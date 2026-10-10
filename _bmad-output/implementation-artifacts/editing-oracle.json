@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-10",
+  "source_sha256": {
+    "Cargo.lock": "e4248e5f6683c8accaaa28a0d7922546e9284c93ff60da17be89c9d49b0e41db",
+    "_bmad-output/implementation-artifacts/check-editing-oracle.py": "6b41316332b0c23508a59efd39d30573ba8411e07c1701931c578ec8956de282",
+    "_bmad-output/implementation-artifacts/editing-oracle.rs": "1f3d77d1ad2522081f86c85da51b7b9f331b094ca4048b111a909919880acd3b",
+    "crates/model/examples/bench_indexed_tree.rs": "252c50df8b773ec42f60f31fc62cc4035b7cf91701286833d7f6a83de049d1cb",
+    "crates/model/src/history.rs": "c36735fa240d8f51f25cb349855c6334d5ce04355117b5219c005d9d2d4f3ea1",
+    "crates/model/src/lib.rs": "8815166611fe9cf17b83f35eecba0b0ee02a6593508b5ecbdd46f77610874a39",
+    "crates/render/src/lib.rs": "4ed862ccb7dd18ecc18b15aa933c85b65d215b7f1315e2196727c4f3c755012e",
+    "crates/render/src/svg.rs": "2305e7b65fa6532e1d061e24880116754f34c0e7b9d94a8c01d1bdf472966dc8",
+    "crates/xml/src/lib.rs": "b93745f66b426bc232117cfd1507f271fea85329eea787bb9dede1c284db81d8"
+  },
+  "xml_semantic_cases": 24,
+  "xml_scope_checks": 258,
+  "history_reference_steps": 10000,
+  "svg": {
+    "svg_deterministic": true,
+    "xml_valid": true,
+    "glyph_uses": 2,
+    "unique_glyphs": 1,
+    "embedded_png_matches": true,
+    "bytes": 2067,
+    "sha256": "01668a3770fde7520ec8df8f4165972d08c9657e0ec74d6929345483559d9a10",
+    "visual_file": "target/editing-oracle/page.svg"
+  },
+  "failures": [],
+  "source_bytes_unchanged": true
+}

@@ -1,0 +1,174 @@
+{
+  "renderer": "Sharp/libvips/librsvg; bundled runtime",
+  "svg_sha256": "01668a3770fde7520ec8df8f4165972d08c9657e0ec74d6929345483559d9a10",
+  "png_sha256": "14bcb0a9fcbd69933dbdc34ad6c68adc8cd883214e472d1b7ea7d40b928f3d56",
+  "size": [
+    300,
+    180
+  ],
+  "pixel_checks": [
+    {
+      "case": "clip-red",
+      "point": [
+        20,
+        20
+      ],
+      "rgba": [
+        255,
+        0,
+        0,
+        255
+      ],
+      "expected": [
+        255,
+        0,
+        0,
+        255
+      ]
+    },
+    {
+      "case": "outside-clip",
+      "point": [
+        40,
+        20
+      ],
+      "rgba": [
+        255,
+        255,
+        255,
+        255
+      ],
+      "expected": [
+        255,
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "case": "crossed-state",
+      "point": [
+        55,
+        15
+      ],
+      "rgba": [
+        0,
+        0,
+        255,
+        255
+      ],
+      "expected": [
+        0,
+        0,
+        255,
+        255
+      ]
+    },
+    {
+      "case": "matrix-order",
+      "point": [
+        90,
+        30
+      ],
+      "rgba": [
+        0,
+        255,
+        0,
+        255
+      ],
+      "expected": [
+        0,
+        255,
+        0,
+        255
+      ]
+    },
+    {
+      "case": "alpha",
+      "point": [
+        120,
+        20
+      ],
+      "rgba": [
+        255,
+        127,
+        127,
+        255
+      ],
+      "expected": [
+        255,
+        127,
+        127,
+        255
+      ]
+    },
+    {
+      "case": "glyph-1",
+      "point": [
+        154,
+        15
+      ],
+      "rgba": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        255
+      ]
+    },
+    {
+      "case": "glyph-2",
+      "point": [
+        174,
+        15
+      ],
+      "rgba": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        255
+      ]
+    },
+    {
+      "case": "embedded-image",
+      "point": [
+        210,
+        20
+      ],
+      "rgba": [
+        255,
+        255,
+        0,
+        255
+      ],
+      "expected": [
+        255,
+        255,
+        0,
+        255
+      ]
+    }
+  ],
+  "success": true,
+  "browser_validation": "Unavailable: in-app browser kernel assets missing; headless Chrome launch rejected by automatic approval policy. Local independent SVG rasterizer used.",
+  "date": "2026-10-10",
+  "renderer_versions": {
+    "sharp": "0.35.5",
+    "vips": "8.18.7",
+    "rsvg": "2.63.2"
+  },
+  "svg_file": "_bmad-output/implementation-artifacts/editing-svg-example.svg",
+  "png_file": "_bmad-output/implementation-artifacts/editing-svg-example.png",
+  "visual_inspection": "Image opened and inspected by coordinator; curves, colors, clips, glyphs and embedded image visible."
+}

@@ -2,13 +2,25 @@
 
 Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus ; ils sont actuellement des emplacements documentés.
 
-Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques et la liste d'affichage. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux ; les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques et historique annuler/rétablir, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Aucun bloc `unsafe` n'est nécessaire dans ce socle ; toute future utilisation devra être isolée et commentée selon la spécification.
 
 ## Validation
+
+### Preuve US-032, US-072 et US-081 — 2026-10-10
+
+Trois US développées en parallèle avec GPT-6 Luna moyen, puis soumises à trois revues indépendantes : [XML opaque](us-032-opaque-xml.md), [historique annuler/rétablir](us-072-undo-history.md) et [backend SVG](us-081-svg-backend.md). Le [suivi du lot](EDITING-PROGRESS.md) rassemble les preuves, les garanties et les limites ; la [revue triée](../_bmad-output/implementation-artifacts/editing-review.md) enregistre chaque constat et sa disposition.
+
+L’[oracle indépendant](../_bmad-output/implementation-artifacts/editing-oracle.json) valide 24 captures XML dans trois encodages, 258 contrôles de namespaces, 10 000 étapes d’historique et les données SVG incorporées. Le [rendu SVG](../_bmad-output/implementation-artifacts/editing-svg-visual.json) passe huit contrôles de pixels avec Sharp/libvips/librsvg et a été inspecté visuellement. La vérification navigateur reste indisponible, comme indiqué dans le suivi du lot.
+
+**160 tests du workspace et 76 tests release passent** (24 modèle, 19 rendu, 33 XML). Aucun constat de revue différé. La [validation globale](../_bmad-output/implementation-artifacts/editing-validation.json) couvre les quatorze contrôles locaux, dont les tests debug/release, Clippy hôte/WASM, formatage, licence, garde du lock, builds Windows/WASM/musl et compilation des tests musl. Les 31 paquets restent locaux, sans dépendance de production externe ; `atelier-render → atelier-xml` est ajouté uniquement pour les tests. Les tests musl sont compilés sur Windows ; le [workflow distant](https://github.com/simkamil/mon-bureau/actions/workflows/ci.yml) les exécute sur Linux.
+
+### Validation distante ZIP/XML — 2026-10-10
+
+Le commit `3aa4d19bef7e8e917b90136f80252bd988e1f7b0` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38050195393), dont l’exécution effective des tests Linux musl. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-formats.json) conserve cette preuve du lot précédent ; les modifications suivantes demandent leur propre validation distante.
 
 ### Preuve US-022/023 et US-030/031 — 2026-10-10
 

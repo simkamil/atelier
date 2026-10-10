@@ -8,5 +8,8 @@ license.workspace = true
 [dependencies]
 atelier-geom = { path = "../geom" }
 
+[dev-dependencies]
+atelier-xml = { path = "../xml" }
+
 [lints]
 workspace = true

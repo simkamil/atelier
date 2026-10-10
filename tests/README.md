@@ -11,3 +11,8 @@ Les corpus de documents complets et images de référence seront ajoutés avec
 les stories correspondantes.
 
 Deux archives Writer classiques/Zip64 ont été validées par Python zipfile (noms, contenus et CRC); leurs octets figés sont comparés aux sorties du writer dans les tests Rust CI. Le manifeste conserve les entrées, options et SHA-256, et le générateur reproduit ces références.
+
+Les tests Rust de XML opaque, historique et SVG vivent dans leurs crates et
+s’exécutent en CI sans runtime externe. Les comparaisons à ElementTree et à un
+modèle d’historique, ainsi que la rasterisation SVG indépendante, sont des
+contrôles complémentaires d’agent : voir le [suivi du lot](../docs/EDITING-PROGRESS.md).

@@ -187,8 +187,10 @@ Réf : §6.2 `xml` · Taille : S · Dépend de : US-030
 
 #### US-032 — Sous-arbres XML opaques
 *En tant que* développeur, *je veux* capturer un sous-arbre XML brut et le réémettre *afin de* préserver les éléments non gérés.
-- [ ] Capture d'un élément et de ses descendants avec leurs espaces de noms effectifs.
-- [ ] Réémission sémantiquement identique dans un autre contexte d'espaces de noms.
+- [x] Capture d'un élément et de ses descendants avec leurs espaces de noms effectifs.
+- [x] Réémission sémantiquement identique dans un autre contexte d'espaces de noms.
+
+Validation : développée, revue et validée le 2026-10-10 ; [contrat et preuves](docs/us-032-opaque-xml.md).
 
 Réf : §5.2 (1) · Taille : S · Dépend de : US-030, US-031
 
@@ -318,9 +320,11 @@ Validation US-071 (2026-10-10) : [contrats, preuves et limites](docs/DEVELOPMENT
 
 #### US-072 — Pile annuler / rétablir
 *En tant que* développeur, *je veux* une pile d'annulation *afin de* fournir un annuler/rétablir illimité.
-- [ ] Les frappes consécutives sont regroupées (coupure sur pause > 1 s, déplacement du curseur ou espace après un mot).
-- [ ] Taille bornée par un budget mémoire paramétrable (les plus anciennes entrées sont éliminées).
-- [ ] La sélection est restaurée à l'annulation.
+- [x] Les frappes consécutives sont regroupées (coupure sur pause > 1 s, déplacement du curseur ou espace après un mot).
+- [x] Taille bornée par un budget mémoire paramétrable (les plus anciennes entrées sont éliminées).
+- [x] La sélection est restaurée à l'annulation.
+
+Validation : développée, revue et validée le 2026-10-10 ; [contrat et preuves](docs/us-072-undo-history.md).
 
 Réf : F-COM-009 · Taille : S · Dépend de : US-071
 
@@ -353,8 +357,10 @@ Validation US-080 (2026-10-10) : [contrats, preuves et limites](docs/DEVELOPMENT
 
 #### US-081 — Backend SVG
 *En tant que* développeur, *je veux* convertir une liste d'affichage en SVG *afin de* préparer l'impression.
-- [ ] Un SVG par page, glyphes définis une fois (`<defs>`) puis réutilisés (`<use>`).
-- [ ] Images incorporées, clips, transformations, couleurs avec transparence.
+- [x] Un SVG par page, glyphes définis une fois (`<defs>`) puis réutilisés (`<use>`).
+- [x] Images incorporées, clips, transformations, couleurs avec transparence.
+
+Validation : développée, revue et validée le 2026-10-10 ; [contrat et preuves](docs/us-081-svg-backend.md).
 
 Réf : §6.6 · Taille : S · Dépend de : US-080
 

@@ -10,6 +10,9 @@
 use core::fmt;
 use std::collections::BTreeMap;
 
+mod history;
+pub use history::{EditKind, History, HistoryAction, HistoryError};
+
 /// Opaque identity assigned to an element for the lifetime of its tree.
 ///
 /// Identities are local to the `IndexedTree` that created them. Different trees
@@ -736,6 +739,10 @@ impl<O> Transaction<O> {
     }
     pub fn operations(&self) -> &[O] {
         &self.operations
+    }
+
+    pub(crate) fn into_operations(self) -> Vec<O> {
+        self.operations
     }
 }
 

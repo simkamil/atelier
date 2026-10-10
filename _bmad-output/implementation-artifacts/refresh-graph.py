@@ -23,7 +23,7 @@ for entry in previous.get('hyperedges',[]):
         doc.setdefault('hyperedges',[]).append(entry)
         known_hyperedges.add(entry['id'])
 document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
-document_paths.add('docs/FORMATS-PROGRESS.md')
+document_paths.update({'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
 known={node['id'] for node in doc['nodes']}
 preserved=set()
 for node in previous['nodes']:
@@ -63,7 +63,7 @@ for i,m in enumerate(headings):
         for edge in doc['edges']:
             if edge.get('source')==node_id:
                 edge['source_location']=str(ref_line)
-for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
+for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','docs/us-032-opaque-xml.md','docs/us-072-undo-history.md','docs/us-081-svg-backend.md','docs/EDITING-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
     p=root/rel
     if p.is_file():
         contents=p.read_text(encoding='utf-8')

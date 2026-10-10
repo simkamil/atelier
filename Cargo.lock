@@ -91,6 +91,7 @@ name = "atelier-render"
 version = "0.1.0"
 dependencies = [
  "atelier-geom",
+ "atelier-xml",
 ]
 
 [[package]]

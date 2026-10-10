@@ -55,6 +55,50 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_model_src_history",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/model/src/history.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_model_src_history",
+    "target": "crate",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/model/src/history.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_model_src_history",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/model/src/history.rs",
+    "source_location": "L406",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_model_src_history",
+    "target": "crate",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/model/src/history.rs",
+    "source_location": "L407",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_model_src_lib",
     "target": "fmt",
     "relation": "imports_from",
@@ -67,11 +111,22 @@
   },
   {
     "source": "crates_model_src_lib",
+    "target": "history",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/model/src/lib.rs",
+    "source_location": "L14",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_model_src_lib",
     "target": "super",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/model/src/lib.rs",
-    "source_location": "L1069",
+    "source_location": "L1076",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -82,7 +137,18 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/render/src/lib.rs",
-    "source_location": "L10",
+    "source_location": "L12",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_lib",
+    "target": "svg",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/lib.rs",
+    "source_location": "L15",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -93,7 +159,73 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/render/src/lib.rs",
-    "source_location": "L962",
+    "source_location": "L967",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_svg",
+    "target": "crate",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/svg.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_svg",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/svg.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_svg",
+    "target": "write_as",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/svg.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_svg",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/svg.rs",
+    "source_location": "L674",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_svg",
+    "target": "crate",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/svg.rs",
+    "source_location": "L675",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_svg",
+    "target": "atelier_xml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/svg.rs",
+    "source_location": "L677",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -148,7 +280,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/xml/src/lib.rs",
-    "source_location": "L1719",
+    "source_location": "L2186",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -159,7 +291,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/xml/src/lib.rs",
-    "source_location": "L1720",
+    "source_location": "L2187",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"

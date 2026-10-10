@@ -142,6 +142,48 @@ pub enum Event {
         data: String,
     },
 }
+
+/// A validated semantic XML subtree captured from a reader event.
+/// Its representation is private so callers cannot inject unchecked XML.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OpaqueSubtree {
+    items: Vec<OpaqueItem>,
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OpaqueItem {
+    event: Event,
+    // Namespace declarations needed at this start tag. The root stores the
+    // complete effective scope so QName-valued content survives relocation.
+    bindings: Vec<(String, String)>,
+}
+
+fn event_bytes(event: &Event) -> usize {
+    match event {
+        Event::StartElement {
+            name, attributes, ..
+        } => name_bytes(name)
+            .saturating_add(
+                attributes
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<Attribute>()),
+            )
+            .saturating_add(attributes.iter().fold(0usize, |n, a| {
+                n.saturating_add(name_bytes(&a.name))
+                    .saturating_add(a.value.capacity())
+            })),
+        Event::EndElement { name } => name_bytes(name),
+        Event::Text(s) | Event::Comment(s) => s.capacity(),
+        Event::ProcessingInstruction { target, data } => {
+            target.capacity().saturating_add(data.capacity())
+        }
+    }
+}
+fn name_bytes(name: &Name) -> usize {
+    name.local
+        .len()
+        .saturating_add(name.prefix.as_ref().map_or(0, String::len))
+        .saturating_add(name.namespace.as_ref().map_or(0, String::len))
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Diagnostic {
     pub position: Position,
@@ -375,6 +417,10 @@ pub struct Reader<R> {
     root_seen: bool,
     doctype_seen: bool,
     failed: bool,
+    last_start: Option<Event>,
+    last_start_declarations: Option<(usize, usize)>,
+    pending_empty_checkpoint: Option<usize>,
+    capture_memory: usize,
 }
 impl<R: Read> Reader<R> {
     pub fn new(input: R) -> Self {
@@ -396,6 +442,10 @@ impl<R: Read> Reader<R> {
             root_seen: false,
             doctype_seen: false,
             failed: false,
+            last_start: None,
+            last_start_declarations: None,
+            pending_empty_checkpoint: None,
+            capture_memory: 0,
         }
     }
     /// Enables only one repair: synthesizing end events at EOF for open elements.
@@ -445,6 +495,8 @@ impl<R: Read> Reader<R> {
             .saturating_add(self.diagnostics.iter().fold(0usize, |used, diagnostic| {
                 used.saturating_add(diagnostic.message.capacity())
             }))
+            .saturating_add(self.last_start.as_ref().map_or(0, event_bytes))
+            .saturating_add(self.capture_memory)
     }
     fn text_budget(&self) -> usize {
         self.limits.max_text_bytes.min(
@@ -791,6 +843,7 @@ impl<R: Read> Reader<R> {
             self.root_seen = true;
         }
         let checkpoint = self.namespace_bindings.len();
+        self.last_start_declarations = None;
         let mut declarations = 0usize;
         for (key, value) in &raw_attrs {
             let prefix = if key == "xmlns" {
@@ -847,6 +900,7 @@ impl<R: Read> Reader<R> {
                 }
             }
         }
+        self.last_start_declarations = Some((checkpoint, self.namespace_bindings.len()));
         let mut event_memory = raw
             .len()
             .saturating_add(raw_attrs.iter().fold(0usize, |used, (n, v)| {
@@ -940,7 +994,9 @@ impl<R: Read> Reader<R> {
             self.stack.push(name.clone());
             self.namespace_checkpoints.push(checkpoint);
         } else {
-            self.namespace_bindings.truncate(checkpoint);
+            // Keep the empty element's scope until the caller has had the
+            // opportunity to capture this just-returned event.
+            self.pending_empty_checkpoint = Some(checkpoint);
         }
         Ok(Event::StartElement {
             name,
@@ -1215,6 +1271,11 @@ impl<R: Read> Reader<R> {
         if self.failed || self.ended {
             return Ok(None);
         }
+        self.last_start = None;
+        self.last_start_declarations = None;
+        if let Some(checkpoint) = self.pending_empty_checkpoint.take() {
+            self.namespace_bindings.truncate(checkpoint);
+        }
         if self.events >= self.limits.max_events {
             return match self.after_event_budget() {
                 Ok(event) => Ok(event),
@@ -1231,11 +1292,240 @@ impl<R: Read> Reader<R> {
                 return Err(error);
             }
         };
+        if let Some(Event::StartElement { .. }) = &event {
+            let extra = event.as_ref().map_or(0, event_bytes);
+            if self.memory_used().saturating_add(extra) > self.limits.max_memory_bytes {
+                self.failed = true;
+                return Err(
+                    self.error(ErrorKind::Limit, "latest start event exceeds memory budget")
+                );
+            }
+            self.last_start = event.clone();
+        }
         if event.is_some() {
             self.events += 1;
         }
         Ok(event)
     }
+
+    /// Capture the most recently returned start element and its complete subtree.
+    /// The start is consumed exactly once; any next reader event invalidates it.
+    pub fn capture_opaque(&mut self) -> Result<OpaqueSubtree, XmlError> {
+        let Some(root) = self.last_start.take() else {
+            return Err(self.error(
+                ErrorKind::WriterState,
+                "no unconsumed start event to capture",
+            ));
+        };
+        let result = self.capture_opaque_inner(root);
+        self.finish_opaque_capture(result)
+    }
+
+    fn capture_opaque_inner(&mut self, root: Event) -> Result<OpaqueSubtree, XmlError> {
+        let root_bytes = event_bytes(&root);
+        let binding_copy_budget = self.namespace_bindings.iter().fold(0usize, |n, (p, u)| {
+            n.saturating_add(p.len())
+                .saturating_add(u.len())
+                .saturating_add(std::mem::size_of::<(String, String)>())
+        });
+        let root_slot = std::mem::size_of::<OpaqueItem>();
+        let base_memory = self
+            .memory_used()
+            .saturating_add(root_bytes)
+            .saturating_add(root_slot);
+        if base_memory.saturating_add(binding_copy_budget) > self.limits.max_memory_bytes {
+            return self.capture_failed(ErrorKind::Limit, "opaque root exceeds memory budget");
+        }
+        let remaining = self.limits.max_memory_bytes.saturating_sub(base_memory);
+        let root_bindings = match flatten_bindings(&self.namespace_bindings, remaining) {
+            Ok(bindings) => bindings,
+            Err(error) => {
+                self.failed = true;
+                return Err(error);
+            }
+        };
+        let mut items = Vec::new();
+        let mut opaque_bytes = root_bytes;
+        opaque_bytes =
+            opaque_bytes.saturating_add(root_bindings.iter().fold(0usize, |n, (p, u)| {
+                n.saturating_add(p.len()).saturating_add(u.len())
+            }));
+        opaque_bytes = opaque_bytes.saturating_add(
+            root_bindings
+                .capacity()
+                .saturating_mul(std::mem::size_of::<(String, String)>()),
+        );
+        let used = self.memory_used().saturating_add(opaque_bytes);
+        if used > self.limits.max_memory_bytes {
+            return self.capture_failed(ErrorKind::Limit, "opaque subtree exceeds memory budget");
+        }
+        items
+            .try_reserve_exact(1)
+            .map_err(|_| self.error(ErrorKind::Limit, "cannot reserve opaque subtree"))?;
+        let root_empty = matches!(root, Event::StartElement { empty: true, .. });
+        items.push(OpaqueItem {
+            event: root,
+            bindings: root_bindings,
+        });
+        opaque_bytes = opaque_bytes.saturating_add(
+            items
+                .capacity()
+                .saturating_mul(std::mem::size_of::<OpaqueItem>()),
+        );
+        self.capture_memory = opaque_bytes;
+        let mut depth = usize::from(!root_empty);
+        let mut count = 1usize;
+        let initial_diagnostics = self.diagnostics.len();
+        while depth != 0 {
+            let event = match self.next_event() {
+                Ok(Some(event)) => event,
+                Ok(None) => {
+                    return self.capture_failed(ErrorKind::Syntax, "truncated opaque subtree");
+                }
+                Err(error) => {
+                    self.failed = true;
+                    return Err(error);
+                }
+            };
+            if self.diagnostics.len() != initial_diagnostics {
+                return self.capture_failed(
+                    ErrorKind::Syntax,
+                    "reader repaired a truncated opaque subtree",
+                );
+            }
+            count = count.saturating_add(1);
+            if count > self.limits.max_events {
+                return self
+                    .capture_failed(ErrorKind::Limit, "opaque subtree event limit exceeded");
+            }
+            let binding_range = self.last_start_declarations;
+            // The capture loop owns this event now; release the Reader's
+            // last-start clone before reserving its opaque copy.
+            self.last_start = None;
+            let binding_count = if matches!(event, Event::StartElement { .. }) {
+                binding_range.map_or(0, |(start, end)| end - start)
+            } else {
+                0
+            };
+            let extra = event_bytes(&event).saturating_add(
+                binding_count.saturating_mul(std::mem::size_of::<(String, String)>()),
+            );
+            let binding_bytes = binding_range.map_or(0, |(start, end)| {
+                self.namespace_bindings[start..end]
+                    .iter()
+                    .fold(0usize, |n, (p, u)| {
+                        n.saturating_add(p.len()).saturating_add(u.len())
+                    })
+            });
+            let next_opaque_bytes = opaque_bytes
+                .saturating_add(extra)
+                .saturating_add(binding_bytes);
+            if items.len() >= self.limits.max_events {
+                return self
+                    .capture_failed(ErrorKind::Limit, "opaque subtree exceeds configured limits");
+            }
+            let new_capacity = if items.len() == items.capacity() {
+                items
+                    .capacity()
+                    .max(1)
+                    .saturating_mul(2)
+                    .min(self.limits.max_events)
+            } else {
+                items.capacity()
+            };
+            let next_capture_memory = next_opaque_bytes
+                .saturating_add(new_capacity.saturating_mul(std::mem::size_of::<OpaqueItem>()));
+            if self
+                .memory_used()
+                .saturating_sub(self.capture_memory)
+                .saturating_add(next_capture_memory)
+                > self.limits.max_memory_bytes
+            {
+                return self.capture_failed(
+                    ErrorKind::Limit,
+                    "opaque subtree exceeds configured memory budget",
+                );
+            }
+            if items.len() == items.capacity() {
+                let additional = new_capacity.saturating_sub(items.len());
+                items.try_reserve_exact(additional).map_err(|_| {
+                    self.error(ErrorKind::Limit, "cannot grow bounded opaque subtree")
+                })?;
+            }
+            match &event {
+                Event::StartElement { empty: false, .. } => depth = depth.saturating_add(1),
+                Event::EndElement { .. } => depth -= 1,
+                _ => {}
+            }
+            let bindings = if binding_count == 0 {
+                Vec::new()
+            } else {
+                let (start, end) = binding_range.expect("start event has binding range");
+                let mut copy = Vec::new();
+                copy.try_reserve_exact(end - start).map_err(|_| {
+                    self.error(ErrorKind::Limit, "cannot reserve opaque namespace bindings")
+                })?;
+                copy.extend(self.namespace_bindings[start..end].iter().cloned());
+                copy
+            };
+            items.push(OpaqueItem { event, bindings });
+            opaque_bytes = next_opaque_bytes;
+            self.capture_memory = next_capture_memory;
+        }
+        self.capture_memory = 0;
+        Ok(OpaqueSubtree { items })
+    }
+    fn capture_failed<T>(&mut self, kind: ErrorKind, message: &str) -> Result<T, XmlError> {
+        Err(self.error(kind, message))
+    }
+
+    fn finish_opaque_capture(
+        &mut self,
+        result: Result<OpaqueSubtree, XmlError>,
+    ) -> Result<OpaqueSubtree, XmlError> {
+        if result.is_err() {
+            self.failed = true;
+            self.capture_memory = 0;
+            self.last_start = None;
+            self.last_start_declarations = None;
+            self.pending_empty_checkpoint = None;
+        }
+        result
+    }
+}
+
+fn flatten_bindings(
+    bindings: &[(String, String)],
+    budget: usize,
+) -> Result<Vec<(String, String)>, XmlError> {
+    let bytes = bindings.iter().fold(0usize, |n, (p, u)| {
+        n.saturating_add(p.len())
+            .saturating_add(u.len())
+            .saturating_add(std::mem::size_of::<(String, String)>())
+    });
+    if bytes > budget {
+        return Err(XmlError::new(
+            ErrorKind::Limit,
+            Position::default(),
+            "opaque namespace scope exceeds memory budget",
+        ));
+    }
+    let mut out: Vec<(String, String)> = Vec::new();
+    out.try_reserve_exact(bindings.len()).map_err(|_| {
+        XmlError::new(
+            ErrorKind::Limit,
+            Position::default(),
+            "cannot reserve opaque namespace scope",
+        )
+    })?;
+    for (prefix, uri) in bindings {
+        if let Some(existing) = out.iter_mut().find(|(p, _)| p == prefix) {
+            existing.1.clone_from(uri);
+        } else {
+            out.push((prefix.clone(), uri.clone()));
+        }
+    }
+    Ok(out)
 }
 
 /// Iterator adapter that stops after the first parse error.
@@ -1308,6 +1598,183 @@ impl<W: Write> Writer<W> {
             self.finished = true;
         }
         result
+    }
+    /// Write a reader-validated opaque subtree while keeping its prefixes and
+    /// captured namespace bindings stable for QName-valued text and attributes.
+    pub fn write_opaque(&mut self, subtree: &OpaqueSubtree) -> Result<(), XmlError> {
+        let result = self.write_opaque_inner(subtree);
+        if result.is_err() {
+            self.finished = true;
+        }
+        result
+    }
+    fn write_opaque_inner(&mut self, subtree: &OpaqueSubtree) -> Result<(), XmlError> {
+        if self.finished || subtree.items.is_empty() {
+            return Err(XmlError::new(
+                ErrorKind::WriterState,
+                Position::default(),
+                "invalid opaque subtree or finished writer",
+            ));
+        }
+        if self.stack.is_empty() {
+            if self.root_seen {
+                return Err(XmlError::new(
+                    ErrorKind::WriterState,
+                    Position::default(),
+                    "multiple document elements",
+                ));
+            }
+            self.root_seen = true;
+        }
+        let parent_depth = self.stack.len();
+        let mut local_stack: Vec<String> = Vec::new();
+        let mut root = true;
+        for item in &subtree.items {
+            match &item.event {
+                Event::StartElement {
+                    name,
+                    attributes,
+                    empty,
+                } => {
+                    validate_name(name)?;
+                    for attr in attributes {
+                        validate_name(&attr.name)?;
+                        validate_chars(&attr.value)?;
+                        if attr.name.namespace.as_deref() == Some(XMLNS_NS) {
+                            return Err(XmlError::new(
+                                ErrorKind::Namespace,
+                                Position::default(),
+                                "namespace declarations cannot be attributes",
+                            ));
+                        }
+                    }
+                    let q = name.qualified();
+                    write!(self.output, "<{}", q)
+                        .map_err(|e| XmlError::io(Position::default(), e))?;
+                    let has_default = item.bindings.iter().any(|(p, _)| p.is_empty());
+                    for (prefix, uri) in &item.bindings {
+                        if (!prefix.is_empty() && !is_ncname(prefix))
+                            || prefix == "xmlns"
+                            || prefix == "xml" && uri != XML_NS
+                            || prefix != "xml" && uri == XML_NS
+                            || uri == XMLNS_NS
+                            || !prefix.is_empty() && uri.is_empty()
+                        {
+                            return Err(XmlError::new(
+                                ErrorKind::Namespace,
+                                Position::default(),
+                                "invalid opaque namespace binding",
+                            ));
+                        }
+                        if prefix.is_empty() {
+                            self.output
+                                .write_all(b" xmlns=\"")
+                                .map_err(|e| XmlError::io(Position::default(), e))?;
+                        } else {
+                            write!(self.output, " xmlns:{}=\"", prefix)
+                                .map_err(|e| XmlError::io(Position::default(), e))?;
+                        }
+                        escape_attr(&mut self.output, uri)?;
+                        self.output
+                            .write_all(b"\"")
+                            .map_err(|e| XmlError::io(Position::default(), e))?;
+                    }
+                    if root && !has_default {
+                        self.output
+                            .write_all(b" xmlns=\"\"")
+                            .map_err(|e| XmlError::io(Position::default(), e))?;
+                    }
+                    let mut seen = HashSet::new();
+                    for attr in attributes {
+                        if !seen.insert((
+                            attr.name.namespace.as_deref().unwrap_or(""),
+                            attr.name.local.as_str(),
+                        )) {
+                            return Err(XmlError::new(
+                                ErrorKind::DuplicateAttribute,
+                                Position::default(),
+                                "duplicate opaque attribute",
+                            ));
+                        }
+                        write!(self.output, " {}=\"", attr.name.qualified())
+                            .map_err(|e| XmlError::io(Position::default(), e))?;
+                        escape_attr(&mut self.output, &attr.value)?;
+                        self.output
+                            .write_all(b"\"")
+                            .map_err(|e| XmlError::io(Position::default(), e))?;
+                    }
+                    if *empty {
+                        self.output
+                            .write_all(b"/>")
+                            .map_err(|e| XmlError::io(Position::default(), e))?;
+                    } else {
+                        self.output
+                            .write_all(b">")
+                            .map_err(|e| XmlError::io(Position::default(), e))?;
+                        local_stack.push(q);
+                    }
+                    root = false;
+                }
+                Event::EndElement { name } => {
+                    let q = name.qualified();
+                    if local_stack.last() != Some(&q) {
+                        return Err(XmlError::new(
+                            ErrorKind::WriterState,
+                            Position::default(),
+                            "invalid opaque element balance",
+                        ));
+                    }
+                    local_stack.pop();
+                    write!(self.output, "</{}>", q)
+                        .map_err(|e| XmlError::io(Position::default(), e))?;
+                }
+                Event::Text(text) => escape_text(&mut self.output, text)?,
+                Event::Comment(text) => {
+                    validate_chars(text)?;
+                    if text.contains("--") || text.ends_with('-') {
+                        return Err(XmlError::new(
+                            ErrorKind::Syntax,
+                            Position::default(),
+                            "invalid opaque comment",
+                        ));
+                    }
+                    self.output
+                        .write_all(b"<!--")
+                        .map_err(|e| XmlError::io(Position::default(), e))?;
+                    write_eol_normalized(&mut self.output, text)?;
+                    self.output
+                        .write_all(b"-->")
+                        .map_err(|e| XmlError::io(Position::default(), e))?;
+                }
+                Event::ProcessingInstruction { target, data } => {
+                    validate_chars(data)?;
+                    if !is_ncname(target)
+                        || target.eq_ignore_ascii_case("xml")
+                        || data.contains("?>")
+                    {
+                        return Err(XmlError::new(
+                            ErrorKind::Syntax,
+                            Position::default(),
+                            "invalid opaque processing instruction",
+                        ));
+                    }
+                    write!(self.output, "<?{} ", target)
+                        .map_err(|e| XmlError::io(Position::default(), e))?;
+                    write_eol_normalized(&mut self.output, data)?;
+                    self.output
+                        .write_all(b"?>")
+                        .map_err(|e| XmlError::io(Position::default(), e))?;
+                }
+            }
+        }
+        if !local_stack.is_empty() || self.stack.len() != parent_depth {
+            return Err(XmlError::new(
+                ErrorKind::WriterState,
+                Position::default(),
+                "unclosed opaque element",
+            ));
+        }
+        Ok(())
     }
     fn write_inner(&mut self, event: &Event) -> Result<(), XmlError> {
         if self.finished {
@@ -2298,16 +2765,20 @@ mod tests {
     #[test]
     fn tolerant_eof_diagnostic_obeys_memory_budget() {
         let mut found = false;
-        for max_memory_bytes in 1..1024 {
+        let input = "<r>".repeat(8);
+        for max_memory_bytes in 1..8192 {
             let limits = Limits {
                 max_memory_bytes,
                 ..Limits::default()
             };
-            let mut reader = Reader::with_limits(&b"<r>"[..], limits);
+            let mut reader = Reader::with_limits(input.as_bytes(), limits);
             reader.tolerant = true;
-            if reader
-                .next_event()
-                .is_ok_and(|event| matches!(event, Some(Event::StartElement { .. })))
+            let starts_ok = (0..8).all(|_| {
+                reader
+                    .next_event()
+                    .is_ok_and(|event| matches!(event, Some(Event::StartElement { .. })))
+            });
+            if starts_ok
                 && matches!(
                     reader.next_event(),
                     Err(XmlError {
@@ -2368,5 +2839,193 @@ mod tests {
             panic!()
         };
         assert_eq!(name.namespace.as_deref(), Some("urn:x"));
+    }
+
+    #[test]
+    fn opaque_subtree_reemits_effective_prefixes_and_qname_values() {
+        let source = b"<outer xmlns='urn:default' xmlns:p='urn:A' xmlns:xsi='urn:xsi'><p:unknown xsi:type='p:Widget'>p:Text<!--c--><?pi d?><child xmlns=''><p:x xmlns:p='urn:B'/></child></p:unknown><next/></outer>";
+        let mut reader = Reader::new(&source[..]);
+        reader.next_event().unwrap();
+        let start = reader.next_event().unwrap().unwrap();
+        assert!(matches!(start, Event::StartElement { .. }));
+        let opaque = reader.capture_opaque().unwrap();
+        let after = reader.next_event().unwrap().unwrap();
+        assert!(
+            matches!(after, Event::StartElement { name: Name { local, .. }, .. } if local == "next")
+        );
+
+        let mut writer = Writer::new(Vec::new()).unwrap();
+        let parent = Name {
+            prefix: None,
+            local: "target".into(),
+            namespace: Some("urn:target".into()),
+        };
+        writer
+            .write_event(&Event::StartElement {
+                name: parent.clone(),
+                attributes: vec![],
+                empty: false,
+            })
+            .unwrap();
+        writer.write_opaque(&opaque).unwrap();
+        writer
+            .write_event(&Event::EndElement { name: parent })
+            .unwrap();
+        let output = writer.finish().unwrap();
+        let reparsed = events(&output).unwrap();
+        assert!(reparsed.iter().any(|event| matches!(event, Event::StartElement { name, attributes, .. } if name.prefix.as_deref() == Some("p") && name.namespace.as_deref() == Some("urn:A") && attributes.iter().any(|a| a.value == "p:Widget" && a.name.namespace.as_deref() == Some("urn:xsi")) )));
+        assert!(reparsed.contains(&Event::Text("p:Text".into())));
+        assert!(reparsed.contains(&Event::Comment("c".into())));
+        assert!(reparsed.contains(&Event::ProcessingInstruction {
+            target: "pi".into(),
+            data: "d".into()
+        }));
+        assert!(reparsed.iter().any(|event| matches!(event, Event::StartElement { name, .. } if name.local == "child" && name.namespace.is_none())));
+        assert!(reparsed.iter().any(|event| matches!(event, Event::StartElement { name, .. } if name.local == "x" && name.namespace.as_deref() == Some("urn:B"))));
+    }
+
+    #[test]
+    fn opaque_empty_start_is_immediate_and_capture_is_one_shot() {
+        let mut reader = Reader::new(&b"<root><r xmlns:p='urn:p'/><after/></root>"[..]);
+        reader.next_event().unwrap();
+        assert!(matches!(
+            reader.next_event().unwrap(),
+            Some(Event::StartElement { empty: true, .. })
+        ));
+        let opaque = reader.capture_opaque().unwrap();
+        let mut writer = Writer::new(Vec::new()).unwrap();
+        writer.write_opaque(&opaque).unwrap();
+        let bytes = writer.finish().unwrap();
+        assert!(
+            events(&bytes)
+                .unwrap()
+                .iter()
+                .any(|e| matches!(e, Event::StartElement { name, .. } if name.local == "r")),
+            "{}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(reader.capture_opaque().is_err());
+        assert!(
+            matches!(reader.next_event().unwrap(), Some(Event::StartElement { name, .. }) if name.local == "after")
+        );
+    }
+
+    #[test]
+    fn opaque_capture_propagates_utf16_truncation_and_limits() {
+        let xml = "<r xmlns:p='urn:p'><p:x>v</p:x></r>";
+        let mut utf16 = vec![0xff, 0xfe];
+        for unit in xml.encode_utf16() {
+            utf16.extend_from_slice(&unit.to_le_bytes());
+        }
+        let mut reader = Reader::new(&utf16[..]);
+        reader.next_event().unwrap();
+        reader.next_event().unwrap();
+        assert!(reader.capture_opaque().is_ok());
+
+        let mut truncated = Reader::new(&b"<r><x>"[..]);
+        truncated.next_event().unwrap();
+        assert_eq!(
+            truncated.capture_opaque().unwrap_err().kind,
+            ErrorKind::Syntax
+        );
+
+        let mut tolerant = Reader::new_tolerant(&b"<r><x>"[..]);
+        tolerant.next_event().unwrap();
+        assert_eq!(
+            tolerant.capture_opaque().unwrap_err().kind,
+            ErrorKind::Syntax
+        );
+
+        let limits = Limits {
+            max_events: 2,
+            ..Limits::default()
+        };
+        let mut limited = Reader::with_limits(&b"<r><x>text</x></r>"[..], limits);
+        limited.next_event().unwrap();
+        assert_eq!(limited.capture_opaque().unwrap_err().kind, ErrorKind::Limit);
+
+        let payload = format!("<r>{}</r>", "x".repeat(900));
+        let limits = Limits {
+            max_memory_bytes: 512,
+            max_text_bytes: 2048,
+            ..Limits::default()
+        };
+        let mut memory_limited = Reader::with_limits(payload.as_bytes(), limits);
+        memory_limited.next_event().unwrap();
+        assert_eq!(
+            memory_limited.capture_opaque().unwrap_err().kind,
+            ErrorKind::Limit
+        );
+    }
+
+    #[test]
+    fn opaque_memory_budget_stops_before_reading_a_later_large_text_event() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct Counted<'a> {
+            input: &'a [u8],
+            consumed: &'a AtomicUsize,
+        }
+        impl Read for Counted<'_> {
+            fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+                let n = self.input.len().min(out.len()).min(1);
+                out[..n].copy_from_slice(&self.input[..n]);
+                self.input = &self.input[n..];
+                self.consumed.fetch_add(n, Ordering::Relaxed);
+                Ok(n)
+            }
+        }
+
+        let input = format!(
+            "<r><x>{}</x><y>{}</y></r>",
+            "small".repeat(8),
+            "large".repeat(2_000)
+        );
+        let consumed = AtomicUsize::new(0);
+        let limits = Limits {
+            max_memory_bytes: 1024,
+            max_text_bytes: 16 * 1024,
+            ..Limits::default()
+        };
+        let mut reader = Reader::with_limits(
+            Counted {
+                input: input.as_bytes(),
+                consumed: &consumed,
+            },
+            limits,
+        );
+        reader.next_event().unwrap();
+        assert_eq!(reader.capture_opaque().unwrap_err().kind, ErrorKind::Limit);
+        assert!(
+            consumed.load(Ordering::Relaxed) < input.len(),
+            "capture consumed the full oversized source before refusing"
+        );
+    }
+
+    #[test]
+    fn opaque_capture_cleans_up_reservation_failure() {
+        let mut reader = Reader::new(&b"<r/>"[..]);
+        reader.next_event().unwrap();
+        reader.capture_memory = 91;
+        reader.last_start_declarations = Some((0, 0));
+        reader.pending_empty_checkpoint = Some(0);
+
+        // Capacity overflow is returned safely by Vec and does not attempt a
+        // real large allocation. It models a fallible reserve failure.
+        let reserve_error = Vec::<u8>::new().try_reserve_exact(usize::MAX).unwrap_err();
+        let error = XmlError::new(
+            ErrorKind::Limit,
+            Position::default(),
+            reserve_error.to_string(),
+        );
+        let result = reader.finish_opaque_capture(Err(error));
+
+        assert_eq!(result.unwrap_err().kind, ErrorKind::Limit);
+        assert!(reader.failed);
+        assert_eq!(reader.capture_memory, 0);
+        assert!(reader.last_start.is_none());
+        assert!(reader.last_start_declarations.is_none());
+        assert!(reader.pending_empty_checkpoint.is_none());
+        assert!(reader.next_event().unwrap().is_none());
     }
 }

@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Ordered, validated display lists and a bounded portable binary format.
+//! Ordered, validated display lists, a bounded portable binary format, and an
+//! SVG backend.
 //!
-//! The crate describes drawing operations only. Image and font identifiers are
-//! opaque document-owned values; no backend or resource loader is provided.
+//! Image and font identifiers remain opaque document-owned values. The SVG
+//! backend resolves them only through caller-supplied in-memory resources; it
+//! does not load files, system fonts, or network resources.
 
 #![forbid(unsafe_code)]
 
 use atelier_geom::{GeometryError, MAX_COORDINATE, Path as GeomPath, Point, Rect};
 use core::fmt;
+
+mod svg;
+pub use svg::{SvgError, SvgImage, SvgLimits, SvgResourceProvider, render_svg};
 
 /// Stable format signature (`ATDL`, Atelier Display List).
 pub const SIGNATURE: [u8; 4] = *b"ATDL";
