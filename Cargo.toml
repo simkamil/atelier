@@ -32,6 +32,7 @@ members = [
     "tools/check-license",
     "tools/check-workspace",
     "tools/bench",
+    "tools/ucd-gen",
 ]
 
 [workspace.package]
@@ -46,3 +47,12 @@ unused_imports = "deny"
 
 [workspace.lints.clippy]
 all = "warn"
+
+# Optimized ABI artifact; regular release behavior remains available to crates.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"

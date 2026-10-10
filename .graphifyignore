@@ -8,3 +8,6 @@ graphify-out/
 tests/image-reference/**/*.png
 tests/image-reference/**/*.gif
 tests/image-reference/**/*.bmp
+
+# Official Unicode source data are represented by the manifest and generator.
+data/ucd/17.0.0/**

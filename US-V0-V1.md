@@ -82,9 +82,9 @@ Validation US-005 (2026-10-09) : [preuves et limites](docs/DEVELOPMENT.md#preuve
 
 #### US-010 — Générateur de tables Unicode
 *En tant que* développeur, *je veux* générer les tables Unicode depuis les fichiers UCD officiels *afin de* ne dépendre d'aucune bibliothèque.
-- [ ] Les fichiers UCD (version figée) sont stockés dans `data/ucd/`.
-- [ ] L'outil génère du code Rust compact (tables à deux niveaux) : catégorie générale, classes de coupure de ligne, propriétés de graphème et de mot, casse, décompositions, propriétés emoji, noms des caractères.
-- [ ] Génération reproductible (même entrée → même sortie), fichiers générés versionnés.
+- [x] Les fichiers UCD (version figée) sont stockés dans `data/ucd/`.
+- [x] L'outil génère du code Rust compact (tables à deux niveaux) : catégorie générale, classes de coupure de ligne, propriétés de graphème et de mot, casse, décompositions, propriétés emoji, noms des caractères.
+- [x] Génération reproductible (même entrée → même sortie), fichiers générés versionnés.
 
 Réf : §6.4 · Taille : M · Dépend de : US-001
 
@@ -246,8 +246,8 @@ Validation — 2026-10-10 : [API et contrat](docs/us-050-opentype-tables.md), [p
 
 #### US-051 — Contours TrueType
 *En tant que* développeur, *je veux* convertir les contours `glyf` en chemins *afin de* dessiner les glyphes.
-- [ ] Glyphes simples (courbes quadratiques, points implicites) et composites (transformations, profondeur bornée).
-- [ ] Rendu des glyphes de Carlito et Liberation identique aux images de référence.
+- [x] Glyphes simples (courbes quadratiques, points implicites) et composites (transformations, profondeur bornée).
+- [x] Rendu des glyphes de Carlito et Liberation identique aux images de référence.
 
 Réf : §6.4 · Taille : M · Dépend de : US-050, US-060
 
@@ -388,9 +388,9 @@ Réf : §6.6 · Taille : S · Dépend de : US-080, US-061
 
 #### US-090 — ABI WASM
 *En tant que* développeur, *je veux* une ABI WASM écrite à la main *afin d'appeler* le moteur depuis le JS sans `wasm-bindgen`.
-- [ ] Exports `alloc`, `free`, `dispatch(ptr, len) -> ptr` ; chargeur JS correspondant.
-- [ ] Une panique Rust est convertie en erreur remontée au JS ; le moteur reste utilisable ou se réinitialise proprement.
-- [ ] Build de release optimisé en taille (taille suivie dans les bancs).
+- [x] Exports `alloc`, `free`, `dispatch(ptr, len) -> ptr` ; chargeur JS correspondant.
+- [x] Une panique Rust est convertie en erreur remontée au JS ; le moteur reste utilisable ou se réinitialise proprement.
+- [x] Build de release optimisé en taille (taille suivie dans les bancs).
 
 Réf : §6.7 · Taille : M · Dépend de : US-001
 

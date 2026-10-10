@@ -7,3 +7,9 @@ license.workspace = true
 
 [lints]
 workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+abi-test-hooks = []

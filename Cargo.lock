@@ -65,6 +65,9 @@ version = "0.1.0"
 [[package]]
 name = "atelier-font"
 version = "0.1.0"
+dependencies = [
+ "atelier-geom",
+]
 
 [[package]]
 name = "atelier-geom"
@@ -125,8 +128,15 @@ name = "atelier-text-model"
 version = "0.1.0"
 
 [[package]]
+name = "atelier-ucd-gen"
+version = "0.1.0"
+
+[[package]]
 name = "atelier-unicode"
 version = "0.1.0"
+dependencies = [
+ "atelier-ucd-gen",
+]
 
 [[package]]
 name = "atelier-xml"

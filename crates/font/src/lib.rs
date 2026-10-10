@@ -7,6 +7,8 @@
 #![forbid(unsafe_code)]
 
 pub mod embedded;
+pub mod outline;
+pub use outline::{OutlineError, OutlineLimits};
 
 use std::collections::BTreeMap;
 

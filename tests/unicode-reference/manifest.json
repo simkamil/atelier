@@ -1,0 +1,9 @@
+{
+  "unicode_version": "17.0.0",
+  "source": "Independent Python parser of the frozen official UCD",
+  "scalars": 1112064,
+  "fields": 30,
+  "checksum_algorithm": "FNV-1a-64 per field, UTF-8 value followed by LF, ascending scalar order; conditional rows TSV",
+  "file": "checksums.tsv",
+  "sha256": "421faea76a65352e84a9dd2ea2efe17bde44a1f03b1a2ee684f3554e7e684f74"
+}

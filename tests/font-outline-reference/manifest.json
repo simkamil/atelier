@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "oracle": "FontTools",
+  "faces": 20,
+  "cases": 300,
+  "file": "outlines.tsv",
+  "sha256": "51da5b890f11550664c48d84cc0f5047ac638e0dbe97064d45ebc6060d85c6e4"
+}

@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "case": "wrong_version",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "invalid_line_class",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "malformed_line_record",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "missing_codepoint",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "range_outside_unicode",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "invalid_missing_default",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "invalid_fold_scalar",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "overlapping_line_range",
+      "exit_code": 1,
+      "existing_output_unchanged": true
+    },
+    {
+      "case": "missing_source",
+      "exit_code": 1,
+      "partial_output_absent": true
+    }
+  ],
+  "windows_replacement_generations": 2,
+  "source_bytes_unchanged": true,
+  "all_passed": true
+}

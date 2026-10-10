@@ -3,6 +3,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod properties;
+
 mod tables;
 
 /// A supported byte encoding. UTF-16 byte order is explicit.

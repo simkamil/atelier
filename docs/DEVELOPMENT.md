@@ -1,6 +1,6 @@
 # Développement
 
-Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus. Les polices embarquées et les corpus de référence sont versionnés ; le client web reste un emplacement documenté.
+Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus. Les polices embarquées et les corpus de référence sont versionnés ; le client web dispose du chargeur ABI WASM, tandis que son interface reste à développer.
 
 Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques, historique annuler/rétablir, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; `atelier-font` lit les tables de base OpenType et les cmap 4/6/12/14 et expose vingt polices embarquées ; `atelier-image` décode PNG, GIF et BMP en RGBA8 avec limites explicites. Les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
@@ -9,6 +9,19 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Aucun bloc `unsafe` n'est nécessaire dans ce socle ; toute future utilisation devra être isolée et commentée selon la spécification.
 
 ## Validation
+
+### Preuve US-010, US-051 et US-090 — 2026-10-10
+
+Les [tables Unicode](us-010-ucd-tables.md), les [contours TrueType](us-051-truetype-outlines.md) et l’[ABI WASM manuelle](us-090-wasm-abi.md) ont été développés en parallèle avec GPT-6 Luna moyen, relus par trois agents indépendants et validés. Le [suivi du démonstrateur](PROTOTYPE-PROGRESS.md) rassemble les résultats et les dépendances restantes. Le backlog compte **26 US terminées sur 158**.
+
+**233 tests workspace et 43 tests release passent** dans les [21 contrôles locaux](../_bmad-output/implementation-artifacts/prototype-foundations-validation.json). Les 32 paquets restent locaux ; les nouveaux liens sont Unicode→générateur en build et font→geom. Les sources et le lock restent identiques pendant les contrôles. Le job WASM exerce les vrais exports dans Node, le panic/reset et la taille optimisée ; le job Linux exécute les tests musl, compilés seulement sur l’hôte Windows local.
+
+L’[oracle Unicode indépendant](../_bmad-output/implementation-artifacts/prototype-ucd-oracle.json) compare 1 112 064 scalaires, quinze propriétés et dix mappings par scalaire. Un test Rust exhaustif compare les empreintes officielles en CI. FontTools valide [43 576 glyphes](../_bmad-output/implementation-artifacts/prototype-font-oracle.json), et [300 rendus](../_bmad-output/implementation-artifacts/prototype-outline-raster.json) concordent pixel par pixel. Les 20 000 mutations de fontes passent sans panic ; neuf erreurs CLI Unicode laissent les sorties intactes. La [revue triée](../_bmad-output/implementation-artifacts/prototype-foundations-review.md) ne laisse aucun constat différé.
+
+### Validation distante du lot images et polices — 2026-10-10
+
+Le commit `20a6a05bd69d22f4f004b7a907d2c9696b24c4ad` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38076202790). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-images-fonts.json) conserve la preuve du lot précédent.
+
 
 ### Preuve US-040, US-043 et US-056 — 2026-10-10
 

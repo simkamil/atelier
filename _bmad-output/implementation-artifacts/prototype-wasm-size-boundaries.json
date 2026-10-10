@@ -1,0 +1,13 @@
+{
+  "cases": [
+    {
+      "bytes": 57555,
+      "exit_code": 0
+    },
+    {
+      "bytes": 57556,
+      "exit_code": 1
+    }
+  ],
+  "exact_threshold_verified": true
+}

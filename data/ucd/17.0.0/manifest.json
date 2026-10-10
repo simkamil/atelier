@@ -1,0 +1,367 @@
+{
+  "unicode_version": "17.0.0",
+  "source_url": "https://www.unicode.org/Public/17.0.0/ucd/UCD.zip",
+  "archive_sha256": "2066d1909b2ea93916ce092da1c0ee4808ea3ef8407c94b4f14f5b7eb263d28e",
+  "files": [
+    {
+      "path": "ArabicShaping.txt",
+      "sha256": "39afa01e680e27d0fd10b67a9b27be13fbaa3d0efecfb5be45991de9a0d267d0",
+      "bytes": 41441
+    },
+    {
+      "path": "auxiliary/GraphemeBreakProperty.txt",
+      "sha256": "d6b51d1d2ae5c33b451b7ed994b48f1f4dc62b2272a5831e7fd418514a6bae89",
+      "bytes": 99377
+    },
+    {
+      "path": "auxiliary/GraphemeBreakTest.html",
+      "sha256": "82085032ec97e8ef359cea2d540b46a0685eafbf7740008486d6165f26f6c89e",
+      "bytes": 62434
+    },
+    {
+      "path": "auxiliary/GraphemeBreakTest.txt",
+      "sha256": "e2d134d2c52919bace503ebb6a551c1855fe1a1faec18478c78fff254a1793ec",
+      "bytes": 126570
+    },
+    {
+      "path": "auxiliary/LineBreakTest.html",
+      "sha256": "ac2bea1af7141c4ce85d8a7d92c5ba038d58787721b9a8566cc4b2c849e2ce11",
+      "bytes": 798560
+    },
+    {
+      "path": "auxiliary/LineBreakTest.txt",
+      "sha256": "e69884e0dde6a8724873f885d68c52dc14518abf9ae4ca9e2283b8773db3b752",
+      "bytes": 3166819
+    },
+    {
+      "path": "auxiliary/SentenceBreakProperty.txt",
+      "sha256": "871c0c985ad95125e25b302414065a10839d068970bceb383ecec138f22a0a18",
+      "bytes": 221233
+    },
+    {
+      "path": "auxiliary/SentenceBreakTest.html",
+      "sha256": "b851d21b7af43f11eb39c264c52044802793517d8348ed2f50d76f5fd500bfe3",
+      "bytes": 116901
+    },
+    {
+      "path": "auxiliary/SentenceBreakTest.txt",
+      "sha256": "12cb47d028ded0c1cb8a28558f95479cbcd24559c46977015c82f3b50a1cc6e4",
+      "bytes": 87946
+    },
+    {
+      "path": "auxiliary/WordBreakProperty.txt",
+      "sha256": "72274cac1e6b919507db35655c3e175aa27274668a1ece95c28d2069f2ad9852",
+      "bytes": 114445
+    },
+    {
+      "path": "auxiliary/WordBreakTest.html",
+      "sha256": "906c1a05827f6c00c49f186a7f37a2e87cc1c08f8e6f89e74e875f186a50859a",
+      "bytes": 68840
+    },
+    {
+      "path": "auxiliary/WordBreakTest.txt",
+      "sha256": "1de23a75f37904abc7d206239ee8d34f8fdf0fb4ab32a7174dfbabbde25419b2",
+      "bytes": 322136
+    },
+    {
+      "path": "BidiBrackets.txt",
+      "sha256": "dadbaf38a0d0246e5b805bf8725cb81b7c621f93d030595635f5ba2c2f179428",
+      "bytes": 8891
+    },
+    {
+      "path": "BidiCharacterTest.txt",
+      "sha256": "a3e6e905ab5afbe318a96df5401d0372a04cd73ef139ab5e3cf0ae241c255488",
+      "bytes": 6880771
+    },
+    {
+      "path": "BidiMirroring.txt",
+      "sha256": "a2f16fb873ab4fcdf3221cb1a8a85a134ddd6ed03603181823ff5206af3741ce",
+      "bytes": 26827
+    },
+    {
+      "path": "BidiTest.txt",
+      "sha256": "888bdfc8090652272d1f859cdb00ae659e2dc6c26740be61ef1d03998a687620",
+      "bytes": 7959988
+    },
+    {
+      "path": "Blocks.txt",
+      "sha256": "c0edefaf1a19771e830a82735472716af6bf3c3975f6c2a23ffbe2580fbbcb15",
+      "bytes": 11663
+    },
+    {
+      "path": "CaseFolding.txt",
+      "sha256": "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183",
+      "bytes": 87539
+    },
+    {
+      "path": "CJKRadicals.txt",
+      "sha256": "826f83be25cd18fb8a5015a514704504e1982e840ea14d058bf583e1cc620c83",
+      "bytes": 5491
+    },
+    {
+      "path": "CompositionExclusions.txt",
+      "sha256": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
+      "bytes": 9007
+    },
+    {
+      "path": "DerivedAge.txt",
+      "sha256": "f8ecdf768bdc210f201abd271d9bc587825618a86a7046a8146cc816393f1998",
+      "bytes": 138286
+    },
+    {
+      "path": "DerivedCoreProperties.txt",
+      "sha256": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+      "bytes": 1134783
+    },
+    {
+      "path": "DerivedNormalizationProps.txt",
+      "sha256": "71fd6a206a2c0cdd41feb6b7f656aa31091db45e9cedc926985d718397f9e488",
+      "bytes": 1377582
+    },
+    {
+      "path": "DoNotEmit.txt",
+      "sha256": "d6da8009b918509e4529ae9245ffd0948027d84a3ee929ff0387e5e9ba61cfff",
+      "bytes": 47421
+    },
+    {
+      "path": "EastAsianWidth.txt",
+      "sha256": "ea7ce50f3444a050333448dffef1cadd9325af55cbb764b4a2280faf52170a33",
+      "bytes": 201595
+    },
+    {
+      "path": "emoji/emoji-data.txt",
+      "sha256": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
+      "bytes": 107324
+    },
+    {
+      "path": "emoji/emoji-variation-sequences.txt",
+      "sha256": "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
+      "bytes": 38315
+    },
+    {
+      "path": "emoji/ReadMe.txt",
+      "sha256": "94e5bff04cae342d08a1540f733068fa638c603dcd3b58d5473f95553e4490c7",
+      "bytes": 621
+    },
+    {
+      "path": "EmojiSources.txt",
+      "sha256": "db1b517734304781702789d586801275e82bd91ff45be7d34e2dc250cc10e34d",
+      "bytes": 13643
+    },
+    {
+      "path": "EquivalentUnifiedIdeograph.txt",
+      "sha256": "38619c05a17e771554000fe604afee92e10eb49e0616ecf0c87af3c1eb0f4320",
+      "bytes": 18371
+    },
+    {
+      "path": "extracted/DerivedBidiClass.txt",
+      "sha256": "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
+      "bytes": 173433
+    },
+    {
+      "path": "extracted/DerivedBinaryProperties.txt",
+      "sha256": "13dd09d35a9377e33eb388a01e6581d4bfec6b2685316078c341982fa444071a",
+      "bytes": 17476
+    },
+    {
+      "path": "extracted/DerivedCombiningClass.txt",
+      "sha256": "191463abfbd202703c6fd6776a92a23ac44ec65e0476a7f95aa91ca492cef29b",
+      "bytes": 182705
+    },
+    {
+      "path": "extracted/DerivedDecompositionType.txt",
+      "sha256": "f44e5ceaf40edc1fe06ea0404e8bebc7d356dcc38aac076543b6874008a06e3e",
+      "bytes": 75171
+    },
+    {
+      "path": "extracted/DerivedEastAsianWidth.txt",
+      "sha256": "0b5523a2217cb318d20b329a05d31eec5af5686ba09d263b85bb75a28989a3a8",
+      "bytes": 187441
+    },
+    {
+      "path": "extracted/DerivedGeneralCategory.txt",
+      "sha256": "d62e5bab70ca74f099343f71224fa051cb1fdd61a1ab45c0488c44cfc0b6102e",
+      "bytes": 277514
+    },
+    {
+      "path": "extracted/DerivedJoiningGroup.txt",
+      "sha256": "bb67e0c00b88acfa5be633967b66b23326844a86e49c6fde7b57960d3af66cae",
+      "bytes": 25323
+    },
+    {
+      "path": "extracted/DerivedJoiningType.txt",
+      "sha256": "f39ebe974825d6736aee15582250307aa532b2cfab3caf3f86bd23fddc9c5c4d",
+      "bytes": 40635
+    },
+    {
+      "path": "extracted/DerivedLineBreak.txt",
+      "sha256": "dad3ef492d198d6f1dde4922b175f7371a27dfe62fce489f3e04807015a4c682",
+      "bytes": 251808
+    },
+    {
+      "path": "extracted/DerivedName.txt",
+      "sha256": "019758bbe6c756c40fca6d505187ea660c5e195533e2ff2c841963a212c9d369",
+      "bytes": 1894051
+    },
+    {
+      "path": "extracted/DerivedNumericType.txt",
+      "sha256": "7c83684d3336b698381745b78a971c3e1242cb3fcac58604469086c19b6edcee",
+      "bytes": 21655
+    },
+    {
+      "path": "extracted/DerivedNumericValues.txt",
+      "sha256": "139b976bdc288be01c80f018523da769cf2845109b5a7f0f8a432db64bfedcfa",
+      "bytes": 140679
+    },
+    {
+      "path": "HangulSyllableType.txt",
+      "sha256": "5a57450afde0d082bc5026f7458649eac3b615490cc7e3d916b0367f1593c0e3",
+      "bytes": 51360
+    },
+    {
+      "path": "Index.txt",
+      "sha256": "e3cd66531dc4379bdf2fd83a3e1fff57b51705fecacce41921d3f386f420a2b4",
+      "bytes": 169498
+    },
+    {
+      "path": "IndicPositionalCategory.txt",
+      "sha256": "68cedc29a7e57f984d90fe2c7712f2e6d0c717e253db219607daea8997d6c480",
+      "bytes": 52257
+    },
+    {
+      "path": "IndicSyllabicCategory.txt",
+      "sha256": "3fc122f4cf58b0c19268d5f810263b04ab4e1e67743386ec0e0ada9c76aec5be",
+      "bytes": 86695
+    },
+    {
+      "path": "Jamo.txt",
+      "sha256": "17bb07f5e37f995351ddcef393c04464a9e3891ed0c0bd56a03a5c5e400a6326",
+      "bytes": 3365
+    },
+    {
+      "path": "LineBreak.txt",
+      "sha256": "e6a18fa91f8f6a6f8e534b1d3f128c21ada45bfe152eb6b1bcc5e15fd8ac92e6",
+      "bytes": 263180
+    },
+    {
+      "path": "NameAliases.txt",
+      "sha256": "793f6f1e4d15fd90f05ae66460191dc4d75d1fea90136a25f30dd6a4cb950eac",
+      "bytes": 16714
+    },
+    {
+      "path": "NamedSequences.txt",
+      "sha256": "0cd1c928edac72ea1369187599727c4f0d92367316b4c5ee5140475ab9298be0",
+      "bytes": 20859
+    },
+    {
+      "path": "NamedSequencesProv.txt",
+      "sha256": "7c096fd10a31fdd297e502e36a426fe9a61e4f4b555127cefb34fe5dc65abe3d",
+      "bytes": 2047
+    },
+    {
+      "path": "NamesList.html",
+      "sha256": "c39e7c3d190ee639a5965c3ef31687960e77287aa9c7d4cc0a5cda6d36e9066c",
+      "bytes": 36833
+    },
+    {
+      "path": "NamesList.txt",
+      "sha256": "0dcedcb47ab03d71bdd6864dd6224508c5722c9556786b1c65c8d7296cad3af4",
+      "bytes": 2061500
+    },
+    {
+      "path": "NormalizationCorrections.txt",
+      "sha256": "32cdfbfd01844f1fcd0b3c9da53a1f9cba7d3eeaba278f8d1330fdafd57e85c0",
+      "bytes": 2214
+    },
+    {
+      "path": "NormalizationTest.txt",
+      "sha256": "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db",
+      "bytes": 2827429
+    },
+    {
+      "path": "NushuSources.txt",
+      "sha256": "d1106d497a00609158199a8af4696de35a5916903ea779fa96c5108e0fd801da",
+      "bytes": 23960
+    },
+    {
+      "path": "PropertyAliases.txt",
+      "sha256": "4441f573caf952ffece1d7c892e7715bd7136dfc26f96eb6f268bf1e474715fb",
+      "bytes": 9619
+    },
+    {
+      "path": "PropertyValueAliases.txt",
+      "sha256": "64e9a5f76f7a1e8b5a47d6a1f9a26522a251208f5276bdfa1559dac7cf2e827a",
+      "bytes": 81858
+    },
+    {
+      "path": "PropList.txt",
+      "sha256": "130dcddcaadaf071008bdfce1e7743e04fdfbc910886f017d9f9ac931d8c64dd",
+      "bytes": 145465
+    },
+    {
+      "path": "ReadMe.txt",
+      "sha256": "9fe1a90bd32659d7953616283dc2bffaa165518aae9ace026040c42c559ba606",
+      "bytes": 740
+    },
+    {
+      "path": "ScriptExtensions.txt",
+      "sha256": "ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6",
+      "bytes": 20707
+    },
+    {
+      "path": "Scripts.txt",
+      "sha256": "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf",
+      "bytes": 192460
+    },
+    {
+      "path": "SpecialCasing.txt",
+      "sha256": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
+      "bytes": 17049
+    },
+    {
+      "path": "StandardizedVariants.txt",
+      "sha256": "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
+      "bytes": 71251
+    },
+    {
+      "path": "TangutSources.txt",
+      "sha256": "4f5079d81395cc5e7264b1b05a6edb157e0451323e2c7cfabfe09c349e65df02",
+      "bytes": 395170
+    },
+    {
+      "path": "UnicodeData.txt",
+      "sha256": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
+      "bytes": 2198209
+    },
+    {
+      "path": "Unikemet.txt",
+      "sha256": "a7b46c19e24355257030b73be046c71b172595ec4a106867d3f988e3a4007208",
+      "bytes": 1482071
+    },
+    {
+      "path": "USourceData.txt",
+      "sha256": "0caa31c713a0ea0eaaa75d7afd0bca05d7448df4df22c384ffc30a0d9c7953e4",
+      "bytes": 249144
+    },
+    {
+      "path": "USourceGlyphs.pdf",
+      "sha256": "7d896dae54a0cb9f8d55fdca8a6fa8e27fc850c5b74958e1bb08b375861f8e9b",
+      "bytes": 2156594
+    },
+    {
+      "path": "USourceRSChart.pdf",
+      "sha256": "985bd38cdaf3989032139e2e4bea31982a5f851e8eaf332a296cb2d298db077f",
+      "bytes": 2090635
+    },
+    {
+      "path": "VerticalOrientation.txt",
+      "sha256": "dcef09c3fb24d356b042569c328ec341efc5b53447700d799f2fb4834c3cd3cd",
+      "bytes": 189196
+    }
+  ],
+  "license": {
+    "path": "LICENSE.txt",
+    "source_url": "https://www.unicode.org/license.txt",
+    "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96"
+  }
+}

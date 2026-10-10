@@ -18,3 +18,9 @@
 /data/fonts/licenses/*.txt whitespace=-blank-at-eol,-blank-at-eof
 /tests/image-reference/pngsuite/PngSuite.LICENSE whitespace=-blank-at-eof
 /tests/image-reference/pngsuite/PngSuite.README -text whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol
+
+# Keep official UCD source files byte-exact, including upstream whitespace.
+/data/ucd/** -text -whitespace
+# Empty glyphs have an explicit empty last TSV column. Preserve oracle bytes.
+/tests/font-outline-reference/** -text -whitespace
+/tests/unicode-reference/** -text -whitespace

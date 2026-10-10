@@ -1,0 +1,14 @@
+{
+  "unicode_version": "17.0.0",
+  "scalars_compared": 1112064,
+  "properties_per_scalar": 15,
+  "mapping_lookups_per_scalar": 10,
+  "names_compared": 159801,
+  "decompositions_compared": 5914,
+  "conditional_rules_compared": 16,
+  "canonical_compositions_compared": 961,
+  "official_files_verified": 71,
+  "archive_sha256": "2066d1909b2ea93916ce092da1c0ee4808ea3ef8407c94b4f14f5b7eb263d28e",
+  "all_equal": true,
+  "raw_license_verified": true
+}

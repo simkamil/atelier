@@ -31,6 +31,11 @@ jobs:
       - name: Check font and image resource integrity
         shell: pwsh
         run: ./tests/check-assets.ps1
+      - name: Check Unicode sources and outline reference integrity
+        shell: pwsh
+        run: ./tests/check-ucd.ps1
+      - name: Check Unicode generator reproducibility
+        run: cargo run -p atelier-ucd-gen --locked --offline -- --ucd data/ucd/17.0.0 --output crates/unicode/src/generated.rs --check
       - name: Test Windows MSVC workspace
         run: cargo test --workspace --target x86_64-pc-windows-msvc --locked --offline
       - name: Run Clippy
@@ -63,6 +68,17 @@ jobs:
         run: cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
       - name: Test engine on native host
         run: cargo test -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --locked --offline
+      - name: Build optimized WASM ABI
+        run: cargo build -p atelier-core-wasm --profile wasm-release --target wasm32-unknown-unknown --locked --offline
+      - name: Build isolated panic test hooks
+        run: cargo build -p atelier-core-wasm --profile wasm-release --target wasm32-unknown-unknown --target-dir target/wasm-abi-hooks --features abi-test-hooks --locked --offline
+      - name: Exercise ABI in Node and verify optimized size
+        shell: pwsh
+        run: |
+          node tests/wasm-abi.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm target/wasm-abi-hooks/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/check-wasm-size.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   linux-musl:
     name: Linux musl build and tests

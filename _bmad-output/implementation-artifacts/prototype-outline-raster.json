@@ -1,0 +1,9 @@
+{
+  "font_faces": 20,
+  "raster_cases": 300,
+  "reference": "FontTools paths rasterized independently by librsvg through Sharp",
+  "image_size": 128,
+  "maximum_channel_difference": 0,
+  "allowed_channel_difference": 1,
+  "all_equal_within_tolerance": true
+}

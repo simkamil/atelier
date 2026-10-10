@@ -27,3 +27,12 @@ le [suivi du lot](../docs/MODEL-FONT-PROGRESS.md).
 Le [corpus d’images](image-reference/README.md) fournit PngSuite complet et des
 GIF/BMP avec pixels RGBA de référence. Le test Cargo du corpus tourne dans les
 jobs natifs de CI; les oracles Python sont des outils d’agent uniquement.
+
+`font-outline-reference/` contient 300 contours de référence FontTools issus de
+vingt faces. Les tests Rust comparent les contours aplatis à une tolérance de
+0,01 unité de police. `unicode-reference/` conserve les empreintes indépendantes
+des 29 consultations sur chaque scalaire et des règles de casse conditionnelle ;
+le test natif les recalcule en CI. Le garde `check-ucd.ps1` vérifie les sources
+Unicode, leur licence et les corpus. `wasm-abi.mjs` exerce les vrais artefacts
+optimisés produit/test-hooks dans Node, notamment allocations, croissance,
+quota mémoire et panic/réinitialisation. Voir le [suivi](../docs/PROTOTYPE-PROGRESS.md).

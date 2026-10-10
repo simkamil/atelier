@@ -1,0 +1,8 @@
+{
+  "font_faces": 20,
+  "compared_glyphs": 43576,
+  "reference_cases": 300,
+  "canonical_coordinate_rounding_digits": 6,
+  "geometry_matches": true,
+  "reference_sha256": "51da5b890f11550664c48d84cc0f5047ac638e0dbe97064d45ebc6060d85c6e4"
+}

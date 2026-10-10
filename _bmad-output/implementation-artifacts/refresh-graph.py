@@ -25,6 +25,8 @@ for entry in previous.get('hyperedges',[]):
 document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
 document_paths.update({'crates/font/tests/fixtures/README.md', 'crates/font/tests/fixtures/fixtures.json', 'docs/us-050-opentype-tables.md', 'docs/us-073-selection.md', 'docs/us-074-recovery-journal.md', 'docs/MODEL-FONT-PROGRESS.md', 'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
 document_paths.update(['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md'])
+prototype_docs=['docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
+document_paths.update(prototype_docs)
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt'))
 known={node['id'] for node in doc['nodes']}
 preserved=set()
@@ -65,7 +67,7 @@ for i,m in enumerate(headings):
         for edge in doc['edges']:
             if edge.get('source')==node_id:
                 edge['source_location']=str(ref_line)
-for rel in ['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md']+[p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt')]+['crates/font/tests/fixtures/README.md','README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','docs/us-032-opaque-xml.md','docs/us-072-undo-history.md','docs/us-081-svg-backend.md','docs/EDITING-PROGRESS.md','docs/us-050-opentype-tables.md','docs/us-073-selection.md','docs/us-074-recovery-journal.md','docs/MODEL-FONT-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
+for rel in prototype_docs+['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md']+[p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt')]+['crates/font/tests/fixtures/README.md','README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','docs/us-032-opaque-xml.md','docs/us-072-undo-history.md','docs/us-081-svg-backend.md','docs/EDITING-PROGRESS.md','docs/us-050-opentype-tables.md','docs/us-073-selection.md','docs/us-074-recovery-journal.md','docs/MODEL-FONT-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
     p=root/rel
     if p.is_file():
         contents=p.read_text(encoding='utf-8')
@@ -76,11 +78,12 @@ for rel in ['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-
             doc['edges']=[e for e in doc['edges'] if not(e['source']==node_id and e['target']=='spec_document')]
             doc['edges'].append({'source':node_id,'target':'spec_document','relation':'references','confidence':'EXTRACTED','confidence_score':1.0,'source_file':str(p),'source_location':str(contents[:contents.index('SPEC.md')].count('\n')+1)})
 code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if 'target' not in p.parts]
+code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
 # Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
 manifest=root/'tests/format-reference/manifest.json'
 font_manifest=root/'crates/font/tests/fixtures/fixtures.json'
-code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'tests/check-assets.ps1') if p.is_file()]
+code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1') if p.is_file()]
 ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}
@@ -103,6 +106,7 @@ local_imports={
     'embedded':'crates_font_src_embedded',
     'atelier_font':'crates_font_src_lib',
     'atelier_unicode':'crates_unicode_src_lib',
+    'atelier_ucd_gen':'tools_ucd_gen_src_lib',
     'atelier_xml':'crates_xml_src_lib',
     'atelier_bench':'tools_bench_src_lib',
     'crc32':'crates_compress_src_lib_crc32',
@@ -199,6 +203,10 @@ if not to_json(g,communities,out/'graph.json',community_labels=labels,force=bool
     raise RuntimeError('Refused to overwrite graph with smaller graph')
 report=generate(g,communities,cohesion,labels,gods,surprises,detection,{'input':0,'output':0},str(root),suggested_questions=questions)
 report += f'\nRéférences AST externes non résolues exclues du graphe : {len(unresolved)} (détail dans unresolved-structural-references.json). Le graphe simple peut fusionner plusieurs relations entre les mêmes symboles ; les relations brutes restent dans .graphify_extract.json.\n'
+cost_path=out/'cost.json'
+if cost_path.is_file():
+    cost=json.loads(cost_path.read_text(encoding='utf-8'))
+    report += f'\nCoût CLI cumulé enregistré : {cost.get("total_input_tokens",0)} tokens en entrée et {cost.get("total_output_tokens",0)} en sortie ; la génération locale de ce rapport par API utilise 0 token LLM.\n'
 report += f'\n## Périmètre de cette mise à jour\n\nLa carte combine les dépendances documentaires déclarées (158 US), l’AST des sources Rust et les métadonnées Cargo réellement présentes. Les crates vides ne représentent pas des fonctionnalités implémentées. La commande `py -m graphify . --cargo` a réussi après mise en cache des documents et exclusion du runtime agent ; les API locales de Graphify régénèrent ce rapport et ses libellés. Cargo.toml est couvert par les métadonnées de ses {len(cargo["nodes"])} paquets, même si son extraction AST produit zéro nœud. Cette génération locale par API n’utilise pas de LLM ; les coûts des extractions CLI restent dans cost.json.\n'
 (out/'GRAPH_REPORT.md').write_text(report,encoding='utf-8')
 (out/'story-dependencies.json').write_text(json.dumps(doc,ensure_ascii=False,indent=2),encoding='utf-8')

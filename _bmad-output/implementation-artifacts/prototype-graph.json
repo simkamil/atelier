@@ -1,0 +1,14 @@
+{
+  "nodes": 2031,
+  "edges": 5217,
+  "stories": 158,
+  "done": 26,
+  "dangling_edges": 0,
+  "cargo_packages": 32,
+  "cli_refreshed": true,
+  "semantic_cli_tokens": {
+    "input": 1068,
+    "output": 1531
+  },
+  "api_report_llm_tokens": 0
+}

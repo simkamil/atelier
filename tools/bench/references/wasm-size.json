@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "artifact": "atelier_core_wasm.wasm",
+  "target": "wasm32-unknown-unknown",
+  "profile": "wasm-release",
+  "features": [],
+  "reference_bytes": 52323,
+  "allowed_growth_percent": 10,
+  "measured_on": "2026-10-10"
+}
