@@ -22,7 +22,7 @@ for entry in previous.get('hyperedges',[]):
     if entry['id'] not in known_hyperedges:
         doc.setdefault('hyperedges',[]).append(entry)
         known_hyperedges.add(entry['id'])
-document_paths={'docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','.github/workflows/ci.yml'}
+document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
 known={node['id'] for node in doc['nodes']}
 preserved=set()
 for node in previous['nodes']:
@@ -34,6 +34,8 @@ for node in previous['nodes']:
     except ValueError:
         continue
     if relative in document_paths and node['id'] not in known:
+        if node['id']=='atelier_geom':
+            node['rationale']='Local workspace dependency providing geometric types like Point and Rect.'
         doc['nodes'].append({k:v for k,v in node.items() if k not in {'community','community_name'}})
         known.add(node['id'])
         preserved.add(node['id'])
@@ -60,7 +62,7 @@ for i,m in enumerate(headings):
         for edge in doc['edges']:
             if edge.get('source')==node_id:
                 edge['source_location']=str(ref_line)
-for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
+for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
     p=root/rel
     if p.is_file():
         contents=p.read_text(encoding='utf-8')
@@ -86,12 +88,13 @@ gods=god_nodes(g)
 surprises=surprising_connections(g,communities)
 questions=suggest_questions(g,communities,labels)
 detection=detect(root,extra_excludes=['target','_bmad','_bmad-output','graphify-out'])
-# Verified scope reduction: the interrupted scan had indexed installed BMAD runtime.
-# Preserve that graph for audit before replacing it with the product-only map.
-import shutil
-backup=Path(r'C:\Users\simka\AppData\Local\Temp\atelier-us001-review-b03fa8596f0d48879de2f2f385589915')/'graph-before-product-scope.json'
-if not backup.exists():
+# Preserve a recovery copy without depending on another machine's temp folder.
+import shutil,tempfile
+backup_marker=out/'.graphify_scope_backup'
+if not backup_marker.exists() or not Path(backup_marker.read_text(encoding='utf-8')).is_file():
+    backup=Path(tempfile.mkdtemp(prefix='atelier-graph-scope-'))/'graph-before-product-scope.json'
     shutil.copyfile(out/'graph.json',backup)
+    backup_marker.write_text(str(backup),encoding='utf-8')
 # The incremental CLI adds unresolved std-type placeholders and may choose a
 # different ID for an existing manifest. Allow only those verified reductions;
 # never remove a located source symbol without an equivalent replacement.
@@ -105,6 +108,10 @@ cleanup=[]
 verified_symbol_replacements={
     'crates_model_src_lib_indexedtree_t_allocate':'crates_model_src_lib_radixarena_t_allocate',
     'crates_model_src_lib_remove_all_then_insert_never_reuses_id_or_slot':'crates_model_src_lib_remove_all_then_insert_keeps_id_unique_and_reuses_slot',
+    # The compressor's writer now borrows caller storage; Graphify includes
+    # the explicit lifetime in the impl identifier. Verified same methods.
+    'crates_compress_src_lib_bitwriter_finish':'crates_compress_src_lib_bitwriter_a_finish',
+    'crates_compress_src_lib_bitwriter_write':'crates_compress_src_lib_bitwriter_a_write',
 }
 for node in removed:
     key=source_key(node)

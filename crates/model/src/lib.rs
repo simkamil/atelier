@@ -42,6 +42,7 @@ impl fmt::Display for IndexedTreeError {
 
 impl std::error::Error for IndexedTreeError {}
 
+#[derive(Clone)]
 struct Node<T> {
     id: NodeId,
     value: T,
@@ -71,6 +72,7 @@ impl<T> Node<T> {
 /// The AVL tree stores elements in in-order sequence. Its radix arena reuses
 /// slots after deletion, so allocated node storage is bounded by the peak slot
 /// range. Growing the arena never relocates existing nodes.
+#[derive(Clone)]
 pub struct IndexedTree<T> {
     root: Option<usize>,
     arena: RadixArena<T>,
@@ -83,11 +85,13 @@ const RADIX_BITS: usize = 8;
 const RADIX_FANOUT: usize = 1 << RADIX_BITS;
 const RADIX_LEVELS: usize = (usize::BITS as usize).div_ceil(RADIX_BITS);
 
+#[derive(Clone)]
 enum RadixPage<T> {
     Branch(Box<[Option<RadixPage<T>>; RADIX_FANOUT]>),
     Leaf(Box<[Option<ArenaSlot<T>>; RADIX_FANOUT]>),
 }
 
+#[derive(Clone)]
 enum ArenaSlot<T> {
     Occupied(Box<Node<T>>),
     Free(Option<usize>),
@@ -101,6 +105,7 @@ fn empty_page<T>(leaf: bool) -> RadixPage<T> {
     }
 }
 
+#[derive(Clone)]
 struct RadixArena<T> {
     root: Option<RadixPage<T>>,
     next_slot: Option<usize>,
@@ -274,6 +279,40 @@ impl<T> IndexedTree<T> {
         self.by_id.insert(id, node);
         self.len += 1;
         Ok(id)
+    }
+
+    fn restore_id(
+        &mut self,
+        position: usize,
+        id: NodeId,
+        value: T,
+    ) -> Result<(), IndexedTreeError> {
+        if position > self.len {
+            return Err(IndexedTreeError::PositionOutOfBounds {
+                position,
+                len: self.len,
+            });
+        }
+        if self.next_id.is_some_and(|next| id.0 >= next) {
+            return Err(IndexedTreeError::IdentifierExhausted);
+        }
+        if self.by_id.contains_key(&id) {
+            return Err(IndexedTreeError::IdentifierExhausted);
+        }
+        if !self.arena.can_allocate() {
+            return Err(IndexedTreeError::CapacityExhausted);
+        }
+        let node = self
+            .arena
+            .allocate(Node::new(id, value))
+            .ok_or(IndexedTreeError::CapacityExhausted)?;
+        self.root = Some(self.insert_rec(self.root, position, node));
+        if let Some(root) = self.root {
+            self.node_mut(root).parent = None;
+        }
+        self.by_id.insert(id, node);
+        self.len += 1;
+        Ok(())
     }
 
     /// Removes and returns the value at `position`.
@@ -564,9 +603,514 @@ impl<T> IndexedTree<T> {
     }
 }
 
+/// Maximum encoded transaction size accepted by the version-1 codec.
+pub const MAX_TRANSACTION_BYTES: usize = 1_048_576;
+/// Maximum number of operations in one encoded transaction.
+pub const MAX_TRANSACTION_OPERATIONS: usize = 4_096;
+/// Maximum encoded payload for one operation.
+pub const MAX_OPERATION_BYTES: usize = 65_536;
+const TRANSACTION_MAGIC: &[u8; 4] = b"ATOP";
+const TRANSACTION_VERSION: u16 = 1;
+
+/// A bounded-codec failure. Decoding never allocates beyond the declared limits.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodecError {
+    TooLarge,
+    TooManyOperations,
+    UnknownVersion(u16),
+    InvalidData,
+    Truncated,
+    TrailingData,
+}
+
+impl fmt::Display for CodecError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "transaction codec error: {self:?}")
+    }
+}
+
+impl std::error::Error for CodecError {}
+
+/// Writer supplied to operation codecs. Its buffer is capped by the transaction limit.
+pub struct Encoder {
+    bytes: Vec<u8>,
+}
+
+impl Encoder {
+    fn new() -> Self {
+        Self { bytes: Vec::new() }
+    }
+    pub fn write_u8(&mut self, value: u8) -> Result<(), CodecError> {
+        self.write_bytes(&[value])
+    }
+    pub fn write_u32(&mut self, value: u32) -> Result<(), CodecError> {
+        self.write_bytes(&value.to_le_bytes())
+    }
+    pub fn write_u64(&mut self, value: u64) -> Result<(), CodecError> {
+        self.write_bytes(&value.to_le_bytes())
+    }
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), CodecError> {
+        if self
+            .bytes
+            .len()
+            .checked_add(bytes.len())
+            .filter(|n| *n <= MAX_OPERATION_BYTES)
+            .is_none()
+        {
+            return Err(CodecError::TooLarge);
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(())
+    }
+}
+
+/// Reader supplied to operation codecs. All reads are checked and bounded.
+pub struct Decoder<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Decoder<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+    pub fn read_u8(&mut self) -> Result<u8, CodecError> {
+        Ok(self.read_bytes(1)?[0])
+    }
+    pub fn read_u32(&mut self) -> Result<u32, CodecError> {
+        Ok(u32::from_le_bytes(
+            self.read_bytes(4)?
+                .try_into()
+                .map_err(|_| CodecError::Truncated)?,
+        ))
+    }
+    pub fn read_u64(&mut self) -> Result<u64, CodecError> {
+        Ok(u64::from_le_bytes(
+            self.read_bytes(8)?
+                .try_into()
+                .map_err(|_| CodecError::Truncated)?,
+        ))
+    }
+    pub fn read_bytes(&mut self, len: usize) -> Result<&'a [u8], CodecError> {
+        let end = self.offset.checked_add(len).ok_or(CodecError::TooLarge)?;
+        let result = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or(CodecError::Truncated)?;
+        self.offset = end;
+        Ok(result)
+    }
+    fn is_finished(&self) -> bool {
+        self.offset == self.bytes.len()
+    }
+}
+
+/// A state chooses its own checkpoint representation and restoration strategy.
+pub trait TransactionalState {
+    type Checkpoint;
+    fn checkpoint(&self) -> Self::Checkpoint;
+    fn restore(&mut self, checkpoint: Self::Checkpoint);
+}
+
+/// One reversible model operation. `invert` prepares the inverse from the state
+/// immediately before this operation is applied.
+pub trait Operation<S>: Sized {
+    type Error;
+    fn apply(&self, state: &mut S) -> Result<(), Self::Error>;
+    fn invert(&self, state: &S) -> Result<Self, Self::Error>;
+    fn encode(&self, encoder: &mut Encoder) -> Result<(), CodecError>;
+    fn decode(decoder: &mut Decoder<'_>) -> Result<Self, CodecError>;
+}
+
+/// An ordered group of operations. The codec is deterministic and versioned.
+pub struct Transaction<O> {
+    operations: Vec<O>,
+}
+
+impl<O> Transaction<O> {
+    pub fn new(operations: Vec<O>) -> Result<Self, CodecError> {
+        if operations.len() > MAX_TRANSACTION_OPERATIONS {
+            return Err(CodecError::TooManyOperations);
+        }
+        Ok(Self { operations })
+    }
+    pub fn operations(&self) -> &[O] {
+        &self.operations
+    }
+}
+
+/// Identifies whether preparing an inverse or applying an operation failed.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TransactionError<E> {
+    Inversion { index: usize, source: E },
+    Application { index: usize, source: E },
+}
+
+impl<E: fmt::Display> fmt::Display for TransactionError<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Inversion { index, source } => write!(
+                f,
+                "could not prepare inverse for operation {index}: {source}"
+            ),
+            Self::Application { index, source } => write!(f, "operation {index} failed: {source}"),
+        }
+    }
+}
+impl<E: fmt::Debug + fmt::Display> std::error::Error for TransactionError<E> {}
+
+impl<O> Transaction<O> {
+    /// Applies every operation in order. Any failure restores the exact checkpoint.
+    /// On success, returns the operations that undo the transaction in reverse order.
+    pub fn apply<S>(&self, state: &mut S) -> Result<Self, TransactionError<O::Error>>
+    where
+        S: TransactionalState,
+        O: Operation<S>,
+    {
+        let checkpoint = state.checkpoint();
+        let mut inverses = Vec::with_capacity(self.operations.len());
+        for (index, operation) in self.operations.iter().enumerate() {
+            let inverse = match operation.invert(state) {
+                Ok(inverse) => inverse,
+                Err(source) => {
+                    state.restore(checkpoint);
+                    return Err(TransactionError::Inversion { index, source });
+                }
+            };
+            if let Err(source) = operation.apply(state) {
+                state.restore(checkpoint);
+                return Err(TransactionError::Application { index, source });
+            }
+            inverses.push(inverse);
+        }
+        inverses.reverse();
+        Ok(Self {
+            operations: inverses,
+        })
+    }
+}
+
+impl<O> Transaction<O> {
+    /// Encodes a transaction as `ATOP`, version, count, then length-delimited operations.
+    pub fn encode<S>(&self) -> Result<Vec<u8>, CodecError>
+    where
+        O: Operation<S>,
+    {
+        if self.operations.len() > MAX_TRANSACTION_OPERATIONS {
+            return Err(CodecError::TooManyOperations);
+        }
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(TRANSACTION_MAGIC);
+        bytes.extend_from_slice(&TRANSACTION_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&(self.operations.len() as u32).to_le_bytes());
+        for operation in &self.operations {
+            let mut encoder = Encoder::new();
+            operation.encode(&mut encoder)?;
+            let len = u32::try_from(encoder.bytes.len()).map_err(|_| CodecError::TooLarge)?;
+            let new_len = bytes
+                .len()
+                .checked_add(4 + len as usize)
+                .ok_or(CodecError::TooLarge)?;
+            if new_len > MAX_TRANSACTION_BYTES {
+                return Err(CodecError::TooLarge);
+            }
+            bytes.extend_from_slice(&len.to_le_bytes());
+            bytes.extend_from_slice(&encoder.bytes);
+        }
+        Ok(bytes)
+    }
+
+    /// Decodes and validates all operations before a caller can apply the transaction.
+    pub fn decode<S>(bytes: &[u8]) -> Result<Self, CodecError>
+    where
+        O: Operation<S>,
+    {
+        if bytes.len() > MAX_TRANSACTION_BYTES {
+            return Err(CodecError::TooLarge);
+        }
+        let mut decoder = Decoder::new(bytes);
+        if decoder.read_bytes(4)? != TRANSACTION_MAGIC {
+            return Err(CodecError::InvalidData);
+        }
+        let version = u16::from_le_bytes(
+            decoder
+                .read_bytes(2)?
+                .try_into()
+                .map_err(|_| CodecError::Truncated)?,
+        );
+        if version != TRANSACTION_VERSION {
+            return Err(CodecError::UnknownVersion(version));
+        }
+        let count = decoder.read_u32()? as usize;
+        if count > MAX_TRANSACTION_OPERATIONS {
+            return Err(CodecError::TooManyOperations);
+        }
+        let mut operations = Vec::with_capacity(count);
+        for _ in 0..count {
+            let len = decoder.read_u32()? as usize;
+            if len > MAX_OPERATION_BYTES {
+                return Err(CodecError::TooLarge);
+            }
+            let payload = decoder.read_bytes(len)?;
+            let mut operation_decoder = Decoder::new(payload);
+            let operation = O::decode(&mut operation_decoder)?;
+            if !operation_decoder.is_finished() {
+                return Err(CodecError::TrailingData);
+            }
+            operations.push(operation);
+        }
+        if !decoder.is_finished() {
+            return Err(CodecError::TrailingData);
+        }
+        Ok(Self { operations })
+    }
+}
+
+/// Errors for the `IndexedTree` operation adapter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationError {
+    PreconditionFailed,
+    Tree(IndexedTreeError),
+    InvalidData,
+}
+
+impl fmt::Display for OperationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "operation failed: {self:?}")
+    }
+}
+impl std::error::Error for OperationError {}
+
+/// Values supported by the built-in deterministic tree-operation codec.
+pub trait BinaryValue: Sized {
+    fn encode_value(&self, encoder: &mut Encoder) -> Result<(), CodecError>;
+    fn decode_value(decoder: &mut Decoder<'_>) -> Result<Self, CodecError>;
+}
+
+impl BinaryValue for i32 {
+    fn encode_value(&self, e: &mut Encoder) -> Result<(), CodecError> {
+        e.write_bytes(&self.to_le_bytes())
+    }
+    fn decode_value(d: &mut Decoder<'_>) -> Result<Self, CodecError> {
+        Ok(i32::from_le_bytes(
+            d.read_bytes(4)?
+                .try_into()
+                .map_err(|_| CodecError::Truncated)?,
+        ))
+    }
+}
+impl BinaryValue for u64 {
+    fn encode_value(&self, e: &mut Encoder) -> Result<(), CodecError> {
+        e.write_u64(*self)
+    }
+    fn decode_value(d: &mut Decoder<'_>) -> Result<Self, CodecError> {
+        d.read_u64()
+    }
+}
+impl BinaryValue for String {
+    fn encode_value(&self, e: &mut Encoder) -> Result<(), CodecError> {
+        let len = u32::try_from(self.len()).map_err(|_| CodecError::TooLarge)?;
+        e.write_u32(len)?;
+        e.write_bytes(self.as_bytes())
+    }
+    fn decode_value(d: &mut Decoder<'_>) -> Result<Self, CodecError> {
+        let len = d.read_u32()? as usize;
+        String::from_utf8(d.read_bytes(len)?.to_vec()).map_err(|_| CodecError::InvalidData)
+    }
+}
+
+/// Concrete insert/remove operations for `IndexedTree`. The clone bound lives
+/// only on this adapter; generic operations and states need not be cloneable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IndexedTreeOperation<T> {
+    Insert {
+        position: usize,
+        value: T,
+    },
+    Remove {
+        id: NodeId,
+    },
+    Restore {
+        position: usize,
+        id: NodeId,
+        value: T,
+    },
+}
+
+impl<T: Clone> TransactionalState for IndexedTree<T> {
+    type Checkpoint = Self;
+    fn checkpoint(&self) -> Self::Checkpoint {
+        self.clone()
+    }
+    fn restore(&mut self, checkpoint: Self::Checkpoint) {
+        *self = checkpoint;
+    }
+}
+
+impl<T: Clone + BinaryValue> Operation<IndexedTree<T>> for IndexedTreeOperation<T> {
+    type Error = OperationError;
+    fn invert(&self, tree: &IndexedTree<T>) -> Result<Self, Self::Error> {
+        match self {
+            Self::Insert { position, .. } => {
+                if *position > tree.len {
+                    return Err(OperationError::Tree(
+                        IndexedTreeError::PositionOutOfBounds {
+                            position: *position,
+                            len: tree.len,
+                        },
+                    ));
+                }
+                let next = tree
+                    .next_id
+                    .ok_or(OperationError::Tree(IndexedTreeError::IdentifierExhausted))?;
+                if !tree.arena.can_allocate() {
+                    return Err(OperationError::Tree(IndexedTreeError::CapacityExhausted));
+                }
+                Ok(Self::Remove { id: NodeId(next) })
+            }
+            Self::Remove { id } => {
+                let position = tree
+                    .position_of(*id)
+                    .ok_or(OperationError::PreconditionFailed)?;
+                let value = tree
+                    .get(position)
+                    .ok_or(OperationError::PreconditionFailed)?
+                    .clone();
+                Ok(Self::Restore {
+                    position,
+                    id: *id,
+                    value,
+                })
+            }
+            Self::Restore { id, .. } => {
+                if tree.position_of(*id).is_some() {
+                    return Err(OperationError::PreconditionFailed);
+                }
+                Ok(Self::Remove { id: *id })
+            }
+        }
+    }
+    fn apply(&self, tree: &mut IndexedTree<T>) -> Result<(), Self::Error> {
+        match self {
+            Self::Insert { position, value } => tree
+                .insert(*position, value.clone())
+                .map(|_| ())
+                .map_err(OperationError::Tree),
+            Self::Remove { id } => {
+                let position = tree
+                    .position_of(*id)
+                    .ok_or(OperationError::PreconditionFailed)?;
+                tree.remove(position)
+                    .map(|_| ())
+                    .map_err(OperationError::Tree)
+            }
+            Self::Restore {
+                position,
+                id,
+                value,
+            } => tree
+                .restore_id(*position, *id, value.clone())
+                .map_err(OperationError::Tree),
+        }
+    }
+    fn encode(&self, e: &mut Encoder) -> Result<(), CodecError> {
+        match self {
+            Self::Insert { position, value } => {
+                e.write_u8(0)?;
+                e.write_u64(u64::try_from(*position).map_err(|_| CodecError::TooLarge)?)?;
+                value.encode_value(e)
+            }
+            Self::Remove { id } => {
+                e.write_u8(1)?;
+                e.write_u64(id.0)
+            }
+            Self::Restore {
+                position,
+                id,
+                value,
+            } => {
+                e.write_u8(2)?;
+                e.write_u64(u64::try_from(*position).map_err(|_| CodecError::TooLarge)?)?;
+                e.write_u64(id.0)?;
+                value.encode_value(e)
+            }
+        }
+    }
+    fn decode(d: &mut Decoder<'_>) -> Result<Self, CodecError> {
+        match d.read_u8()? {
+            0 => {
+                let position =
+                    usize::try_from(d.read_u64()?).map_err(|_| CodecError::InvalidData)?;
+                Ok(Self::Insert {
+                    position,
+                    value: T::decode_value(d)?,
+                })
+            }
+            1 => Ok(Self::Remove {
+                id: NodeId(d.read_u64()?),
+            }),
+            2 => {
+                let position =
+                    usize::try_from(d.read_u64()?).map_err(|_| CodecError::InvalidData)?;
+                let id = NodeId(d.read_u64()?);
+                Ok(Self::Restore {
+                    position,
+                    id,
+                    value: T::decode_value(d)?,
+                })
+            }
+            _ => Err(CodecError::InvalidData),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{IndexedTree, IndexedTreeError};
+    use super::{
+        CodecError, IndexedTree, IndexedTreeError, IndexedTreeOperation as TreeOp,
+        MAX_TRANSACTION_BYTES, NodeId, OperationError, Transaction, TransactionError,
+    };
+
+    struct PlainState(i32);
+    impl super::TransactionalState for PlainState {
+        type Checkpoint = i32;
+        fn checkpoint(&self) -> i32 {
+            self.0
+        }
+        fn restore(&mut self, checkpoint: i32) {
+            self.0 = checkpoint;
+        }
+    }
+    #[derive(Clone)]
+    struct PlainOp {
+        amount: i32,
+        fail: bool,
+    }
+    impl super::Operation<PlainState> for PlainOp {
+        type Error = &'static str;
+        fn apply(&self, state: &mut PlainState) -> Result<(), Self::Error> {
+            state.0 += self.amount;
+            if self.fail {
+                return Err("requested failure");
+            }
+            Ok(())
+        }
+        fn invert(&self, _: &PlainState) -> Result<Self, Self::Error> {
+            Ok(Self {
+                amount: -self.amount,
+                fail: false,
+            })
+        }
+        fn encode(&self, encoder: &mut super::Encoder) -> Result<(), super::CodecError> {
+            encoder.write_u32(self.amount as u32)
+        }
+        fn decode(decoder: &mut super::Decoder<'_>) -> Result<Self, super::CodecError> {
+            Ok(Self {
+                amount: decoder.read_u32()? as i32,
+                fail: false,
+            })
+        }
+    }
 
     fn assert_matches(tree: &IndexedTree<i32>, model: &[(super::NodeId, i32)]) {
         assert_eq!(tree.len(), model.len());
@@ -755,5 +1299,231 @@ mod tests {
         );
         assert!(capacity_limited.is_empty());
         assert_eq!(capacity_limited.next_id, Some(0));
+    }
+
+    #[test]
+    fn transaction_apply_and_inverse_restore_ids_and_order_including_two_child_delete() {
+        let mut tree = IndexedTree::new();
+        let ids: Vec<_> = (0..15)
+            .map(|value| tree.insert(tree.len(), value).unwrap())
+            .collect();
+        let next_before = tree.next_id;
+        let root = tree.root.unwrap();
+        assert!(tree.node(root).left.is_some() && tree.node(root).right.is_some());
+        let remove_id = tree.node(root).id;
+        let transaction = Transaction::new(vec![TreeOp::Remove { id: remove_id }]).unwrap();
+        let inverse = transaction.apply(&mut tree).unwrap();
+        assert_eq!(tree.get_by_id(remove_id), None);
+        inverse.apply(&mut tree).unwrap();
+        assert_matches(
+            &tree,
+            &ids.iter()
+                .enumerate()
+                .map(|(i, id)| (*id, i as i32))
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(tree.next_id, next_before);
+        let fresh = tree.insert(tree.len(), 99).unwrap();
+        assert_eq!(fresh, NodeId(15));
+    }
+
+    #[test]
+    fn transaction_failure_restores_exact_checkpoint_and_provisional_id() {
+        let mut tree = IndexedTree::new();
+        let original = tree.insert(0, 10).unwrap();
+        let transaction = Transaction::new(vec![
+            TreeOp::Insert {
+                position: 1,
+                value: 20,
+            },
+            TreeOp::Remove { id: NodeId(999) },
+        ])
+        .unwrap();
+        assert!(matches!(
+            transaction.apply(&mut tree),
+            Err(TransactionError::Inversion {
+                index: 1,
+                source: OperationError::PreconditionFailed
+            })
+        ));
+        assert_eq!(tree.len(), 1);
+        assert_eq!(tree.get_by_id(original), Some(&10));
+        assert_eq!(tree.insert(1, 30), Ok(NodeId(1)));
+    }
+
+    #[test]
+    fn failed_operation_application_rolls_back_prior_mutations() {
+        let mut tree = IndexedTree::new();
+        let original = tree.insert(0, 10).unwrap();
+        let transaction = Transaction::new(vec![
+            TreeOp::Insert {
+                position: 1,
+                value: 20,
+            },
+            TreeOp::Insert {
+                position: 99,
+                value: 30,
+            },
+        ])
+        .unwrap();
+        assert!(matches!(
+            transaction.apply(&mut tree),
+            Err(TransactionError::Inversion { index: 1, .. })
+        ));
+        assert_eq!(tree.get_by_id(original), Some(&10));
+        assert_eq!(tree.next_id, Some(1));
+    }
+
+    #[test]
+    fn generic_non_clone_state_rolls_back_when_apply_fails_mid_transaction() {
+        let mut state = PlainState(41);
+        let transaction = Transaction::new(vec![
+            PlainOp {
+                amount: 5,
+                fail: false,
+            },
+            PlainOp {
+                amount: 100,
+                fail: true,
+            },
+        ])
+        .unwrap();
+        assert!(matches!(
+            transaction.apply(&mut state),
+            Err(TransactionError::Application { index: 1, .. })
+        ));
+        assert_eq!(state.0, 41);
+    }
+
+    #[test]
+    fn transaction_codec_is_deterministic_bounded_and_rejects_invalid_input() {
+        let transaction = Transaction::new(vec![
+            TreeOp::Insert {
+                position: 0,
+                value: 7,
+            },
+            TreeOp::Insert {
+                position: 1,
+                value: -4,
+            },
+        ])
+        .unwrap();
+        let encoded = transaction.encode::<IndexedTree<i32>>().unwrap();
+        assert_eq!(encoded, transaction.encode::<IndexedTree<i32>>().unwrap());
+        let decoded = Transaction::<TreeOp<i32>>::decode::<IndexedTree<i32>>(&encoded).unwrap();
+        assert_eq!(decoded.operations(), transaction.operations());
+        let mut unknown = encoded.clone();
+        unknown[4..6].copy_from_slice(&2_u16.to_le_bytes());
+        assert!(matches!(
+            Transaction::<TreeOp<i32>>::decode::<IndexedTree<i32>>(&unknown),
+            Err(CodecError::UnknownVersion(2))
+        ));
+        assert!(matches!(
+            Transaction::<TreeOp<i32>>::decode::<IndexedTree<i32>>(&encoded[..encoded.len() - 1]),
+            Err(CodecError::Truncated)
+        ));
+        assert!(matches!(
+            Transaction::<TreeOp<i32>>::decode::<IndexedTree<i32>>(&vec![
+                0;
+                MAX_TRANSACTION_BYTES + 1
+            ]),
+            Err(CodecError::TooLarge)
+        ));
+    }
+
+    #[test]
+    fn deterministic_pseudo_random_transactions_round_trip() {
+        let mut tree = IndexedTree::new();
+        let mut model: Vec<(NodeId, i32)> = (0..12)
+            .map(|value| {
+                let id = tree.insert(tree.len(), value).unwrap();
+                (id, value)
+            })
+            .collect();
+        let mut seed = 0x8a5c_12d3_u64;
+        let mut value = 12_i32;
+        for turn in 0..200_i32 {
+            let before = model.clone();
+            let mut planned = before.clone();
+            let mut removable_ids: Vec<_> = before.iter().map(|(id, _)| *id).collect();
+            let mut planned_next_id = tree.next_id.unwrap();
+            let mut operations = Vec::new();
+
+            // Every batch includes a removal of an ID that existed at its start.
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            let remove_index = seed as usize % removable_ids.len();
+            let removed_id = removable_ids.swap_remove(remove_index);
+            let remove_position = planned
+                .iter()
+                .position(|(id, _)| *id == removed_id)
+                .unwrap();
+            operations.push(TreeOp::Remove { id: removed_id });
+            planned.remove(remove_position);
+
+            // And every batch inserts, so successful inverses must keep IDs monotone.
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            let insert_position = seed as usize % (planned.len() + 1);
+            operations.push(TreeOp::Insert {
+                position: insert_position,
+                value,
+            });
+            planned.insert(insert_position, (NodeId(planned_next_id), value));
+            planned_next_id = planned_next_id.checked_add(1).unwrap();
+            value += 1;
+
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            let extra_count = 1 + (seed as usize % 4);
+            for _ in 0..extra_count {
+                seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+                let should_remove = !removable_ids.is_empty() && seed & 1 == 0;
+                if should_remove {
+                    let candidate_index = seed as usize % removable_ids.len();
+                    let id = removable_ids.swap_remove(candidate_index);
+                    let position = planned
+                        .iter()
+                        .position(|(candidate, _)| *candidate == id)
+                        .unwrap();
+                    operations.push(TreeOp::Remove { id });
+                    planned.remove(position);
+                } else {
+                    let position = seed as usize % (planned.len() + 1);
+                    operations.push(TreeOp::Insert { position, value });
+                    planned.insert(position, (NodeId(planned_next_id), value));
+                    planned_next_id = planned_next_id.checked_add(1).unwrap();
+                    value += 1;
+                }
+            }
+
+            let transaction = Transaction::new(operations).unwrap();
+            let encoded = transaction.encode::<IndexedTree<i32>>().unwrap();
+            let decoded = Transaction::<TreeOp<i32>>::decode::<IndexedTree<i32>>(&encoded).unwrap();
+            assert_eq!(decoded.operations(), transaction.operations());
+            let inverse = decoded.apply(&mut tree).unwrap();
+            model = planned;
+            assert_matches(&tree, &model);
+            assert_eq!(tree.next_id, Some(planned_next_id));
+            let published_ids: Vec<_> = model
+                .iter()
+                .map(|(id, _)| *id)
+                .filter(|id| !before.iter().any(|(old_id, _)| old_id == id))
+                .collect();
+
+            inverse.apply(&mut tree).unwrap();
+            model = before.clone();
+            assert_eq!(model, before);
+            assert_matches(&tree, &model);
+            assert_eq!(tree.next_id, Some(planned_next_id));
+
+            // Publishing a fresh ID after undo proves that IDs from the undone
+            // successful transaction are not recycled for another node.
+            let probe_value = -turn - 1;
+            let probe = tree.insert(tree.len(), probe_value).unwrap();
+            assert_eq!(probe, NodeId(planned_next_id));
+            assert!(!before.iter().any(|(id, _)| *id == probe));
+            assert!(!published_ids.contains(&probe));
+            model.push((probe, probe_value));
+            assert_matches(&tree, &model);
+            value += 1;
+        }
     }
 }

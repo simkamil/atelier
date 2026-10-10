@@ -2,13 +2,31 @@
 
 Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus ; ils sont actuellement des emplacements documentés.
 
-Les crates `atelier-unicode`, `atelier-geom` et `atelier-model` fournissent respectivement les encodages de texte, les primitives géométriques et un arbre de nœuds indexé. Les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques et la liste d'affichage. Les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Aucun bloc `unsafe` n'est nécessaire dans ce socle ; toute future utilisation devra être isolée et commentée selon la spécification.
 
 ## Validation
+
+### Validation distante du socle — 2026-10-10
+
+Le commit `b9297cd3a94293a913b2b79ba66c06e3acf4024c`, publié sur [simkamil/mon-bureau](https://github.com/simkamil/mon-bureau), a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38032559875) : Windows MSVC avec tests et qualité, compilation/lint WASM avec tests natifs, puis build et exécution des tests Linux musl. Cette exécution lève les réserves sur la CI distante et l'exécution Linux mentionnées dans les relevés locaux historiques ci-dessous. Elle couvre les six US du socle ; les modifications suivantes doivent obtenir leur propre validation. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-foundations.json) conserve le SHA, les jobs et leurs conclusions.
+
+### Preuve US-020/021, US-071 et US-080 — 2026-10-10
+
+Quatre US développées en parallèle avec GPT-6 Luna, raisonnement moyen, puis validées et marquées terminées dans le backlog :
+
+- [US-020/021](us-020-021-compression.md) : inflate incrémental DEFLATE/zlib plafonné, blocs stockés/fixes/dynamiques, CRC32/Adler32 et encodeur LZ77/Huffman dynamique à deux niveaux. Cinq tests Rust incluent les vecteurs indépendants et seize sorties de référence vérifiées en CI. L'oracle Python zlib réussit **2 463 cas sur 75 entrées** : 300 encodages, 1 314 décodages et 849 refus de flux invalides ou dépassant le plafond. L'encodeur conserve des données proportionnelles à l'entrée ; le décodeur garde une fenêtre de 32 Kio et des tables bornées.
+- [US-071](us-071-transactions.md) : opérations génériques inversibles, transaction atomique par checkpoint, adaptateur réel de l'arbre et codec ATOP borné. Six tests nouveaux couvrent notamment erreur après mutation, rollback exact avec compteur, suppression à deux enfants et 200 transactions de plusieurs opérations comparées à un modèle Vec. Une annulation réussie conserve le compteur monotone des IDs publiés ; le checkpoint de l'adaptateur clone l'arène et les valeurs.
+- [US-080](us-080-display-list.md) : commandes indépendantes des backends et codec ATDL 1.0 ; treize tests couvrent toutes les commandes, les troncatures, les valeurs invalides et les budgets. Les compteurs forgés ne provoquent pas de réservation disproportionnée et la taille de sortie est vérifiée avant allocation. Clips rectangulaires en coordonnées de page, piles indépendantes de clips et transformations ; les backends restent à développer.
+
+**91 tests du workspace passent**. Les treize contrôles globaux réussissent : garde avant Cargo, builds MSVC/WASM/musl, tests natifs, Clippy hôte/WASM avec `-D warnings`, rustfmt, SPDX, métadonnées locales et compilation des tests musl. Les 31 paquets restent locaux, sans dépendance externe. La seule modification volontaire du lock ajoute `atelier-render → atelier-geom` ; les contrôles ne modifient ensuite aucun de ses octets. La CI WASM inclut désormais compression et rendu. L'exécution des tests Linux doit être confirmée sur le runner GitHub du commit publié ; la preuve locale Windows ne la remplace pas.
+
+Non-régression du banc AVL release : 100 000 blocs, 10 000 insertions, cinq échantillons après chauffe ; médiane **17,8943 ms**, sous le seuil de 50 ms, sur le même hôte i9-13900KF/64 Gio/Windows que le relevé du socle. Ce résultat reste propre à l'hôte et à sa charge.
+
+Trois revues parallèles sont triées, sans constat différé. Preuves : [validation globale](../_bmad-output/implementation-artifacts/next-batch-validation.json), [revue et corrections](../_bmad-output/implementation-artifacts/next-batch-review.md), [interopérabilité et ratios](../_bmad-output/implementation-artifacts/compression-oracle.json), [contrôles complémentaires et banc](../_bmad-output/implementation-artifacts/next-batch-extra-checks.json). Les outils Python de validation sont réservés aux agents ; la CI produit utilise Rust.
 
 ### Preuve US-060 et US-070 — 2026-10-10
 

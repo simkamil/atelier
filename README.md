@@ -1,6 +1,6 @@
 # Atelier
 
-Socle de développement de la suite bureautique Atelier, sous AGPL-3.0-or-later. Le workspace comprend 28 crates produit et trois outils internes (garde du lock, vérification de licence et bancs de performance). Les premières API produit disponibles couvrent les [encodages de texte](docs/us-014-encodings.md), la [géométrie 2D](docs/us-060-geometry.md) et l'[arbre de nœuds indexé](docs/us-070-indexed-tree.md). Les autres crates sont des squelettes ; les éditeurs et formats décrits dans `SPEC.md` restent à développer.
+Socle de développement de la suite bureautique Atelier, sous AGPL-3.0-or-later. Le workspace comprend 28 crates produit et trois outils internes (garde du lock, vérification de licence et bancs de performance). Les API produit disponibles couvrent les [encodages de texte](docs/us-014-encodings.md), la [compression DEFLATE/zlib](docs/us-020-021-compression.md), la [géométrie 2D](docs/us-060-geometry.md), l'[arbre de nœuds indexé](docs/us-070-indexed-tree.md), les [transactions atomiques](docs/us-071-transactions.md) et la [liste d'affichage](docs/us-080-display-list.md). Les autres crates sont des squelettes ; les éditeurs et formats décrits dans `SPEC.md` restent à développer.
 
 ## Prérequis
 
@@ -31,8 +31,8 @@ cargo build -p atelier-check-workspace --locked --offline
 cargo test -p atelier-check-workspace --locked --offline
 cargo build --workspace --locked --offline
 cargo test --workspace --locked --offline
-cargo build -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model --target wasm32-unknown-unknown --locked --offline
-cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
+cargo build -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render --target wasm32-unknown-unknown --locked --offline
+cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 cargo fmt --all --check
 cargo run --locked --offline -p atelier-check-license -- .
@@ -49,7 +49,7 @@ cargo build --workspace --exclude atelier-desktop-win --exclude atelier-core-was
 cargo test --workspace --exclude atelier-desktop-win --exclude atelier-core-wasm --target x86_64-unknown-linux-musl --locked --offline
 ```
 
-La CI déclenche ces contrôles sur `push`, `pull_request` et `workflow_dispatch`. Le job Windows compile et teste tout le workspace sur MSVC, puis exécute Clippy, rustfmt et SPDX. Le job WASM compile et lint `atelier-core-wasm`, `atelier-unicode`, `atelier-geom` et `atelier-model` pour `wasm32-unknown-unknown`, puis teste ces crates sur l'hôte Windows natif ; il ne prétend pas exécuter un binaire WASM sous Windows. Le job Ubuntu compile et exécute les tests des crates compatibles sur `x86_64-unknown-linux-musl`. Ces jobs valident des hôtes et configurations distincts ; un passage local Windows ne prouve pas le résultat d'un job distant Linux.
+La CI déclenche ces contrôles sur `push`, `pull_request` et `workflow_dispatch`. Le job Windows compile et teste tout le workspace sur MSVC, puis exécute Clippy, rustfmt et SPDX. Le job WASM compile et lint `atelier-core-wasm`, `atelier-unicode`, `atelier-geom`, `atelier-model`, `atelier-compress` et `atelier-render` pour `wasm32-unknown-unknown`, puis teste ces crates sur l'hôte Windows natif ; il ne prétend pas exécuter un binaire WASM sous Windows. Le job Ubuntu compile et exécute les tests des crates compatibles sur `x86_64-unknown-linux-musl`. Ces jobs valident des hôtes et configurations distincts ; un passage local Windows ne prouve pas le résultat d'un job distant Linux.
 
 Aucun paquet externe n'est déclaré. `atelier-bench` mesure les cas de socle `utf8_scan` et `sort_u64`, et produit un CSV en nanosecondes. `--case NOM` sélectionne un cas, `--output -` écrit le CSV seul sur la sortie standard, et `--reference FICHIER` compare les mêmes cas. Les mesures acceptent de 1 à 1 000 000 itérations. Le code de sortie vaut 2 pour une régression strictement supérieure à 10 %, 1 pour une erreur d'entrée et 0 en cas de succès. Ces cas ne prétendent pas que les objectifs de `SPEC.md` §6.16 sont atteints.
 

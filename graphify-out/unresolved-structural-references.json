@@ -1,5 +1,16 @@
 [
   {
+    "source": "crates_compress_tests_streams",
+    "target": "atelier_compress",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/compress/tests/streams.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_geom_src_lib",
     "target": "fmt",
     "relation": "imports_from",
@@ -60,7 +71,29 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/model/src/lib.rs",
-    "source_location": "L569",
+    "source_location": "L1069",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_lib",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/lib.rs",
+    "source_location": "L10",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_src_lib",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/src/lib.rs",
+    "source_location": "L962",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"

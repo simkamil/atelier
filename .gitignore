@@ -12,6 +12,8 @@
 /_bmad-output/implementation-artifacts/foundations-baseline.txt
 /_bmad-output/implementation-artifacts/stage-review-diff.py
 /_bmad-output/implementation-artifacts/*.log
+/_bmad-output/implementation-artifacts/github-ci.json
+/_bmad-output/implementation-artifacts/*review-diff.txt
 
 # Graphify caches contain machine-specific paths; keep the reports and graph.
 /graphify-out/*

@@ -89,6 +89,9 @@ version = "0.1.0"
 [[package]]
 name = "atelier-render"
 version = "0.1.0"
+dependencies = [
+ "atelier-geom",
+]
 
 [[package]]
 name = "atelier-server"

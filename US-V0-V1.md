@@ -122,20 +122,24 @@ Réf : §5.1 · Taille : S · Dépend de : US-001
 
 #### US-020 — Décompression deflate
 *En tant que* développeur, *je veux* décompresser deflate/zlib *afin de* lire les paquets ZIP et les images PNG.
-- [ ] Blocs stockés, Huffman fixe et dynamique ; enveloppe zlib ; CRC32 et Adler32.
-- [ ] Mode flux (entrée et sortie par morceaux).
-- [ ] Limite de taille de sortie paramétrable (protection contre les bombes).
-- [ ] Validé sur un corpus de flux de référence et en aller-retour avec US-021.
+- [x] Blocs stockés, Huffman fixe et dynamique ; enveloppe zlib ; CRC32 et Adler32.
+- [x] Mode flux (entrée et sortie par morceaux).
+- [x] Limite de taille de sortie paramétrable (protection contre les bombes).
+- [x] Validé sur un corpus de flux de référence et en aller-retour avec US-021.
 
 Réf : §6.2 `compress` · Taille : M · Dépend de : US-001
 
+Validation US-020 (2026-10-10) : [contrats, preuves et limites](docs/DEVELOPMENT.md#preuve-us-020021-us-071-et-us-080--2026-10-10).
+
 #### US-021 — Compression deflate
 *En tant que* développeur, *je veux* compresser en deflate *afin d'écrire* des fichiers docx et PDF compacts.
-- [ ] Niveaux « rapide » et « normal » (LZ77 avec chaînes de hachage, Huffman dynamique).
-- [ ] Sortie toujours décompressible par US-020 (test de propriété sur données aléatoires).
-- [ ] Taux de compression documenté sur le corpus de test.
+- [x] Niveaux « rapide » et « normal » (LZ77 avec chaînes de hachage, Huffman dynamique).
+- [x] Sortie toujours décompressible par US-020 (test de propriété sur données aléatoires).
+- [x] Taux de compression documenté sur le corpus de test.
 
 Réf : §6.2 `compress` · Taille : M · Dépend de : US-020
+
+Validation US-021 (2026-10-10) : [contrats, preuves et limites](docs/DEVELOPMENT.md#preuve-us-020021-us-071-et-us-080--2026-10-10).
 
 #### US-022 — Lecture ZIP
 *En tant que* développeur, *je veux* lire les archives ZIP *afin d'ouvrir* les documents OOXML et ODF.
@@ -296,11 +300,13 @@ Réf : §6.3 · Taille : M · Dépend de : US-001
 
 #### US-071 — Opérations et transactions
 *En tant que* développeur, *je veux* que toute modification passe par des opérations inversibles groupées en transactions *afin d'avoir* un annuler fiable et un modèle prêt pour la co-édition.
-- [ ] Interface `Operation` : `apply`, `invert`, sérialisation.
-- [ ] Transaction atomique : en cas d'échec, l'état est restauré.
-- [ ] Test de propriété : `apply` puis `invert` = identité, sur séquences aléatoires.
+- [x] Interface `Operation` : `apply`, `invert`, sérialisation.
+- [x] Transaction atomique : en cas d'échec, l'état est restauré.
+- [x] Test de propriété : `apply` puis `invert` = identité, sur séquences aléatoires.
 
 Réf : §6.3 · Taille : M · Dépend de : US-070
+
+Validation US-071 (2026-10-10) : [contrats, preuves et limites](docs/DEVELOPMENT.md#preuve-us-020021-us-071-et-us-080--2026-10-10).
 
 #### US-072 — Pile annuler / rétablir
 *En tant que* développeur, *je veux* une pile d'annulation *afin de* fournir un annuler/rétablir illimité.
@@ -330,10 +336,12 @@ Réf : F-COM-006, §6.13 · Taille : S · Dépend de : US-071
 
 #### US-080 — Format de liste d'affichage
 *En tant que* développeur, *je veux* une liste d'affichage par page *afin de* dessiner le même contenu sur l'écran, en SVG et en PDF.
-- [ ] Commandes : remplir/contourer un chemin, série de glyphes positionnés, image, empiler/dépiler un clip, transformation, zone de lien, marqueur de structure (pour l'accessibilité et le PDF balisé).
-- [ ] Sérialisation binaire compacte ; glyphes référencés par (police, identifiant de glyphe).
+- [x] Commandes : remplir/contourer un chemin, série de glyphes positionnés, image, empiler/dépiler un clip, transformation, zone de lien, marqueur de structure (pour l'accessibilité et le PDF balisé).
+- [x] Sérialisation binaire compacte ; glyphes référencés par (police, identifiant de glyphe).
 
 Réf : §6.6 · Taille : M · Dépend de : US-060
+
+Validation US-080 (2026-10-10) : [contrats, preuves et limites](docs/DEVELOPMENT.md#preuve-us-020021-us-071-et-us-080--2026-10-10).
 
 #### US-081 — Backend SVG
 *En tant que* développeur, *je veux* convertir une liste d'affichage en SVG *afin de* préparer l'impression.

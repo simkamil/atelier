@@ -1,0 +1,53 @@
+{
+  "oracle": "Python stdlib zlib",
+  "zlib_version": "1.3.1",
+  "fixtures": 75,
+  "cases": 2463,
+  "checks": {
+    "encode_interop": 300,
+    "decode_interop": 1314,
+    "reject_invalid_or_limit": 849
+  },
+  "corpus_sizes": {
+    "repetitive.txt": {
+      "source": 1440,
+      "fast": 92,
+      "normal": 92
+    },
+    "mixed-utf8.txt": {
+      "source": 740,
+      "fast": 77,
+      "normal": 77
+    },
+    "binary-repeat.bin": {
+      "source": 2048,
+      "fast": 330,
+      "normal": 330
+    },
+    "incompressible.bin": {
+      "source": 4096,
+      "fast": 4137,
+      "normal": 4137
+    }
+  },
+  "known_wire_sha256": {
+    "repetitive.txt-fast-raw.bin": "2cefb22f834b23dfa3624dc7a0e49034e2f741c493582e3d08f88eb24e58905f",
+    "repetitive.txt-normal-raw.bin": "2cefb22f834b23dfa3624dc7a0e49034e2f741c493582e3d08f88eb24e58905f",
+    "repetitive.txt-fast-zlib.bin": "f4606df421c1a65c98aaab85a5defc847edecdb4065d338860cd9132e618d94d",
+    "repetitive.txt-normal-zlib.bin": "a767939df7538bddd4b353c7ff45b83bdf25560a7c864f62183c816efc556510",
+    "mixed-utf8.txt-fast-raw.bin": "0c512f24d4002718eb9023196c9fc29a69063362ee67ac0f9a92444b9677a8fb",
+    "mixed-utf8.txt-normal-raw.bin": "0c512f24d4002718eb9023196c9fc29a69063362ee67ac0f9a92444b9677a8fb",
+    "mixed-utf8.txt-fast-zlib.bin": "01f39c76f3619834a75086ac8f403318f0cabed1de09e814fa4b425383238853",
+    "mixed-utf8.txt-normal-zlib.bin": "a19d3ec340d40d114348eccc00c1c597b9b1dec1fff39b842ccbef2a7e6f113a",
+    "binary-repeat.bin-fast-raw.bin": "e66255d8a50ead70f2118ea3e0786b2f03d5563acb9c1b54c384a97c17a6b15a",
+    "binary-repeat.bin-normal-raw.bin": "e66255d8a50ead70f2118ea3e0786b2f03d5563acb9c1b54c384a97c17a6b15a",
+    "binary-repeat.bin-fast-zlib.bin": "a6a94cad46b79a7208991b74d78f8f029277eedab5548a091a87e760df911cf0",
+    "binary-repeat.bin-normal-zlib.bin": "8dc155dc1c87ff216e36c48b5b665359311fcef26f66e92cbbda0f6022f31caa",
+    "incompressible.bin-fast-raw.bin": "d04ba7d8b1c72f2f2edeea84caed1e7002c7cc8f6f59090c35dc08f618ddfb99",
+    "incompressible.bin-normal-raw.bin": "d04ba7d8b1c72f2f2edeea84caed1e7002c7cc8f6f59090c35dc08f618ddfb99",
+    "incompressible.bin-fast-zlib.bin": "1227301ba8044ada5976aa234c2ad83d7abf51c2381bef80f60bb653f5261af8",
+    "incompressible.bin-normal-zlib.bin": "a1ba647c5eaa4a5e3d955d08a519f21ad66d38118c054439296ce643cd06f6cf"
+  },
+  "result": "passed",
+  "reproducer": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-compression-oracle-637v88nv"
+}

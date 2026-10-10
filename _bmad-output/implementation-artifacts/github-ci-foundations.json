@@ -1,0 +1,331 @@
+{
+  "repository": "simkamil/mon-bureau",
+  "head_sha": "b9297cd3a94293a913b2b79ba66c06e3acf4024c",
+  "runs": [
+    {
+      "id": 38032559875,
+      "name": "CI",
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38032559875",
+      "updated_at": "2026-10-10T06:56:21Z",
+      "jobs": [
+        {
+          "id": 114156372573,
+          "name": "Windows MSVC, tests and quality",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38032559875/job/114156372573",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-10T06:54:38Z",
+              "completed_at": "2026-10-10T06:54:39Z"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-10T06:54:39Z",
+              "completed_at": "2026-10-10T06:54:45Z"
+            },
+            {
+              "name": "Install Rust stable components",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-10T06:54:45Z",
+              "completed_at": "2026-10-10T06:55:05Z"
+            },
+            {
+              "name": "Select Rust stable",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-10T06:55:05Z",
+              "completed_at": "2026-10-10T06:55:05Z"
+            },
+            {
+              "name": "Bootstrap workspace lock guard",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-10T06:55:05Z",
+              "completed_at": "2026-10-10T06:55:12Z"
+            },
+            {
+              "name": "Check workspace lock",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-10T06:55:12Z",
+              "completed_at": "2026-10-10T06:55:13Z"
+            },
+            {
+              "name": "Build Windows MSVC workspace",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-10T06:55:13Z",
+              "completed_at": "2026-10-10T06:55:18Z"
+            },
+            {
+              "name": "Test Windows MSVC workspace",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-10T06:55:18Z",
+              "completed_at": "2026-10-10T06:56:02Z"
+            },
+            {
+              "name": "Run Clippy",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-10T06:56:02Z",
+              "completed_at": "2026-10-10T06:56:07Z"
+            },
+            {
+              "name": "Check formatting",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-10T06:56:07Z",
+              "completed_at": "2026-10-10T06:56:08Z"
+            },
+            {
+              "name": "Check SPDX headers",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 11,
+              "started_at": "2026-10-10T06:56:08Z",
+              "completed_at": "2026-10-10T06:56:09Z"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 22,
+              "started_at": "2026-10-10T06:56:09Z",
+              "completed_at": "2026-10-10T06:56:12Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 23,
+              "started_at": "2026-10-10T06:56:12Z",
+              "completed_at": "2026-10-10T06:56:12Z"
+            }
+          ]
+        },
+        {
+          "id": 114156372659,
+          "name": "Linux musl build and tests",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38032559875/job/114156372659",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-10T06:54:37Z",
+              "completed_at": "2026-10-10T06:54:38Z"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-10T06:54:38Z",
+              "completed_at": "2026-10-10T06:54:39Z"
+            },
+            {
+              "name": "Install Rust stable target",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-10T06:54:39Z",
+              "completed_at": "2026-10-10T06:54:42Z"
+            },
+            {
+              "name": "Select Rust stable",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-10T06:54:42Z",
+              "completed_at": "2026-10-10T06:54:42Z"
+            },
+            {
+              "name": "Update apt package index",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-10T06:54:42Z",
+              "completed_at": "2026-10-10T06:54:49Z"
+            },
+            {
+              "name": "Install musl linker",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-10T06:54:49Z",
+              "completed_at": "2026-10-10T06:54:54Z"
+            },
+            {
+              "name": "Bootstrap workspace lock guard",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-10T06:54:54Z",
+              "completed_at": "2026-10-10T06:55:05Z"
+            },
+            {
+              "name": "Check workspace lock",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-10T06:55:05Z",
+              "completed_at": "2026-10-10T06:55:07Z"
+            },
+            {
+              "name": "Build Linux musl packages",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-10T06:55:07Z",
+              "completed_at": "2026-10-10T06:55:09Z"
+            },
+            {
+              "name": "Test Linux musl packages",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 10,
+              "started_at": "2026-10-10T06:55:09Z",
+              "completed_at": "2026-10-10T06:55:49Z"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 20,
+              "started_at": "2026-10-10T06:55:49Z",
+              "completed_at": "2026-10-10T06:55:49Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 21,
+              "started_at": "2026-10-10T06:55:49Z",
+              "completed_at": "2026-10-10T06:55:49Z"
+            }
+          ]
+        },
+        {
+          "id": 114156372861,
+          "name": "WASM compile, lint and native engine tests",
+          "status": "completed",
+          "conclusion": "success",
+          "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38032559875/job/114156372861",
+          "steps": [
+            {
+              "name": "Set up job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 1,
+              "started_at": "2026-10-10T06:54:37Z",
+              "completed_at": "2026-10-10T06:54:37Z"
+            },
+            {
+              "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 2,
+              "started_at": "2026-10-10T06:54:37Z",
+              "completed_at": "2026-10-10T06:54:43Z"
+            },
+            {
+              "name": "Install Rust stable with Clippy",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 3,
+              "started_at": "2026-10-10T06:54:43Z",
+              "completed_at": "2026-10-10T06:55:19Z"
+            },
+            {
+              "name": "Select Rust stable",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 4,
+              "started_at": "2026-10-10T06:55:19Z",
+              "completed_at": "2026-10-10T06:55:20Z"
+            },
+            {
+              "name": "Bootstrap workspace lock guard",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 5,
+              "started_at": "2026-10-10T06:55:20Z",
+              "completed_at": "2026-10-10T06:55:30Z"
+            },
+            {
+              "name": "Check workspace lock",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 6,
+              "started_at": "2026-10-10T06:55:30Z",
+              "completed_at": "2026-10-10T06:55:35Z"
+            },
+            {
+              "name": "Compile WASM target",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 7,
+              "started_at": "2026-10-10T06:55:35Z",
+              "completed_at": "2026-10-10T06:55:37Z"
+            },
+            {
+              "name": "Lint WASM target",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 8,
+              "started_at": "2026-10-10T06:55:38Z",
+              "completed_at": "2026-10-10T06:55:42Z"
+            },
+            {
+              "name": "Test engine on native host",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 9,
+              "started_at": "2026-10-10T06:55:42Z",
+              "completed_at": "2026-10-10T06:56:16Z"
+            },
+            {
+              "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 18,
+              "started_at": "2026-10-10T06:56:16Z",
+              "completed_at": "2026-10-10T06:56:18Z"
+            },
+            {
+              "name": "Complete job",
+              "status": "completed",
+              "conclusion": "success",
+              "number": 19,
+              "started_at": "2026-10-10T06:56:18Z",
+              "completed_at": "2026-10-10T06:56:19Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
