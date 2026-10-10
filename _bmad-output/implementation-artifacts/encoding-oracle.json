@@ -1,0 +1,6 @@
+{
+  "reference": "Python standard-library codecs (independent of Rust mapping tables)",
+  "cases": 5028,
+  "passed": true,
+  "source": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-encoding-oracle-0cj9vnyr\\oracle.rs"
+}

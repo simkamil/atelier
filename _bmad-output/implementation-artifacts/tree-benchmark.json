@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-10",
+  "exit_code": 0,
+  "storage": "fixed-page radix arena after review",
+  "stdout": "IndexedTree insert benchmark: fixture=100000, operations=10000, samples=5, warmup=16.4412ms, median=16.6464ms, limit=50ms, result=PASS, host=windows-x86_64\n",
+  "stderr": "   Compiling atelier-model v0.1.0 (C:\\mon-bureau\\crates\\model)\n    Finished `release` profile [optimized] target(s) in 0.42s\n     Running `target\\release\\examples\\bench_indexed_tree.exe`\n",
+  "host": {
+    "cpu": {
+      "Name": "13th Gen Intel(R) Core(TM) i9-13900KF",
+      "NumberOfCores": 24,
+      "NumberOfLogicalProcessors": 32
+    },
+    "memory": {
+      "TotalPhysicalMemory": 68523401216
+    },
+    "os": {
+      "Caption": "Microsoft Windows 11 Professionnel",
+      "Version": "10.0.26300"
+    },
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "profile": "release",
+  "tests_workspace_passed": 25,
+  "baseline": [
+    {
+      "case": "utf8_scan",
+      "iterations": "100",
+      "median_ns": "100"
+    },
+    {
+      "case": "sort_u64",
+      "iterations": "100",
+      "median_ns": "1"
+    }
+  ],
+  "current": [
+    {
+      "case": "utf8_scan",
+      "iterations": "100",
+      "median_ns": "100"
+    },
+    {
+      "case": "sort_u64",
+      "iterations": "100",
+      "median_ns": "1"
+    }
+  ],
+  "comparison_exit": 0,
+  "controlled_regression_exit": 2,
+  "stdout_csv_valid": true,
+  "baseline_preserved": true,
+  "invalid_inputs_exit": 1,
+  "local_packages": 30,
+  "product_crates": 28,
+  "external_dependencies": 0
+}

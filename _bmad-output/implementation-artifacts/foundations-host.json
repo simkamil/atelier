@@ -1,0 +1,15 @@
+{
+  "cpu": {
+    "Name": "13th Gen Intel(R) Core(TM) i9-13900KF",
+    "NumberOfCores": 24,
+    "NumberOfLogicalProcessors": 32
+  },
+  "memory": {
+    "TotalPhysicalMemory": 68523401216
+  },
+  "os": {
+    "Caption": "Microsoft Windows 11 Professionnel",
+    "Version": "10.0.26300"
+  },
+  "rust": "rustc 1.99.0 (b940084d7 2026-09-28)"
+}

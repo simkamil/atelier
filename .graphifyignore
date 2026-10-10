@@ -1,0 +1,5 @@
+# Exclude generated outputs and installed agent tooling from the product map.
+target/
+_bmad/
+_bmad-output/
+graphify-out/

@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows MSVC, tests and quality
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust stable components
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy --target x86_64-pc-windows-msvc
+      - name: Select Rust stable
+        run: rustup default stable
+      - name: Bootstrap workspace lock guard
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target | Out-Null
+          rustc --edition=2024 tools/check-workspace/src/main.rs -o target/check-workspace.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check workspace lock
+        run: .\target\check-workspace.exe .
+      - name: Build Windows MSVC workspace
+        run: cargo build --workspace --target x86_64-pc-windows-msvc --locked --offline
+      - name: Test Windows MSVC workspace
+        run: cargo test --workspace --target x86_64-pc-windows-msvc --locked --offline
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Check SPDX headers
+        run: cargo run --locked --offline -p atelier-check-license -- .
+
+  wasm:
+    name: WASM compile, lint and native engine tests
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust stable with Clippy
+        run: rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
+      - name: Select Rust stable
+        run: rustup default stable
+      - name: Bootstrap workspace lock guard
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target | Out-Null
+          rustc --edition=2024 tools/check-workspace/src/main.rs -o target/check-workspace.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check workspace lock
+        run: .\target\check-workspace.exe .
+      - name: Compile WASM target
+        run: cargo build -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model --target wasm32-unknown-unknown --locked --offline
+      - name: Lint WASM target
+        run: cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
+      - name: Test engine on native host
+        run: cargo test -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model --locked --offline
+
+  linux-musl:
+    name: Linux musl build and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust stable target
+        run: rustup toolchain install stable --profile minimal --target x86_64-unknown-linux-musl
+      - name: Select Rust stable
+        run: rustup default stable
+      - name: Update apt package index
+        run: sudo apt-get update
+      - name: Install musl linker
+        run: sudo apt-get install --yes musl-tools
+      - name: Bootstrap workspace lock guard
+        run: |
+          mkdir -p target
+          rustc --edition=2024 tools/check-workspace/src/main.rs -o target/check-workspace
+      - name: Check workspace lock
+        run: ./target/check-workspace .
+      - name: Build Linux musl packages
+        run: cargo build --workspace --exclude atelier-desktop-win --exclude atelier-core-wasm --target x86_64-unknown-linux-musl --locked --offline
+      - name: Test Linux musl packages
+        run: cargo test --workspace --exclude atelier-desktop-win --exclude atelier-core-wasm --target x86_64-unknown-linux-musl --locked --offline

@@ -1,0 +1,301 @@
+{
+  "date": "2026-10-10",
+  "host": "Windows x86_64",
+  "checks": [
+    {
+      "name": "bootstrap",
+      "argv": [
+        "rustc",
+        "--edition=2024",
+        "tools/check-workspace/src/main.rs",
+        "-o",
+        "target/check-workspace.exe"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "guard",
+      "argv": [
+        "C:\\mon-bureau\\target\\check-workspace.exe",
+        "."
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "windows_build",
+      "argv": [
+        "cargo",
+        "build",
+        "--workspace",
+        "--target",
+        "x86_64-pc-windows-msvc",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "windows_tests",
+      "argv": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--target",
+        "x86_64-pc-windows-msvc",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "passed": 43,
+      "tests": [
+        "tests::accepts_exactly_ten_percent_and_flags_more",
+        "tests::comparison_rejects_missing_duplicate_and_zero_median_reference_rows",
+        "tests::measures_n_times_and_reports_case_and_iterations",
+        "tests::csv_round_trip_escapes_names_and_rejects_malformed_or_duplicate_rows",
+        "tests::median_handles_odd_even_and_large_samples_without_overflow",
+        "tests::rejects_extreme_iteration_counts_before_allocating",
+        "tests::rejects_zero_iterations_and_duplicate_or_unknown_cases",
+        "tests::cli_rejects_list_measurement_option_combinations",
+        "tests::cli_rejects_invalid_arguments_and_unreadable_reference",
+        "tests::cli_refuses_malformed_reference_without_panicking",
+        "tests::cli_reports_unwritable_output_and_incomplete_reference",
+        "tests::cli_preserves_reference_and_does_not_create_output_for_invalid_reference",
+        "tests::cli_lists_and_measures_multiple_real_cases",
+        "executable_rejects_extreme_iteration_counts_without_panicking",
+        "executable_reports_non_unicode_os_argument",
+        "executable_rejects_same_output_and_reference_without_changing_baseline",
+        "executable_list_and_case_selection_return_only_requested_rows",
+        "executable_stdout_is_csv_with_and_without_reference",
+        "tests::accepts_a_valid_header",
+        "tests::reports_invalid_utf8_instead_of_succeeding",
+        "tests::rejects_missing_and_incorrect_headers_and_reports_the_paths",
+        "tests::rejects_symlinked_files_and_directories_when_supported",
+        "tests::ignores_generated_and_agent_work_directories",
+        "missing_source_roots_print_diagnostics_and_exit_nonzero",
+        "tests::rejects_bad_json_and_missing_workspace_fields",
+        "tests::accepts_workspace_lock_and_local_dependency_entries",
+        "tests::parses_json_structure_and_member_ids",
+        "tests::rejects_external_source_even_if_identity_matches",
+        "tests::rejects_invalid_dependency_arrays_and_quoted_values",
+        "tests::rejects_missing_malformed_duplicate_and_unknown_lock_format",
+        "executable_rejects_extra_arguments",
+        "executable_refuses_external_packages_without_changing_lock_bytes",
+        "executable_refuses_git_source_and_preserves_lock_bytes",
+        "executable_refuses_registry_source_even_when_name_and_version_match_member",
+        "executable_reports_missing_and_invalid_utf8_lock",
+        "executable_reports_cargo_metadata_failure_without_changing_lock",
+        "executable_rejects_malformed_lock_arrays_and_preserves_bytes",
+        "executable_reports_cargo_package_collision_without_changing_lock",
+        "executable_refuses_lock_that_needs_resolution_without_changing_bytes",
+        "executable_accepts_workspace_and_local_dependency_packages",
+        "executable_rejects_excluded_path_dependency_without_changing_lock",
+        "executable_refuses_non_member_path_packages_and_invalid_locks",
+        "tools\\bench\\src\\lib.rs - BenchmarkCase::new (line 30)"
+      ]
+    },
+    {
+      "name": "wasm_build",
+      "argv": [
+        "cargo",
+        "build",
+        "-p",
+        "atelier-core-wasm",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "wasm_native_tests",
+      "argv": [
+        "cargo",
+        "test",
+        "-p",
+        "atelier-core-wasm",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "clippy_workspace",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--locked",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "clippy_wasm",
+      "argv": [
+        "cargo",
+        "clippy",
+        "-p",
+        "atelier-core-wasm",
+        "--all-targets",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "format",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "license",
+      "argv": [
+        "cargo",
+        "run",
+        "--locked",
+        "--offline",
+        "-p",
+        "atelier-check-license",
+        "--",
+        "."
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "metadata",
+      "argv": [
+        "cargo",
+        "metadata",
+        "--no-deps",
+        "--format-version",
+        "1",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "package_count": 31,
+      "all_members_local": true,
+      "no_external_dependencies": true
+    },
+    {
+      "name": "musl_build",
+      "argv": [
+        "cargo",
+        "build",
+        "--workspace",
+        "--exclude",
+        "atelier-desktop-win",
+        "--exclude",
+        "atelier-core-wasm",
+        "--target",
+        "x86_64-unknown-linux-musl",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "musl_tests_compile_only",
+      "argv": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--exclude",
+        "atelier-desktop-win",
+        "--exclude",
+        "atelier-core-wasm",
+        "--target",
+        "x86_64-unknown-linux-musl",
+        "--locked",
+        "--offline",
+        "--no-run"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "limitations": [
+    "GitHub Actions not executed: no remote repository configured.",
+    "Linux musl tests compiled only; no Linux runtime on this host."
+  ],
+  "lock_bytes_unchanged": true,
+  "workflow_inspection": {
+    "windows": {
+      "runner": "windows-2025",
+      "guard_before_cargo": true,
+      "each_cargo_check_separate": true
+    },
+    "wasm": {
+      "runner": "windows-2025",
+      "guard_before_cargo": true,
+      "each_cargo_check_separate": true
+    },
+    "linux-musl": {
+      "runner": "ubuntu-24.04",
+      "guard_before_cargo": true,
+      "each_cargo_check_separate": true
+    }
+  },
+  "matrix_coverage": {
+    "workspace_local": [
+      "executable_accepts_workspace_and_local_dependency_packages"
+    ],
+    "external_sources": [
+      "executable_refuses_git_source_and_preserves_lock_bytes",
+      "executable_refuses_registry_source_even_when_name_and_version_match_member"
+    ],
+    "nonmember_path": [
+      "executable_rejects_excluded_path_dependency_without_changing_lock",
+      "executable_reports_cargo_package_collision_without_changing_lock"
+    ],
+    "invalid_lock": [
+      "executable_reports_missing_and_invalid_utf8_lock",
+      "executable_rejects_malformed_lock_arrays_and_preserves_bytes",
+      "tests::rejects_missing_malformed_duplicate_and_unknown_lock_format"
+    ],
+    "metadata_failure": [
+      "executable_reports_cargo_metadata_failure_without_changing_lock",
+      "tests::rejects_bad_json_and_missing_workspace_fields"
+    ],
+    "lock_preserved": [
+      "executable_refuses_external_packages_without_changing_lock_bytes",
+      "executable_refuses_lock_that_needs_resolution_without_changing_bytes"
+    ]
+  },
+  "graphify": {
+    "nodes": 464,
+    "edges": 885,
+    "missing_endpoints": 0,
+    "completed_stories": [
+      "US-001",
+      "US-002",
+      "US-005"
+    ]
+  },
+  "lock_inspection": {
+    "format": 4,
+    "packages": 31,
+    "no_external_source": true
+  },
+  "review": {
+    "model": "gpt-6-luna",
+    "reasoning_effort": "medium",
+    "layers": 3,
+    "confirmed_findings_remaining": 0,
+    "deferred_code_changes": 0
+  }
+}

@@ -1,0 +1,29 @@
+/target/
+**/target/
+*.rlib
+*.rmeta
+*.pdb
+*.ilk
+*.obj
+*.exe
+
+# Installed agent tooling and local review baselines.
+/_bmad/
+/_bmad-output/implementation-artifacts/foundations-baseline.txt
+/_bmad-output/implementation-artifacts/stage-review-diff.py
+/_bmad-output/implementation-artifacts/*.log
+
+# Graphify caches contain machine-specific paths; keep the reports and graph.
+/graphify-out/*
+!/graphify-out/GRAPH_REPORT.md
+!/graphify-out/graph.json
+!/graphify-out/graph.html
+!/graphify-out/story-dependencies.json
+!/graphify-out/unresolved-structural-references.json
+
+# Local credentials and Python caches.
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc

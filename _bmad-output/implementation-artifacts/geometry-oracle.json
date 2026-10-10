@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "curves": 200,
+  "curve_samples": 200200,
+  "affine_inverse_cases": 200,
+  "binary": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-geometry-oracle-538nnuan\\oracle.exe"
+}

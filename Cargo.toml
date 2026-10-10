@@ -1,0 +1,48 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/base",
+    "crates/unicode",
+    "crates/compress",
+    "crates/zip",
+    "crates/xml",
+    "crates/cfb",
+    "crates/crypto",
+    "crates/image",
+    "crates/font",
+    "crates/shape",
+    "crates/geom",
+    "crates/raster",
+    "crates/model",
+    "crates/text-model",
+    "crates/text-layout",
+    "crates/sheet-model",
+    "crates/calc",
+    "crates/slide-model",
+    "crates/render",
+    "crates/fmt-ooxml",
+    "crates/fmt-odf",
+    "crates/fmt-legacy",
+    "crates/fmt-pdf",
+    "crates/fmt-markdown",
+    "crates/lua",
+    "crates/core-wasm",
+    "crates/desktop-win",
+    "crates/server",
+    "tools/check-license",
+    "tools/check-workspace",
+    "tools/bench",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "AGPL-3.0-or-later"
+
+[workspace.lints.rust]
+unused_must_use = "deny"
+unused_imports = "deny"
+
+[workspace.lints.clippy]
+all = "warn"

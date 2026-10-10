@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "seeds": 12,
+  "mixed_operations": 240000,
+  "reference": "independent Vec via public API",
+  "storage": "fixed-page radix arena after review",
+  "binary": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-tree-oracle-l211k1rm\\oracle.exe"
+}
