@@ -33,3 +33,5 @@ __pycache__/
 *.pyc
 
 /_bmad-output/implementation-artifacts/model-font-review-*.md
+
+/_bmad-output/implementation-artifacts/images-fonts-review-*.md

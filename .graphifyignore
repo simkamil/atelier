@@ -3,3 +3,8 @@ target/
 _bmad/
 _bmad-output/
 graphify-out/
+
+# Pixel corpora are represented by their manifest, README and Rust consumers.
+tests/image-reference/**/*.png
+tests/image-reference/**/*.gif
+tests/image-reference/**/*.bmp

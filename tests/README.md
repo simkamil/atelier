@@ -7,8 +7,8 @@ outil d'agent sous `_bmad-output/implementation-artifacts/`.
 
 Les octets sont conservés tels quels par `.gitattributes`, notamment les
 encodages malformés, BOM UTF-16 et fins de ligne utilisés pour tester XML.
-Les corpus de documents complets et images de référence seront ajoutés avec
-les stories correspondantes.
+Les corpus de documents complets restent à ajouter avec leurs stories.
+Le corpus d’images de référence est décrit ci-dessous.
 
 Deux archives Writer classiques/Zip64 ont été validées par Python zipfile (noms, contenus et CRC); leurs octets figés sont comparés aux sorties du writer dans les tests Rust CI. Le manifeste conserve les entrées, options et SHA-256, et le générateur reproduit ces références.
 
@@ -23,3 +23,7 @@ sans Python. Le contrôle complémentaire `check-model-font-oracle.py` compare
 les faces à FontTools, les positions à un modèle Python et les enveloppes
 binaires à `struct`/`zlib.crc32`. Ces outils restent réservés aux agents ; voir
 le [suivi du lot](../docs/MODEL-FONT-PROGRESS.md).
+
+Le [corpus d’images](image-reference/README.md) fournit PngSuite complet et des
+GIF/BMP avec pixels RGBA de référence. Le test Cargo du corpus tourne dans les
+jobs natifs de CI; les oracles Python sont des outils d’agent uniquement.

@@ -24,6 +24,8 @@ for entry in previous.get('hyperedges',[]):
         known_hyperedges.add(entry['id'])
 document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
 document_paths.update({'crates/font/tests/fixtures/README.md', 'crates/font/tests/fixtures/fixtures.json', 'docs/us-050-opentype-tables.md', 'docs/us-073-selection.md', 'docs/us-074-recovery-journal.md', 'docs/MODEL-FONT-PROGRESS.md', 'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
+document_paths.update(['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md'])
+document_paths.update(p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt'))
 known={node['id'] for node in doc['nodes']}
 preserved=set()
 for node in previous['nodes']:
@@ -63,7 +65,7 @@ for i,m in enumerate(headings):
         for edge in doc['edges']:
             if edge.get('source')==node_id:
                 edge['source_location']=str(ref_line)
-for rel in ['crates/font/tests/fixtures/README.md','README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','docs/us-032-opaque-xml.md','docs/us-072-undo-history.md','docs/us-081-svg-backend.md','docs/EDITING-PROGRESS.md','docs/us-050-opentype-tables.md','docs/us-073-selection.md','docs/us-074-recovery-journal.md','docs/MODEL-FONT-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
+for rel in ['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md']+[p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt')]+['crates/font/tests/fixtures/README.md','README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','docs/us-032-opaque-xml.md','docs/us-072-undo-history.md','docs/us-081-svg-backend.md','docs/EDITING-PROGRESS.md','docs/us-050-opentype-tables.md','docs/us-073-selection.md','docs/us-074-recovery-journal.md','docs/MODEL-FONT-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
     p=root/rel
     if p.is_file():
         contents=p.read_text(encoding='utf-8')
@@ -78,15 +80,27 @@ code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
 manifest=root/'tests/format-reference/manifest.json'
 font_manifest=root/'crates/font/tests/fixtures/fixtures.json'
-code_inputs=code+[p for p in (manifest,font_manifest) if p.is_file()]
+code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'tests/check-assets.ps1') if p.is_file()]
 ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}
 node_ids={n['id'] for n in merged['nodes']}
+# Remove hyperedges whose referenced fixture concepts were aggregated above.
+# Keep every resolvable member; build_from_json otherwise only warns and drops.
+valid_hyperedges=[]
+for entry in doc.get('hyperedges',[]):
+    kept=[n for n in entry.get('nodes',[]) if n in node_ids]
+    if kept:
+        entry=dict(entry,nodes=kept)
+        valid_hyperedges.append(entry)
+doc['hyperedges']=valid_hyperedges
+merged['hyperedges']=valid_hyperedges
 # Resolve verified workspace imports that the Rust extractor leaves unqualified.
 # Preserve std and wildcard placeholders in diagnostics instead of inventing nodes.
 local_imports={
     'atelier_compress':'crates_compress_src_lib',
+    'atelier_image':'crates_image_src_lib',
+    'embedded':'crates_font_src_embedded',
     'atelier_font':'crates_font_src_lib',
     'atelier_unicode':'crates_unicode_src_lib',
     'atelier_xml':'crates_xml_src_lib',
@@ -163,6 +177,16 @@ for node in removed:
     moved=verified_symbol_replacements.get(node['id'])
     if moved in g and g.nodes[moved].get('source_file')==node.get('source_file'):
         replacement=moved
+    # Corpus pixels are represented by the independently verified manifest,
+    # not visual LLM concepts. Only prune verified fixture paths; retain the
+    # CLI backup and record every replacement in normalization diagnostics.
+    source=node.get('source_file','').replace('\\','/')
+    if source.startswith('tests/image-reference/') and Path(source).suffix.lower() in ('.png','.gif','.bmp'):
+        fixture_manifest=json.loads((root/'tests/image-reference/manifest.json').read_text(encoding='utf-8'))
+        if source.removeprefix('tests/image-reference/') in {c['file'] for c in fixture_manifest['cases']}:
+            replacement='tests_image_reference_manifest' if 'tests_image_reference_manifest' in g else 'document_tests_image_reference_readme_md'
+    if node['id']=='sil_ofl_1_1' and not source:
+        replacement='document_data_fonts_readme_md'
     if not placeholder and replacement is None:
         raise RuntimeError(f'Refused to remove located graph node: {node["id"]}')
     cleanup.append({'id':node['id'],'reason':'unresolved AST placeholder' if placeholder else 'equivalent located node','replacement':replacement})

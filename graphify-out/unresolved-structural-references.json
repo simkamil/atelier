@@ -5,7 +5,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L1181",
+    "source_location": "L1183",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -28,6 +28,50 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/geom/src/lib.rs",
     "source_location": "L696",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_image_src_lib",
+    "target": "decode_bmp",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/image/src/lib.rs",
+    "source_location": "L10",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_image_src_lib",
+    "target": "decode_gif",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/image/src/lib.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_image_src_lib",
+    "target": "decode_png",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/image/src/lib.rs",
+    "source_location": "L12",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_image_tests_reference_corpus",
+    "target": "path",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/image/tests/reference_corpus.rs",
+    "source_location": "L4",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -625,5 +669,29 @@
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
+  },
+  {
+    "source": "data_fonts_licenses_caladea_ofl",
+    "target": "sil_ofl_1_1",
+    "relation": "implements",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "data/fonts/licenses/Caladea-OFL.txt"
+  },
+  {
+    "source": "data_fonts_licenses_carlito_ofl",
+    "target": "sil_ofl_1_1",
+    "relation": "implements",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "data/fonts/licenses/Carlito-OFL.txt"
+  },
+  {
+    "source": "data_fonts_licenses_liberation_ofl",
+    "target": "sil_ofl_1_1",
+    "relation": "implements",
+    "confidence": "EXTRACTED",
+    "confidence_score": 1.0,
+    "source_file": "data/fonts/licenses/Liberation-OFL.txt"
   }
 ]

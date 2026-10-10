@@ -198,11 +198,13 @@ Réf : §5.2 (1) · Taille : S · Dépend de : US-030, US-031
 
 #### US-040 — Décodeur PNG
 *En tant que* développeur, *je veux* décoder les PNG *afin d'afficher* les images des documents.
-- [ ] Tous les types de couleur et profondeurs, entrelacement Adam7, palette, transparence `tRNS`, vérification des CRC.
-- [ ] Toutes les images valides de la PngSuite décodées correctement ; les invalides rejetées sans panique.
-- [ ] Limite de dimensions (pixels max) paramétrable.
+- [x] Tous les types de couleur et profondeurs, entrelacement Adam7, palette, transparence `tRNS`, vérification des CRC.
+- [x] Toutes les images valides de la PngSuite décodées correctement ; les invalides rejetées sans panique.
+- [x] Limite de dimensions (pixels max) paramétrable.
 
 Réf : §6.2 `image` · Taille : M · Dépend de : US-020
+
+Validation US-040 (2026-10-10) : [contrat et preuves](docs/us-040-png.md), [validation du lot](docs/IMAGES-FONTS-PROGRESS.md).
 
 #### US-041 — Encodeur PNG
 *En tant que* développeur, *je veux* encoder en PNG *afin de* produire des miniatures et des images de test.
@@ -222,10 +224,13 @@ Réf : §6.2 `image` · Taille : L · Dépend de : US-001
 
 #### US-043 — Décodeurs GIF et BMP
 *En tant que* développeur, *je veux* décoder GIF et BMP *afin de* couvrir les formats d'image du MVP.
-- [ ] GIF : première image, transparence, entrelacement.
-- [ ] BMP : 1, 4, 8, 16, 24, 32 bits, compression RLE4 et RLE8, images inversées.
+- [x] GIF : première image, transparence, entrelacement.
+- [x] BMP : 1, 4, 8, 16, 24, 32 bits, compression RLE4 et RLE8, images inversées.
 
 Réf : F-TXT-032 · Taille : S · Dépend de : US-001
+
+Validation US-043 (2026-10-10) : [contrat et preuves](docs/us-043-gif-bmp.md), [validation du lot](docs/IMAGES-FONTS-PROGRESS.md).
+
 
 ## E0.6 — Polices et mise en forme du texte
 
@@ -279,10 +284,13 @@ Réf : §5.2 (3), §6.4 · Taille : M · Dépend de : US-050
 
 #### US-056 — Polices embarquées
 *En tant que* développeur, *je veux* embarquer les polices libres *afin de* garantir une mise en page identique partout.
-- [ ] Carlito, Caladea, Liberation Sans/Serif/Mono (toutes graisses et styles) dans `data/fonts/`.
-- [ ] Textes de licence OFL inclus et affichables.
+- [x] Carlito, Caladea, Liberation Sans/Serif/Mono (toutes graisses et styles) dans `data/fonts/`.
+- [x] Textes de licence OFL inclus et affichables.
 
 Réf : §5.2 (3), §9 · Taille : S · Dépend de : —
+
+Validation US-056 (2026-10-10) : [contrat et preuves](docs/us-056-embedded-fonts.md), [validation du lot](docs/IMAGES-FONTS-PROGRESS.md).
+
 
 ## E0.7 — Géométrie et rasterisation
 
@@ -419,7 +427,7 @@ Réf : §6.1 · Taille : S · Dépend de : US-092
 - [ ] Seules les pages visibles sont dessinées ; redessin limité aux zones modifiées.
 - [ ] Défilement à 60 images/s sur un document de 300 pages.
 
-Réf : §6.6 · Taille : L · Dépend de : US-080, US-092
+Réf : §6.6 · Taille : L · Dépend de : US-051, US-080, US-092
 
 #### US-102 — Internationalisation
 *En tant que* développeur, *je veux* un catalogue de chaînes *afin qu'aucun* texte d'interface ne soit en dur.

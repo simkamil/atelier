@@ -6,6 +6,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod embedded;
+
 use std::collections::BTreeMap;
 
 const MAX_TABLES: usize = 4096;

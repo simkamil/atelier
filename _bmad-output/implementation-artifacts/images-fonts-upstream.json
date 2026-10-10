@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-10",
+  "official_downloads": 9,
+  "font_assets_verified": 20,
+  "all_upstream_bytes_identical": true,
+  "sources": [
+    {
+      "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-Bold.ttf",
+      "download_sha256": "bb5d20f79b82599ec72983597437373a80f2d2085fa91fc144fd74e876a594db",
+      "verified_assets": [
+        "data/fonts/carlito/Carlito-Bold.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-BoldItalic.ttf",
+      "download_sha256": "b32928186c119599e03ca6a1ffc680fdcb7fac95772f4b95d989cf6cd3861517",
+      "verified_assets": [
+        "data/fonts/carlito/Carlito-BoldItalic.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-Italic.ttf",
+      "download_sha256": "0b019225e58d702bfedcbd35c21696769f8ee115cb6343f84c2f240312450d1c",
+      "verified_assets": [
+        "data/fonts/carlito/Carlito-Italic.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-Regular.ttf",
+      "download_sha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595",
+      "verified_assets": [
+        "data/fonts/carlito/Carlito-Regular.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-Bold.ttf",
+      "download_sha256": "ae3cb2dcbc925809dd29d2a44e9802211cab66be541bacbfc9c08c74b27c3742",
+      "verified_assets": [
+        "data/fonts/caladea/Caladea-Bold.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-BoldItalic.ttf",
+      "download_sha256": "ccabaa7b7e2fdf253d2b1a5fa699dd8a3df8d835a9eb285ad82631a677eb76c0",
+      "verified_assets": [
+        "data/fonts/caladea/Caladea-BoldItalic.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-Italic.ttf",
+      "download_sha256": "4359a8e24f748b6447b1ff6d7a174febe70961d29f8bb8634b56dacd740a3deb",
+      "verified_assets": [
+        "data/fonts/caladea/Caladea-Italic.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-Regular.ttf",
+      "download_sha256": "f1e899278b7b4491aba5b6a8253c4b04c050cc59b21865be5c37559a775153cd",
+      "verified_assets": [
+        "data/fonts/caladea/Caladea-Regular.ttf"
+      ]
+    },
+    {
+      "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+      "download_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0",
+      "verified_assets": [
+        "data/fonts/liberation/LiberationMono-Bold.ttf",
+        "data/fonts/liberation/LiberationMono-BoldItalic.ttf",
+        "data/fonts/liberation/LiberationMono-Italic.ttf",
+        "data/fonts/liberation/LiberationMono-Regular.ttf",
+        "data/fonts/liberation/LiberationSans-Bold.ttf",
+        "data/fonts/liberation/LiberationSans-BoldItalic.ttf",
+        "data/fonts/liberation/LiberationSans-Italic.ttf",
+        "data/fonts/liberation/LiberationSans-Regular.ttf",
+        "data/fonts/liberation/LiberationSerif-Bold.ttf",
+        "data/fonts/liberation/LiberationSerif-BoldItalic.ttf",
+        "data/fonts/liberation/LiberationSerif-Italic.ttf",
+        "data/fonts/liberation/LiberationSerif-Regular.ttf"
+      ]
+    }
+  ]
+}

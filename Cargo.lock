@@ -73,6 +73,9 @@ version = "0.1.0"
 [[package]]
 name = "atelier-image"
 version = "0.1.0"
+dependencies = [
+ "atelier-compress",
+]
 
 [[package]]
 name = "atelier-lua"

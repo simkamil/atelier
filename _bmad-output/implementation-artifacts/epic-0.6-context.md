@@ -4,7 +4,7 @@
 
 ## Goal
 
-Établir les primitives de lecture des polices et de mise en forme typographique qui permettent au moteur de produire une mise en page déterministe sur desktop et web. Les polices OpenType alimentent ensuite les contours, le positionnement et le gestionnaire de polices.
+Établir les primitives de lecture des polices et de mise en forme typographique qui permettent au moteur de produire une mise en page déterministe sur desktop et web. Les polices OpenType alimentent les contours, le positionnement et le gestionnaire; des faces libres embarquées assurent une base portable pour les replis métriques.
 
 ## Stories
 
@@ -20,12 +20,14 @@
 
 Le moteur V1 prend en charge les polices lues depuis des fichiers, y compris celles embarquées et incorporées, et fournit une mise en forme latine avec correspondance caractère-glyphe, métriques, crénage et ligatures. Le traitement des écritures complexes et du bidi est différé ; les API doivent rester utilisables pour des séquences de glyphes génériques. La sortie doit être déterministe à police identique, quelle que soit la plateforme.
 
-Les polices et fichiers ouverts sont des entrées non fiables : toutes les tailles, profondeurs et plages doivent être contrôlées, aucune panique ne doit être possible sur des données invalides. Le fuzzing maison couvre les parseurs de polices. Le produit ne peut ajouter aucune dépendance tierce. Les polices distribuées doivent respecter leurs licences ; les fontes embarquées prévues sont sous SIL OFL 1.1 avec textes de licence inclus.
+Les polices et fichiers ouverts sont des entrées non fiables : toutes les tailles, profondeurs et plages doivent être contrôlées, aucune panique ne doit être possible sur des données invalides. Le fuzzing maison couvre les parseurs de polices. Le produit ne peut ajouter aucune dépendance tierce. Les polices distribuées doivent respecter leurs licences ; les fontes embarquées sont sous SIL OFL 1.1 et leurs textes de licence complets accompagnent les binaires.
 
 ## Technical Decisions
 
 Le crate `atelier-font` appartient au moteur partagé et reste en Rust sûr (`forbid(unsafe_code)`). Les données de police sont interprétées en big-endian, sans copie inutile lorsque des vues bornées suffisent. Les erreurs de format sont renvoyées sous forme de types explicites. La séparation entre conteneur sfnt, tables OpenType et tracés évite de coupler le parsing aux moteurs `shape`/`render`.
 
+US-056 fournit 20 TTF inchangés : Carlito, Caladea, Liberation Sans, Liberation Serif et Liberation Mono; pour chaque famille Regular, Bold, Italic et Bold Italic. Provenance et empreintes doivent permettre de vérifier les révisions amont et l’intégrité; les textes OFL complets et copyrights sont livrés avec les fontes. L’API Rust du catalogue et son raccordement au crate sont coordonnés au niveau workspace.
+
 ## Cross-Story Dependencies
 
-US-051, US-052, US-053, US-054 et US-055 dépendent de US-050. US-056 fournit les fichiers redistribuables utilisés par le gestionnaire et les scénarios de référence.
+US-051, US-052, US-053, US-054 et US-055 dépendent de US-050. US-056 fournit les fichiers redistribuables utilisés par le gestionnaire et les scénarios de référence; le catalogue embarqué est consommé par US-055.

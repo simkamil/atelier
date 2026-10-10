@@ -1,14 +1,22 @@
 # Développement
 
-Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus ; ils sont actuellement des emplacements documentés.
+Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus. Les polices embarquées et les corpus de référence sont versionnés ; le client web reste un emplacement documenté.
 
-Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques, historique annuler/rétablir, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; `atelier-font` lit les tables de base OpenType et les cmap 4/6/12/14 ; les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques, historique annuler/rétablir, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; `atelier-font` lit les tables de base OpenType et les cmap 4/6/12/14 et expose vingt polices embarquées ; `atelier-image` décode PNG, GIF et BMP en RGBA8 avec limites explicites. Les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Aucun bloc `unsafe` n'est nécessaire dans ce socle ; toute future utilisation devra être isolée et commentée selon la spécification.
 
 ## Validation
+
+### Preuve US-040, US-043 et US-056 — 2026-10-10
+
+Trois US développées en parallèle avec GPT-6 Luna moyen, relues et validées : [PNG](us-040-png.md), [GIF/BMP](us-043-gif-bmp.md) et [polices embarquées](us-056-embedded-fonts.md). Le [suivi du lot](IMAGES-FONTS-PROGRESS.md) regroupe les contrats et les preuves. Le backlog compte **23 US terminées sur 158**.
+
+**210 tests workspace et 34 tests release passent** (20 images, 14 polices). Les [quinze contrôles locaux](../_bmad-output/implementation-artifacts/images-fonts-validation.json) couvrent builds Windows/WASM/musl, compilation des tests musl, tests, Clippy hôte/WASM, format, SPDX, garde, intégrité des ressources et métadonnées des 31 paquets locaux. La seule nouvelle dépendance est locale : `atelier-image → atelier-compress`. Les sources et le lock restent identiques pendant la validation.
+
+L’[oracle indépendant](../_bmad-output/implementation-artifacts/images-fonts-oracle.json) contrôle 201 images, dont 187 références de pixels et 14 PNG invalides, 149 728 mutations sans panic, onze inventaires altérés et vingt faces avec FontTools. Les [binaires des polices](../_bmad-output/implementation-artifacts/images-fonts-upstream.json) correspondent exactement aux sources officielles. La [revue triée](../_bmad-output/implementation-artifacts/images-fonts-review.md) ne laisse aucun constat différé. Les corpus et le garde d’intégrité fonctionnent en CI sans Python ni téléchargement ; le job Linux exécute les tests musl du commit publié.
 
 ### Preuve US-050, US-073 et US-074 — 2026-10-10
 

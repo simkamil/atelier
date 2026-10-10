@@ -28,6 +28,9 @@ jobs:
         run: .\target\check-workspace.exe .
       - name: Build Windows MSVC workspace
         run: cargo build --workspace --target x86_64-pc-windows-msvc --locked --offline
+      - name: Check font and image resource integrity
+        shell: pwsh
+        run: ./tests/check-assets.ps1
       - name: Test Windows MSVC workspace
         run: cargo test --workspace --target x86_64-pc-windows-msvc --locked --offline
       - name: Run Clippy
@@ -55,11 +58,11 @@ jobs:
       - name: Check workspace lock
         run: .\target\check-workspace.exe .
       - name: Compile WASM target
-        run: cargo build -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font --target wasm32-unknown-unknown --locked --offline
+        run: cargo build -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --target wasm32-unknown-unknown --locked --offline
       - name: Lint WASM target
-        run: cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
+        run: cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
       - name: Test engine on native host
-        run: cargo test -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font --locked --offline
+        run: cargo test -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --locked --offline
 
   linux-musl:
     name: Linux musl build and tests

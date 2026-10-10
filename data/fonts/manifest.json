@@ -1,0 +1,380 @@
+{
+  "schema_version": 1,
+  "license": "SIL Open Font License 1.1",
+  "asset_count": 20,
+  "total_bytes": 7426636,
+  "assets": [
+    {
+      "path": "data/fonts/carlito/Carlito-Bold.ttf",
+      "family": "Carlito",
+      "style": "normal",
+      "weight": 700,
+      "subfamily": "Bold",
+      "font_version": "Version 1.104",
+      "bytes": 682468,
+      "sha256": "bb5d20f79b82599ec72983597437373a80f2d2085fa91fc144fd74e876a594db",
+      "license_file": "licenses/Carlito-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/carlito",
+        "commit": "3a810cab78ebd6e2e4eed42af9e8453c4f9b850a",
+        "release": null,
+        "source_file": "fonts/ttf/Carlito-Bold.ttf",
+        "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-Bold.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/carlito/Carlito-BoldItalic.ttf",
+      "family": "Carlito",
+      "style": "italic",
+      "weight": 700,
+      "subfamily": "Bold Italic",
+      "font_version": "Version 1.104",
+      "bytes": 808508,
+      "sha256": "b32928186c119599e03ca6a1ffc680fdcb7fac95772f4b95d989cf6cd3861517",
+      "license_file": "licenses/Carlito-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/carlito",
+        "commit": "3a810cab78ebd6e2e4eed42af9e8453c4f9b850a",
+        "release": null,
+        "source_file": "fonts/ttf/Carlito-BoldItalic.ttf",
+        "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-BoldItalic.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/carlito/Carlito-Italic.ttf",
+      "family": "Carlito",
+      "style": "italic",
+      "weight": 400,
+      "subfamily": "Italic",
+      "font_version": "Version 1.104",
+      "bytes": 615236,
+      "sha256": "0b019225e58d702bfedcbd35c21696769f8ee115cb6343f84c2f240312450d1c",
+      "license_file": "licenses/Carlito-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/carlito",
+        "commit": "3a810cab78ebd6e2e4eed42af9e8453c4f9b850a",
+        "release": null,
+        "source_file": "fonts/ttf/Carlito-Italic.ttf",
+        "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-Italic.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/carlito/Carlito-Regular.ttf",
+      "family": "Carlito",
+      "style": "normal",
+      "weight": 400,
+      "subfamily": "Regular",
+      "font_version": "Version 1.104",
+      "bytes": 628032,
+      "sha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595",
+      "license_file": "licenses/Carlito-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/carlito",
+        "commit": "3a810cab78ebd6e2e4eed42af9e8453c4f9b850a",
+        "release": null,
+        "source_file": "fonts/ttf/Carlito-Regular.ttf",
+        "source_url": "https://github.com/googlefonts/carlito/blob/3a810cab78ebd6e2e4eed42af9e8453c4f9b850a/fonts/ttf/Carlito-Regular.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/caladea/Caladea-Bold.ttf",
+      "family": "Caladea",
+      "style": "normal",
+      "weight": 700,
+      "subfamily": "Bold",
+      "font_version": "Version 1.001",
+      "bytes": 84492,
+      "sha256": "ae3cb2dcbc925809dd29d2a44e9802211cab66be541bacbfc9c08c74b27c3742",
+      "license_file": "licenses/Caladea-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/caladea",
+        "commit": "336a529cfad3d103d6527752686f8331d13e820a",
+        "release": null,
+        "source_file": "fonts/ttf/Caladea-Bold.ttf",
+        "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-Bold.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/caladea/Caladea-BoldItalic.ttf",
+      "family": "Caladea",
+      "style": "italic",
+      "weight": 700,
+      "subfamily": "Bold Italic",
+      "font_version": "Version 1.001",
+      "bytes": 83356,
+      "sha256": "ccabaa7b7e2fdf253d2b1a5fa699dd8a3df8d835a9eb285ad82631a677eb76c0",
+      "license_file": "licenses/Caladea-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/caladea",
+        "commit": "336a529cfad3d103d6527752686f8331d13e820a",
+        "release": null,
+        "source_file": "fonts/ttf/Caladea-BoldItalic.ttf",
+        "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-BoldItalic.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/caladea/Caladea-Italic.ttf",
+      "family": "Caladea",
+      "style": "italic",
+      "weight": 400,
+      "subfamily": "Italic",
+      "font_version": "Version 1.001",
+      "bytes": 83780,
+      "sha256": "4359a8e24f748b6447b1ff6d7a174febe70961d29f8bb8634b56dacd740a3deb",
+      "license_file": "licenses/Caladea-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/caladea",
+        "commit": "336a529cfad3d103d6527752686f8331d13e820a",
+        "release": null,
+        "source_file": "fonts/ttf/Caladea-Italic.ttf",
+        "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-Italic.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/caladea/Caladea-Regular.ttf",
+      "family": "Caladea",
+      "style": "normal",
+      "weight": 400,
+      "subfamily": "Regular",
+      "font_version": "Version 1.001",
+      "bytes": 81600,
+      "sha256": "f1e899278b7b4491aba5b6a8253c4b04c050cc59b21865be5c37559a775153cd",
+      "license_file": "licenses/Caladea-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/googlefonts/caladea",
+        "commit": "336a529cfad3d103d6527752686f8331d13e820a",
+        "release": null,
+        "source_file": "fonts/ttf/Caladea-Regular.ttf",
+        "source_url": "https://github.com/googlefonts/caladea/blob/336a529cfad3d103d6527752686f8331d13e820a/fonts/ttf/Caladea-Regular.ttf"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationMono-Bold.ttf",
+      "family": "Liberation Mono",
+      "style": "normal",
+      "weight": 700,
+      "subfamily": "Bold",
+      "font_version": "Version 2.1.5",
+      "bytes": 307996,
+      "sha256": "bd62a0672d0b9b6710b01df434c80ad54fa5f0835207eb7b17b7a761463067bb",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationMono-Bold.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationMono-BoldItalic.ttf",
+      "family": "Liberation Mono",
+      "style": "italic",
+      "weight": 700,
+      "subfamily": "Bold Italic",
+      "font_version": "Version 2.1.5",
+      "bytes": 284068,
+      "sha256": "79451f3c09fe25116098853b7a2ca6e2436220ccc11af022979adbcf195be130",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationMono-BoldItalic.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationMono-Italic.ttf",
+      "family": "Liberation Mono",
+      "style": "italic",
+      "weight": 400,
+      "subfamily": "Italic",
+      "font_version": "Version 2.1.5",
+      "bytes": 281536,
+      "sha256": "605c01c711b44480a7508d349dfbf3264e81fa43d69e61cfa7d10b86e764c4d1",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationMono-Italic.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationMono-Regular.ttf",
+      "family": "Liberation Mono",
+      "style": "normal",
+      "weight": 400,
+      "subfamily": "Regular",
+      "font_version": "Version 2.1.5",
+      "bytes": 319508,
+      "sha256": "f2b83c763e8afd21709333370bed4774337fae82267937e2b5aea7e2fbd922c1",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationMono-Regular.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSans-Bold.ttf",
+      "family": "Liberation Sans",
+      "style": "normal",
+      "weight": 700,
+      "subfamily": "Bold",
+      "font_version": "Version 2.1.5",
+      "bytes": 414456,
+      "sha256": "788abee4c806d660e8aee46689dd8540cd4bb98da03dcc9d171ce3efd99a9173",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSans-Bold.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSans-BoldItalic.ttf",
+      "family": "Liberation Sans",
+      "style": "italic",
+      "weight": 700,
+      "subfamily": "Bold Italic",
+      "font_version": "Version 2.1.5",
+      "bytes": 408996,
+      "sha256": "698da70fc191cc5f33ad4d6d3fe830fe4624b898ea2e3169955928b7c491f1ee",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSans-BoldItalic.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSans-Italic.ttf",
+      "family": "Liberation Sans",
+      "style": "italic",
+      "weight": 400,
+      "subfamily": "Italic",
+      "font_version": "Version 2.1.5",
+      "bytes": 415816,
+      "sha256": "e5bae5c4cde31f22142753855f4f8fb86da6ff39955ed3c0a11248b0d16948b0",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSans-Italic.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSans-Regular.ttf",
+      "family": "Liberation Sans",
+      "style": "normal",
+      "weight": 400,
+      "subfamily": "Regular",
+      "font_version": "Version 2.1.5",
+      "bytes": 410712,
+      "sha256": "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSans-Regular.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSerif-Bold.ttf",
+      "family": "Liberation Serif",
+      "style": "normal",
+      "weight": 700,
+      "subfamily": "Bold",
+      "font_version": "Version 2.1.5",
+      "bytes": 370096,
+      "sha256": "d754ba427cfe0bca54ae052384baa8f842da5bd6550ad4da024ac441e7a7d5ce",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSerif-Bold.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSerif-BoldItalic.ttf",
+      "family": "Liberation Serif",
+      "style": "italic",
+      "weight": 700,
+      "subfamily": "Bold Italic",
+      "font_version": "Version 2.1.5",
+      "bytes": 376772,
+      "sha256": "f17db8af71e24d2066b587546021d4f0b296be389512b658dec3c09affeb11a7",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSerif-BoldItalic.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSerif-Italic.ttf",
+      "family": "Liberation Serif",
+      "style": "italic",
+      "weight": 400,
+      "subfamily": "Italic",
+      "font_version": "Version 2.1.5",
+      "bytes": 375632,
+      "sha256": "0e3dea9f8d613e006ccfa62201f33e265d19167bd0907725c3e145368b04fc2e",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSerif-Italic.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    },
+    {
+      "path": "data/fonts/liberation/LiberationSerif-Regular.ttf",
+      "family": "Liberation Serif",
+      "style": "normal",
+      "weight": 400,
+      "subfamily": "Regular",
+      "font_version": "Version 2.1.5",
+      "bytes": 393576,
+      "sha256": "058ea80864aef09a23f45cbec2bb5400bc3dfbdea01c3f10538a21fcb497fb74",
+      "license_file": "licenses/Liberation-OFL.txt",
+      "upstream": {
+        "repository": "https://github.com/liberationfonts/liberation-fonts",
+        "commit": "4b0192046158094654e865245832c66d2104219e",
+        "release": "2.1.5",
+        "source_file": "liberation-fonts-ttf-2.1.5/LiberationSerif-Regular.ttf",
+        "source_url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+        "archive_sha256": "7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0"
+      }
+    }
+  ]
+}

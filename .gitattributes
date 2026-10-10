@@ -4,7 +4,17 @@
 *.zip binary
 *.font binary
 *.ttc binary
+*.ttf binary
+*.png binary
+*.gif binary
+*.bmp binary
 # Keep malformed encodings and XML EOL-normalization fixtures byte-exact.
 /tests/format-reference/** -text -whitespace
 # This negative fixture is deliberately not decodable as UTF-8.
 /tests/format-reference/xml/malformed-truncated-utf8.xml -diff
+*.rgba binary
+*.tgz binary
+# Preserve whitespace in original upstream license notices and corpus notes.
+/data/fonts/licenses/*.txt whitespace=-blank-at-eol,-blank-at-eof
+/tests/image-reference/pngsuite/PngSuite.LICENSE whitespace=-blank-at-eof
+/tests/image-reference/pngsuite/PngSuite.README -text whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol
