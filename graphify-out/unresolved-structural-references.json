@@ -11,6 +11,28 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_core_wasm_examples_protocol_oracle",
+    "target": "protocol",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/examples/protocol_oracle.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_examples_protocol_oracle",
+    "target": "env",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/examples/protocol_oracle.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_core_wasm_src_lib",
     "target": "sync",
     "relation": "imports_from",
@@ -27,7 +49,73 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/lib.rs",
-    "source_location": "L369",
+    "source_location": "L371",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_protocol",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/protocol.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_protocol",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/protocol.rs",
+    "source_location": "L208",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_protocol_boundaries",
+    "target": "protocol",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/protocol_boundaries.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_src_layout",
+    "target": "fontface",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/src/layout.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_src_layout",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/src/layout.rs",
+    "source_location": "L1381",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_src_lib",
+    "target": "layout",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/src/lib.rs",
+    "source_location": "L12",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -38,7 +126,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L11",
+    "source_location": "L13",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -49,7 +137,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L1185",
+    "source_location": "L1187",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -72,6 +160,28 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/font/tests/embedded.rs",
     "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_tests_layout_reference",
+    "target": "btreemap",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/tests/layout_reference.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_tests_layout_reference",
+    "target": "path",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/tests/layout_reference.rs",
+    "source_location": "L4",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -335,7 +445,29 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/unicode/src/lib.rs",
-    "source_location": "L147",
+    "source_location": "L148",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_unicode_tests_segmentation",
+    "target": "segmentation",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/unicode/tests/segmentation.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_unicode_tests_segmentation_navigation",
+    "target": "segmentation",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/unicode/tests/segmentation_navigation.rs",
+    "source_location": "L2",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -930,6 +1062,50 @@
     "context": "import",
     "confidence": "EXTRACTED",
     "source_file": "tests/wasm-abi.mjs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_wasm_protocol_boundaries",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/wasm-protocol-boundaries.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_wasm_protocol",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/wasm-protocol.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_wasm_protocol",
+    "target": "ref_node_child_process",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/wasm-protocol.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_wasm_protocol",
+    "target": "ref_node_path",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/wasm-protocol.mjs",
     "source_location": "L4",
     "weight": 1.0,
     "_origin": "ast"

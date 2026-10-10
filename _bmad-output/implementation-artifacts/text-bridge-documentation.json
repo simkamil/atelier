@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-11",
+  "validated_stories": 29,
+  "total_stories": 158,
+  "runtime_validation_sha256": "57c49e35b93c14d098d41403da818b653f4882c2ece61d26065432895cad0951",
+  "documentation_sha256": {
+    "README.md": "67584ff58e7165581706af43e7d7693afb24b46b58bdb58c2aaeabf76a858136",
+    "US-V0-V1.md": "9271154e331b97551235f40abfd3c1d39992ddda07fe50e5a1cbd7035017e4ad",
+    "tests/README.md": "56d5ad4e5a021b70bead0797bbafa405b23576df4b227f12494d76fbcbf1a7b9",
+    "web/README.md": "64878d36125b495b81b55a4b6bab80d26f7ae9cc0cdf3be8238d48e6e1d95691",
+    "docs/DEVELOPMENT.md": "9246128a96c5988f92c3c90df0be695c42f5c71e78790109ce32d3d988dc1b34",
+    "docs/PROTOTYPE-PROGRESS.md": "637581821adc3bb55d07bd6620481681124f8f064ca74d9916dbb014495f04ab",
+    "docs/us-011-segmentation.md": "7e7d2c744bf0beae3f694154f4fa18eab3adb2be5dbff7be1084a232512e3e83",
+    "docs/us-053-kerning-ligatures.md": "0e9f70cc08d3e38a489008b739d284431c6fd44c481df5efca2020c00e466e8d",
+    "docs/us-091-binary-protocol.md": "8b9cd81cc57eed3c2a8962a84671254e8a4068e5b4bb71b53dec21fd5708d0e1",
+    "_bmad-output/implementation-artifacts/spec-us011-segmentation.md": "42abd486635aaad8d45e2c3ab93c5d08f32acd5600da4dfed6f4c0fac2292795",
+    "_bmad-output/implementation-artifacts/spec-us053-kerning-ligatures.md": "f3f75471749ea447819a6b2e82d2331b94a233ebe6ed4a0cd69a8d0ba150e1d9",
+    "_bmad-output/implementation-artifacts/spec-us091-binary-protocol.md": "fb51b2d3894eda12f818c3cd6ae7683dc5cadad6b2ca765746f921f7ab654e52",
+    "_bmad-output/implementation-artifacts/text-bridge-claims.md": "5768452d14de78aafb12b752b9decc08ee22487af3adac83aad1e5dceac9034b",
+    "_bmad-output/implementation-artifacts/text-bridge-review.md": "fae6e76e5655db2a2bb6dc838b8482fca9600758fca09aaaec6204e4829742ce"
+  }
+}

@@ -42,5 +42,9 @@ try {
     $unicodeGolden = Get-Content -LiteralPath (Join-Path $unicodeReferences 'manifest.json') -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable
     Require ($unicodeGolden.unicode_version -ceq '17.0.0' -and $unicodeGolden.scalars -eq 1112064 -and $unicodeGolden.fields -eq 30) 'Invalid exhaustive Unicode reference'
     $null = Verify $unicodeReferences $unicodeGolden.file $unicodeGolden.sha256
-    Write-Output 'Verified 71 official Unicode sources, license, 300 outline references and exhaustive Unicode fingerprints.'
+    $layoutReferences = Join-Path $RootPath 'tests/font-layout-reference'
+    $layoutGolden = Get-Content -LiteralPath (Join-Path $layoutReferences 'manifest.json') -Raw -Encoding utf8 | ConvertFrom-Json -AsHashtable
+    Require ($layoutGolden.schema_version -eq 1 -and $layoutGolden.oracle -ceq 'HarfBuzz' -and $layoutGolden.faces.Count -eq 20 -and $layoutGolden.cases -eq 54716) 'Invalid Latin layout reference inventory'
+    $null = Verify $layoutReferences $layoutGolden.file $layoutGolden.sha256
+    Write-Output 'Verified 71 official Unicode sources, license, 300 outlines, 54716 Latin layout cases and exhaustive Unicode fingerprints.'
 } catch { Write-Error $_; exit 1 }

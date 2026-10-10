@@ -90,8 +90,8 @@ Réf : §6.4 · Taille : M · Dépend de : US-001
 
 #### US-011 — Segmentation en graphèmes et en mots
 *En tant que* développeur, *je veux* segmenter le texte selon UAX#29 *afin que* le curseur, la suppression et la sélection par mot soient corrects.
-- [ ] 100 % de `GraphemeBreakTest.txt` et `WordBreakTest.txt` passent.
-- [ ] Itérateurs avant et arrière à partir de n'importe quelle position.
+- [x] 100 % de `GraphemeBreakTest.txt` et `WordBreakTest.txt` passent.
+- [x] Itérateurs avant et arrière à partir de n'importe quelle position.
 
 Réf : §6.4, §6.15 · Taille : M · Dépend de : US-010
 
@@ -260,8 +260,8 @@ Réf : §6.4 · Taille : L · Dépend de : US-050, US-060
 
 #### US-053 — Crénage et ligatures
 *En tant que* développeur, *je veux* appliquer le crénage et les ligatures *afin d'obtenir* une typographie conforme à Word.
-- [ ] Table `kern` (format 0) et GPOS type 2 (ajustement de paires) ; GSUB type 1 (simple) et type 4 (ligatures).
-- [ ] Sélection des fonctionnalités `kern` et `liga` pour l'écriture latine, script et langue par défaut.
+- [x] Table `kern` (format 0) et GPOS type 2 (ajustement de paires) ; GSUB type 1 (simple) et type 4 (ligatures).
+- [x] Sélection des fonctionnalités `kern` et `liga` pour l'écriture latine, script et langue par défaut.
 
 Réf : §6.4 · Taille : L · Dépend de : US-050
 
@@ -396,9 +396,9 @@ Réf : §6.7 · Taille : M · Dépend de : US-001
 
 #### US-091 — Protocole de messages
 *En tant que* développeur, *je veux* un protocole binaire versionné *afin d'échanger* commandes et événements entre le JS et le moteur.
-- [ ] Encodeur/décodeur Rust et décodeur/encodeur JS miroir, avec numéro de version.
-- [ ] Tests croisés : chaque type de message encodé d'un côté est décodé à l'identique de l'autre.
-- [ ] Message inconnu ou malformé → erreur, jamais de panique.
+- [x] Encodeur/décodeur Rust et décodeur/encodeur JS miroir, avec numéro de version.
+- [x] Tests croisés : chaque type de message encodé d'un côté est décodé à l'identique de l'autre.
+- [x] Message inconnu ou malformé → erreur, jamais de panique.
 
 Réf : §6.7 · Taille : M · Dépend de : US-090
 

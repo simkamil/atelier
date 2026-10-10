@@ -128,7 +128,7 @@
       "source_file": "US-V0-V1.md",
       "source_location": "91",
       "story_id": "US-011",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": "us_v0_v1_us_012",
@@ -290,7 +290,7 @@
       "source_file": "US-V0-V1.md",
       "source_location": "261",
       "story_id": "US-053",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": "us_v0_v1_us_054",
@@ -425,7 +425,7 @@
       "source_file": "US-V0-V1.md",
       "source_location": "397",
       "story_id": "US-091",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": "us_v0_v1_us_092",
@@ -2469,6 +2469,94 @@
       "source_file": "data/ucd/README.md",
       "source_location": null,
       "source_url": null
+    },
+    {
+      "id": "docs_us_011_segmentation",
+      "label": "US-011: Segmentation Unicode",
+      "file_type": "document",
+      "norm_label": "us-011: segmentation unicode",
+      "source_file": "docs/us-011-segmentation.md"
+    },
+    {
+      "id": "docs_us_053_kerning_ligatures",
+      "label": "US-053: Crénage et Ligatures",
+      "file_type": "document",
+      "norm_label": "us-053: crenage et ligatures",
+      "source_file": "docs/us-053-kerning-ligatures.md"
+    },
+    {
+      "id": "uax_29",
+      "label": "UAX #29",
+      "file_type": "concept",
+      "norm_label": "uax #29",
+      "rationale": "Unicode text segmentation standard referenced by US-011.",
+      "source_file": "docs/us-011-segmentation.md",
+      "source_location": "3"
+    },
+    {
+      "id": "us_090_wasm_abi",
+      "label": "US-090 WASM ABI",
+      "file_type": "concept",
+      "norm_label": "us-090 wasm abi",
+      "rationale": "The underlying byte-echo ABI that US-091 messages are carried over.",
+      "source_file": "docs/us-091-binary-protocol.md",
+      "source_location": "3"
+    },
+    {
+      "id": "docs_us_091_binary_protocol",
+      "label": "US-091: Binary Message Protocol v1",
+      "file_type": "document",
+      "norm_label": "us-091: binary message protocol v1",
+      "source_file": "docs/us-091-binary-protocol.md"
+    },
+    {
+      "id": "web_readme",
+      "label": "Web Front-end README",
+      "file_type": "document",
+      "norm_label": "web front-end readme",
+      "source_file": "web/README.md"
+    },
+    {
+      "id": "tests_font_layout_reference_readme",
+      "label": "Font Layout Reference README",
+      "file_type": "document",
+      "norm_label": "font layout reference readme",
+      "source_file": "tests/font-layout-reference/README.md"
+    },
+    {
+      "id": "tests_readme",
+      "label": "Test Resources README",
+      "file_type": "document",
+      "norm_label": "test resources readme",
+      "source_file": "tests/README.md"
+    },
+    {
+      "id": "document_docs_us-011-segmentation_md",
+      "label": "docs/us-011-segmentation.md",
+      "file_type": "document",
+      "source_file": "docs/us-011-segmentation.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-053-kerning-ligatures_md",
+      "label": "docs/us-053-kerning-ligatures.md",
+      "file_type": "document",
+      "source_file": "docs/us-053-kerning-ligatures.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-091-binary-protocol_md",
+      "label": "docs/us-091-binary-protocol.md",
+      "file_type": "document",
+      "source_file": "docs/us-091-binary-protocol.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_font-layout-reference_readme_md",
+      "label": "tests/font-layout-reference/README.md",
+      "file_type": "document",
+      "source_file": "tests/font-layout-reference/README.md",
+      "source_location": "1"
     },
     {
       "id": "document_docs_us-010-ucd-tables_md",
@@ -8203,6 +8291,30 @@
       "weight": 1.0
     },
     {
+      "source": "docs_us_091_binary_protocol",
+      "target": "us_090_wasm_abi",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "docs/us-091-binary-protocol.md"
+    },
+    {
+      "source": "tests_readme",
+      "target": "tests_font_layout_reference_readme",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tests/README.md"
+    },
+    {
+      "source": "web_readme",
+      "target": "us_090_wasm_abi",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "web/README.md"
+    },
+    {
       "source": "document_readme_md",
       "target": "spec_document",
       "relation": "references",
@@ -8218,7 +8330,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\docs\\DEVELOPMENT.md",
-      "source_location": "128"
+      "source_location": "139"
     },
     {
       "source": "document_web_readme_md",
@@ -8227,7 +8339,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\web\\README.md",
-      "source_location": "5"
+      "source_location": "11"
     }
   ],
   "hyperedges": [

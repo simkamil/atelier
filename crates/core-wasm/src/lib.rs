@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
 
 /// Maximum size of one allocation or dispatch payload (64 MiB).
+pub mod protocol;
+
 pub const MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum number of bytes owned by the ABI at one time (128 MiB).
 pub const MAX_TOTAL_BYTES: usize = 128 * 1024 * 1024;

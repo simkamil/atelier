@@ -10,6 +10,17 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 
 ## Validation
 
+### Preuve US-011, US-053 et US-091 — 2026-10-11
+
+La [segmentation Unicode](us-011-segmentation.md), le [crénage et les ligatures](us-053-kerning-ligatures.md) et le [protocole Rust/JS](us-091-binary-protocol.md) sont développés et validés. Le backlog compte **29 US terminées sur 158**. Les trois implémentations et trois revues indépendantes utilisent GPT-6 Luna moyen.
+
+Les [25 contrôles](../_bmad-output/implementation-artifacts/text-bridge-validation.json) passent : 260 tests workspace et 70 tests release, corpus Unicode complets, 54 716 sorties HarfBuzz, échanges croisés des dix types, limites et 10 000 mutations sans panic. Les sources et le lock restent identiques pendant la validation. Les 32 paquets restent locaux, et l'ABI optimisée mesure toujours 52 323 octets. La [revue triée](../_bmad-output/implementation-artifacts/text-bridge-review.md) conserve chaque constat et sa résolution.
+
+Le [suivi du démonstrateur](PROTOTYPE-PROGRESS.md) précise les dépendances encore ouvertes. La CI Linux exécute les tests musl, compilés seulement sur l'hôte Windows local.
+
+Le lot précédent (`76efdfee2124112eef5ceee21d67422b062efa80`) a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38089712085), dont l'exécution musl. Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-prototype-foundations.json) en conserve la preuve.
+
+
 ### Preuve US-010, US-051 et US-090 — 2026-10-10
 
 Les [tables Unicode](us-010-ucd-tables.md), les [contours TrueType](us-051-truetype-outlines.md) et l’[ABI WASM manuelle](us-090-wasm-abi.md) ont été développés en parallèle avec GPT-6 Luna moyen, relus par trois agents indépendants et validés. Le [suivi du démonstrateur](PROTOTYPE-PROGRESS.md) rassemble les résultats et les dépendances restantes. Le backlog compte **26 US terminées sur 158**.

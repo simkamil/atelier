@@ -17,6 +17,17 @@ doc=json.loads((out/'story-dependencies.json').read_text(encoding='utf-8'))
 # Preserve source-grounded semantic concepts introduced by the story agents.
 # Their documentation nodes complement, rather than replace, the Rust AST.
 previous=json.loads((out/'graph.json').read_text(encoding='utf-8'))
+# CLI semantic extraction omitted attribution for two explicitly referenced
+# concepts. Ground them in the actual documentation before preservation.
+concept_sources={'uax_29':('docs/us-011-segmentation.md','uax29'),
+                 'us_090_wasm_abi':('docs/us-091-binary-protocol.md','us090')}
+for node in previous['nodes']:
+    if not node.get('source_file') and node['id'] in concept_sources:
+        relative,needle=concept_sources[node['id']]
+        lines=(root/relative).read_text(encoding='utf-8').splitlines()
+        line=next(i+1 for i,value in enumerate(lines) if needle in re.sub(r'[^a-z0-9]','',value.lower()))
+        node['source_file']=relative
+        node['source_location']=str(line)
 known_hyperedges={entry['id'] for entry in doc.get('hyperedges',[])}
 for entry in previous.get('hyperedges',[]):
     if entry['id'] not in known_hyperedges:
@@ -25,8 +36,9 @@ for entry in previous.get('hyperedges',[]):
 document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
 document_paths.update({'crates/font/tests/fixtures/README.md', 'crates/font/tests/fixtures/fixtures.json', 'docs/us-050-opentype-tables.md', 'docs/us-073-selection.md', 'docs/us-074-recovery-journal.md', 'docs/MODEL-FONT-PROGRESS.md', 'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
 document_paths.update(['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md'])
-prototype_docs=['docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
+prototype_docs=['docs/us-011-segmentation.md','docs/us-053-kerning-ligatures.md','docs/us-091-binary-protocol.md','tests/font-layout-reference/README.md','docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
 document_paths.update(prototype_docs)
+document_paths.update({'README.md','web/README.md','tests/README.md'})
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt'))
 known={node['id'] for node in doc['nodes']}
 preserved=set()
@@ -83,7 +95,7 @@ code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
 manifest=root/'tests/format-reference/manifest.json'
 font_manifest=root/'crates/font/tests/fixtures/fixtures.json'
-code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1') if p.is_file()]
+code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tests/font-layout-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1') if p.is_file()]
 ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}

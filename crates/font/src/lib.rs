@@ -7,7 +7,9 @@
 #![forbid(unsafe_code)]
 
 pub mod embedded;
+pub mod layout;
 pub mod outline;
+pub use layout::{FontLayout, GlyphAdjustment, GlyphCluster, LayoutError, LayoutLimits};
 pub use outline::{OutlineError, OutlineLimits};
 
 use std::collections::BTreeMap;

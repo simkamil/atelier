@@ -24,3 +24,5 @@
 # Empty glyphs have an explicit empty last TSV column. Preserve oracle bytes.
 /tests/font-outline-reference/** -text -whitespace
 /tests/unicode-reference/** -text -whitespace
+/tests/font-layout-reference/** -text -whitespace
+/tests/font-layout-reference/layout.tsv -diff

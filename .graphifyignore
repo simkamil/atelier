@@ -11,3 +11,6 @@ tests/image-reference/**/*.bmp
 
 # Official Unicode source data are represented by the manifest and generator.
 data/ucd/17.0.0/**
+
+# Golden Latin layout data are represented by manifest, README and Rust test.
+tests/font-layout-reference/layout.tsv

@@ -36,3 +36,20 @@ le test natif les recalcule en CI. Le garde `check-ucd.ps1` vérifie les sources
 Unicode, leur licence et les corpus. `wasm-abi.mjs` exerce les vrais artefacts
 optimisés produit/test-hooks dans Node, notamment allocations, croissance,
 quota mémoire et panic/réinitialisation. Voir le [suivi](../docs/PROTOTYPE-PROGRESS.md).
+
+Les corpus officiels GraphemeBreakTest (766 cas) et WordBreakTest (1 944 cas)
+sont exécutés intégralement. Un second test vérifie navigation et itération
+dans les deux sens depuis chaque position UTF-8 de ces 2 710 cas, y compris
+les offsets invalides. Le [corpus typographique](font-layout-reference/README.md)
+contient 54 716 sorties indépendantes HarfBuzz sur les vingt faces, consommées
+par Cargo en CI sans installer l'oracle Python.
+
+`wasm-protocol.mjs` compare les dix messages dans les deux directions entre
+Rust et JavaScript, avec golden frames et erreurs. `wasm-protocol-boundaries.mjs`
+vérifie la capacité maximale exacte et son dépassement d'un octet. Reproduction :
+
+```powershell
+cargo build -p atelier-core-wasm --example protocol_oracle --locked --offline
+node tests/wasm-protocol.mjs target/debug/examples/protocol_oracle.exe target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
+node tests/wasm-protocol-boundaries.mjs
+```

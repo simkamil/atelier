@@ -80,6 +80,13 @@ jobs:
           node tests/check-wasm-size.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Build native protocol oracle
+        run: cargo build -p atelier-core-wasm --example protocol_oracle --locked --offline
+      - name: Cross-check Rust and JavaScript protocol and real ABI transport
+        run: node tests/wasm-protocol.mjs target/debug/examples/protocol_oracle.exe target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
+      - name: Check exact protocol capacity boundary in JavaScript
+        run: node tests/wasm-protocol-boundaries.mjs
+
   linux-musl:
     name: Linux musl build and tests
     runs-on: ubuntu-24.04
