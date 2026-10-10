@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! A position-indexed sequence backed by an AVL tree.
+//! Indexed document nodes, atomic transactions, history, selections and recovery.
 //!
 //! Positions are implicit in the in-order traversal. Subtree sizes make rank
 //! lookup and insertion logarithmic, while parent links make the reverse
@@ -9,6 +9,9 @@
 
 use core::fmt;
 use std::collections::BTreeMap;
+
+pub mod journal;
+pub mod selection;
 
 mod history;
 pub use history::{EditKind, History, HistoryAction, HistoryError};

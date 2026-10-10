@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-10",
+  "source_sha256": {
+    ".github/workflows/ci.yml": "2c7176c0cac2f6b6fe6b51a883112a2b0f71ad8580892445a9f7eae76618440b",
+    "Cargo.lock": "90dca81eab6e3a84b1a71944f667fdbed50ce8c1f5c35d9a2f1bd5fa3623d725",
+    "_bmad-output/implementation-artifacts/check-model-font-oracle.py": "0e9a7d7d708389c792d3149fa168fb7e0ec85848b31266706338483f01586e7f",
+    "_bmad-output/implementation-artifacts/generate-font-oracle.py": "5b0fb586bd07572dc9fd88050ecaeae128bdcf907af0b1f974da92659cfd781e",
+    "_bmad-output/implementation-artifacts/model-font-oracle.rs": "1dbbeba11eb277f4bab0ba107eacbce94723475236d35f3aa785d32340778d64",
+    "crates/font/src/lib.rs": "c2d731c9bbc214acfdb2ca91ed519da16034279ce13527541c516e17e88f3b3e",
+    "crates/font/tests/fixtures/README.md": "94311ab3028b0528bbee14a94f5ae2939e390ccca2d4a8749b14e176fdd67b45",
+    "crates/font/tests/fixtures/fixtures.json": "a4ef6998141d1940f34e2b59a6524d57d0e08b614805088e6cbc027f20e60f83",
+    "crates/font/tests/fixtures/font-0-12.font": "0a7b61fbc5da686239186d613e4664e6af0c0a5992b1a854934294e558280366",
+    "crates/font/tests/fixtures/font-0-4.font": "a1b4c7559d9b9e2c58d5d34d1959a8339b496250bd6d7724beb85e9d41b65bf2",
+    "crates/font/tests/fixtures/font-0-6.font": "7f72b911617d96cf9619a58e81223a2454a8da33ea311649bc99afb80c68cf93",
+    "crates/font/tests/fixtures/font-1-12.font": "cbdcd60eb333e3d6336187f335de93a2eb8db60a606cca181c3cf4eb37cde02a",
+    "crates/font/tests/fixtures/font-1-4.font": "5d669b3a4a7af3a1f8bbdb1c2713c6751cca760bfcc7834ed8949321e77d986a",
+    "crates/font/tests/fixtures/font-1-6.font": "b88ff4b733aa436362c18f5a9447a1c612c9c2b9399e7c3a8d616ff30b11acf7",
+    "crates/font/tests/fixtures/two-faces.ttc": "22c95527dd3567db656343b069324e2fac0e0ee4109b5ef96036bfdba59878f3",
+    "crates/font/tests/opentype_fixtures.rs": "125482cef6a4169adb16aea0ac263002f223b176b6c70a81ab30afdcf87b527d",
+    "crates/model/examples/bench_indexed_tree.rs": "252c50df8b773ec42f60f31fc62cc4035b7cf91701286833d7f6a83de049d1cb",
+    "crates/model/src/history.rs": "c36735fa240d8f51f25cb349855c6334d5ce04355117b5219c005d9d2d4f3ea1",
+    "crates/model/src/journal.rs": "1e6977f6c0d3c35ac5ab94c2ced939a89d5675a1fb5119ef299573031eff6e18",
+    "crates/model/src/lib.rs": "c626387490fb78cec8d2f673cbcb387c5e3d4a2d45b743d11e0ea4fa1a21d693",
+    "crates/model/src/selection.rs": "386bf26ea46058c89e479a1738f1e85dfd4efcac63e5e34448d56167bf82c86d"
+  },
+  "font_faces": 8,
+  "selection_cases": 12001,
+  "journal_cases": 267,
+  "font_mutations": 25272,
+  "failures": [],
+  "source_bytes_unchanged": true
+}

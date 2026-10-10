@@ -31,3 +31,5 @@
 !.env.example
 __pycache__/
 *.pyc
+
+/_bmad-output/implementation-artifacts/model-font-review-*.md

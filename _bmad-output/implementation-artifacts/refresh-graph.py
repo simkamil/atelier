@@ -23,7 +23,7 @@ for entry in previous.get('hyperedges',[]):
         doc.setdefault('hyperedges',[]).append(entry)
         known_hyperedges.add(entry['id'])
 document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
-document_paths.update({'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
+document_paths.update({'crates/font/tests/fixtures/README.md', 'crates/font/tests/fixtures/fixtures.json', 'docs/us-050-opentype-tables.md', 'docs/us-073-selection.md', 'docs/us-074-recovery-journal.md', 'docs/MODEL-FONT-PROGRESS.md', 'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
 known={node['id'] for node in doc['nodes']}
 preserved=set()
 for node in previous['nodes']:
@@ -63,7 +63,7 @@ for i,m in enumerate(headings):
         for edge in doc['edges']:
             if edge.get('source')==node_id:
                 edge['source_location']=str(ref_line)
-for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','docs/us-032-opaque-xml.md','docs/us-072-undo-history.md','docs/us-081-svg-backend.md','docs/EDITING-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
+for rel in ['crates/font/tests/fixtures/README.md','README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','docs/us-032-opaque-xml.md','docs/us-072-undo-history.md','docs/us-081-svg-backend.md','docs/EDITING-PROGRESS.md','docs/us-050-opentype-tables.md','docs/us-073-selection.md','docs/us-074-recovery-journal.md','docs/MODEL-FONT-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
     p=root/rel
     if p.is_file():
         contents=p.read_text(encoding='utf-8')
@@ -77,11 +77,46 @@ code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if
 # Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
 manifest=root/'tests/format-reference/manifest.json'
-code_inputs=code+([manifest] if manifest.is_file() else [])
+font_manifest=root/'crates/font/tests/fixtures/fixtures.json'
+code_inputs=code+[p for p in (manifest,font_manifest) if p.is_file()]
 ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}
 node_ids={n['id'] for n in merged['nodes']}
+# Resolve verified workspace imports that the Rust extractor leaves unqualified.
+# Preserve std and wildcard placeholders in diagnostics instead of inventing nodes.
+local_imports={
+    'atelier_compress':'crates_compress_src_lib',
+    'atelier_font':'crates_font_src_lib',
+    'atelier_unicode':'crates_unicode_src_lib',
+    'atelier_xml':'crates_xml_src_lib',
+    'atelier_bench':'tools_bench_src_lib',
+    'crc32':'crates_compress_src_lib_crc32',
+    'parse_csv':'tools_bench_src_lib_parse_csv',
+    'history':'crates_model_src_history',
+    'svg':'crates_render_src_svg',
+}
+for edge in merged['edges']:
+    if edge.get('relation')!='imports_from' or edge['target'] in node_ids:
+        continue
+    replacement=local_imports.get(edge['target'])
+    if edge['target']=='crate':
+        source=Path(edge.get('source_file',''))
+        if len(source.parts)>=3 and source.parts[0] in ('crates','tools'):
+            prefix='_'.join(source.parts[:2]).replace('-','_')+'_src_'
+            replacement=next((prefix+stem for stem in ('lib','main') if prefix+stem in node_ids),None)
+    if replacement in node_ids:
+        edge['target']=replacement
+# File modules must retain a located link to their declaring root module.
+for source in code:
+    for match in re.finditer(r'^(?:pub\s+)?mod\s+(\w+)\s*;',source.read_text(encoding='utf-8'),re.M):
+        target=source.parent/(match.group(1)+'.rs')
+        if not target.is_file():
+            continue
+        source_id=source.relative_to(root).with_suffix('').as_posix().replace('/','_').replace('-','_')
+        target_id=target.relative_to(root).with_suffix('').as_posix().replace('/','_').replace('-','_')
+        if source_id in node_ids and target_id in node_ids:
+            merged['edges'].append({'source':source_id,'target':target_id,'relation':'declares_module','confidence':'EXTRACTED','confidence_score':1.0,'source_file':source.relative_to(root).as_posix(),'source_location':str(source.read_text(encoding='utf-8')[:match.start()].count('\n')+1)})
 unresolved=[e for e in merged['edges'] if e['source'] not in node_ids or e['target'] not in node_ids]
 (out/'unresolved-structural-references.json').write_text(json.dumps(unresolved,ensure_ascii=False,indent=2),encoding='utf-8')
 merged['edges']=[e for e in merged['edges'] if e not in unresolved]

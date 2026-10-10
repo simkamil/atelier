@@ -1,0 +1,14 @@
+{
+  "generated_by": "in-house FontTools fixtures; no third-party font data",
+  "license": "AGPL-3.0-or-later",
+  "fixtures": [
+    {"file":"font-0-4.font","sha256":"a1b4c7559d9b9e2c58d5d34d1959a8339b496250bd6d7724beb85e9d41b65bf2","face":0,"cmap":4},
+    {"file":"font-0-6.font","sha256":"7f72b911617d96cf9619a58e81223a2454a8da33ea311649bc99afb80c68cf93","face":0,"cmap":6},
+    {"file":"font-0-12.font","sha256":"0a7b61fbc5da686239186d613e4664e6af0c0a5992b1a854934294e558280366","face":0,"cmap":12},
+    {"file":"font-1-4.font","sha256":"5d669b3a4a7af3a1f8bbdb1c2713c6751cca760bfcc7834ed8949321e77d986a","face":0,"cmap":4},
+    {"file":"font-1-6.font","sha256":"b88ff4b733aa436362c18f5a9447a1c612c9c2b9399e7c3a8d616ff30b11acf7","face":0,"cmap":6},
+    {"file":"font-1-12.font","sha256":"cbdcd60eb333e3d6336187f335de93a2eb8db60a606cca181c3cf4eb37cde02a","face":0,"cmap":12},
+    {"file":"two-faces.ttc","sha256":"22c95527dd3567db656343b069324e2fac0e0ee4109b5ef96036bfdba59878f3","face":0},
+    {"file":"two-faces.ttc","sha256":"22c95527dd3567db656343b069324e2fac0e0ee4109b5ef96036bfdba59878f3","face":1}
+  ]
+}

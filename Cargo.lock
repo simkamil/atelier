@@ -81,6 +81,9 @@ version = "0.1.0"
 [[package]]
 name = "atelier-model"
 version = "0.1.0"
+dependencies = [
+ "atelier-compress",
+]
 
 [[package]]
 name = "atelier-raster"

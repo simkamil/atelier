@@ -231,11 +231,13 @@ Réf : F-TXT-032 · Taille : S · Dépend de : US-001
 
 #### US-050 — Tables de base OpenType
 *En tant que* développeur, *je veux* lire les tables de base des polices *afin d'obtenir* les métriques et la correspondance caractère → glyphe.
-- [ ] Fichiers TTF, OTF et collections TTC.
-- [ ] Tables `cmap` (formats 4, 6, 12, 14), `head`, `hhea`, `hmtx`, `maxp`, `name`, `OS/2`, `post`.
-- [ ] Toutes les lectures bornées et vérifiées ; police invalide → erreur propre.
+- [x] Fichiers TTF, OTF et collections TTC.
+- [x] Tables `cmap` (formats 4, 6, 12, 14), `head`, `hhea`, `hmtx`, `maxp`, `name`, `OS/2`, `post`.
+- [x] Toutes les lectures bornées et vérifiées ; police invalide → erreur propre.
 
 Réf : §6.4 · Taille : M · Dépend de : US-001
+
+Validation — 2026-10-10 : [API et contrat](docs/us-050-opentype-tables.md), [preuves du lot](docs/MODEL-FONT-PROGRESS.md).
 
 #### US-051 — Contours TrueType
 *En tant que* développeur, *je veux* convertir les contours `glyf` en chemins *afin de* dessiner les glyphes.
@@ -330,19 +332,23 @@ Réf : F-COM-009 · Taille : S · Dépend de : US-071
 
 #### US-073 — Modèle de sélection
 *En tant que* développeur, *je veux* une sélection exprimée par identifiants de nœud *afin qu'elle* reste valide après chaque modification.
-- [ ] Ancre et tête (nœud + décalage), plusieurs plages.
-- [ ] Positions transformées par chaque opération (insertion avant, suppression englobante, fusion, scission).
+- [x] Ancre et tête (nœud + décalage), plusieurs plages.
+- [x] Positions transformées par chaque opération (insertion avant, suppression englobante, fusion, scission).
 
 Réf : §6.3 · Taille : M · Dépend de : US-071
 
+Validation — 2026-10-10 : [API et contrat](docs/us-073-selection.md), [preuves du lot](docs/MODEL-FONT-PROGRESS.md).
+
 #### US-074 — Journal de transactions
 *En tant que* développeur, *je veux* sérialiser le journal de transactions *afin de* permettre la récupération après crash.
-- [ ] Format binaire versionné, ajout incrémental, somme de contrôle par entrée.
-- [ ] Chaque génération associe un identifiant de document, un instantané autonome de base (ressources incluses), une version de format et un journal portant le même identifiant de génération avec des numéros de séquence. Le contrat accepte un document sans fichier source.
-- [ ] Rejeu depuis cet instantané → état identique au dernier point durable ; seules les transactions validées et complètes sont appliquées. Une fin tronquée, une transaction incomplète ou une somme de contrôle incorrecte arrête le rejeu au dernier état valide, sans appliquer les entrées suivantes ; une génération incompatible est refusée avec une erreur propre.
-- [ ] Tests : document vierge modifié, fichier source enregistré ou remplacé depuis la création du journal, fin tronquée au milieu d'une transaction, mauvais identifiant de génération. Le fichier source courant n'est jamais utilisé comme base implicite.
+- [x] Format binaire versionné, ajout incrémental, somme de contrôle par entrée.
+- [x] Chaque génération associe un identifiant de document, un instantané autonome de base (ressources incluses), une version de format et un journal portant le même identifiant de génération avec des numéros de séquence. Le contrat accepte un document sans fichier source.
+- [x] Rejeu depuis cet instantané → état identique au dernier point durable ; seules les transactions validées et complètes sont appliquées. Une fin tronquée, une transaction incomplète ou une somme de contrôle incorrecte arrête le rejeu au dernier état valide, sans appliquer les entrées suivantes ; une génération incompatible est refusée avec une erreur propre.
+- [x] Tests : document vierge modifié, fichier source enregistré ou remplacé depuis la création du journal, fin tronquée au milieu d'une transaction, mauvais identifiant de génération. Le fichier source courant n'est jamais utilisé comme base implicite.
 
 Réf : F-COM-006, §6.13 · Taille : S · Dépend de : US-071
+
+Validation — 2026-10-10 : [API et contrat](docs/us-074-recovery-journal.md), [preuves du lot](docs/MODEL-FONT-PROGRESS.md).
 
 ## E0.9 — Liste d'affichage
 

@@ -2,13 +2,25 @@
 
 Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus ; ils sont actuellement des emplacements documentés.
 
-Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques et historique annuler/rétablir, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques, historique annuler/rétablir, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; `atelier-font` lit les tables de base OpenType et les cmap 4/6/12/14 ; les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Aucun bloc `unsafe` n'est nécessaire dans ce socle ; toute future utilisation devra être isolée et commentée selon la spécification.
 
 ## Validation
+
+### Preuve US-050, US-073 et US-074 — 2026-10-10
+
+Trois US développées avec GPT-6 Luna moyen en parallèle, relues et validées : [tables OpenType](us-050-opentype-tables.md), [sélections](us-073-selection.md) et [journal de récupération](us-074-recovery-journal.md). Le [suivi du lot](MODEL-FONT-PROGRESS.md) décrit les garanties, les limites d’intégration et les preuves. Le backlog compte **20 US terminées sur 158**.
+
+**187 tests workspace et 51 tests release passent** (40 modèle, 11 polices). Les [14 contrôles locaux](../_bmad-output/implementation-artifacts/model-font-validation.json) couvrent builds Windows/WASM/musl, compilation des tests musl, tests, Clippy hôte/WASM, format, SPDX, garde et métadonnées des 31 paquets locaux. Le modèle utilise CRC32 via la dépendance locale `atelier-compress` ; aucune dépendance externe n’est ajoutée. Les sources et le lock restent identiques pendant les contrôles.
+
+Le [comparateur indépendant](../_bmad-output/implementation-artifacts/model-font-oracle.json) valide huit faces avec FontTools, 25 272 mutations/troncatures sans panique, 12 001 sélections et 267 cas de journal. Les fixtures synthétiques TTF/OTF/TTC sont également testées par Rust en CI. La [revue triée](../_bmad-output/implementation-artifacts/model-font-review.md) n’a aucun constat différé. La CI WASM inclut les polices ; le job Linux exécute les tests musl du commit publié, tandis que l’hôte local les compile seulement.
+
+### Validation distante du lot édition — 2026-10-10
+
+Le commit `77622b0c410ff9f5686325e81bca1e71cf383642` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38068167771). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-editing.json) conserve la preuve du lot précédent ; il ne couvre pas les modifications du présent lot.
 
 ### Preuve US-032, US-072 et US-081 — 2026-10-10
 

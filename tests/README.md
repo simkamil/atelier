@@ -16,3 +16,10 @@ Les tests Rust de XML opaque, historique et SVG vivent dans leurs crates et
 s’exécutent en CI sans runtime externe. Les comparaisons à ElementTree et à un
 modèle d’historique, ainsi que la rasterisation SVG indépendante, sont des
 contrôles complémentaires d’agent : voir le [suivi du lot](../docs/EDITING-PROGRESS.md).
+
+Les fixtures synthétiques OpenType vivent dans `crates/font/tests/fixtures/` ;
+les tests Rust du parseur, des sélections et du journal s’exécutent dans la CI
+sans Python. Le contrôle complémentaire `check-model-font-oracle.py` compare
+les faces à FontTools, les positions à un modèle Python et les enveloppes
+binaires à `struct`/`zlib.crc32`. Ces outils restent réservés aux agents ; voir
+le [suivi du lot](../docs/MODEL-FONT-PROGRESS.md).

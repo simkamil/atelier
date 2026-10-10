@@ -2,6 +2,8 @@
 *.bin binary
 *.out binary
 *.zip binary
+*.font binary
+*.ttc binary
 # Keep malformed encodings and XML EOL-normalization fixtures byte-exact.
 /tests/format-reference/** -text -whitespace
 # This negative fixture is deliberately not decodable as UTF-8.
