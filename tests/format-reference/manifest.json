@@ -1,0 +1,406 @@
+{
+  "schema_version": 1,
+  "generated_by": "_bmad-output/implementation-artifacts/generate-format-references.py",
+  "deterministic": true,
+  "zip_semantics": "ZIP names map to UTF-8 strings; methods 0=stored, 8=deflate; crc32 lowercase hex. Error names are semantic categories, implementation error enums may differ.",
+  "xml_semantics": "Expected expanded element/attribute names use ElementTree {uri}local convention. Lexical CDATA distinction may be omitted by standard-library parsers.",
+  "fixtures": [
+    {
+      "path": "zip/valid-mixed.zip",
+      "sha256": "778f679b98e3ca5237ff7d0a506b3350c92cdad1fcdd0592320083044b1f540f",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "plain.txt",
+          "data_utf8": "plain payload",
+          "method": 0,
+          "crc32": "96e7f0c6"
+        },
+        {
+          "name": "data.txt",
+          "data_utf8": "alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha ",
+          "method": 8,
+          "crc32": "7cff918f"
+        },
+        {
+          "name": "empty",
+          "data_utf8": "",
+          "method": 0,
+          "crc32": "00000000"
+        },
+        {
+          "name": "été.txt",
+          "data_utf8": "utf8 name",
+          "method": 0,
+          "crc32": "cace7f5f"
+        }
+      ],
+      "note": "Classic EOCD; stored/deflate; UTF-8 flag; empty entry."
+    },
+    {
+      "path": "zip/valid-cp437.zip",
+      "sha256": "b367122c83a2d7bd469e4640eb1bf98c2c86dfa89590b56d91830d9f525346b7",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "café.txt",
+          "data_utf8": "CP437 name",
+          "method": 0,
+          "crc32": "db80cee0"
+        }
+      ],
+      "note": "Raw filename byte 0x82 is CP437 é; UTF-8 flag clear."
+    },
+    {
+      "path": "zip/valid-descriptor-signed.zip",
+      "sha256": "73863b313c947b914514404c79ec4e4ef2b876c1f87420a9f54a57b4f63ac02f",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "desc.txt",
+          "data_utf8": "descriptor payload",
+          "method": 8,
+          "crc32": "998727a0"
+        }
+      ],
+      "note": "General-purpose bit 3; signed data descriptor."
+    },
+    {
+      "path": "zip/valid-descriptor-unsigned.zip",
+      "sha256": "6cc5a3ae2dec498bb888cf5a415b6af80d1e7e26aa1219e01f4437e37f04d07a",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "desc.txt",
+          "data_utf8": "descriptor payload",
+          "method": 8,
+          "crc32": "998727a0"
+        }
+      ],
+      "note": "General-purpose bit 3; unsigned data descriptor."
+    },
+    {
+      "path": "zip/valid-force-zip64.zip",
+      "sha256": "a17ccc7f69f5e194aa9c897ce90cb0f25fa1e21e52b3cde3db9565c4dfa6aba0",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "small.txt",
+          "data_utf8": "zip64 small",
+          "method": 0,
+          "crc32": "011e9477"
+        }
+      ],
+      "note": "ZIP64 EOCD/locator and per-entry extra despite tiny data."
+    },
+    {
+      "path": "zip/unsafe-traversal.zip",
+      "sha256": "70889b512c58a14548d8ebb2d81dbbf24ce5f19463d599312673dff8e6e9fc45",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "../escape.txt",
+          "data_utf8": "x",
+          "method": 0,
+          "crc32": "8cdc1683",
+          "expected_name_safety": "unsafe"
+        }
+      ],
+      "note": "Structurally valid; name must be flagged unsafe, never extracted implicitly."
+    },
+    {
+      "path": "zip/bad-crc.zip",
+      "sha256": "acc62dbe2755e1b7faa1f76d52cfac7d17438b03968ff42dc1de6dbee231f8a8",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "bad.txt",
+          "expected_error": "crc_mismatch"
+        }
+      ],
+      "note": "Payload byte altered; central/local advertised CRC remains original."
+    },
+    {
+      "path": "zip/truncated-payload.zip",
+      "sha256": "3cc923436714cfddf1c5a10950a23dd3bf79d8421728426b851f2c86bbdff912",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "truncated.txt",
+          "expected_error": "truncated_or_missing_central_directory"
+        }
+      ],
+      "note": "Tail removed across archive directory/end records."
+    },
+    {
+      "path": "zip/limit-advertised-size.zip",
+      "sha256": "003c86675585d225ade4fb09b5d127d5a4b8824fee130ce775bd9ec203579db9",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "limit.bin",
+          "expected_error": "declared_size_limit"
+        }
+      ],
+      "note": "Central directory advertises huge sizes; reject by configured limits before allocation."
+    },
+    {
+      "path": "zip/writer-golden-classic.zip",
+      "sha256": "02803af7522f6644dfc7d196cf1dab2e8476ed6e693aef01e74c95f85e7ba00a",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "café.txt",
+          "data_utf8": "stored golden: café\n",
+          "method": 0,
+          "crc32": "d8367a02"
+        },
+        {
+          "name": "東京/🙂.xml",
+          "data_utf8": "<r>zip golden 🙂</r>",
+          "method": 8,
+          "crc32": "b8e7f771"
+        }
+      ],
+      "note": "Captured from the stable atelier-zip Writer; immutable wire bytes; validate independently with Python zipfile.",
+      "writer_options": {
+        "force_zip64": false,
+        "timestamp": null,
+        "compression_level": "Normal",
+        "entries": [
+          {
+            "name": "café.txt",
+            "method": "Store",
+            "payload_utf8": "stored golden: café\n"
+          },
+          {
+            "name": "東京/🙂.xml",
+            "method": "Deflate",
+            "payload_utf8": "<r>zip golden 🙂</r>"
+          }
+        ]
+      }
+    },
+    {
+      "path": "zip/writer-golden-zip64.zip",
+      "sha256": "e59c2fe18777f75ef4dbfd3f8f7bea94e516bb48aaf47d9b891cf01082ce10f3",
+      "kind": "zip",
+      "entries": [
+        {
+          "name": "café.txt",
+          "data_utf8": "stored golden: café\n",
+          "method": 0,
+          "crc32": "d8367a02"
+        },
+        {
+          "name": "東京/🙂.xml",
+          "data_utf8": "<r>zip golden 🙂</r>",
+          "method": 8,
+          "crc32": "b8e7f771"
+        }
+      ],
+      "note": "Captured from the stable atelier-zip Writer; immutable wire bytes; validate independently with Python zipfile.",
+      "writer_options": {
+        "force_zip64": true,
+        "timestamp": null,
+        "compression_level": "Normal",
+        "entries": [
+          {
+            "name": "café.txt",
+            "method": "Store",
+            "payload_utf8": "stored golden: café\n"
+          },
+          {
+            "name": "東京/🙂.xml",
+            "method": "Deflate",
+            "payload_utf8": "<r>zip golden 🙂</r>"
+          }
+        ]
+      }
+    },
+    {
+      "path": "xml/utf8-boundaries.xml",
+      "sha256": "246d44d48ec4b92d14b429d12a65d88d7c51c57f70570b0bb16dc833db6c3b8c",
+      "kind": "xml",
+      "expected": {
+        "valid": true,
+        "root": "r",
+        "text": "é𝄞& 🙂",
+        "encoding": "utf-8"
+      },
+      "note": "Contains 2/4-byte UTF-8, predefined and numeric references."
+    },
+    {
+      "path": "xml/utf16le-bom.xml",
+      "sha256": "3c9530f0e336440bfe0d4dc5ccf3fdb70c3fafbfb713bcf3f4acf9aecffdf25e",
+      "kind": "xml",
+      "expected": {
+        "valid": true,
+        "root": "r",
+        "text": "é𝄞",
+        "encoding": "utf-16le"
+      },
+      "note": "UTF-16LE BOM; readers should handle split code units/surrogate pair."
+    },
+    {
+      "path": "xml/utf16be-bom.xml",
+      "sha256": "6dba6600e3b10e007ca94ea3198e35e15a6795e9c38102bfd1436e55d71f2b9b",
+      "kind": "xml",
+      "expected": {
+        "valid": true,
+        "root": "r",
+        "text": "é𝄞",
+        "encoding": "utf-16be"
+      },
+      "note": "UTF-16BE BOM."
+    },
+    {
+      "path": "xml/namespaces.xml",
+      "sha256": "24b88203443c104c5ee80e2b0e9b4a03c426a20e45943e99f3091e51c2f8e374",
+      "kind": "xml",
+      "expected": {
+        "valid": true,
+        "expanded_names": [
+          {
+            "element": "{urn:base}root",
+            "attrs": {
+              "plain": "v",
+              "{urn:one}a": "1"
+            }
+          },
+          {
+            "element": "{urn:one}item",
+            "attrs": {
+              "{urn:one}a": "2"
+            }
+          },
+          {
+            "element": "{urn:base}inner",
+            "attrs": {
+              "{urn:two}a": "3"
+            }
+          },
+          {
+            "element": "clear",
+            "attrs": {}
+          },
+          {
+            "element": "item",
+            "attrs": {}
+          }
+        ]
+      },
+      "note": "Default namespace applies to elements only; nested prefix shadow and empty-default reset. Namespaced attribute tuples use ElementTree expanded syntax."
+    },
+    {
+      "path": "xml/misc-constructs.xml",
+      "sha256": "8ba3bc3600fac4777a94198452bb9d31c37b20b3bf10a8e6f0c9719333cfbd41",
+      "kind": "xml",
+      "expected": {
+        "valid": true,
+        "root": "r",
+        "text": "a<&A&",
+        "pi": "build stable",
+        "comment": "comment",
+        "cdata": "text-equivalent",
+        "doctype": "no-expansion"
+      },
+      "note": "Benign internal subset, PI, comment, CDATA and references; ElementTree/minidom may omit lexical distinctions."
+    },
+    {
+      "path": "xml/normalization.xml",
+      "sha256": "3bc4511ce2329ef3629d37f20823bbceeb84e9f3a54ecbbd84e66bf86841107f",
+      "kind": "xml",
+      "expected": {
+        "valid": true,
+        "root": "r",
+        "attributes": {
+          "a": "x  y z\r"
+        },
+        "text": "a\nb\nc"
+      },
+      "note": "XML 1.0 EOL normalization: literal CRLF/CR in content become LF; literal tab/space/CRLF in CDATA attribute become spaces, while numeric CR reference is preserved."
+    },
+    {
+      "path": "xml/predefined-numeric-entities.xml",
+      "sha256": "2ffdd6c7a84e84c78f78482c564e414e29e5b4c98f7ee03c9e3594712031576f",
+      "kind": "xml",
+      "expected": {
+        "valid": true,
+        "root": "r",
+        "text": "<>'\"&AA"
+      },
+      "note": "Five predefined entities and decimal/hex character references."
+    },
+    {
+      "path": "xml/malformed-mismatched.xml",
+      "sha256": "dc2f836fb5e440b1ad6349eab478a51bdc049aab31d771bcee888c80cd9e3fea",
+      "kind": "xml",
+      "expected": {
+        "valid": false,
+        "error": "mismatched_tags"
+      },
+      "note": "Must fail strict XML parsing; expected error category is semantic, exact diagnostics vary."
+    },
+    {
+      "path": "xml/malformed-unknown-entity.xml",
+      "sha256": "10c027fe95be1264eb3c4167fdf8ca44b7e0af7729b48a76fc7f94b44c12b0a8",
+      "kind": "xml",
+      "expected": {
+        "valid": false,
+        "error": "unknown_entity"
+      },
+      "note": "Must fail strict XML parsing; expected error category is semantic, exact diagnostics vary."
+    },
+    {
+      "path": "xml/malformed-invalid-char.xml",
+      "sha256": "6fce3c856b3670b424c7c9c1cb3e8728e91f6568f88b32cb0beb1bfc82a41497",
+      "kind": "xml",
+      "expected": {
+        "valid": false,
+        "error": "illegal_xml_char"
+      },
+      "note": "Must fail strict XML parsing; expected error category is semantic, exact diagnostics vary."
+    },
+    {
+      "path": "xml/malformed-truncated-utf8.xml",
+      "sha256": "d3803891d677b0bb4ea344cf5b5a644682fdd85fa93a39ac189265334a2de8cd",
+      "kind": "xml",
+      "expected": {
+        "valid": false,
+        "error": "invalid_utf8"
+      },
+      "note": "Must fail strict XML parsing; expected error category is semantic, exact diagnostics vary."
+    },
+    {
+      "path": "xml/malformed-unbound-prefix.xml",
+      "sha256": "8822805ed02b9971e0157ae2fafb09fe14ead7eb35643dc876be644b80f156e3",
+      "kind": "xml",
+      "expected": {
+        "valid": false,
+        "error": "unbound_namespace_prefix"
+      },
+      "note": "Must fail strict XML parsing; expected error category is semantic, exact diagnostics vary."
+    },
+    {
+      "path": "xml/malformed-duplicate-expanded-attr.xml",
+      "sha256": "f635c145ce9af48fa9258dd8934f3982c3d10d61407933343149ad53a5b019f1",
+      "kind": "xml",
+      "expected": {
+        "valid": false,
+        "error": "duplicate_expanded_attribute"
+      },
+      "note": "Must fail strict XML parsing; expected error category is semantic, exact diagnostics vary."
+    },
+    {
+      "path": "xml/doctype-no-expansion.xml",
+      "sha256": "b25f5001f43c0709971a33d208edbf460acb6bb4d365caf5a912c8103df1fb7c",
+      "kind": "xml",
+      "expected": {
+        "valid": false,
+        "error": "doctype_entity_not_expanded"
+      },
+      "note": "Security corpus: implementation must not expand entities. ElementTree may raise recursive-entity error; minidom behavior differs."
+    }
+  ]
+}

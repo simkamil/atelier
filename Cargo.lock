@@ -128,3 +128,7 @@ version = "0.1.0"
 [[package]]
 name = "atelier-zip"
 version = "0.1.0"
+dependencies = [
+ "atelier-compress",
+ "atelier-unicode",
+]

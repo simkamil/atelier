@@ -143,18 +143,22 @@ Validation US-021 (2026-10-10) : [contrats, preuves et limites](docs/DEVELOPMENT
 
 #### US-022 — Lecture ZIP
 *En tant que* développeur, *je veux* lire les archives ZIP *afin d'ouvrir* les documents OOXML et ODF.
-- [ ] Répertoire central, Zip64, méthodes stockée et deflate, descripteurs de données, noms UTF-8 et CP437.
-- [ ] Limites : taux de compression maximal, taille décompressée totale, nombre d'entrées, longueur des noms.
-- [ ] Noms d'entrée normalisés (pas de `..`, pas de chemin absolu).
-- [ ] Archive tronquée ou corrompue → erreur propre ; entrées lisibles quand même accessibles.
+- [x] Répertoire central, Zip64, méthodes stockée et deflate, descripteurs de données, noms UTF-8 et CP437.
+- [x] Limites : taux de compression maximal, taille décompressée totale, nombre d'entrées, longueur des noms.
+- [x] Noms d'entrée normalisés (pas de `..`, pas de chemin absolu).
+- [x] Archive tronquée ou corrompue → erreur propre ; entrées lisibles quand même accessibles.
+
+Validation : développée et validée le 2026-10-10; [contrat et preuves](docs/us-022-023-zip.md).
 
 Réf : §6.13 · Taille : M · Dépend de : US-020, US-014
 
 #### US-023 — Écriture ZIP
 *En tant que* développeur, *je veux* écrire des archives ZIP *afin d'enregistrer* les documents.
-- [ ] Ordre des entrées contrôlé par l'appelant, horodatage fixe en option (sortie déterministe).
-- [ ] Zip64 automatique au-delà des limites 32 bits.
-- [ ] Archives produites lisibles par US-022 et par l'Explorateur Windows.
+- [x] Ordre des entrées contrôlé par l'appelant, horodatage fixe en option (sortie déterministe).
+- [x] Zip64 automatique au-delà des limites 32 bits.
+- [x] Archives produites lisibles par US-022 et par l'Explorateur Windows.
+
+Validation : développée et validée le 2026-10-10; [contrat et preuves](docs/us-022-023-zip.md).
 
 Réf : §6.2 `zip` · Taille : S · Dépend de : US-021
 
@@ -162,18 +166,22 @@ Réf : §6.2 `zip` · Taille : S · Dépend de : US-021
 
 #### US-030 — Analyseur XML en flux
 *En tant que* développeur, *je veux* un analyseur XML en flux avec espaces de noms *afin de* lire OOXML et ODF.
-- [ ] Éléments, attributs, entités prédéfinies et numériques, CDATA, commentaires, instructions de traitement, espaces de noms résolus.
-- [ ] Encodages UTF-8 et UTF-16.
-- [ ] Les DTD sont ignorées : aucune entité externe, aucune expansion d'entité (protection « billion laughs »).
-- [ ] Limites de profondeur, de taille d'attribut et de nombre d'attributs.
-- [ ] Erreurs avec ligne et colonne ; mode tolérant pour les documents légèrement malformés.
+- [x] Éléments, attributs, entités prédéfinies et numériques, CDATA, commentaires, instructions de traitement, espaces de noms résolus.
+- [x] Encodages UTF-8 et UTF-16.
+- [x] Les DTD sont ignorées : aucune entité externe, aucune expansion d'entité (protection « billion laughs »).
+- [x] Limites de profondeur, de taille d'attribut et de nombre d'attributs.
+- [x] Erreurs avec ligne et colonne ; mode tolérant pour les documents légèrement malformés.
+
+Validation : développée et validée le 2026-10-10; [contrat et preuves](docs/us-030-031-xml.md).
 
 Réf : §6.13 · Taille : L · Dépend de : US-014
 
 #### US-031 — Écrivain XML
 *En tant que* développeur, *je veux* un écrivain XML *afin de* générer les parties OOXML.
-- [ ] Échappement correct, déclarations d'espaces de noms, déclaration XML, sortie déterministe.
-- [ ] Sortie relisible par US-030 (aller-retour testé).
+- [x] Échappement correct, déclarations d'espaces de noms, déclaration XML, sortie déterministe.
+- [x] Sortie relisible par US-030 (aller-retour testé).
+
+Validation : développée et validée le 2026-10-10; [contrat et preuves](docs/us-030-031-xml.md).
 
 Réf : §6.2 `xml` · Taille : S · Dépend de : US-030
 

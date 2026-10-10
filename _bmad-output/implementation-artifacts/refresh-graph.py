@@ -22,7 +22,8 @@ for entry in previous.get('hyperedges',[]):
     if entry['id'] not in known_hyperedges:
         doc.setdefault('hyperedges',[]).append(entry)
         known_hyperedges.add(entry['id'])
-document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
+document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
+document_paths.add('docs/FORMATS-PROGRESS.md')
 known={node['id'] for node in doc['nodes']}
 preserved=set()
 for node in previous['nodes']:
@@ -62,7 +63,7 @@ for i,m in enumerate(headings):
         for edge in doc['edges']:
             if edge.get('source')==node_id:
                 edge['source_location']=str(ref_line)
-for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
+for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','docs/FORMATS-PROGRESS.md','web/README.md','data/README.md','tests/README.md','.github/workflows/ci.yml']:
     p=root/rel
     if p.is_file():
         contents=p.read_text(encoding='utf-8')
@@ -73,7 +74,11 @@ for rel in ['README.md','docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/u
             doc['edges']=[e for e in doc['edges'] if not(e['source']==node_id and e['target']=='spec_document')]
             doc['edges'].append({'source':node_id,'target':'spec_document','relation':'references','confidence':'EXTRACTED','confidence_score':1.0,'source_file':str(p),'source_location':str(contents[:contents.index('SPEC.md')].count('\n')+1)})
 code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if 'target' not in p.parts]
-ast=extract(code,cache_root=root,root=root,parallel=False)
+# Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
+# The Graphify CLI indexes it too; dropping it would lose located source nodes.
+manifest=root/'tests/format-reference/manifest.json'
+code_inputs=code+([manifest] if manifest.is_file() else [])
+ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}
 node_ids={n['id'] for n in merged['nodes']}
@@ -112,6 +117,9 @@ verified_symbol_replacements={
     # the explicit lifetime in the impl identifier. Verified same methods.
     'crates_compress_src_lib_bitwriter_finish':'crates_compress_src_lib_bitwriter_a_finish',
     'crates_compress_src_lib_bitwriter_write':'crates_compress_src_lib_bitwriter_a_write',
+    # ZIP split per-entry size/ratio checks from the cumulative check, which now
+    # runs after duplicate classification. Both replacement functions exist.
+    'crates_zip_src_lib_size_limit':'crates_zip_src_lib_entry_size_limit',
 }
 for node in removed:
     key=source_key(node)
@@ -132,7 +140,7 @@ if not to_json(g,communities,out/'graph.json',community_labels=labels,force=bool
     raise RuntimeError('Refused to overwrite graph with smaller graph')
 report=generate(g,communities,cohesion,labels,gods,surprises,detection,{'input':0,'output':0},str(root),suggested_questions=questions)
 report += f'\nRéférences AST externes non résolues exclues du graphe : {len(unresolved)} (détail dans unresolved-structural-references.json). Le graphe simple peut fusionner plusieurs relations entre les mêmes symboles ; les relations brutes restent dans .graphify_extract.json.\n'
-report += f'\n## Périmètre de cette mise à jour\n\nLa carte combine les dépendances documentaires déclarées (158 US), l’AST des sources Rust et les métadonnées Cargo réellement présentes. Les crates vides ne représentent pas des fonctionnalités implémentées. La commande `py -m graphify . --cargo` a réussi après mise en cache complète des documents et exclusion du runtime agent ; les API locales de Graphify régénèrent ce rapport et ses libellés. Cargo.toml est couvert par les métadonnées de ses {len(cargo["nodes"])} paquets, même si son extraction AST produit zéro nœud. Le coût LLM de cette mise à jour est nul ; le coût historique reste dans cost.json.\n'
+report += f'\n## Périmètre de cette mise à jour\n\nLa carte combine les dépendances documentaires déclarées (158 US), l’AST des sources Rust et les métadonnées Cargo réellement présentes. Les crates vides ne représentent pas des fonctionnalités implémentées. La commande `py -m graphify . --cargo` a réussi après mise en cache des documents et exclusion du runtime agent ; les API locales de Graphify régénèrent ce rapport et ses libellés. Cargo.toml est couvert par les métadonnées de ses {len(cargo["nodes"])} paquets, même si son extraction AST produit zéro nœud. Cette génération locale par API n’utilise pas de LLM ; les coûts des extractions CLI restent dans cost.json.\n'
 (out/'GRAPH_REPORT.md').write_text(report,encoding='utf-8')
 (out/'story-dependencies.json').write_text(json.dumps(doc,ensure_ascii=False,indent=2),encoding='utf-8')
 (out/'.graphify_extract.json').write_text(json.dumps(merged,ensure_ascii=False,indent=2),encoding='utf-8')

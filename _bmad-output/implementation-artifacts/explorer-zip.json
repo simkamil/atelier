@@ -1,0 +1,30 @@
+﻿{
+    "date":  "2026-10-10",
+    "success":  true,
+    "handler":  "Shell.Application compressed folders",
+    "source_sha256":  {
+                          "zip_crate":  "8e2d404d3988a70ee4152ea3b39c7a9ae7f9257c0e8c3646461f9811d47a6d4a",
+                          "oracle_exe":  "db41783a1bb1cd504d6dbed0dcf2790bc540463677c90c373b407ffed6fdd165",
+                          "oracle_rust":  "5dd19e863526ab4a01b79e441889baeb99bec01bfc9a544d3a46547aaf44f606"
+                      },
+    "results":  [
+                    {
+                        "count":  2,
+                        "extracted_bytes_equal":  true,
+                        "mode":  "32",
+                        "names":  [
+                                      "readme.txt",
+                                      "été.txt"
+                                  ]
+                    },
+                    {
+                        "count":  2,
+                        "extracted_bytes_equal":  true,
+                        "mode":  "64",
+                        "names":  [
+                                      "readme.txt",
+                                      "été.txt"
+                                  ]
+                    }
+                ]
+}

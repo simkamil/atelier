@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-10",
+  "xml_parses": 105,
+  "xml_round_trips": 105,
+  "xml_rejections": 20,
+  "xml_prolog_doctype_cases": 2,
+  "xml_comment_pi_line_ending_case": true,
+  "zip_reads": 52,
+  "zip_writes": 48,
+  "zip_descriptor_cases": [
+    {
+      "case": "stream-signed-32",
+      "nonseekable_output": true,
+      "force_zip64": false,
+      "unsigned_descriptor": false,
+      "descriptor_bytes": 16,
+      "crate_read": "passed"
+    },
+    {
+      "case": "stream-unsigned-32",
+      "nonseekable_output": true,
+      "force_zip64": false,
+      "unsigned_descriptor": true,
+      "descriptor_bytes": 12,
+      "crate_read": "passed"
+    },
+    {
+      "case": "stream-signed-64",
+      "nonseekable_output": true,
+      "force_zip64": true,
+      "unsigned_descriptor": false,
+      "descriptor_bytes": 24,
+      "crate_read": "passed"
+    },
+    {
+      "case": "stream-unsigned-64",
+      "nonseekable_output": true,
+      "force_zip64": true,
+      "unsigned_descriptor": true,
+      "descriptor_bytes": 20,
+      "crate_read": "passed"
+    }
+  ],
+  "failures": [],
+  "zip_local_errors": 1,
+  "zip_healthy_siblings": 1,
+  "zip_corrupt_member": {
+    "member": "bad.bin",
+    "expected_error": "CrcMismatch",
+    "healthy_sibling_read": true
+  },
+  "zip_local_recovery": 1,
+  "zip_local_recovery_member": "recover.txt",
+  "source_sha256": {
+    "crates/xml/src/lib.rs": "bc580ded78c0f549c2c654670584c5e77f9128057aea666fb98a4f6499dbbe92",
+    "crates/zip/src/lib.rs": "8e2d404d3988a70ee4152ea3b39c7a9ae7f9257c0e8c3646461f9811d47a6d4a",
+    "_bmad-output/implementation-artifacts/format-oracle.rs": "5dd19e863526ab4a01b79e441889baeb99bec01bfc9a544d3a46547aaf44f606",
+    "_bmad-output/implementation-artifacts/check-format-oracle.py": "6b9c3cdebe814d5aedd58b02a840bf01113b6e790ffce4080acac874fc95b46e"
+  }
+}

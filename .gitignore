@@ -14,6 +14,7 @@
 /_bmad-output/implementation-artifacts/*.log
 /_bmad-output/implementation-artifacts/github-ci.json
 /_bmad-output/implementation-artifacts/*review-diff.txt
+/_bmad-output/implementation-artifacts/formats-review-*.md
 
 # Graphify caches contain machine-specific paths; keep the reports and graph.
 /graphify-out/*

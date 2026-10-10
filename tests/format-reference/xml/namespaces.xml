@@ -1,0 +1,1 @@
+<root xmlns="urn:base" xmlns:p="urn:one" plain="v" p:a="1"><p:item p:a="2"><inner xmlns:p="urn:two" p:a="3"/></p:item><clear xmlns=""><item/></clear></root>

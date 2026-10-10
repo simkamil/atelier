@@ -110,6 +110,105 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_xml_src_lib",
+    "target": "hashset",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/xml/src/lib.rs",
+    "source_location": "L12",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_xml_src_lib",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/xml/src/lib.rs",
+    "source_location": "L13",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_xml_src_lib",
+    "target": "io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/xml/src/lib.rs",
+    "source_location": "L14",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_xml_src_lib",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/xml/src/lib.rs",
+    "source_location": "L1719",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_xml_src_lib",
+    "target": "cursor",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/xml/src/lib.rs",
+    "source_location": "L1720",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_zip_src_lib",
+    "target": "atelier_compress",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/zip/src/lib.rs",
+    "source_location": "L10",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_zip_src_lib",
+    "target": "atelier_unicode",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/zip/src/lib.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_zip_src_lib",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/zip/src/lib.rs",
+    "source_location": "L1093",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_zip_src_lib",
+    "target": "pathbuf",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/zip/src/lib.rs",
+    "source_location": "L1094",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "tools_bench_src_lib",
     "target": "collections",
     "relation": "imports_from",
