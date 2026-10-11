@@ -6,10 +6,12 @@
 mod bmp;
 mod gif;
 mod png;
+mod png_encode;
 
 pub use bmp::decode_bmp;
 pub use gif::decode_gif;
 pub use png::decode_png;
+pub use png_encode::{PngColor, encode_png, encode_png_rgba};
 
 /// Top-down RGBA8 pixels with straight alpha and no color-profile conversion.
 #[derive(Clone, Debug, Eq, PartialEq)]
