@@ -57,7 +57,7 @@ start = text.index('Le démonstrateur US-120 reste à construire.')
 end = text.index('\nLes [21 contrôles du lot précédent]',start)
 text = text[:start]+'''Le démonstrateur US-120 reste à construire. Les coupures de ligne Unicode,
 le façonnage latin, le registre de polices et l'historique sont disponibles.
-Il reste le Worker (US-092), le démarrage de l'interface (US-101), le rendu Canvas
+Il reste le Worker (US-092), le rendu Canvas (US-101), la capture clavier/IME
 (US-103), la coque Windows et le pont natif (US-113), puis leurs interactions.
 US-120 dépend de US-012/054/055/072/101/103/113 ; les quatre premières sont validées.
 La connexion des fontes système au Host appartient à US-113. Il n'existe pas
