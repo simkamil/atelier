@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-11",
+  "validated_stories": 35,
+  "total_stories": 158,
+  "validated_slices": [
+    "keyboard navigation",
+    "mouse selection",
+    "plain-text clipboard"
+  ],
+  "in_progress": [
+    "US-214",
+    "US-220",
+    "US-221",
+    "US-222",
+    "US-223",
+    "US-225"
+  ],
+  "quality_gates": 41,
+  "workspace_tests": 377,
+  "native_release_tests": 55,
+  "browser_assertions": 57,
+  "runtime_validation_sha256": "eac6ea6e9d67cf46b67f45da6ec99a5df552967abf38c4b8d687f5c3748aa460",
+  "documentation_sha256": {
+    "docs/us-221-keyboard-editing.md": "0b23a76ac10ef2424af1898747a3e3fa4f648866afbe6949ce180286bda3039d",
+    "docs/us-222-mouse-selection.md": "545dea9ff6ac98ad03fa6f1f6f737c367d9479b159a6a36844618fd595933646",
+    "docs/us-225-plain-clipboard.md": "911ecbf3c39966f7fdc710f28a62f4639a2a0f3cb84823fb0bb6de46317b6009",
+    "docs/us-120-editor-ui.md": "b42195be76e1edd821e842cbc07fc1b9518b934ba365acfaf0e12ffe6a3b60a3",
+    "docs/us-120-editor-engine.md": "bbd59684f84f82759261367e7f3b52d6c8407272e2acc1144b6249137b1e1d77",
+    "docs/us-112-embedded-resources.md": "a89750eaf80dbc1e4e8798780095ad74718379c59449e456a2a3891982e71064",
+    "docs/DEVELOPMENT.md": "5e9fbdd95af9da7ae7f00e1fa848b578b14a1e423fcdd0f8b1ca861b0cf7ebd2",
+    "docs/PROTOTYPE-PROGRESS.md": "dff9f57af94b60d660c36b5d2777afcb9d67733bd7dccfae0e0dc88d16630558",
+    "README.md": "3d13e97faff4b604ded59972fc51cc161f88002da54367dbb3b21d6fa65fcf20",
+    "US-V0-V1.md": "eaca0cb7ce27b3cb9127cd3164e7ca0175efc06d7e7e9daf2a17489180e7a149",
+    "web/README.md": "51520a778b5f78429c31f1fed8d530776126c1067042b57d982a254e13364df5",
+    "tests/README.md": "55126d30d75794d4694d99ebef995838aad6c4e65b145551bd7088c9cec73f77",
+    "_bmad-output/implementation-artifacts/spec-us221-keyboard-editing.md": "0b9d3f4f6f6c72f3c204f197cb27edf42b83df602d0d921afd131b2ad7687b82",
+    "_bmad-output/implementation-artifacts/spec-us222-mouse-selection.md": "5c568abb71dd98a0db9513e57d5acce69df90d8a97537df0ba017cb9fa8e3762",
+    "_bmad-output/implementation-artifacts/spec-us225-plain-clipboard.md": "5ce80a9277f93b292b2bd8a99747ce1d844be665a8d5532e29b76fd3192e1e0e",
+    "_bmad-output/implementation-artifacts/editing-ergonomics-review.md": "f37da193b2c3c9c4c443044ea5a5a84bcce93a0f75bd6f543187444789f31b2e",
+    "_bmad-output/implementation-artifacts/editing-ergonomics-claims.md": "9d1bec57c3adab4feabff9daf1e0fe0b963fd93da8c5db3e6bb80c4c379c1450"
+  }
+}

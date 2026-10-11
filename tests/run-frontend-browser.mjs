@@ -24,7 +24,7 @@ for (const candidate of candidates) {
 assert(executable, "An installed Edge/Chromium browser is required.");
 const files = new Map([
   ["/tests/frontend-browser.html", "text/html; charset=utf-8"],
-  ...["frontend-browser", "canvas-browser", "input-browser"].map(name =>
+  ...["frontend-browser", "canvas-browser", "input-browser", "text-input-editing"].map(name =>
     [`/tests/${name}.mjs`, "text/javascript; charset=utf-8"]),
   ...["display-list", "canvas-renderer", "text-input"].map(name =>
     [`/web/${name}.mjs`, "text/javascript; charset=utf-8"]),

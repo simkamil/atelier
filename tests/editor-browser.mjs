@@ -99,6 +99,151 @@ try {
   await waitFor(() => editor.state?.text === "AB", "grapheme backspace through hidden input");
   assert(editor.state.pages.every(page => page instanceof Uint8Array), "editor state contains ATDL pages");
 
+  // ClipboardEvents are synthetic; the browser DOM and Worker/WASM stay real.
+  async function openText(text) {
+    window.confirm = () => true;
+    nextOpen = { kind: "ok", bytes: new TextEncoder().encode(text) };
+    await editor.openDocument();
+  }
+  const clipboard = (type, { text = "", fail = false } = {}) => {
+    const written = [];
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", { value: {
+      types: ["text/plain", "text/html"],
+      getData: format => format === "text/plain" ? text : "<script>bad()</script>",
+      setData(format, value) { if (fail) throw new Error("denied"); written.push([format, value]); },
+    } });
+    editor.element.dispatchEvent(event);
+    return { event, written };
+  };
+  const selectedText = () => new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+    new TextEncoder().encode(editor.state.text).subarray(Math.min(editor.state.anchor, editor.state.focus), Math.max(editor.state.anchor, editor.state.focus)));
+  await openText("un café trois\r\nligne suivante");
+  key(editor.element, "ArrowRight", { ctrlKey: true });
+  await waitFor(() => editor.state.focus === 3, "Ctrl+Right next word");
+  key(editor.element, "ArrowRight", { ctrlKey: true, shiftKey: true });
+  await waitFor(() => editor.state.anchor === 3 && editor.state.focus === 9, "Ctrl+Shift+Right word selection");
+  assert(selectedText() === "café ", "word selection uses UTF-8 boundaries and includes the separating space");
+  const beforeCopy = editor.state;
+  const copied = clipboard("copy");
+  assert(copied.event.defaultPrevented && copied.written.length === 1 && copied.written[0][0] === "text/plain"
+    && copied.written[0][1] === "café " && editor.state.revision === beforeCopy.revision && !editor.state.dirty,
+    "real model selection copies exact text synchronously without mutation");
+  const deniedCut = clipboard("cut", { fail: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert(deniedCut.event.defaultPrevented && editor.state.text === beforeCopy.text && editor.state.revision === beforeCopy.revision,
+    "failed clipboard write preserves the real model");
+  const cut = clipboard("cut");
+  assert(cut.written[0][1] === "café ", "cut writes before returning to the browser");
+  await waitFor(() => editor.state.text === "un trois\r\nligne suivante", "cut range mutation");
+  await editor.undo();
+  assert(editor.state.text === beforeCopy.text && editor.state.anchor === 3 && editor.state.focus === 9,
+    "one undo restores the cut text and its directed selection");
+  key(editor.element, "v", { ctrlKey: true, shiftKey: true });
+  clipboard("paste", { text: "é🙂" });
+  editor.element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertFromPaste", data: "é🙂", bubbles: true, cancelable: true }));
+  await waitFor(() => editor.state.text === "un é🙂trois\r\nligne suivante", "plain paste replacement");
+  assert(!editor.state.text.includes("<script>") && editor.state.text.split("é🙂").length === 2,
+    "plain paste replaces selection once and ignores HTML");
+  key(editor.element, "a", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === 0 && editor.state.focus === new TextEncoder().encode(editor.state.text).length, "Ctrl+A whole document");
+  assert(selectedText() === editor.state.text, "Ctrl+A selects the real document rather than the hidden textarea");
+  key(editor.element, "Home", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === 0 && editor.state.focus === 0, "document start before F8");
+  key(editor.element, "F8");
+  key(editor.element, "ArrowRight");
+  key(editor.element, "ArrowRight");
+  await waitFor(() => editor.state.anchor === 0 && editor.state.focus === 2, "F8 extends successive movements");
+  key(editor.element, "Escape");
+  key(editor.element, "ArrowRight");
+  await waitFor(() => editor.state.anchor === 2 && editor.state.focus === 2, "Escape ends extension mode");
+  assert(editor.state.anchor === editor.state.focus, "Escape returns to ordinary caret navigation");
+
+  key(editor.element, "F8");
+  key(editor.element, "a", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === 0 && editor.state.focus === new TextEncoder().encode(editor.state.text).length,
+    "Ctrl+A selects all while extension mode is active");
+  key(editor.element, "ArrowLeft");
+  await waitFor(() => editor.state.anchor === 0 && editor.state.focus === 0,
+    "Ctrl+A exits extension mode before the next caret movement");
+
+  await openText("é abc\r\nxy🙂z");
+  key(editor.element, "ArrowDown", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === editor.state.focus && editor.state.focus === 8,
+    "Ctrl+Down moves by paragraph using UTF-8 offsets");
+  key(editor.element, "ArrowUp", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === editor.state.focus && editor.state.focus === 0,
+    "Ctrl+Up moves by paragraph using UTF-8 offsets");
+  key(editor.element, "ArrowRight", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === editor.state.focus && editor.state.focus === 3,
+    "Ctrl+Right moves to the first word boundary in UTF-8 bytes");
+  key(editor.element, "ArrowLeft", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === editor.state.focus && editor.state.focus === 0,
+    "Ctrl+Left moves by word using grapheme-safe UTF-8 offsets");
+
+  await openText("un café trois");
+  key(editor.element, "ArrowRight", { ctrlKey: true });
+  await waitFor(() => editor.state.focus === 3, "word start before deletion");
+  editor.element.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordForward", bubbles: true, cancelable: true }));
+  await waitFor(() => editor.state.text === "un trois", "Ctrl+Delete semantic input");
+  await editor.undo();
+  assert(editor.state.text === "un café trois", "word deletion is undone as a single edit in real WASM");
+
+  await openText("un café trois");
+  key(editor.element, "Home", { ctrlKey: true });
+  await waitFor(() => editor.state.anchor === editor.state.focus && editor.state.focus === 0,
+    "word deletion-backward starts at document beginning");
+  key(editor.element, "ArrowRight", { ctrlKey: true });
+  await waitFor(() => editor.state.focus === 3, "word deletion-backward first word boundary");
+  key(editor.element, "ArrowRight", { ctrlKey: true });
+  await waitFor(() => editor.state.focus === 9, "caret after accented word uses UTF-8 bytes");
+  editor.element.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteWordBackward", bubbles: true, cancelable: true }));
+  await waitFor(() => editor.state.text === "un trois" && editor.state.focus === 3,
+    "Ctrl+Backspace deletes the preceding word through semantic beforeinput");
+  await editor.undo();
+  assert(editor.state.text === "un café trois" && editor.state.anchor === 3 && editor.state.focus === 9
+    && selectedText() === "café ", "one undo restores the deleted word and original selection");
+
+  // Pointer capture requires a trusted hardware event. Shim only capture in this synthetic harness.
+  let capturedPointer = null;
+  canvas.setPointerCapture = id => { capturedPointer = id; };
+  canvas.hasPointerCapture = id => capturedPointer === id;
+  canvas.releasePointerCapture = id => { if (capturedPointer === id) capturedPointer = null; };
+  const pointer = (type, x, y, detail = 1, modifiers = {}) => canvas.dispatchEvent(new PointerEvent(type,
+    { pointerId: 9, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1,
+      clientX: x, clientY: y, detail, bubbles: true, cancelable: true, ...modifiers }));
+  const caretPoint = () => { const r = canvas.getBoundingClientRect(); return { x: r.left + editor.state.caret.x + 0.2,
+    y: r.top + editor.state.caret.y + 7 - scrollport.scrollTop }; };
+  await openText("un café trois\r\nseconde ligne");
+  key(editor.element, "ArrowRight", { ctrlKey: true });
+  await waitFor(() => editor.state.focus === 3, "word target for mouse");
+  const wordPoint = caretPoint();
+  pointer("pointerdown", wordPoint.x + 3, wordPoint.y, 2);
+  pointer("pointerup", wordPoint.x + 3, wordPoint.y, 2);
+  await waitFor(() => selectedText() === "café" && capturedPointer === null, "double-click selection");
+  assert(selectedText() === "café", "double-click selects a whole accented word through engine unit selection");
+  pointer("pointerdown", wordPoint.x + 3, wordPoint.y, 3);
+  pointer("pointerup", wordPoint.x + 3, wordPoint.y, 3);
+  await waitFor(() => selectedText() === "un café trois\r\n" && capturedPointer === null, "triple-click paragraph selection");
+  assert(selectedText() === "un café trois\r\n", "triple-click selects the logical paragraph including CRLF");
+  key(editor.element, "Home", { ctrlKey: true });
+  await waitFor(() => editor.state.focus === 0, "document start before drag end lookup");
+  key(editor.element, "End");
+  await waitFor(() => editor.state.anchor === editor.state.focus && editor.state.focus === 14, "line end before drag");
+  const dragEnd = caretPoint();
+  key(editor.element, "Home");
+  await waitFor(() => editor.state.focus === 0, "line start before drag");
+  const dragStart = caretPoint();
+  pointer("pointerdown", dragStart.x, dragStart.y);
+  pointer("pointermove", dragEnd.x, dragEnd.y);
+  pointer("pointerup", dragEnd.x, dragEnd.y);
+  await waitFor(() => editor.state.anchor === 0 && editor.state.focus === 14 && capturedPointer === null, "drag final point");
+  assert(selectedText() === "un café trois", "rapid down/move/up preserves the final drag range while WASM is asynchronous");
+  assert(document.activeElement === editor.element, "completed mouse drag restores hidden input focus");
+  await openText("AB");
+  inputText(editor.element, "!");
+  await waitFor(() => editor.state.dirty && editor.state.text === "!AB", "dirty fixture before open cancellation");
+
   const previous = editor.state;
   nextOpen = { kind: "cancelled" };
   window.confirm = () => true;
@@ -176,7 +321,9 @@ try {
   assert(dirtyNotifications.includes(false) && dirtyNotifications.includes(true), "dirty state reaches the host channel");
 
   const rect = canvas.getBoundingClientRect();
-  canvas.dispatchEvent(new PointerEvent("pointerdown", { clientX: rect.left + 90, clientY: rect.top + 95, bubbles: true }));
+  pointer("pointerdown", rect.left + 90, rect.top + 95);
+  pointer("pointerup", rect.left + 90, rect.top + 95);
+  await waitFor(() => capturedPointer === null, "Canvas pointer release");
   await waitFor(() => editor.state?.focus >= 0, "Canvas hit-test response");
   assert(document.activeElement === editor.element, "Canvas hit-test restores hidden input focus");
 

@@ -74,4 +74,36 @@ assert.equal(result.status, 0);
 const failure = decodeMessage(result.frame, "event");
 assert.equal(decodeEditorResponse(failure.type, failure.payload).code, "EDITOR_INVALID_ENVELOPE");
 assert.deepEqual(command(EditorOpcode.Export).bytes, original);
-console.log("Editor real WASM ABI: response-budget rollback, cleanup, UTF-8/BOM/CRLF and malformed-envelope rejection passed.");
+
+// Mutate the wire after encoding: JS validation must not mask the WASM guards.
+const selectPoint = () => encodeEditorCommand(EditorOpcode.SelectPoint, {
+  page: 0, x: 72, y: 72, unit: "character", extend: true, anchor: 0, anchorEnd: 0,
+});
+const invalidPoints = [
+  ["unknown page", p => new DataView(p.buffer).setUint32(8, 99, true), "EDITOR_INVALID_PAGE"],
+  ["NaN coordinate", p => new DataView(p.buffer).setFloat64(12, NaN, true), "EDITOR_INVALID_COMMAND"],
+  ["infinite coordinate", p => new DataView(p.buffer).setFloat64(20, Infinity, true), "EDITOR_INVALID_COMMAND"],
+  ["unknown unit", p => { p[28] = 3; }, "EDITOR_INVALID_COMMAND"],
+  ["invalid boolean", p => { p[29] = 2; }, "EDITOR_INVALID_COMMAND"],
+  ["reserved field", p => { p[30] = 1; }, "EDITOR_INVALID_COMMAND"],
+  ["unequal character anchors", p => new DataView(p.buffer).setUint32(36, 4, true), "EDITOR_INVALID_COMMAND"],
+  ["mid UTF-8 anchor", p => { const v = new DataView(p.buffer); v.setUint32(32, 7, true); v.setUint32(36, 7, true); }, "EDITOR_INVALID_SELECTION"],
+  ["past-end anchor", p => { const v = new DataView(p.buffer); v.setUint32(32, 999, true); v.setUint32(36, 999, true); }, "EDITOR_INVALID_SELECTION"],
+  ["truncated body", p => p.slice(0, -1), "EDITOR_INVALID_COMMAND"],
+  ["trailing byte", p => { const out = new Uint8Array(p.length + 1); out.set(p); return out; }, "EDITOR_INVALID_COMMAND"],
+];
+const stableState = command(EditorOpcode.State);
+const stableExport = command(EditorOpcode.Export);
+for (const [name, mutate, expected] of invalidPoints) {
+  const payload = selectPoint();
+  const replacement = mutate(payload);
+  const rejected = invoke(encodeMessage({ type: MessageType.Editor, requestId: requestId++,
+    payload: replacement instanceof Uint8Array ? replacement : payload }));
+  assert.equal(rejected.status, 0, name);
+  const message = decodeMessage(rejected.frame, "event");
+  const failure = decodeEditorResponse(message.type, message.payload);
+  assert.equal(failure.code, expected, name);
+  assert.deepEqual(command(EditorOpcode.State), stableState, `${name}: state unchanged`);
+  assert.deepEqual(command(EditorOpcode.Export), stableExport, `${name}: bytes/revision unchanged`);
+}
+console.log(`Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, envelope and ${invalidPoints.length} atomic SelectPoint rejections passed.`);

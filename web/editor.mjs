@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { attachTextInput } from "./text-input.mjs";
+import { attachMouseSelection } from "./mouse-selection.mjs";
 import { decodeDisplayList } from "./display-list.mjs";
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
@@ -46,10 +47,18 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   let caretVisible = true;
   let lastHostDirty;
   let pageZoom = 1;
+  let pendingTasks = 0;
+  let extensionMode = false;
+  let mouseSelection;
   const input = attachTextInput({
     container: document.body,
     getSelection: () => state ? { anchor: state.anchor, focus: state.focus } : { anchor: 0, focus: 0 },
     getCaret: () => caretScreen(),
+    getClipboardSnapshot: () => {
+      if (!state || disposed || busy || pendingTasks || compositionStart || state.anchor === state.focus) return null;
+      return { text: state.text,
+        selection: { anchor: state.anchor, focus: state.focus }, revision: state.revision };
+    },
     onCommand: command => { void applyInput(command).catch(reportError); },
     onComposition: preview => handleComposition(preview),
     onUnhandled: () => { /* Unsupported browser-native edits stay outside the model. */ },
@@ -63,6 +72,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     busy = value;
     try { onBusy(value); } catch { /* UI callbacks are isolated */ }
     input.element.disabled = value;
+    if (value) mouseSelection?.cancel();
   }
 
   function viewportRect(rect, page) {
@@ -171,12 +181,15 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       }
       const response = decodeEditorResponse(message.type, message.payload);
       if (response.kind === "failed") throw new EditorError(response.code);
+      if ([EditorOpcode.Load, EditorOpcode.InsertText, EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward,
+        EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo].includes(opcode)) extensionMode = false;
       if (opcode !== EditorOpcode.Export) publish(response);
       return response;
   }
 
   function enqueueTask(run) {
-    const result = queue.then(run, run);
+    pendingTasks += 1;
+    const result = queue.then(run, run).finally(() => { pendingTasks -= 1; });
     queue = result.catch(() => {});
     return result;
   }
@@ -185,6 +198,20 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
 
   async function applyInput(command) {
     if (!state || busy) return;
+    if (command.type === "extensionMode") { extensionMode = command.enabled; return; }
+    if (command.type === "selectAll") {
+      extensionMode = false;
+      return enqueueTask(() => dispatch(EditorOpcode.SetSelection, { anchor: 0, focus: new TextEncoder().encode(state.text).length }));
+    }
+    if (command.type === "deleteSelection") {
+      return enqueueTask(async () => {
+        if (command.revision !== state.revision || command.selection?.anchor !== state.anchor
+            || command.selection?.focus !== state.focus || state.anchor === state.focus) {
+          throw new EditorError("EDITOR_STALE_SELECTION");
+        }
+        return dispatch(EditorOpcode.DeleteBackward, { nowMs: nowMs() });
+      });
+    }
     if (command.type === "insertText") {
       const committed = command.inputType === "insertCompositionText" ? compositionCommit : null;
       if (command.inputType === "insertCompositionText") compositionCommit = null;
@@ -197,16 +224,22 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       });
     }
     if (command.type === "delete") {
-      if (command.unit !== "content") throw new EditorError("EDITOR_UNSUPPORTED_INPUT");
-      return enqueue(command.direction === "backward" ? EditorOpcode.DeleteBackward : EditorOpcode.DeleteForward, { nowMs: nowMs() });
+      if (!["content", "word"].includes(command.unit)) throw new EditorError("EDITOR_UNSUPPORTED_INPUT");
+      const opcode = command.unit === "word"
+        ? (command.direction === "backward" ? EditorOpcode.DeleteWordBackward : EditorOpcode.DeleteWordForward)
+        : (command.direction === "backward" ? EditorOpcode.DeleteBackward : EditorOpcode.DeleteForward);
+      return enqueue(opcode, { nowMs: nowMs() });
     }
     if (command.type === "undo") return enqueue(EditorOpcode.Undo);
     if (command.type === "redo") return enqueue(EditorOpcode.Redo);
     if (command.type === "move") {
       let direction = command.direction;
       if (command.toDocumentEdge) direction = direction === "home" ? "documentStart" : "documentEnd";
-      if (command.byWord && !command.toDocumentEdge) throw new EditorError("EDITOR_UNSUPPORTED_INPUT");
-      return enqueue(EditorOpcode.Move, { direction, extend: command.extend });
+      if (command.byWord && !command.toDocumentEdge) {
+        direction = { left: "wordLeft", right: "wordRight", up: "paragraphUp", down: "paragraphDown" }[direction];
+        if (!direction) throw new EditorError("EDITOR_UNSUPPORTED_INPUT");
+      }
+      return enqueue(EditorOpcode.Move, { direction, extend: Boolean(command.extend || extensionMode) });
     }
     throw new EditorError("EDITOR_UNSUPPORTED_INPUT");
   }
@@ -221,7 +254,10 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       renderer.setEditorOverlay({ selectionRects: state?.selectionRects.map(rect => viewportRect(rect, rect.page)) ?? [], caret: state ? caretViewport() : null, caretVisible });
       return;
     }
-    if (preview.phase === "start") compositionStart = { selection: preview.selection, revision: state?.revision };
+    if (preview.phase === "start") {
+      compositionStart = { selection: preview.selection, revision: state?.revision };
+      mouseSelection?.cancel();
+    }
     const caret = preview.caret;
     const bounds = canvas.getBoundingClientRect();
     composition = { caret: { x: caret.x - bounds.left, y: caret.y - bounds.top, height: caret.height }, width: [...preview.text].length * 7 };
@@ -233,29 +269,24 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     repaintOverlay();
   }
 
-  function canvasClick(event) {
-    if (!state || busy) return;
-    const bounds = canvas.getBoundingClientRect();
-    const localX = event.clientX - bounds.left;
-    const localY = event.clientY - bounds.top + renderer.scrollY;
-    let top = 0;
-    let page = -1;
-    let yInPage = 0;
-    for (let index = 0; index < decodedPages.length; index += 1) {
-      const height = decodedPages[index].page.bounds.height * renderer.zoom;
-      if (localY >= top && localY <= top + height) { page = index; yInPage = localY - top; break; }
-      top += height + renderer.pageGap;
-    }
-    if (page < 0) return;
-    const pageBounds = decodedPages[page].page.bounds;
-    const x = pageBounds.min.x + (localX + renderer.scrollX) / renderer.zoom;
-    const y = pageBounds.min.y + yInPage / renderer.zoom;
-    void enqueue(EditorOpcode.HitTest, { page, x, y, extend: event.shiftKey })
-      .then(() => input.focus()).catch(reportError);
-  }
-
+  mouseSelection = attachMouseSelection({
+    canvas, scrollport,
+    getGeometry: () => ({
+      pages: decodedPages.map(({ page }) => ({ minX: page.bounds.min.x, minY: page.bounds.min.y,
+        width: page.bounds.width, height: page.bounds.height })),
+      zoom: pageZoom, pageGap: renderer.pageGap,
+    }),
+    getSelection: () => ({ anchor: state?.anchor ?? 0, focus: state?.focus ?? 0 }),
+    isEnabled: () => Boolean(state && !busy && !compositionStart && !disposed),
+    selectPoint: values => enqueueTask(async () => {
+      if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
+      extensionMode = false;
+      return dispatch(EditorOpcode.SelectPoint, values);
+    }),
+    focus: () => input.focus(),
+    onError: reportError,
+  });
   scrollport.addEventListener("scroll", updateViewport, { passive: true });
-  canvas.addEventListener("pointerdown", canvasClick);
   globalThis.addEventListener?.("resize", scheduleViewport);
   const blink = setInterval(() => { caretVisible = !caretVisible; repaintOverlay(); }, 530);
 
@@ -316,7 +347,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       clearInterval(blink);
       if (viewportFrame) cancelAnimationFrame(viewportFrame);
       scrollport.removeEventListener("scroll", updateViewport);
-      canvas.removeEventListener("pointerdown", canvasClick);
+      mouseSelection.dispose();
       globalThis.removeEventListener?.("resize", scheduleViewport);
       input.dispose(); renderer.destroy();
       compositionPreview.remove();

@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "81321351c400abc92f7e73341cd5326868fdf125",
+  "diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-editing-review-wv038d1z\\changes.diff",
+  "bytes": 9784086,
+  "sha256": "e5285a336841b0aafc9893d004246f89b114f6dada524239b76c8e20f5f63ba6",
+  "claims_file": "C:\\mon-bureau\\_bmad-output\\implementation-artifacts\\editing-ergonomics-claims.md",
+  "patched_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-editing-review-wv038d1z\\patched-changes.diff",
+  "patched_bytes": 10720102,
+  "patched_sha256": "d3cd5fb9433845746dd5fbcabd62d713dcadb6de0da2c4cbf035ababc17d1b7b",
+  "patched_snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/editing-ergonomics-review-snapshot.json (self-referential metadata)"
+  ]
+}

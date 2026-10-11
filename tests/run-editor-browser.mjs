@@ -28,9 +28,9 @@ const files = new Map([
   ["/app.css", ["web/app.css", "text/css; charset=utf-8"]],
   ["/i18n/fr-FR.txt", ["web/i18n/fr-FR.txt", "text/plain; charset=utf-8"]],
   ["/atelier_core_wasm.wasm", ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
-  ...["editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "canvas-renderer", "display-list", "native-host"].map(name =>
+  ...["editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "canvas-renderer", "display-list", "native-host"].map(name =>
     [`/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),
-  ...["editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "canvas-renderer", "display-list"].map(name =>
+  ...["editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "canvas-renderer", "display-list"].map(name =>
     [`/web/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),
   ["/target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
 ]);

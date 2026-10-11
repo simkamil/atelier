@@ -123,6 +123,8 @@ jobs:
         run: node tests/wasm-worker.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
       - name: Exercise default browser Worker bootstrap in headless Edge
         run: node tests/run-worker-browser.mjs
+      - name: Check pointer capture, selection ordering and bounded auto-scroll
+        run: node tests/mouse-selection.mjs
       - name: Exercise Canvas editor, composition and file adapter in headless Edge
         run: node tests/run-editor-browser.mjs
 

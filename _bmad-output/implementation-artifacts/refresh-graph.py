@@ -42,6 +42,7 @@ prototype_docs.extend(['docs/us-101-canvas-renderer.md','docs/us-103-text-input.
 prototype_docs.extend(['web/index.html','web/app.css','web/i18n/fr-FR.txt'])
 prototype_docs.extend(['docs/us-120-editor-engine.md','docs/us-120-editor-ui.md','docs/us-113-file-bridge.md'])
 prototype_docs.extend(['docs/us-112-embedded-resources.md','docs/us-113-file-access.md','docs/us-120-plain-text-model.md','data/engine/README.md'])
+prototype_docs.extend(['docs/us-221-keyboard-editing.md','docs/us-222-mouse-selection.md','docs/us-225-plain-clipboard.md'])
 document_paths.update(prototype_docs)
 document_paths.update({'web/index.html','web/app.css','web/i18n/fr-FR.txt'})
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})

@@ -63,4 +63,6 @@ hors du fil principal. Les modules [Canvas](docs/us-101-canvas-renderer.md) et
 Le [test strict WebView2](docs/us-111-webview2.md) conserve un échec de handles
 sur cet hôte ; US-111 reste ouverte. Le premier [éditeur intégré de texte brut](docs/us-120-editor-ui.md) permet de saisir, sélectionner, annuler/rétablir et utiliser Ouvrir/Enregistrer sous, avec des pages A4 et Carlito 11 pt. Le [pont natif](docs/us-113-file-bridge.md) conserve les octets UTF-8, BOM et fins de ligne. Le périmètre actuel est limité à 128 Kio de texte, latin gauche à droite ; les essais physiques AZERTY/IME, les dialogues manuels et les objectifs de performance restent ouverts.
 
+L’éditeur ajoute la [navigation par mot et paragraphe](docs/us-221-keyboard-editing.md), Ctrl+A, F8/Échap, le [glisser de sélection et le double/triple-clic](docs/us-222-mouse-selection.md), ainsi que [copier/couper/coller en texte brut](docs/us-225-plain-clipboard.md). La colonne visuelle est conservée à travers les lignes courtes. Ces tranches ne clôturent pas les US complètes.
+
 Pour le tester : `cargo run -p atelier-desktop-win --release --locked --offline`, puis Ouvrir un `.txt`, modifier le texte et Enregistrer sous. Le binaire construit est `target/release/atelier.exe`. Le [suivi](docs/PROTOTYPE-PROGRESS.md) distingue les modules livrés des US complètes.

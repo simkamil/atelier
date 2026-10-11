@@ -1,0 +1,24 @@
+{
+  "nodes": 3897,
+  "edges": 9476,
+  "stories": 158,
+  "done": 35,
+  "dangling_edges": 0,
+  "cargo_packages": 32,
+  "cargo_dependency_edges": 17,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "semantic_cli_tokens": {
+    "input": 114875,
+    "output": 18922
+  },
+  "unreported_semantic_runs": 4,
+  "api_report_llm_tokens": 0,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "bb6b2e5386c7a33f2fb8fc3fda4a540450488a896563167a60e2281ea390c764",
+    "graphify-out/graph.json": "fb0929f9a9e66b4942b7984acafb50673e5cff372b33b78195852cdebc75fdb1",
+    "graphify-out/graph.html": "08270d9b6faa84eadac7423d906b549fdbda7898ca561c7b9c14a2e0523f9650",
+    "graphify-out/story-dependencies.json": "5f206cfbc19867903f09ae32d5dfbc824ce16f46fee98276b697d6afbb61a664",
+    "graphify-out/unresolved-structural-references.json": "1efd195348a6aec3d9fbd55c6f50e71856b255391ab766b8b6d38d273b0804b5"
+  }
+}

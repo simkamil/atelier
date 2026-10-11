@@ -8,6 +8,10 @@ try {
     const module = await import(`./${name}-browser.mjs`);
     const run = module[name === "canvas" ? "runCanvasChecks" : "runInputChecks"];
     const checks = await run();
+    if (name === "input") {
+      const { runTextInputEditingChecks } = await import("./text-input-editing.mjs");
+      checks.push(...await runTextInputEditingChecks());
+    }
     if (!Array.isArray(checks) || !checks.length) throw new Error(`Empty ${name} suite`);
     report.suites.push({ name, checks });
   }

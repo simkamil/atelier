@@ -25,6 +25,21 @@ function normalizedRect(rect) {
 
 function inputSignature(type, data) { return `${type}\u0000${data ?? ""}`; }
 
+function selectedPlainText(snapshot) {
+  if (!snapshot || typeof snapshot.text !== "string" || typeof snapshot.revision !== "bigint"
+      || !snapshot.selection || !Number.isInteger(snapshot.selection.anchor)
+      || !Number.isInteger(snapshot.selection.focus)) return null;
+  const start = Math.min(snapshot.selection.anchor, snapshot.selection.focus);
+  const end = Math.max(snapshot.selection.anchor, snapshot.selection.focus);
+  if (start === end) return null;
+  const bytes = new TextEncoder().encode(snapshot.text);
+  if (start < 0 || end > bytes.length) return null;
+  try {
+    const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+    return decoder.decode(bytes.subarray(start, end));
+  } catch { return null; }
+}
+
 function commandForInput(inputType) {
   if (inputType === "insertLineBreak" || inputType === "insertParagraph") return { type: "insertText", text: "\n" };
   if (["insertText", "insertReplacementText", "insertFromPaste", "insertFromDrop", "insertFromYank"].includes(inputType)) {
@@ -49,6 +64,7 @@ export function attachTextInput({
   element,
   getSelection,
   getCaret,
+  getClipboardSnapshot,
   onCommand,
   onComposition = () => {},
   onUnhandled,
@@ -59,6 +75,7 @@ export function attachTextInput({
     throw new TypeError("getSelection and getCaret callbacks are required.");
   }
   if (typeof onCommand !== "function" || typeof onComposition !== "function"
+      || (getClipboardSnapshot !== undefined && typeof getClipboardSnapshot !== "function")
       || (onUnhandled !== undefined && typeof onUnhandled !== "function") || typeof onError !== "function") {
     throw new TypeError("Input callbacks must be functions.");
   }
@@ -179,14 +196,21 @@ export function attachTextInput({
   }
 
   function onKeyDown(event) {
-    if (disposed || event.isComposing || event.keyCode === 229 || nativeComposing) return;
+    if (disposed || textarea.disabled || event.isComposing || event.keyCode === 229 || nativeComposing) return;
     if (event.key === "AltGraph" || event.getModifierState?.("AltGraph") || (event.ctrlKey && event.altKey)) return;
     const key = event.key;
     let command;
     if (event.ctrlKey && !event.altKey && !event.metaKey) {
       const normalizedKey = typeof key === "string" ? key.toLowerCase() : "";
-      if (normalizedKey === "z" && !event.shiftKey) command = { type: "undo" };
+      if (normalizedKey === "a" && !event.shiftKey) command = { type: "selectAll" };
+      else if (normalizedKey === "z" && !event.shiftKey) command = { type: "undo" };
       else if (normalizedKey === "y" && !event.shiftKey || normalizedKey === "z" && event.shiftKey) command = { type: "redo" };
+    }
+    if (!command && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && key === "F8") {
+      command = { type: "extensionMode", enabled: true };
+    }
+    if (!command && !event.ctrlKey && !event.shiftKey && !event.altKey && !event.metaKey && key === "Escape") {
+      command = { type: "extensionMode", enabled: false };
     }
     if (!command && !event.altKey && !event.metaKey && KEY_COMMANDS.has(key)) {
       command = {
@@ -345,7 +369,7 @@ export function attachTextInput({
   }
 
   function onPaste(event) {
-    if (disposed || nativeComposing) return;
+    if (disposed || textarea.disabled || nativeComposing) return;
     let text;
     try {
       if (event.clipboardData?.types && [...event.clipboardData.types].includes("text/plain")) {
@@ -364,10 +388,29 @@ export function attachTextInput({
     scheduleClear();
   }
 
+  function onClipboard(event, cut = false) {
+    if (disposed || textarea.disabled || !getClipboardSnapshot) return;
+    // Once the editor owns clipboard snapshots, never let the browser copy transient textarea content.
+    event.preventDefault();
+    if (nativeComposing || composition || !event.clipboardData) return;
+    let snapshot;
+    try { snapshot = getClipboardSnapshot(); }
+    catch (error) { reportError(error); return; }
+    const text = selectedPlainText(snapshot);
+    if (text === null) return;
+    try { event.clipboardData.setData("text/plain", text); }
+    catch { return; }
+    if (cut) emitCommand({ type: "deleteSelection", selection: snapshot.selection, revision: snapshot.revision });
+  }
+
+  function onCopy(event) { onClipboard(event, false); }
+  function onCut(event) { onClipboard(event, true); }
+
   for (const [type, listener] of [
     ["keydown", onKeyDown], ["beforeinput", onBeforeInput], ["input", onInput],
     ["compositionstart", onCompositionStart], ["compositionupdate", onCompositionUpdate],
     ["compositionend", onCompositionEnd], ["paste", onPaste], ["blur", onBlur],
+    ["copy", onCopy], ["cut", onCut],
   ]) textarea.addEventListener(type, listener);
 
   function updateCaret(rect = undefined) {
@@ -412,6 +455,7 @@ export function attachTextInput({
       ["keydown", onKeyDown], ["beforeinput", onBeforeInput], ["input", onInput],
       ["compositionstart", onCompositionStart], ["compositionupdate", onCompositionUpdate],
       ["compositionend", onCompositionEnd], ["paste", onPaste], ["blur", onBlur],
+      ["copy", onCopy], ["cut", onCut],
     ]) textarea.removeEventListener(type, listener);
     clearValue();
     if (created) textarea.remove();

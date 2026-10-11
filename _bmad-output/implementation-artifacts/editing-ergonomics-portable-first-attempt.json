@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "exit_code": 1,
+  "result": "",
+  "stderr": "WebView2 ExecuteScript self-check callback timed out",
+  "executable_sha256": "9fd2dc9a623f4b16f4a04d35309c039a7e5aade17ad67a925759e8f6b6398ba7",
+  "cwd_contains_web_or_data": false,
+  "only_copied_input": "atelier.exe"
+}

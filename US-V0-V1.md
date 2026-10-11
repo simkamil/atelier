@@ -635,6 +635,8 @@ Réf : §6.5, §6.16 · Taille : L · Dépend de : US-212
 - [ ] Rectangles de sélection sur plusieurs lignes et pages.
 - [ ] Déplacement vertical conservant la colonne visuelle d'origine.
 
+Tranche TXT validée le 2026-10-11 : colonne visuelle conservée entre lignes courtes ; voir [navigation](docs/us-221-keyboard-editing.md). Les clusters riches restent à couvrir.
+
 Réf : §6.5 · Taille : M · Dépend de : US-210
 
 #### US-215 — Bordures et trame de paragraphe (rendu)
@@ -654,12 +656,16 @@ Réf : F-TXT-012 · Taille : S · Dépend de : US-212
 - [ ] Taper avec une sélection active la remplace.
 - [ ] Mode refrappe (Inser) désactivé par défaut, activable dans les options.
 
+Tranche TXT validée le 2026-10-11 : Ctrl+Retour arrière/Suppr par mot et annulation ; voir [navigation](docs/us-221-keyboard-editing.md). Les critères de saisie riche/physique restent ouverts.
+
 Réf : F-TXT-001 · Taille : M · Dépend de : US-103, US-200, US-214
 
 #### US-221 — Déplacer le curseur au clavier
 *En tant qu'*utilisateur, *je veux* naviguer au clavier *afin de* me déplacer rapidement dans le texte.
 - [ ] Flèches ; Ctrl+←/→ par mot ; Ctrl+↑/↓ par paragraphe ; Début/Fin de ligne ; Ctrl+Début/Fin du document ; Page préc./suiv. ; Ctrl+Page préc./suiv. vers l'objet précédent/suivant.
 - [ ] La vue défile pour garder le curseur visible.
+
+Tranche TXT validée le 2026-10-11 : Ctrl+flèches par mot/paragraphe, maintien du X ; voir [contrat](docs/us-221-keyboard-editing.md). Navigation entre objets riches encore absente.
 
 Réf : F-TXT-002 · Taille : S · Dépend de : US-214
 
@@ -669,11 +675,15 @@ Réf : F-TXT-002 · Taille : S · Dépend de : US-214
 - [ ] Glisser avec défilement automatique aux bords ; extension par mot après un double-clic.
 - [ ] Maj+clic étend la sélection ; Alt+glisser sélectionne un bloc rectangulaire.
 
+Tranche TXT validée le 2026-10-11 : glisser, auto-scroll, Maj+clic, double-clic mot et triple-clic paragraphe ; voir [contrat](docs/us-222-mouse-selection.md). Phrase, marge et bloc rectangulaire restent ouverts.
+
 Réf : F-TXT-002 · Taille : M · Dépend de : US-214
 
 #### US-223 — Sélectionner au clavier
 *En tant qu'*utilisateur, *je veux* sélectionner au clavier *afin de* travailler sans souris.
 - [ ] Maj + toutes les combinaisons de US-221 ; Ctrl+A sélectionne tout ; F8 mode extension (Échap pour sortir).
+
+Tranche TXT validée le 2026-10-11 : Ctrl+A, Maj+mouvements disponibles et F8/Échap ; Ctrl+A quitte F8. Les combinaisons liées aux objets riches restent ouvertes.
 
 Réf : F-TXT-002 · Taille : S · Dépend de : US-221
 
@@ -691,6 +701,8 @@ Réf : F-TXT-003 · Taille : M · Dépend de : US-222
 - [ ] Coller du HTML (navigateur, Word) : paragraphes, titres, gras/italique/souligné, couleurs, listes, tableaux, liens, images ; scripts et styles dangereux ignorés.
 - [ ] Ctrl+Maj+V : coller sans mise en forme ; options de collage proposées après un collage (conserver la mise en forme source, fusionner, texte seul).
 - [ ] Coller une image depuis le presse-papiers l'insère.
+
+Tranche TXT validée le 2026-10-11 : copy/cut/paste text/plain synchrones, Ctrl+Maj+V, sélection UTF-8 et coupe annulable ; voir [contrat](docs/us-225-plain-clipboard.md). HTML/interne riche, images et options restent ouverts.
 
 Réf : F-COM-016 · Taille : L · Dépend de : US-200, US-270
 

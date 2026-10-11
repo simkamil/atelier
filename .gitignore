@@ -8,6 +8,7 @@
 *.exe
 
 # Installed agent tooling and local review baselines.
+/.claude/worktrees/
 /_bmad/
 /_bmad-output/implementation-artifacts/foundations-baseline.txt
 /_bmad-output/implementation-artifacts/stage-review-diff.py

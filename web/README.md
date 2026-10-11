@@ -22,4 +22,6 @@ Voir les [contrats Canvas](../docs/us-101-canvas-renderer.md) et
 
 ## Page embarquée
 
+`mouse-selection.mjs` traduit les points du Canvas en coordonnées de page et gère capture, glisser, double/triple-clic et défilement aux bords. Le moteur WASM choisit les frontières de graphèmes, mots et paragraphes. `editor.mjs` fournit à `text-input.mjs` un instantané stable de la sélection pour copier/couper uniquement du texte brut ; les commandes restent dans la même queue. Ctrl+A quitte F8 et sélectionne tout, F8 active l’extension et Échap l’arrête. Voir les contrats [clavier](../docs/us-221-keyboard-editing.md), [souris](../docs/us-222-mouse-selection.md) et [presse-papiers](../docs/us-225-plain-clipboard.md).
+
 `index.html`, `app.mjs` et `app.css` présentent l’éditeur texte brut avec Carlito. La table [native de ressources](../docs/us-112-embedded-resources.md) incorpore les modules, le catalogue et le [vrai WASM optimisé](../data/engine/README.md). Le contrôle natif vérifie Ping, la saisie réelle via Worker/WASM, des pixels de glyphes, undo/redo et le retour à un document propre. `native-host.mjs` implémente les requêtes fichiers bornées ; le relais CSP conserve son journal distinct. Les tests utilisent aussi un Host factice sans dialogue.

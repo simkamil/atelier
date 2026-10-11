@@ -96,6 +96,11 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/text-input.mjs"),
     },
     Resource {
+        path: "/mouse-selection.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/mouse-selection.mjs"),
+    },
+    Resource {
         path: "/atelier_core_wasm.wasm",
         mime: "application/wasm",
         bytes: include_bytes!("../../../data/engine/atelier_core_wasm.wasm"),

@@ -1568,6 +1568,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/editor-protocol.mjs','text/javascript'], ['/editor.mjs','text/javascript'],
             ['/native-host.mjs','text/javascript'], ['/display-list.mjs','text/javascript'],
             ['/canvas-renderer.mjs','text/javascript'], ['/text-input.mjs','text/javascript'],
+            ['/mouse-selection.mjs','text/javascript'],
             ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
             ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
           ];
@@ -1701,7 +1702,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
         ));
     }
     Ok(format!(
-        "embedded resources: assets=17; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}",
+        "embedded resources: assets=18; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}",
         attempts.len()
     ))
 }

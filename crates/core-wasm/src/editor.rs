@@ -2,6 +2,7 @@
 //! Strict ATED command handling and session-owned plain-text editor state.
 
 use atelier_text_model::{PlainTextDocument, PlainTextLimits, Selection};
+use atelier_unicode::segmentation::{grapheme_boundaries, word_boundaries};
 
 use crate::editor_layout::Layout;
 use crate::protocol::{Message, MessageType};
@@ -16,6 +17,7 @@ pub struct EditorSession {
     revision: u64,
     saved_bytes: Vec<u8>,
     layout: Option<Layout>,
+    preferred_x: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +91,7 @@ impl EditorSession {
                 // when its bytes match; a cached layout belongs to the old
                 // document instance and must never survive that replacement.
                 candidate.layout = None;
+                candidate.preferred_x = None;
                 candidate.document = Some(doc);
                 if content_changed {
                     candidate.bump_revision()?;
@@ -107,6 +110,7 @@ impl EditorSession {
                 if doc.text() != before {
                     candidate.bump_revision()?;
                 }
+                candidate.preferred_x = None;
             }
             3 | 4 => {
                 let mut r = Reader::new(body);
@@ -121,6 +125,7 @@ impl EditorSession {
                 if doc.text() != before {
                     candidate.bump_revision()?;
                 }
+                candidate.preferred_x = None;
             }
             5 | 6 => {
                 let doc = candidate.ensure_document()?;
@@ -133,6 +138,7 @@ impl EditorSession {
                 if doc.text() != before {
                     candidate.bump_revision()?;
                 }
+                candidate.preferred_x = None;
             }
             7 => {
                 let mut r = Reader::new(body);
@@ -143,13 +149,14 @@ impl EditorSession {
                     .set_selection(Selection { anchor, focus })
                     .map_err(map_text_error)?;
                 candidate.layout = None;
+                candidate.preferred_x = None;
             }
             8 => {
                 let mut r = Reader::new(body);
                 let direction = r.u8()?;
                 let extend = r.flag()?;
                 r.reserved_u16()?;
-                if direction > 9 {
+                if direction > 13 {
                     return Err(EditorError("EDITOR_INVALID_COMMAND"));
                 }
                 let current = candidate.ensure_document()?.selection();
@@ -162,9 +169,19 @@ impl EditorSession {
                 } else {
                     None
                 };
-                let next = candidate
-                    .current_layout()?
-                    .move_offset(collapsed.unwrap_or(current.focus), direction);
+                let offset = collapsed.unwrap_or(current.focus);
+                let vertical = matches!(direction, 2 | 3 | 8 | 9);
+                let preferred_x = candidate.preferred_x;
+                let text = candidate.ensure_document()?.text().to_owned();
+                let layout = candidate.current_layout()?;
+                let x = preferred_x.unwrap_or_else(|| layout.caret(offset).x);
+                let next = match direction {
+                    10 => word_move(&text, offset, false),
+                    11 => word_move(&text, offset, true),
+                    12 | 13 => paragraph_move(&text, offset, direction == 13),
+                    _ if vertical => layout.move_offset_at_x(offset, direction, x),
+                    _ => layout.move_offset(offset, direction),
+                };
                 let next = collapsed.unwrap_or(next);
                 candidate
                     .document
@@ -180,6 +197,7 @@ impl EditorSession {
                     })
                     .map_err(map_text_error)?;
                 candidate.layout = None;
+                candidate.preferred_x = vertical.then_some(x);
             }
             9 => {
                 let mut r = Reader::new(body);
@@ -209,6 +227,101 @@ impl EditorSession {
                     })
                     .map_err(map_text_error)?;
                 candidate.layout = None;
+                candidate.preferred_x = None;
+            }
+            12 | 13 => {
+                let mut r = Reader::new(body);
+                let now = r.u64()?;
+                let doc = candidate.ensure_document()?;
+                let before = doc.text().to_owned();
+                let selection = doc.selection();
+                if selection.anchor != selection.focus {
+                    doc.delete_backward(now).map_err(map_text_error)?;
+                } else {
+                    let range = word_delete_range(doc.text(), selection.focus, opcode == 13);
+                    if range.start != range.end {
+                        doc.set_selection(Selection {
+                            anchor: range.start,
+                            focus: range.end,
+                        })
+                        .map_err(map_text_error)?;
+                        doc.delete_backward(now).map_err(map_text_error)?;
+                    }
+                }
+                if doc.text() != before {
+                    candidate.bump_revision()?;
+                }
+                candidate.preferred_x = None;
+            }
+            14 => {
+                let mut r = Reader::new(body);
+                let page = r.u32()? as usize;
+                let x = r.f64()?;
+                let y = r.f64()?;
+                let unit = r.u8()?;
+                let extend = r.flag()?;
+                r.reserved_u16()?;
+                let anchor = r.u32()? as usize;
+                let anchor_end = r.u32()? as usize;
+                if !x.is_finite() || !y.is_finite() || unit > 2 {
+                    return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                }
+                let offset = candidate
+                    .current_layout()?
+                    .hit_test(page, x, y)
+                    .ok_or(EditorError("EDITOR_INVALID_PAGE"))?;
+                let text = candidate.document.as_ref().unwrap().text();
+                let selection = if unit == 0 {
+                    if extend {
+                        if anchor_end != anchor {
+                            return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                        }
+                        validate_grapheme(text, anchor)?;
+                        Selection {
+                            anchor,
+                            focus: offset,
+                        }
+                    } else {
+                        if anchor != 0 || anchor_end != 0 {
+                            return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                        }
+                        Selection::caret(offset)
+                    }
+                } else {
+                    let base = if extend {
+                        validate_grapheme(text, anchor)?;
+                        validate_grapheme(text, anchor_end)?;
+                        if unit != 0 && anchor > anchor_end {
+                            return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                        }
+                        Some(anchor..anchor_end)
+                    } else {
+                        if anchor != 0 || anchor_end != 0 {
+                            return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                        }
+                        None
+                    };
+                    let target = if unit == 1 {
+                        word_unit(text, offset)
+                    } else {
+                        paragraph_unit(text, offset)
+                    };
+                    match base {
+                        None => Selection {
+                            anchor: target.start,
+                            focus: target.end,
+                        },
+                        Some(base) => extend_unit_selection(base, target),
+                    }
+                };
+                candidate
+                    .document
+                    .as_mut()
+                    .unwrap()
+                    .set_selection(selection)
+                    .map_err(map_text_error)?;
+                candidate.layout = None;
+                candidate.preferred_x = None;
             }
             11 => {
                 let mut r = Reader::new(body);
@@ -354,6 +467,125 @@ fn limits() -> PlainTextLimits {
         max_history_bytes: MAX_HISTORY,
     }
 }
+
+fn word_units(text: &str) -> Vec<core::ops::Range<usize>> {
+    word_boundaries(text).segments().collect()
+}
+fn word_unit(text: &str, offset: usize) -> core::ops::Range<usize> {
+    let units = word_units(text);
+    units
+        .iter()
+        .find(|r| r.start <= offset && offset < r.end)
+        .or_else(|| units.last())
+        .cloned()
+        .unwrap_or(0..0)
+}
+fn word_move(text: &str, offset: usize, right: bool) -> usize {
+    let units = word_units(text);
+    if right {
+        let mut index = units.partition_point(|r| r.end <= offset);
+        if index >= units.len() {
+            return text.len();
+        }
+        // Always cross at least one UAX #29 segment, even from its interior.
+        index += 1;
+        while index < units.len() && text[units[index].clone()].chars().all(char::is_whitespace) {
+            index += 1;
+        }
+        units.get(index).map_or(text.len(), |r| r.start)
+    } else {
+        let mut index = units.partition_point(|r| r.start < offset);
+        if index == 0 {
+            return 0;
+        }
+        index -= 1;
+        while index > 0 && text[units[index].clone()].chars().all(char::is_whitespace) {
+            index -= 1;
+        }
+        units.get(index).map_or(0, |r| r.start)
+    }
+}
+fn word_delete_range(text: &str, offset: usize, forward: bool) -> core::ops::Range<usize> {
+    let next = word_move(text, offset, forward);
+    offset.min(next)..offset.max(next)
+}
+fn paragraph_units(text: &str) -> Vec<core::ops::Range<usize>> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\r' || bytes[i] == b'\n' {
+            let end = if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
+                i + 2
+            } else {
+                i + 1
+            };
+            out.push(start..end);
+            start = end;
+            i = end;
+        } else {
+            i += 1;
+        }
+    }
+    out.push(start..text.len());
+    out
+}
+fn paragraph_unit(text: &str, offset: usize) -> core::ops::Range<usize> {
+    let units = paragraph_units(text);
+    units
+        .iter()
+        .find(|r| r.start <= offset && offset < r.end)
+        .or_else(|| units.last())
+        .cloned()
+        .unwrap_or(0..0)
+}
+fn paragraph_move(text: &str, offset: usize, down: bool) -> usize {
+    let units = paragraph_units(text);
+    let index = units
+        .iter()
+        .position(|r| r.start <= offset && offset < r.end)
+        .unwrap_or(units.len().saturating_sub(1));
+    let target = if down {
+        units.get(index + 1)
+    } else if offset > units[index].start {
+        units.get(index)
+    } else {
+        index.checked_sub(1).and_then(|i| units.get(i))
+    };
+    let Some(target) = target else {
+        return offset;
+    };
+    target.start
+}
+fn extend_unit_selection(
+    base: core::ops::Range<usize>,
+    target: core::ops::Range<usize>,
+) -> Selection {
+    if target.end <= base.start {
+        Selection {
+            anchor: base.end,
+            focus: target.start,
+        }
+    } else if target.start >= base.end {
+        Selection {
+            anchor: base.start,
+            focus: target.end,
+        }
+    } else {
+        Selection {
+            anchor: base.start,
+            focus: base.end,
+        }
+    }
+}
+fn validate_grapheme(text: &str, offset: usize) -> Result<(), EditorError> {
+    grapheme_boundaries(text)
+        .is_boundary(offset)
+        .map_err(|_| EditorError("EDITOR_INVALID_SELECTION"))?
+        .then_some(())
+        .ok_or(EditorError("EDITOR_INVALID_SELECTION"))
+}
 fn map_text_error(error: atelier_text_model::PlainTextError) -> EditorError {
     use atelier_text_model::PlainTextError::*;
     match error {
@@ -395,6 +627,8 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         8 => Some(4),
         9 => Some(21),
         11 => Some(8),
+        12 | 13 => Some(8),
+        14 => Some(32),
         _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),
     };
     if expected.is_some_and(|len| len != body.len()) {
@@ -404,6 +638,12 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         return Err(EditorError("EDITOR_INVALID_COMMAND"));
     }
     if opcode == 9 && body.len() == 21 && body[20] > 1 {
+        return Err(EditorError("EDITOR_INVALID_COMMAND"));
+    }
+    if opcode == 14
+        && body.len() == 32
+        && (body[20] > 2 || body[21] > 1 || body[22] != 0 || body[23] != 0)
+    {
         return Err(EditorError("EDITOR_INVALID_COMMAND"));
     }
     if opcode == 2 && body.len() < 8 {
@@ -502,5 +742,21 @@ impl<'a> Reader<'a> {
         let rest = &self.bytes[self.at..];
         self.at = self.bytes.len();
         rest
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::extend_unit_selection;
+
+    #[test]
+    fn selecting_a_unit_starting_at_base_end_extends_forward() {
+        assert_eq!(
+            extend_unit_selection(0..3, 3..9),
+            atelier_text_model::Selection {
+                anchor: 0,
+                focus: 9
+            }
+        );
     }
 }

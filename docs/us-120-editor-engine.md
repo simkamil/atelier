@@ -71,3 +71,35 @@ Les dialogues manuels, AZERTY/IME physique et mesures de 300 pages/démarrage re
 ouverts pour US-120. US-113 conserve SharedBuffer, polices/URL ; US-111 conserve
 l’échec strict de handles. Les **35/158 US complètes** sont inchangées. Les tests
 musl sont compilés localement ; leur exécution appartient à la CI Linux publiée.
+
+## Édition TXT au clavier, à la souris et presse-papiers — 2026-10-11
+
+Trois agents GPT-6 Luna moyen ont développé en parallèle la navigation, la
+sélection souris et le presse-papiers, puis trois revues indépendantes ont été
+triées. Les [contrats clavier](us-221-keyboard-editing.md),
+[souris](us-222-mouse-selection.md) et [texte brut](us-225-plain-clipboard.md)
+décrivent les comportements livrés : Ctrl+flèches par mot/paragraphe,
+Ctrl+effacement par mot, colonne visuelle conservée, Ctrl+A, F8/Échap,
+glisser avec défilement aux bords, double/triple-clic et copier/couper/coller.
+
+La [validation finale](../_bmad-output/implementation-artifacts/editing-ergonomics-validation.json)
+réussit **41 contrôles, 377 tests workspace et 55 tests natifs release**.
+Les 57 assertions du navigateur exercent le vrai Worker/WASM ;
+l’ABI réelle refuse onze SelectPoint invalides sans mutation. Les sources et le
+lock sont inchangés pendant les contrôles. Le shell embarque **18 ressources**,
+et la [copie isolée](../_bmad-output/implementation-artifacts/editing-ergonomics-portable.json)
+fonctionne sans dossier web/data. La [revue](../_bmad-output/implementation-artifacts/editing-ergonomics-review.md)
+conserve 17 constats et leurs décisions, sans nouveau report. Les anciens reports
+copy/cut, mot et colonne sont résolus pour cette tranche TXT.
+Un timeout d’initialisation WebView2 est conservé dans
+`editing-ergonomics-retry-validation.json` ; les contrôles restants ont été repris
+sur les mêmes sources, avec des dossiers de diagnostic natifs isolés.
+La sonde portable a également réussi à la seconde tentative, avec le même
+exécutable ; `editing-ergonomics-portable-first-attempt.json` conserve son timeout
+ExecuteScript initial. Ces reprises ne prouvent pas l’absence d’instabilité du runtime.
+
+Le backlog reste à **35/158 US complètes**. US-214/220/221/222/223/225 restent
+ouvertes : objets riches, phrases/marge/bloc rectangulaire, formats HTML/interne
+et images, ainsi que les essais physiques, ne sont pas tous livrés. US-111
+conserve son échec strict de handles. Les événements synthétiques ne valident pas
+AZERTY/IME physique ; les tests musl sont compilés localement et exécutés en CI Linux.

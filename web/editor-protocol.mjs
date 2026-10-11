@@ -4,6 +4,7 @@ import { decodeDisplayList } from "./display-list.mjs";
 export const EditorOpcode = Object.freeze({
   State: 0, Load: 1, InsertText: 2, DeleteBackward: 3, DeleteForward: 4,
   Undo: 5, Redo: 6, SetSelection: 7, Move: 8, HitTest: 9, Export: 10, MarkSaved: 11,
+  DeleteWordBackward: 12, DeleteWordForward: 13, SelectPoint: 14,
 });
 
 export const EDITOR_LIMITS = Object.freeze({
@@ -23,6 +24,7 @@ const DIRECTIONS = new Map([
   ["left", 0], ["right", 1], ["up", 2], ["down", 3], ["home", 4],
   ["end", 5], ["documentStart", 6], ["documentEnd", 7],
   ["pageUp", 8], ["pageDown", 9],
+  ["wordLeft", 10], ["wordRight", 11], ["paragraphUp", 12], ["paragraphDown", 13],
 ]);
 
 export class EditorProtocolError extends Error {
@@ -63,7 +65,7 @@ function boolByte(value, name) {
 
 /** Encode an ATED v1 command payload as defined by the shared editor contract. */
 export function encodeEditorCommand(opcode, values = {}) {
-  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 11 || values === null || typeof values !== "object") {
+  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 14 || values === null || typeof values !== "object") {
     fail("INVALID_ARGUMENT", "Invalid editor opcode or arguments.");
   }
   let body;
@@ -77,7 +79,7 @@ export function encodeEditorCommand(opcode, values = {}) {
     const prefix = new Uint8Array(8);
     new DataView(prefix.buffer).setBigUint64(0, u64(values.nowMs, "nowMs"), true);
     body = concat(prefix, body);
-  } else if (opcode === EditorOpcode.DeleteBackward || opcode === EditorOpcode.DeleteForward) {
+  } else if ([EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward, EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward].includes(opcode)) {
     body = new Uint8Array(8);
     new DataView(body.buffer).setBigUint64(0, u64(values.nowMs, "nowMs"), true);
   } else if (opcode === EditorOpcode.SetSelection) {
@@ -87,7 +89,7 @@ export function encodeEditorCommand(opcode, values = {}) {
     view.setUint32(4, u32(values.focus, "focus"), true);
   } else if (opcode === EditorOpcode.Move) {
     const direction = typeof values.direction === "number" ? values.direction : DIRECTIONS.get(values.direction);
-    if (!Number.isInteger(direction) || direction < 0 || direction > 9) fail("INVALID_ARGUMENT", "Invalid movement direction.");
+    if (!Number.isInteger(direction) || direction < 0 || direction > 13) fail("INVALID_ARGUMENT", "Invalid movement direction.");
     body = new Uint8Array([direction, boolByte(values.extend ?? false, "extend"), 0, 0]);
   } else if (opcode === EditorOpcode.HitTest) {
     body = new Uint8Array(21);
@@ -96,6 +98,18 @@ export function encodeEditorCommand(opcode, values = {}) {
     view.setFloat64(4, finite(values.x, "x"), true);
     view.setFloat64(12, finite(values.y, "y"), true);
     view.setUint8(20, boolByte(values.extend ?? false, "extend"));
+  } else if (opcode === EditorOpcode.SelectPoint) {
+    const unit = typeof values.unit === "number" ? values.unit : ["character", "word", "paragraph"].indexOf(values.unit);
+    if (!Number.isInteger(unit) || unit < 0 || unit > 2) fail("INVALID_ARGUMENT", "Invalid selection unit.");
+    body = new Uint8Array(32);
+    const view = new DataView(body.buffer);
+    view.setUint32(0, u32(values.page, "page"), true);
+    view.setFloat64(4, finite(values.x, "x"), true);
+    view.setFloat64(12, finite(values.y, "y"), true);
+    view.setUint8(20, unit);
+    view.setUint8(21, boolByte(values.extend ?? false, "extend"));
+    view.setUint32(24, u32(values.anchor ?? 0, "anchor"), true);
+    view.setUint32(28, u32(values.anchorEnd ?? 0, "anchorEnd"), true);
   } else if (opcode === EditorOpcode.MarkSaved) {
     body = new Uint8Array(8);
     new DataView(body.buffer).setBigUint64(0, u64(values.revision, "revision"), true);

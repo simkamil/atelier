@@ -82,7 +82,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor-layout.rs",
-    "source_location": "L464",
+    "source_location": "L471",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -100,11 +100,33 @@
   },
   {
     "source": "crates_core_wasm_src_editor",
+    "target": "segmentation",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/editor.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_editor",
     "target": "protocol",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor.rs",
-    "source_location": "L7",
+    "source_location": "L8",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_editor",
+    "target": "extend_unit_selection",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/editor.rs",
+    "source_location": "L750",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -478,7 +500,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/resources.rs",
-    "source_location": "L237",
+    "source_location": "L242",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -676,7 +698,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2117",
+    "source_location": "L2118",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -687,7 +709,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2121",
+    "source_location": "L2122",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -698,7 +720,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2123",
+    "source_location": "L2124",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -2107,6 +2129,17 @@
     "context": "import",
     "confidence": "EXTRACTED",
     "source_file": "tests/editor-protocol.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_mouse_selection",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/mouse-selection.mjs",
     "source_location": "L2",
     "weight": 1.0,
     "_origin": "ast"

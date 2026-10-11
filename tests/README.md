@@ -88,6 +88,8 @@ Le benchmark software n’est pas une validation de fluidité matérielle ; les
 
 ## Ressources embarquées, fichiers et texte brut
 
+`node tests/mouse-selection.mjs` vérifie capture, coalescence asynchrone, zoom, pages, scroll, annulation et erreurs de callbacks avec une horloge contrôlée. `run-frontend-browser.mjs input` ajoute les cas copy/cut du modèle (UTF-8, U+FEFF de contenu, sélection inversée et échec d’écriture). `run-editor-browser.mjs` couvre les raccourcis Ctrl par mot/paragraphe, F8/Ctrl+A/Échap, suppression par mot et undo, double/triple-clic et glisser via le vrai Worker/WASM. Les événements synthétiques et captures simulées ne remplacent pas les essais natifs. `editor-abi.mjs` injecte onze commandes SelectPoint invalides directement dans le vrai WASM et vérifie l’absence de mutation.
+
 Le premier éditeur intégré se vérifie avec `node tests/editor-protocol.mjs`,
 `node tests/editor-abi.mjs` et `node tests/run-editor-browser.mjs` après un build
 WASM optimisé. Le test ABI exerce la limite réelle de 128 Mio d’allocations et

@@ -269,3 +269,180 @@ fn selecting_only_an_explicit_newline_emits_a_thin_selection_rectangle() {
     );
     assert_eq!(width, 1.5);
 }
+
+#[test]
+fn word_delete_is_one_undoable_edit_and_restores_a_reversed_utf8_selection() {
+    let mut session = EditorSession::default()
+        .transact(&command(1, "un été choisi".as_bytes()))
+        .unwrap()
+        .0;
+    let selected = "un été choisi";
+    let start = selected.find("été").unwrap() as u32;
+    let end = selected.len() as u32;
+    let mut body = end.to_le_bytes().to_vec();
+    body.extend_from_slice(&start.to_le_bytes());
+    session = session.transact(&command(7, &body)).unwrap().0;
+    let deleted = 55u64.to_le_bytes().to_vec();
+    session = session.transact(&command(12, &deleted)).unwrap().0;
+    let after_delete = state(&session, &command(0, &[]));
+    assert_eq!(
+        &after_delete[64..64 + u32_at(&after_delete, 24) as usize],
+        b"un "
+    );
+    session = session.transact(&command(5, &[])).unwrap().0;
+    let restored = state(&session, &command(0, &[]));
+    assert_eq!(&restored[64..64 + selected.len()], selected.as_bytes());
+    assert_eq!(u32_at(&restored, 16), end);
+    assert_eq!(u32_at(&restored, 20), start);
+}
+
+#[test]
+fn vertical_navigation_keeps_the_preferred_column_across_a_short_line() {
+    let text = "0123456789\nx\n0123456789";
+    let mut session = EditorSession::default()
+        .transact(&command(1, text.as_bytes()))
+        .unwrap()
+        .0;
+    let mut selection = 8u32.to_le_bytes().to_vec();
+    selection.extend_from_slice(&8u32.to_le_bytes());
+    session = session.transact(&command(7, &selection)).unwrap().0;
+    let initial = state(&session, &command(0, &[]));
+    let initial_x = f64::from_le_bytes(initial[36..44].try_into().unwrap());
+    for _ in 0..2 {
+        session = session.transact(&command(8, &[3, 0, 0, 0])).unwrap().0;
+    }
+    let returned = state(&session, &command(0, &[]));
+    let returned_x = f64::from_le_bytes(returned[36..44].try_into().unwrap());
+    assert!((returned_x - initial_x).abs() < 0.01);
+    assert_eq!(u32_at(&returned, 20), 21);
+}
+
+#[test]
+fn invalid_select_point_fails_through_wasm_without_mutating_the_session() {
+    let (session, _) = EditorSession::default()
+        .transact(&command(1, b"unchanged"))
+        .unwrap();
+    let before = state(&session, &command(0, &[]));
+    let mut invalid = [0u8; 32];
+    invalid[..4].copy_from_slice(&99u32.to_le_bytes());
+    let request = Message {
+        kind: MessageType::Editor,
+        request_id: 99,
+        payload: command(14, &invalid),
+    };
+    let (candidate, failure) = session.prepare_message(&request);
+    assert!(candidate.is_none());
+    assert_eq!(failure.kind, MessageType::Failed);
+    assert_eq!(failure.request_id, 99);
+    assert_eq!(state(&session, &command(0, &[])), before);
+}
+
+#[test]
+fn word_and_paragraph_navigation_respect_unicode_segments_and_crlf() {
+    let text = "été, ici\r\nensuite";
+    let mut session = EditorSession::default()
+        .transact(&command(1, text.as_bytes()))
+        .unwrap()
+        .0;
+    let move_word =
+        |session: EditorSession| session.transact(&command(8, &[11, 0, 0, 0])).unwrap().0;
+    session = move_word(session);
+    let first = state(&session, &command(0, &[]));
+    assert_eq!(u32_at(&first, 20), 5); // End of the first UAX #29 word.
+    session = move_word(session);
+    let second = state(&session, &command(0, &[]));
+    assert_eq!(u32_at(&second, 20), 7); // Whitespace is skipped; punctuation remains a unit.
+
+    let mut start = 0u32.to_le_bytes().to_vec();
+    start.extend_from_slice(&0u32.to_le_bytes());
+    session = session.transact(&command(7, &start)).unwrap().0;
+    session = session.transact(&command(8, &[13, 0, 0, 0])).unwrap().0;
+    let next_paragraph = state(&session, &command(0, &[]));
+    assert!(u32_at(&next_paragraph, 20) >= "été, ici\r\n".len() as u32);
+}
+
+#[test]
+fn select_point_selects_word_and_crlf_terminated_paragraph() {
+    let text = "été, ici\r\nensuite";
+    let session = EditorSession::default()
+        .transact(&command(1, text.as_bytes()))
+        .unwrap()
+        .0;
+    let select = |unit: u8| {
+        let mut body = Vec::new();
+        body.extend_from_slice(&0u32.to_le_bytes());
+        body.extend_from_slice(&54.0f64.to_le_bytes());
+        body.extend_from_slice(&65.0f64.to_le_bytes());
+        body.extend_from_slice(&[unit, 0, 0, 0]);
+        body.extend_from_slice(&0u32.to_le_bytes());
+        body.extend_from_slice(&0u32.to_le_bytes());
+        session.transact(&command(14, &body)).unwrap().1
+    };
+    let word = select(1);
+    let word_range = (u32_at(&word, 16) as usize).min(u32_at(&word, 20) as usize)
+        ..(u32_at(&word, 16) as usize).max(u32_at(&word, 20) as usize);
+    assert_eq!(
+        &word[64 + word_range.start..64 + word_range.end],
+        "été".as_bytes()
+    );
+    let paragraph = select(2);
+    assert_eq!(u32_at(&paragraph, 16), 0);
+    assert_eq!(u32_at(&paragraph, 20), "été, ici\r\n".len() as u32);
+}
+
+#[test]
+fn select_point_character_extension_accepts_a_nonzero_anchor() {
+    let session = EditorSession::default()
+        .transact(&command(1, b"abc"))
+        .unwrap()
+        .0;
+    let mut body = Vec::new();
+    body.extend_from_slice(&0u32.to_le_bytes());
+    body.extend_from_slice(&54.0f64.to_le_bytes());
+    body.extend_from_slice(&65.0f64.to_le_bytes());
+    body.extend_from_slice(&[0, 1, 0, 0]);
+    body.extend_from_slice(&1u32.to_le_bytes());
+    body.extend_from_slice(&1u32.to_le_bytes());
+    let response = session.transact(&command(14, &body)).unwrap().1;
+    assert_eq!(u32_at(&response, 16), 1);
+    assert_eq!(u32_at(&response, 20), 0);
+}
+
+#[test]
+fn paragraph_navigation_uses_logical_boundaries_and_resets_preferred_x() {
+    let text = "one\r\ntwo\r\nthree";
+    let mut session = EditorSession::default()
+        .transact(&command(1, text.as_bytes()))
+        .unwrap()
+        .0;
+    let set = |at: u32| {
+        let mut body = at.to_le_bytes().to_vec();
+        body.extend_from_slice(&at.to_le_bytes());
+        body
+    };
+    session = session.transact(&command(7, &set(7))).unwrap().0;
+    session = session.transact(&command(8, &[12, 0, 0, 0])).unwrap().0;
+    assert_eq!(u32_at(&state(&session, &command(0, &[])), 20), 5);
+    session = session.transact(&command(8, &[12, 0, 0, 0])).unwrap().0;
+    assert_eq!(u32_at(&state(&session, &command(0, &[])), 20), 0);
+    session = session.transact(&command(8, &[13, 0, 0, 0])).unwrap().0;
+    assert_eq!(u32_at(&state(&session, &command(0, &[])), 20), 5);
+    session = session.transact(&command(8, &[13, 0, 0, 0])).unwrap().0;
+    assert_eq!(u32_at(&state(&session, &command(0, &[])), 20), 10);
+}
+
+#[test]
+fn paragraph_navigation_clears_the_previous_vertical_column() {
+    let text = "0123456789\nx\nabcdefghij\nABCDEFGHIJ";
+    let mut session = EditorSession::default()
+        .transact(&command(1, text.as_bytes()))
+        .unwrap()
+        .0;
+    let mut caret = 8u32.to_le_bytes().to_vec();
+    caret.extend_from_slice(&8u32.to_le_bytes());
+    session = session.transact(&command(7, &caret)).unwrap().0;
+    session = session.transact(&command(8, &[3, 0, 0, 0])).unwrap().0;
+    session = session.transact(&command(8, &[13, 0, 0, 0])).unwrap().0;
+    session = session.transact(&command(8, &[3, 0, 0, 0])).unwrap().0;
+    assert_eq!(u32_at(&state(&session, &command(0, &[])), 20), 24);
+}

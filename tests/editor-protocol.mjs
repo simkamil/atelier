@@ -50,6 +50,18 @@ const maxU64Command = encodeEditorCommand(EditorOpcode.InsertText, { nowMs: (1n 
 assert.equal(new DataView(maxU64Command.buffer).getBigUint64(8, true), (1n << 64n) - 1n, "BigInt u64 maximum encodes exactly");
 assert.deepEqual([...encodeEditorCommand(EditorOpcode.Move, { direction: "pageDown", extend: true }).subarray(8)], [9, 1, 0, 0]);
 assert.equal(encodeEditorCommand(EditorOpcode.HitTest, { page: 2, x: 10.5, y: 20, extend: false }).length, 29);
+assert.deepEqual([...encodeEditorCommand(EditorOpcode.Move, { direction: "wordLeft", extend: true }).subarray(8)], [10, 1, 0, 0]);
+assert.deepEqual([...encodeEditorCommand(EditorOpcode.Move, { direction: "paragraphDown" }).subarray(8)], [13, 0, 0, 0]);
+assert.equal(encodeEditorCommand(EditorOpcode.DeleteWordForward, { nowMs: 42n }).length, 16);
+const pointSelection = encodeEditorCommand(EditorOpcode.SelectPoint, { page: 1, x: 30.25, y: 70.5,
+  unit: "word", extend: true, anchor: 3, anchorEnd: 8 });
+const pointView = new DataView(pointSelection.buffer);
+assert.equal(pointSelection.length, 40);
+assert.deepEqual([pointView.getUint32(8, true), pointView.getFloat64(12, true), pointView.getFloat64(20, true)], [1, 30.25, 70.5]);
+assert.deepEqual([...pointSelection.subarray(28, 32)], [1, 1, 0, 0]);
+assert.deepEqual([pointView.getUint32(32, true), pointView.getUint32(36, true)], [3, 8]);
+expectCode(() => encodeEditorCommand(EditorOpcode.SelectPoint, { page: 0, x: NaN, y: 0, unit: "word" }), "INVALID_ARGUMENT");
+expectCode(() => encodeEditorCommand(EditorOpcode.SelectPoint, { page: 0, x: 0, y: 0, unit: "sentence" }), "INVALID_ARGUMENT");
 expectCode(() => encodeEditorCommand(EditorOpcode.Move, { direction: "sideways" }), "INVALID_ARGUMENT");
 expectCode(() => encodeEditorCommand(EditorOpcode.HitTest, { page: 0, x: Infinity, y: 0 }), "INVALID_ARGUMENT");
 

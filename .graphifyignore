@@ -1,4 +1,5 @@
 # Exclude generated outputs and installed agent tooling from the product map.
+.claude/worktrees/
 target/
 _bmad/
 _bmad-output/

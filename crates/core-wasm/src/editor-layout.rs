@@ -377,6 +377,10 @@ impl Layout {
     }
 
     pub fn move_offset(&self, offset: usize, direction: u8) -> usize {
+        self.move_offset_at_x(offset, direction, self.caret(offset).x)
+    }
+
+    pub fn move_offset_at_x(&self, offset: usize, direction: u8, preferred_x: f64) -> usize {
         let line_index = self.line_index_for_offset(offset);
         let line = &self.lines[line_index];
         match direction {
@@ -413,11 +417,14 @@ impl Layout {
                 let Some(target) = target else {
                     return offset;
                 };
-                let x = self.caret(offset).x;
                 self.lines[target]
                     .slots
                     .iter()
-                    .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))
+                    .min_by(|a, b| {
+                        (a.1 - preferred_x)
+                            .abs()
+                            .total_cmp(&(b.1 - preferred_x).abs())
+                    })
                     .map_or(offset, |s| s.0)
             }
             _ => offset,
