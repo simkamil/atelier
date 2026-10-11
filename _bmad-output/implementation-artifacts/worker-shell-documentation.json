@@ -1,0 +1,22 @@
+{
+  "date": "2027-10-11",
+  "validated_stories": 34,
+  "total_stories": 158,
+  "runtime_validation_sha256": "9cf99148f577693284db37b9804d5bf53db04d5e2220f5d534f66a0766b5d1e5",
+  "documentation_sha256": {
+    "README.md": "acf8f60e99e65103d78d11a458dd2a92fa968bf032e441831b09f43c0dce1660",
+    "US-V0-V1.md": "91b08c7ff6539500f5be1654dfc794575e597bedcdd1b7e59a0bb3c94c65b3de",
+    "web/README.md": "20d1d51d3850367d80653a87c67ab3565094526f4f6d072e04499a108755ff5b",
+    "tests/README.md": "94c890b2a5ee3c8051d5024128542cb9d7ff89a0641637af51d9a3d9dc3806d8",
+    "docs/DEVELOPMENT.md": "123f65374ef5677343053b9acf23f6a37dd780ded0f6af91fb996a6ec054c581",
+    "docs/PROTOTYPE-PROGRESS.md": "a5d89c1802d85a5aa40f13dfb21133e7efb40fda89d7f7a0c2bbcdd900246310",
+    "docs/us-092-worker.md": "e12a8888a5887b714494a31056376f0fd531e285d05736cfdbab887a2b8e011f",
+    "_bmad-output/implementation-artifacts/spec-us092-worker.md": "bb14191001a0b4e65497ede2eee7892349f8880a971e6c9d3fbacdfdbad80bf3",
+    "docs/us-110-win32-window.md": "f20c041a6ebef7e51b3ec77768caae214094a4f5cef9c762032c6dbd03ed0b50",
+    "docs/us-116-portable-data.md": "3cc121abe3745119b4bb81f71820320ca3ca9a91bd1184d6404ef53760ddfd57",
+    "_bmad-output/implementation-artifacts/spec-us110-win32-window.md": "6c8bddc647d52b08c39e1bc6509f2c1f5c19986932cbf3f1be2c17b084adacb2",
+    "_bmad-output/implementation-artifacts/spec-us116-portable-data.md": "8659fb838ff990384a762aa38ccc33b58e70bad1312a154b11d03512e080a060",
+    "_bmad-output/implementation-artifacts/worker-shell-claims.md": "dcf0036f434549cd6131fec34d299dccd435d403df783b23861b894ca20721b9",
+    "_bmad-output/implementation-artifacts/worker-shell-review.md": "3127d7af7d0c21ddecee04c90e8bd4da6c6f335f920f2166aec26c2e86f97529"
+  }
+}

@@ -37,8 +37,18 @@ document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-ge
 document_paths.update({'crates/font/tests/fixtures/README.md', 'crates/font/tests/fixtures/fixtures.json', 'docs/us-050-opentype-tables.md', 'docs/us-073-selection.md', 'docs/us-074-recovery-journal.md', 'docs/MODEL-FONT-PROGRESS.md', 'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
 document_paths.update(['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md'])
 prototype_docs=['docs/us-012-line-breaks.md','docs/us-054-latin-shaping.md','docs/us-055-font-manager.md','docs/us-011-segmentation.md','docs/us-053-kerning-ligatures.md','docs/us-091-binary-protocol.md','tests/font-layout-reference/README.md','docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
+prototype_docs.extend(['docs/us-092-worker.md','docs/us-110-win32-window.md','docs/us-116-portable-data.md'])
 document_paths.update(prototype_docs)
+document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
 document_paths.update({'README.md','web/README.md','tests/README.md'})
+document_paths.add('tests/worker-browser.html')
+browser_html_lines = (root/'tests/worker-browser.html').read_text(encoding='utf-8').splitlines()
+for node in previous['nodes'] + doc['nodes']:
+    if node.get('source_file','').replace('\\','/') == 'tests/worker-browser.html':
+        if node['id'] == 'tests_worker_browser_html':
+            node['source_location'] = str(next(i+1 for i,line in enumerate(browser_html_lines) if '<h1>' in line))
+        elif node['id'] == 'tests_worker_browser_result_pre':
+            node['source_location'] = str(next(i+1 for i,line in enumerate(browser_html_lines) if '<pre id="result"' in line))
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt'))
 known={node['id'] for node in doc['nodes']}
 preserved=set()

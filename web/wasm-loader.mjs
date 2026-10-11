@@ -52,6 +52,18 @@ export class EngineResetError extends Error {
   }
 }
 
+function abortError() {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) throw abortError();
+}
+
+function yieldToTaskQueue() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function normalizeModule(bytesOrModule) {
   if (bytesOrModule instanceof WebAssembly.Module) {
     return bytesOrModule;
@@ -90,6 +102,7 @@ function isInBounds(ptr, len, memoryBytes) {
 export async function createWasmEngine(bytesOrModule) {
   const module = await normalizeModule(bytesOrModule);
   let state;
+  let dispatchBusy = false;
   try {
     state = instantiate(module);
   } catch (error) {
@@ -111,7 +124,7 @@ export async function createWasmEngine(bytesOrModule) {
     }
   }
 
-  function dispatch(input) {
+  function dispatchCore(input) {
     if (!(input instanceof Uint8Array)) {
       throw new EngineInputError("dispatch expects a Uint8Array.");
     }
@@ -255,5 +268,140 @@ export async function createWasmEngine(bytesOrModule) {
     return result;
   }
 
-  return Object.freeze({ dispatch });
+  function dispatch(input) {
+    if (dispatchBusy) throw new EngineInputError("This WASM engine already has a dispatch in progress.");
+    dispatchBusy = true;
+    try {
+      return dispatchCore(input);
+    } finally {
+      dispatchBusy = false;
+    }
+  }
+
+  async function dispatchAsync(input, options = {}) {
+    if (!(input instanceof Uint8Array)) throw new EngineInputError("dispatchAsync expects a Uint8Array.");
+    const inputLen = input.byteLength;
+    if (inputLen > MAX_BUFFER_BYTES) throw new EngineInputError(`Input exceeds ${MAX_BUFFER_BYTES} bytes.`);
+    if (options === null || typeof options !== "object") throw new EngineInputError("dispatchAsync options must be an object.");
+    const { signal, onProgress, chunkBytes = 256 * 1024 } = options;
+    if (signal !== undefined && (signal === null || typeof signal.addEventListener !== "function" || typeof signal.aborted !== "boolean")) {
+      throw new EngineInputError("signal must be an AbortSignal.");
+    }
+    if (onProgress !== undefined && typeof onProgress !== "function") throw new EngineInputError("onProgress must be a function.");
+    if (!Number.isSafeInteger(chunkBytes) || chunkBytes < 16 * 1024 || chunkBytes > 16 * 1024 * 1024) {
+      throw new EngineInputError("chunkBytes must be an integer between 16384 and 16777216.");
+    }
+    if (dispatchBusy) throw new EngineInputError("This WASM engine already has a dispatch in progress.");
+    if (!state) throw new EngineResetError("The WASM engine has no usable instance.");
+    dispatchBusy = true;
+
+    let inputPtr = 0;
+    let inputOutstanding = false;
+    let descriptorPtr = 0;
+    let payloadPtr = 0;
+    let payloadLen = 0;
+    let instanceDiscarded = false;
+    let operationError;
+    let result;
+    let inputCopied = 0;
+    let outputCopied = 0;
+    let outputBytes = 0;
+    const report = (phase, copiedBytes, totalBytes) => {
+      if (typeof onProgress === "function") {
+        try { onProgress(Object.freeze({ phase, copiedBytes, totalBytes })); } catch { /* caller callbacks are isolated */ }
+      }
+    };
+    const ensureInputAttached = () => {
+      if (input.byteLength !== inputLen) throw new EngineInputError("Input buffer was detached or resized during dispatchAsync.");
+    };
+    try {
+      throwIfAborted(signal);
+      inputPtr = inputLen === 0 ? 0 : state.alloc(inputLen) >>> 0;
+      if (inputLen > 0 && inputPtr === 0) throw new EngineMemoryError("WASM could not allocate the input buffer.");
+      inputOutstanding = inputLen > 0;
+      if (inputLen > 0) {
+        for (let offset = 0; offset < inputLen; offset += chunkBytes) {
+          ensureInputAttached();
+          throwIfAborted(signal);
+          const length = Math.min(chunkBytes, inputLen - offset);
+          const memory = new Uint8Array(state.memory.buffer);
+          if (!isInBounds(inputPtr + offset, length, memory.byteLength)) throw new EngineAbiError("WASM returned an out-of-range input allocation.");
+          memory.set(input.subarray(offset, offset + length), inputPtr + offset);
+          inputCopied += length;
+          report("input", inputCopied, inputLen);
+          if (offset + length < inputLen) await yieldToTaskQueue();
+        }
+      }
+      ensureInputAttached();
+      throwIfAborted(signal);
+      descriptorPtr = state.dispatch(inputPtr, inputLen) >>> 0;
+      inputOutstanding = false;
+      if (descriptorPtr === 0) {
+        const error = new EngineAbiError("WASM dispatch returned the fatal zero descriptor.");
+        state = undefined;
+        instanceDiscarded = true;
+        try { state = instantiate(module); } catch (resetError) {
+          state = undefined;
+          throw new EngineResetError("The WASM engine returned a fatal descriptor and its instance could not be recreated.", resetError);
+        }
+        throw error;
+      }
+      const descriptorMemory = new Uint8Array(state.memory.buffer);
+      if (!isInBounds(descriptorPtr, DESCRIPTOR_BYTES, descriptorMemory.byteLength)) throw new EngineAbiError("WASM returned an out-of-range descriptor.");
+      const descriptor = new DataView(state.memory.buffer, descriptorPtr, DESCRIPTOR_BYTES);
+      payloadPtr = descriptor.getUint32(0, true);
+      payloadLen = descriptor.getUint32(4, true);
+      if (payloadPtr === 0 || payloadLen < 4 || payloadLen > MAX_BUFFER_BYTES) throw new EngineAbiError("WASM returned an invalid payload pointer or length.");
+      const memory = new Uint8Array(state.memory.buffer);
+      if (!isInBounds(payloadPtr, payloadLen, memory.byteLength)) throw new EngineAbiError("WASM returned an out-of-range payload.");
+      const status = new DataView(state.memory.buffer, payloadPtr, payloadLen).getUint32(0, true);
+      if (status !== 0) throw new EngineStatusError(status);
+      outputBytes = payloadLen - 4;
+      result = new Uint8Array(outputBytes);
+      const totalBytes = inputLen + outputBytes;
+      for (let offset = 0; offset < outputBytes; offset += chunkBytes) {
+        throwIfAborted(signal);
+        const length = Math.min(chunkBytes, outputBytes - offset);
+        const current = new Uint8Array(state.memory.buffer);
+        if (!isInBounds(payloadPtr + 4 + offset, length, current.byteLength)) throw new EngineAbiError("WASM response moved out of bounds while copying.");
+        result.set(current.subarray(payloadPtr + 4 + offset, payloadPtr + 4 + offset + length), offset);
+        outputCopied += length;
+        report("output", inputCopied + outputCopied, totalBytes);
+        if (offset + length < outputBytes) await yieldToTaskQueue();
+      }
+      throwIfAborted(signal);
+    } catch (error) {
+      operationError = error;
+      if (error instanceof WebAssembly.RuntimeError) {
+        state = undefined;
+        instanceDiscarded = true;
+        operationError = resetAfterTrap(error);
+      }
+    } finally {
+      if (!instanceDiscarded && state) {
+        const cleanupErrors = [];
+        for (const [ptr, len, label] of [[payloadPtr, payloadLen, "response payload"], [descriptorPtr, DESCRIPTOR_BYTES, "response descriptor"], [inputOutstanding ? inputPtr : 0, inputOutstanding ? inputLen : 0, "unconsumed input"]]) {
+          if (!ptr || !len) continue;
+          try {
+            if (state.free(ptr, len) !== 0) cleanupErrors.push(`WASM rejected freeing the ${label}.`);
+          } catch (error) {
+            if (error instanceof WebAssembly.RuntimeError) {
+              state = undefined;
+              instanceDiscarded = true;
+              operationError = resetAfterTrap(error);
+              break;
+            }
+            cleanupErrors.push(`WASM threw while freeing the ${label}.`);
+          }
+        }
+        if (cleanupErrors.length && operationError === undefined) operationError = new EngineMemoryError(cleanupErrors.join(" "));
+      }
+      dispatchBusy = false;
+    }
+    if (operationError !== undefined) throw operationError;
+    report("complete", inputLen + outputBytes, inputLen + outputBytes);
+    return result;
+  }
+
+  return Object.freeze({ dispatch, dispatchAsync });
 }

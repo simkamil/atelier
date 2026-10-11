@@ -38,6 +38,8 @@ jobs:
         run: cargo run -p atelier-ucd-gen --locked --offline -- --ucd data/ucd/17.0.0 --output crates/unicode/src/generated.rs --check
       - name: Test Windows MSVC workspace
         run: cargo test --workspace --target x86_64-pc-windows-msvc --locked --offline
+      - name: Exercise native window without displaying it
+        run: .\target\x86_64-pc-windows-msvc\debug\atelier.exe --self-check target\shell-check\window-state.txt
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
       - name: Check formatting
@@ -86,6 +88,10 @@ jobs:
         run: node tests/wasm-protocol.mjs target/debug/examples/protocol_oracle.exe target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
       - name: Check exact protocol capacity boundary in JavaScript
         run: node tests/wasm-protocol-boundaries.mjs
+      - name: Exercise real Worker transfers and cancellation
+        run: node tests/wasm-worker.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
+      - name: Exercise default browser Worker bootstrap in headless Edge
+        run: node tests/run-worker-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests

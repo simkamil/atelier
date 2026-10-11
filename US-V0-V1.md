@@ -412,14 +412,16 @@ Réf : §6.7 · Taille : M · Dépend de : US-090
 
 #### US-092 — Moteur dans un Web Worker
 *En tant que* développeur, *je veux* exécuter le moteur dans un Web Worker *afin que* l'interface ne bloque jamais.
-- [ ] File de commandes, réponses associées par identifiant.
-- [ ] Les listes d'affichage sont copiées une fois depuis la mémoire WASM vers un `ArrayBuffer` JS indépendant, puis ce tampon est transféré au fil principal sans copie supplémentaire. `WebAssembly.Memory.buffer` n'est jamais placé dans la liste de transfert.
-- [ ] Test : après réception et transfert d'une liste, le moteur traite une nouvelle commande ; le tampon JS transféré est détaché côté émetteur, la mémoire WASM reste utilisable et les octets reçus correspondent à la sortie initiale. V0/V1 fonctionnent sans `SharedArrayBuffer`.
+- [x] File de commandes, réponses associées par identifiant.
+- [x] Les listes d'affichage sont copiées une fois depuis la mémoire WASM vers un `ArrayBuffer` JS indépendant, puis ce tampon est transféré au fil principal sans copie supplémentaire. `WebAssembly.Memory.buffer` n'est jamais placé dans la liste de transfert.
+- [x] Test : après réception et transfert d'une liste, le moteur traite une nouvelle commande ; le tampon JS transféré est détaché côté émetteur, la mémoire WASM reste utilisable et les octets reçus correspondent à la sortie initiale. V0/V1 fonctionnent sans `SharedArrayBuffer`.
 - [ ] Une opération longue (ouverture, export) peut être annulée et signale sa progression.
 
 Réf : §6.7 · Taille : S · Dépend de : US-091
 
 ## E0.11 — Socle du front-end
+
+US-092 en cours (2027-10-11) : [transport et limites](docs/us-092-worker.md). Progression/annulation des copies vérifiées ; le critère opération métier ouverture/export reste ouvert.
 
 #### US-100 — Interface Host
 *En tant que* développeur, *je veux* une interface `Host` *afin que* le front-end soit identique sur le desktop et le web.
@@ -482,10 +484,12 @@ Réf : F-COM-018 · Taille : M · Dépend de : US-104
 
 #### US-110 — Fenêtre Win32
 *En tant que* développeur, *je veux* une fenêtre Win32 native *afin d'héberger* la WebView.
-- [ ] Boucle de messages, prise en charge du DPI par écran (Per-Monitor V2), barre de titre au thème du système.
-- [ ] Taille, position et état (agrandi) mémorisés et restaurés, y compris en multi-écran.
+- [x] Boucle de messages, prise en charge du DPI par écran (Per-Monitor V2), barre de titre au thème du système.
+- [x] Taille, position et état (agrandi) mémorisés et restaurés, y compris en multi-écran.
 
 Réf : §6.8 · Taille : S · Dépend de : US-001
+
+Validation US-110 (2027-10-11) : [contrat et limites](docs/us-110-win32-window.md), [preuve du lot](_bmad-output/implementation-artifacts/worker-shell-validation.json).
 
 #### US-111 — Liaisons WebView2
 *En tant que* développeur, *je veux* des liaisons COM WebView2 écrites à la main *afin d'afficher* le front-end sans Tauri.
@@ -527,13 +531,15 @@ Réf : §6.8, F-COM-002 · Taille : S · Dépend de : US-113
 
 #### US-116 — Mode portable
 *En tant qu'*utilisateur, *je veux* que les données gérées par l'application restent dans son dossier en mode portable *afin de* l'emporter sur une clé USB.
-- [ ] Données (préférences, récupération, récents, cache WebView2) dans `atelier-data/` à côté de l'exe ; aucune écriture dans le registre.
-- [ ] Si le dossier n'est pas inscriptible : avant toute création de cache ou de données, dialogue natif proposant de déplacer l'exe vers un dossier inscriptible, de choisir explicitement le mode local sous `%LOCALAPPDATA%\Atelier`, ou de quitter. Aucun repli automatique.
-- [ ] En mode local, préférences, récupération, récents, rapports de crash et cache utilisent cette même racine ; le mode est identifié dans l'interface. Un dossier de données toujours inaccessible empêche le démarrage avec un message clair. Les traces produites indépendamment par Windows ne relèvent pas de la garantie portable.
+- [x] Données (préférences, récupération, récents, cache WebView2) dans `atelier-data/` à côté de l'exe ; aucune écriture dans le registre.
+- [x] Si le dossier n'est pas inscriptible : avant toute création de cache ou de données, dialogue natif proposant de déplacer l'exe vers un dossier inscriptible, de choisir explicitement le mode local sous `%LOCALAPPDATA%\Atelier`, ou de quitter. Aucun repli automatique.
+- [x] En mode local, préférences, récupération, récents, rapports de crash et cache utilisent cette même racine ; le mode est identifié dans l'interface. Un dossier de données toujours inaccessible empêche le démarrage avec un message clair. Les traces produites indépendamment par Windows ne relèvent pas de la garantie portable.
 
 Réf : D6, §7.2 · Taille : S · Dépend de : US-110
 
 ## E0.13 — Tranche verticale
+
+Validation US-116 (2027-10-11) : [contrat et limites](docs/us-116-portable-data.md), [preuve du lot](_bmad-output/implementation-artifacts/worker-shell-validation.json).
 
 #### US-120 — Démonstrateur de bout en bout
 *En tant que* développeur, *je veux* une tranche verticale fonctionnelle *afin de* valider l'architecture avant de construire le traitement de texte.

@@ -8,4 +8,4 @@ Le [contrat Rust/JS](../docs/us-091-binary-protocol.md) décrit le format exact.
 Les tests croisés exécutent un oracle Rust natif et transportent des trames
 dans le véritable WASM, dont dispatch conserve son comportement d'écho.
 
-Le client, son Worker et l’interface d’édition restent à développer. Les chaînes d’interface seront externalisées dans des catalogues fr-FR conformément à `SPEC.md`.
+Le [client et son Worker](../docs/us-092-worker.md) exécutent le transport WASM hors du fil principal. L’interface d’édition reste à développer. Les chaînes d’interface seront externalisées dans des catalogues fr-FR conformément à `SPEC.md`.

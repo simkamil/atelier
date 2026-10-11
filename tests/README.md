@@ -55,3 +55,9 @@ node tests/wasm-protocol-boundaries.mjs
 ```
 
 Le lot US-012/054/055 ajoute LineBreakTest complet (19 338 cas), ses contextes LB9 enrichis, le contrôle EAW sur tous les scalaires, et la façade de façonnage confrontée aux 54 716 sorties HarfBuzz à une taille/chasse fractionnaire. Les tests du registre vérifient familles, poids, styles, sources, couverture, TTC et atomicité. L'oracle de fontes système est un outil Windows local ; ses fontes ne sont pas distribuées et les tests Cargo restent autonomes.
+
+Les tests [Worker](wasm-worker.mjs) utilisent un vrai Worker Node et le vrai WASM :
+FIFO, octets exacts, transfert/détachement, progression/annulation et reprise.
+`cargo test -p atelier-desktop-win --locked --offline` couvre stockage et géométrie ;
+la CI lance aussi `atelier.exe --self-check target/shell-check/window-state.txt`
+pour exercer une fenêtre Win32 cachée sans interaction. Voir les [preuves](../_bmad-output/implementation-artifacts/worker-shell-validation.json).

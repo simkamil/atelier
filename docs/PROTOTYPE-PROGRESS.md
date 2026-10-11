@@ -2,7 +2,7 @@
 
 US-010/011/012, US-051/053/054/055 et US-090/091 ont été développées en parallèle avec GPT-6 Luna,
 raisonnement moyen, puis relues et validées. Le backlog compte désormais
-**32 US terminées sur 158**.
+**34 US terminées sur 158**.
 
 - [Unicode](us-010-ucd-tables.md) : 71 fichiers officiels Unicode 17.0.0,
   licence et SHA-256, générateur local et build reproductible. L’[oracle](../_bmad-output/implementation-artifacts/prototype-ucd-oracle.json)
@@ -19,13 +19,16 @@ raisonnement moyen, puis relues et validées. Le backlog compte désormais
   optimisée mesure 52 323 octets, avec seuil de régression à 57 555 octets.
   Les tests tournent sur les vrais artefacts WASM dans Node.
 
-Le démonstrateur US-120 reste à construire. Les coupures de ligne Unicode,
-le façonnage latin, le registre de polices et l'historique sont disponibles.
-Il reste le Worker (US-092), le rendu Canvas (US-101), la capture clavier/IME
-(US-103), la coque Windows et le pont natif (US-113), puis leurs interactions.
-US-120 dépend de US-012/054/055/072/101/103/113 ; les quatre premières sont validées.
-La connexion des fontes système au Host appartient à US-113. Il n'existe pas
-encore d'interface permettant d'ouvrir et modifier un document.
+Le démonstrateur US-120 reste à construire. Le socle texte, le Worker,
+la fenêtre Win32 et la résolution portable sont disponibles. La coque Windows
+peut être lancée avec `cargo run -p atelier-desktop-win --locked --offline` ;
+elle affiche une fenêtre native vide et mémorise sa géométrie.
+Il reste WebView2 (US-111), ses ressources et le pont natif (US-112/113),
+le Canvas (US-101), la saisie clavier/IME (US-103) et leur intégration US-120.
+US-092 reste ouverte : le Worker transfère réellement les buffers avec progression et annulation
+pendant les copies par blocs ; le dispatch WASM synchrone n'est pas préemptible
+et conserve son écho ABI. Les handlers métier d'ouverture/export restent à intégrer.
+Il n'existe pas encore d'interface pour ouvrir et modifier un document.
 
 Les [21 contrôles du lot précédent](../_bmad-output/implementation-artifacts/prototype-foundations-validation.json)
 passent : 233 tests workspace, 43 tests release, builds Windows/WASM/musl,
@@ -79,3 +82,20 @@ ne laissent aucun constat différé. Le coordinateur a finalisé les corrections
 après la limite d'usage des deux agents de développement ; les agents frais
 de revue ont pu travailler. Les tests musl sont compilés localement et exécutés
 par la CI Linux du commit publié.
+
+US-110 et US-116 sont développées, relues et validées ; le transport de US-092
+est implémenté et vérifié en parallèle avec GPT-6 Luna moyen :
+
+- [Worker](us-092-worker.md) : FIFO, IDs u64, buffers transférés et détachés,
+  mémoire WASM réutilisable, annulation et progression réelles des copies.
+- [Fenêtre Windows](us-110-win32-window.md) : boucle native, Per-Monitor V2,
+  thème système et géométrie persistante, tests de vrais HWND cachés.
+- [Stockage portable](us-116-portable-data.md) : une racine commune,
+  choix local explicite en cas d'échec et arrêt avant tout cache inaccessible.
+
+Les [27 contrôles](../_bmad-output/implementation-artifacts/worker-shell-validation.json)
+passent, avec **312 tests workspace et 21 tests shell release**.
+Les sources et le lock sont restés identiques pendant la validation.
+La [revue indépendante](../_bmad-output/implementation-artifacts/worker-shell-review.md)
+ne laisse aucun constat différé dans le transport livré et les deux US Windows. Le multi-écran synthétique ne remplace pas un
+essai sur plusieurs écrans physiques ; les tests natifs n'affichent pas de fenêtre.

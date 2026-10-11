@@ -1,0 +1,14 @@
+{
+  "status": "passed",
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+  "crossOriginIsolated": false,
+  "checks": [
+    "artefact WASM accessible",
+    "octets exacts, ID u64 conservé",
+    "FIFO dans un vrai Worker ES navigateur",
+    "annulation après progression partielle réelle",
+    "mémoire WASM réutilisable et budget libéré sur 41 commandes"
+  ],
+  "executable": "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "previous_cua_attempt": "failed to write kernel assets: path not found (os error 3); replaced by direct headless browser execution"
+}

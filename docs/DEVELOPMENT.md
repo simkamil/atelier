@@ -10,6 +10,22 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 
 ## Validation
 
+### Preuve US-092, US-110 et US-116 — 2027-10-11
+
+Le [Worker](us-092-worker.md), la [fenêtre Windows](us-110-win32-window.md) et le
+[stockage portable](us-116-portable-data.md) constituent ce lot ; les deux US Windows portent le backlog à **34/158 US validées**. US-092 reste ouverte pour l’annulation/progression d’une opération métier réelle.
+Développement et revues en parallèle avec GPT-6 Luna moyen.
+Les [27 contrôles](../_bmad-output/implementation-artifacts/worker-shell-validation.json)
+passent : 312 tests workspace, 21 tests shell release, Worker réel avec vrai WASM,
+HWND caché, builds Windows/WASM/musl, Clippy, format, ressources et licence.
+Les sources et le lock sont inchangés pendant les contrôles ; les 32 paquets restent locaux.
+La [revue triée](../_bmad-output/implementation-artifacts/worker-shell-review.md)
+ne laisse aucun constat différé. Les limites de dispatch synchrone et de validation
+multi-écran sont décrites dans les contrats. Les tests musl s'exécutent en CI Linux.
+La [CI précédente](https://github.com/simkamil/mon-bureau/actions/runs/38120218029)
+sur c091f6a52aa58af94966592ff356750471200d44 est [archivée](../_bmad-output/implementation-artifacts/github-ci-text-layout.json).
+
+
 ### Preuve US-012, US-054 et US-055 — 2026-10-11
 
 Les [coupures Unicode](us-012-line-breaks.md), le [façonnage latin](us-054-latin-shaping.md) et le [registre de polices](us-055-font-manager.md) portent le backlog à **32 US terminées sur 158**. Trois agents GPT-6 Luna moyen ont développé en parallèle ; le coordinateur a finalisé les corrections après leur limite d'usage, puis trois agents frais Luna moyen ont conduit les revues indépendantes.
