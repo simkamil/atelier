@@ -148,6 +148,14 @@ impl<'a> FontFace<'a> {
         if usize::from(glyph_id) >= glyph_count {
             return Err(OutlineError::InvalidGlyph);
         }
+        if self.table(*b"glyf").is_none() {
+            if self.table(*b"CFF2").is_some() {
+                return Err(OutlineError::Unsupported("CFF2 variable outlines"));
+            }
+            if let Some(cff) = self.table(*b"CFF ") {
+                return crate::cff::CffFont::parse(cff)?.outline(glyph_id, limits);
+            }
+        }
         let loca = self
             .table(*b"loca")
             .ok_or(OutlineError::MissingTable("loca"))?;

@@ -1,0 +1,1696 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! CFF / Type 2 outline tests on synthetic fonts assembled by a small builder.
+//! No real CFF font is embedded in the repository.
+
+use atelier_font::cff::{CffFont, MAX_OPERATIONS};
+use atelier_font::{FontFace, OutlineError, OutlineLimits};
+use atelier_geom::{Path, Point};
+
+// ---------------------------------------------------------------- charstrings
+
+#[derive(Clone, Copy)]
+enum T {
+    N(i32),
+    O(u8),
+    E(u8),
+    R(&'static [u8]),
+}
+use T::*;
+
+const HSTEM: u8 = 1;
+const VSTEM: u8 = 3;
+const VMOVETO: u8 = 4;
+const RLINETO: u8 = 5;
+const HLINETO: u8 = 6;
+const VLINETO: u8 = 7;
+const RRCURVETO: u8 = 8;
+const CALLSUBR: u8 = 10;
+const RETURN: u8 = 11;
+const ENDCHAR: u8 = 14;
+const HSTEMHM: u8 = 18;
+const HINTMASK: u8 = 19;
+const CNTRMASK: u8 = 20;
+const RMOVETO: u8 = 21;
+const HMOVETO: u8 = 22;
+const VSTEMHM: u8 = 23;
+const RCURVELINE: u8 = 24;
+const RLINECURVE: u8 = 25;
+const VVCURVETO: u8 = 26;
+const HHCURVETO: u8 = 27;
+const CALLGSUBR: u8 = 29;
+const VHCURVETO: u8 = 30;
+const HVCURVETO: u8 = 31;
+
+fn num(v: i32) -> Vec<u8> {
+    match v {
+        -107..=107 => vec![(v + 139) as u8],
+        108..=1131 => {
+            let w = v - 108;
+            vec![(w / 256 + 247) as u8, (w % 256) as u8]
+        }
+        -1131..=-108 => {
+            let w = -v - 108;
+            vec![(w / 256 + 251) as u8, (w % 256) as u8]
+        }
+        _ => {
+            let mut b = vec![28];
+            b.extend_from_slice(&(v as i16).to_be_bytes());
+            b
+        }
+    }
+}
+
+fn cs(parts: &[T]) -> Vec<u8> {
+    let mut out = Vec::new();
+    for p in parts {
+        match *p {
+            N(v) => out.extend(num(v)),
+            O(op) => out.push(op),
+            E(op) => out.extend([12, op]),
+            R(b) => out.extend_from_slice(b),
+        }
+    }
+    out
+}
+
+fn ns(v: &[i32]) -> Vec<T> {
+    v.iter().map(|&x| N(x)).collect()
+}
+
+/// `args... op endchar` after `0 0 rmoveto`.
+fn drawn(args: &[i32], op: T) -> Vec<u8> {
+    let mut v = vec![N(0), N(0), O(RMOVETO)];
+    v.extend(ns(args));
+    v.push(op);
+    v.push(O(ENDCHAR));
+    cs(&v)
+}
+fn drawn_escape(args: &[i32], esc: u8) -> Vec<u8> {
+    drawn(args, E(esc))
+}
+
+// ---------------------------------------------------------------- expected paths
+
+struct Pb(Path);
+fn p(x: f64, y: f64) -> Point {
+    Point::try_new(x, y).unwrap()
+}
+impl Pb {
+    fn new() -> Self {
+        Pb(Path::new())
+    }
+    fn m(mut self, x: f64, y: f64) -> Self {
+        self.0.move_to(p(x, y));
+        self
+    }
+    fn l(mut self, x: f64, y: f64) -> Self {
+        self.0.line_to(p(x, y)).unwrap();
+        self
+    }
+    fn c(mut self, a: (f64, f64), b: (f64, f64), e: (f64, f64)) -> Self {
+        self.0
+            .cubic_to(p(a.0, a.1), p(b.0, b.1), p(e.0, e.1))
+            .unwrap();
+        self
+    }
+    fn z(mut self) -> Self {
+        self.0.close().unwrap();
+        self
+    }
+    fn done(self) -> Path {
+        self.0
+    }
+}
+
+// ---------------------------------------------------------------- CFF builder
+
+fn index_with(items: &[Vec<u8>], off_size: usize) -> Vec<u8> {
+    let mut out = (items.len() as u16).to_be_bytes().to_vec();
+    if items.is_empty() {
+        return out;
+    }
+    out.push(off_size as u8);
+    let mut off = 1usize;
+    let put = |out: &mut Vec<u8>, v: usize| {
+        out.extend_from_slice(&(v as u32).to_be_bytes()[4 - off_size..]);
+    };
+    put(&mut out, off);
+    for it in items {
+        off += it.len();
+        put(&mut out, off);
+    }
+    for it in items {
+        out.extend_from_slice(it);
+    }
+    out
+}
+fn index(items: &[Vec<u8>]) -> Vec<u8> {
+    let total: usize = items.iter().map(Vec::len).sum::<usize>() + 1;
+    let off_size = if total < 256 {
+        1
+    } else if total < 65536 {
+        2
+    } else {
+        4
+    };
+    index_with(items, off_size)
+}
+
+fn d29(v: i32) -> Vec<u8> {
+    let mut b = vec![29];
+    b.extend_from_slice(&v.to_be_bytes());
+    b
+}
+
+#[derive(Clone, Default)]
+struct Fd {
+    lsubrs: Vec<Vec<u8>>,
+    default_w: i32,
+    nominal_w: i32,
+}
+
+#[derive(Clone, Default)]
+struct Spec {
+    glyphs: Vec<Vec<u8>>,
+    gsubrs: Vec<Vec<u8>>,
+    fds: Vec<Fd>,
+    /// Raw FDSelect bytes; presence makes the font CID-keyed.
+    fd_select: Option<Vec<u8>>,
+    /// Raw charset bytes (None: format 0 with SIDs 1..n).
+    charset: Option<Vec<u8>>,
+    strings: Vec<Vec<u8>>,
+    charstring_type: Option<i32>,
+}
+
+fn private_dict(fd: &Fd) -> (Vec<u8>, Vec<u8>) {
+    let has_subrs = !fd.lsubrs.is_empty();
+    let dict_len = 12 + if has_subrs { 6 } else { 0 };
+    let mut d = d29(fd.default_w);
+    d.push(20);
+    d.extend(d29(fd.nominal_w));
+    d.push(21);
+    if has_subrs {
+        d.extend(d29(dict_len as i32));
+        d.push(19);
+    }
+    assert_eq!(d.len(), dict_len);
+    let subrs = if has_subrs {
+        index(&fd.lsubrs)
+    } else {
+        Vec::new()
+    };
+    (d, subrs)
+}
+
+fn build(spec: &Spec) -> Vec<u8> {
+    let header = vec![1, 0, 4, 4];
+    let name = index(&[b"Test".to_vec()]);
+    let strings = index(&spec.strings);
+    let gsubr = index(&spec.gsubrs);
+    let n = spec.glyphs.len();
+    let charset = spec.charset.clone().unwrap_or_else(|| {
+        let mut c = vec![0];
+        for i in 1..n {
+            c.extend((i as u16).to_be_bytes());
+        }
+        c
+    });
+    let charstrings = index(&spec.glyphs);
+    let top_len = |cid: bool| {
+        // Fixed-size dict: operands use the 5-byte form, so the length does not depend on values.
+        let mut d = Vec::new();
+        if let Some(t) = spec.charstring_type {
+            d.extend(d29(t));
+            d.extend([12, 6]);
+        }
+        if cid {
+            for _ in 0..3 {
+                d.extend(d29(0));
+            }
+            d.extend([12, 30]);
+            d.extend(d29(0));
+            d.extend([12, 36]);
+            d.extend(d29(0));
+            d.extend([12, 37]);
+        } else {
+            d.extend(d29(0));
+            d.extend(d29(0));
+            d.push(18);
+        }
+        d.extend(d29(0));
+        d.push(15);
+        d.extend(d29(0));
+        d.push(17);
+        d.len()
+    };
+    let cid = spec.fd_select.is_some();
+    let top_idx_len = index(&[vec![0; top_len(cid)]]).len();
+    let mut pos = header.len() + name.len() + top_idx_len + strings.len() + gsubr.len();
+    let charset_off = pos;
+    pos += charset.len();
+    let cs_off = pos;
+    pos += charstrings.len();
+    let mut tail = Vec::new();
+    let mut top = Vec::new();
+    if let Some(t) = spec.charstring_type {
+        top.extend(d29(t));
+        top.extend([12, 6]);
+    }
+    if cid {
+        let sel = spec.fd_select.clone().unwrap();
+        let fdselect_off = pos;
+        pos += sel.len();
+        tail.extend(&sel);
+        let fd_dict_len = 11;
+        let fdarray_len = index(&vec![vec![0; fd_dict_len]; spec.fds.len()]).len();
+        let fdarray_off = pos;
+        pos += fdarray_len;
+        let mut dicts = Vec::new();
+        let mut privates: Vec<u8> = Vec::new();
+        for fd in &spec.fds {
+            let (pd, subrs) = private_dict(fd);
+            let mut d = d29(pd.len() as i32);
+            d.extend(d29((pos + privates.len()) as i32));
+            d.push(18);
+            dicts.push(d);
+            privates.extend(&pd);
+            privates.extend(&subrs);
+        }
+        tail.extend(index(&dicts));
+        tail.extend(privates);
+        for _ in 0..3 {
+            top.extend(d29(0));
+        }
+        top.extend([12, 30]);
+        top.extend(d29(fdarray_off as i32));
+        top.extend([12, 36]);
+        top.extend(d29(fdselect_off as i32));
+        top.extend([12, 37]);
+    } else {
+        let fd = spec.fds.first().cloned().unwrap_or_default();
+        let (pd, subrs) = private_dict(&fd);
+        top.extend(d29(pd.len() as i32));
+        top.extend(d29(pos as i32));
+        top.push(18);
+        tail.extend(pd);
+        tail.extend(subrs);
+    }
+    top.extend(d29(charset_off as i32));
+    top.push(15);
+    top.extend(d29(cs_off as i32));
+    top.push(17);
+    assert_eq!(top.len(), top_len(cid));
+    let mut out = header;
+    out.extend(name);
+    out.extend(index(&[top]));
+    out.extend(strings);
+    out.extend(gsubr);
+    out.extend(charset);
+    out.extend(charstrings);
+    out.extend(tail);
+    out
+}
+
+fn simple(glyphs: Vec<Vec<u8>>) -> Spec {
+    Spec {
+        glyphs,
+        fds: vec![Fd {
+            default_w: 250,
+            nominal_w: 600,
+            ..Fd::default()
+        }],
+        ..Spec::default()
+    }
+}
+
+/// Decode glyph 1 of a one-glyph-after-notdef font.
+fn outline_of(code: Vec<u8>) -> Result<Path, OutlineError> {
+    outline_in(simple(vec![cs(&[O(ENDCHAR)]), code]), 1)
+}
+fn outline_in(spec: Spec, gid: u16) -> Result<Path, OutlineError> {
+    let bytes = build(&spec);
+    CffFont::parse(&bytes)?.outline(gid, OutlineLimits::default())
+}
+fn glyph_in(spec: Spec, gid: u16) -> (Path, f64) {
+    let bytes = build(&spec);
+    let g = CffFont::parse(&bytes)
+        .unwrap()
+        .glyph(gid, OutlineLimits::default())
+        .unwrap();
+    (g.path, g.width)
+}
+
+// ---------------------------------------------------------------- drawing operators
+
+#[test]
+fn moves_and_lines_close_contours_implicitly() {
+    let tri = cs(&[
+        N(100),
+        N(200),
+        O(RMOVETO),
+        N(100),
+        N(0),
+        N(0),
+        N(100),
+        O(RLINETO),
+        O(ENDCHAR),
+    ]);
+    assert_eq!(
+        outline_of(tri).unwrap(),
+        Pb::new()
+            .m(100., 200.)
+            .l(200., 200.)
+            .l(200., 300.)
+            .z()
+            .done()
+    );
+
+    let hv = cs(&[
+        N(10),
+        O(HMOVETO),
+        N(50),
+        N(30),
+        N(20),
+        O(HLINETO),
+        N(5),
+        O(VMOVETO),
+        N(7),
+        N(8),
+        O(VLINETO),
+        O(ENDCHAR),
+    ]);
+    assert_eq!(
+        outline_of(hv).unwrap(),
+        Pb::new()
+            .m(10., 0.)
+            .l(60., 0.)
+            .l(60., 30.)
+            .l(80., 30.)
+            .z()
+            .m(80., 35.)
+            .l(80., 42.)
+            .l(88., 42.)
+            .z()
+            .done()
+    );
+    // vlineto starts vertical, hlineto horizontal.
+    let v = drawn(&[3, 4, 5], O(VLINETO));
+    assert_eq!(
+        outline_of(v).unwrap(),
+        Pb::new().m(0., 0.).l(0., 3.).l(4., 3.).l(4., 8.).z().done()
+    );
+}
+
+#[test]
+fn contour_without_drawing_is_dropped_and_empty_glyph_is_empty() {
+    let g = cs(&[N(5), N(5), O(RMOVETO), N(1), N(1), O(RMOVETO), O(ENDCHAR)]);
+    assert!(outline_of(g).unwrap().is_empty());
+    assert!(outline_of(cs(&[O(ENDCHAR)])).unwrap().is_empty());
+}
+
+#[test]
+fn curve_operators_match_the_specification() {
+    let cases: Vec<(&str, Vec<u8>, Path)> = vec![
+        (
+            "rrcurveto",
+            drawn(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], O(RRCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((1., 2.), (4., 6.), (9., 12.))
+                .c((16., 20.), (25., 30.), (36., 42.))
+                .z()
+                .done(),
+        ),
+        (
+            "hhcurveto dy1",
+            drawn(&[5, 10, 20, 30, 40], O(HHCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 5.), (30., 35.), (70., 35.))
+                .z()
+                .done(),
+        ),
+        (
+            "hhcurveto two",
+            drawn(&[10, 20, 30, 40, 50, 60, 70, 80], O(HHCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 0.), (30., 30.), (70., 30.))
+                .c((120., 30.), (180., 100.), (260., 100.))
+                .z()
+                .done(),
+        ),
+        (
+            "vvcurveto dx1",
+            drawn(&[5, 10, 20, 30, 40], O(VVCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((5., 10.), (25., 40.), (25., 80.))
+                .z()
+                .done(),
+        ),
+        (
+            "vvcurveto",
+            drawn(&[10, 20, 30, 40], O(VVCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((0., 10.), (20., 40.), (20., 80.))
+                .z()
+                .done(),
+        ),
+        (
+            "hvcurveto 4",
+            drawn(&[10, 20, 30, 40], O(HVCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 0.), (30., 30.), (30., 70.))
+                .z()
+                .done(),
+        ),
+        (
+            "hvcurveto 5",
+            drawn(&[10, 20, 30, 40, 50], O(HVCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 0.), (30., 30.), (80., 70.))
+                .z()
+                .done(),
+        ),
+        (
+            "hvcurveto 9",
+            drawn(&[10, 20, 30, 40, 1, 2, 3, 4, 5], O(HVCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 0.), (30., 30.), (30., 70.))
+                .c((30., 71.), (32., 74.), (36., 79.))
+                .z()
+                .done(),
+        ),
+        (
+            "vhcurveto 4",
+            drawn(&[10, 20, 30, 40], O(VHCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((0., 10.), (20., 40.), (60., 40.))
+                .z()
+                .done(),
+        ),
+        (
+            "vhcurveto 5",
+            drawn(&[10, 20, 30, 40, 50], O(VHCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((0., 10.), (20., 40.), (60., 90.))
+                .z()
+                .done(),
+        ),
+        (
+            "vhcurveto 8",
+            drawn(&[10, 20, 30, 40, 1, 2, 3, 4], O(VHCURVETO)),
+            Pb::new()
+                .m(0., 0.)
+                .c((0., 10.), (20., 40.), (60., 40.))
+                .c((61., 40.), (63., 43.), (63., 47.))
+                .z()
+                .done(),
+        ),
+        (
+            "rcurveline",
+            drawn(&[1, 2, 3, 4, 5, 6, 7, 8], O(RCURVELINE)),
+            Pb::new()
+                .m(0., 0.)
+                .c((1., 2.), (4., 6.), (9., 12.))
+                .l(16., 20.)
+                .z()
+                .done(),
+        ),
+        (
+            "rlinecurve",
+            drawn(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], O(RLINECURVE)),
+            Pb::new()
+                .m(0., 0.)
+                .l(1., 2.)
+                .l(4., 6.)
+                .c((9., 12.), (16., 20.), (25., 30.))
+                .z()
+                .done(),
+        ),
+        (
+            "flex",
+            drawn_escape(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 50], 35),
+            Pb::new()
+                .m(0., 0.)
+                .c((1., 2.), (4., 6.), (9., 12.))
+                .c((16., 20.), (25., 30.), (36., 42.))
+                .z()
+                .done(),
+        ),
+        (
+            "hflex",
+            drawn_escape(&[10, 20, 5, 30, 40, 50, 60], 34),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 0.), (30., 5.), (60., 5.))
+                .c((100., 5.), (150., 0.), (210., 0.))
+                .z()
+                .done(),
+        ),
+        (
+            "hflex1",
+            drawn_escape(&[10, 4, 20, 6, 30, 40, 50, 8, 60], 36),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 4.), (30., 10.), (60., 10.))
+                .c((100., 10.), (150., 18.), (210., 0.))
+                .z()
+                .done(),
+        ),
+        (
+            "flex1 horizontal",
+            drawn_escape(&[10, 2, 10, 2, 10, 2, 10, 2, 10, 2, 20], 37),
+            Pb::new()
+                .m(0., 0.)
+                .c((10., 2.), (20., 4.), (30., 6.))
+                .c((40., 8.), (50., 10.), (70., 0.))
+                .z()
+                .done(),
+        ),
+        (
+            "flex1 vertical",
+            drawn_escape(&[2, 10, 2, 10, 2, 10, 2, 10, 2, 10, 20], 37),
+            Pb::new()
+                .m(0., 0.)
+                .c((2., 10.), (4., 20.), (6., 30.))
+                .c((8., 40.), (10., 50.), (0., 70.))
+                .z()
+                .done(),
+        ),
+    ];
+    for (name, code, expected) in cases {
+        assert_eq!(outline_of(code).unwrap(), expected, "{name}");
+    }
+}
+
+#[test]
+fn drawing_operators_validate_their_argument_counts() {
+    for (name, code) in [
+        ("rlineto odd", drawn(&[1, 2, 3], O(RLINETO))),
+        ("rlineto none", drawn(&[], O(RLINETO))),
+        ("hlineto none", drawn(&[], O(HLINETO))),
+        ("rrcurveto 5", drawn(&[1, 2, 3, 4, 5], O(RRCURVETO))),
+        ("hhcurveto 3", drawn(&[1, 2, 3], O(HHCURVETO))),
+        ("hvcurveto 6", drawn(&[1, 2, 3, 4, 5, 6], O(HVCURVETO))),
+        ("rcurveline 6", drawn(&[1, 2, 3, 4, 5, 6], O(RCURVELINE))),
+        ("rlinecurve 7", drawn(&[1, 2, 3, 4, 5, 6, 7], O(RLINECURVE))),
+        ("flex 12", drawn_escape(&[1; 12], 35)),
+        ("hflex 6", drawn_escape(&[1; 6], 34)),
+        ("hflex1 8", drawn_escape(&[1; 8], 36)),
+        ("flex1 10", drawn_escape(&[1; 10], 37)),
+        ("rmoveto 1", cs(&[N(1), O(RMOVETO), O(ENDCHAR)])),
+        (
+            "rmoveto 4",
+            cs(&[N(1), N(2), N(3), N(4), O(RMOVETO), O(ENDCHAR)]),
+        ),
+        ("hmoveto 0", cs(&[O(HMOVETO), O(ENDCHAR)])),
+        (
+            "line before moveto",
+            cs(&[N(1), N(1), O(RLINETO), O(ENDCHAR)]),
+        ),
+    ] {
+        assert!(
+            matches!(outline_of(code), Err(OutlineError::InvalidData(_))),
+            "{name}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------- widths and hints
+
+#[test]
+fn optional_width_is_read_from_the_first_stack_clearing_operator() {
+    let wide = |code: Vec<u8>| glyph_in(simple(vec![cs(&[O(ENDCHAR)]), code]), 1).1;
+    assert_eq!(wide(cs(&[N(1), N(1), O(RMOVETO), O(ENDCHAR)])), 250.0);
+    assert_eq!(
+        wide(cs(&[N(50), N(1), N(1), O(RMOVETO), O(ENDCHAR)])),
+        650.0
+    );
+    assert_eq!(wide(cs(&[N(-70), N(1), O(HMOVETO), O(ENDCHAR)])), 530.0);
+    assert_eq!(wide(cs(&[N(7), N(1), O(VMOVETO), O(ENDCHAR)])), 607.0);
+    assert_eq!(
+        wide(cs(&[N(70), N(10), N(20), O(HSTEM), O(ENDCHAR)])),
+        670.0
+    );
+    assert_eq!(wide(cs(&[N(10), N(20), O(HSTEM), O(ENDCHAR)])), 250.0);
+    assert_eq!(wide(cs(&[N(30), O(ENDCHAR)])), 630.0);
+    assert_eq!(wide(cs(&[O(ENDCHAR)])), 250.0);
+    // Width before an implicit-vstem hintmask.
+    assert_eq!(
+        wide(cs(&[N(5), N(1), N(2), O(HINTMASK), R(&[0]), O(ENDCHAR)])),
+        605.0
+    );
+    // Fractional width via 16.16.
+    assert_eq!(wide(cs(&[R(&[255, 0, 0, 0x80, 0]), O(ENDCHAR)])), 600.5);
+    // Only the first operator may carry a width.
+    assert!(matches!(
+        outline_of(cs(&[
+            N(1),
+            N(2),
+            O(HSTEM),
+            N(9),
+            N(1),
+            N(2),
+            O(HSTEM),
+            O(ENDCHAR)
+        ])),
+        Err(OutlineError::InvalidData(_))
+    ));
+    assert!(matches!(
+        outline_of(cs(&[N(1), N(1), O(RMOVETO), N(3), O(ENDCHAR)])),
+        Err(OutlineError::InvalidData(_))
+    ));
+}
+
+#[test]
+fn hint_masks_skip_the_right_number_of_bytes() {
+    // 0x0e would be endchar and 0xff a 16.16 prefix if the mask were interpreted.
+    let tail = [N(0), N(0), O(RMOVETO), N(4), N(4), O(RLINETO), O(ENDCHAR)];
+    let expected = Pb::new().m(0., 0.).l(4., 4.).z().done();
+    let mk = |head: &[T], mask: &'static [u8]| {
+        let mut v = head.to_vec();
+        v.push(R(mask));
+        v.extend(tail);
+        cs(&v)
+    };
+    // hstemhm (2 stems) + hintmask with 2 implicit vstem args (1 stem) = 3 stems = 1 byte.
+    let head = [
+        N(10),
+        N(20),
+        N(30),
+        N(40),
+        O(HSTEMHM),
+        N(5),
+        N(6),
+        O(HINTMASK),
+    ];
+    assert_eq!(outline_of(mk(&head, &[0x0e])).unwrap(), expected);
+    // 8 stems = 1 byte, 9 stems = 2 bytes.
+    let mut eight = ns(&[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+    eight.push(O(VSTEMHM));
+    eight.push(O(HINTMASK));
+    assert_eq!(outline_of(mk(&eight, &[0xff])).unwrap(), expected);
+    let mut nine = ns(&[1; 18]);
+    nine.push(O(VSTEM));
+    nine.push(O(CNTRMASK));
+    assert_eq!(outline_of(mk(&nine, &[0x0e, 0x0e])).unwrap(), expected);
+    // A second mask reuses the stem count; with a width and no stems before any mask.
+    let mut twice = ns(&[1, 1, 1, 1]);
+    twice.extend([O(HSTEM), O(HINTMASK), R(&[0x0e]), O(CNTRMASK), R(&[0x0e])]);
+    let mut v = twice.clone();
+    v.extend(tail);
+    assert_eq!(outline_of(cs(&v)).unwrap(), expected);
+    // Missing mask bytes: truncated.
+    assert!(matches!(
+        outline_of(cs(&[N(1), N(1), O(HSTEM), O(HINTMASK)])),
+        Err(OutlineError::Truncated)
+    ));
+    // Hint operators left without a following mask do not draw anything.
+    // More than 96 stems is rejected.
+    let mut many = Vec::new();
+    for _ in 0..5 {
+        many.extend(ns(&[1; 48]));
+        many.push(O(HSTEM));
+    }
+    many.push(O(ENDCHAR));
+    assert!(matches!(
+        outline_of(cs(&many)),
+        Err(OutlineError::LimitExceeded("stem hints"))
+    ));
+    // Odd stem arguments after the width has been consumed.
+    assert!(matches!(
+        outline_of(cs(&[
+            N(1),
+            N(2),
+            O(HSTEM),
+            N(1),
+            N(2),
+            N(3),
+            O(VSTEM),
+            O(ENDCHAR)
+        ])),
+        Err(OutlineError::InvalidData(_))
+    ));
+}
+
+// ---------------------------------------------------------------- numbers and arithmetic
+
+fn eval_x(parts: &[T]) -> f64 {
+    // Leaves exactly one value on the stack, moves there and draws one line.
+    let mut v = parts.to_vec();
+    v.extend([N(1), O(RMOVETO), N(1), N(1), O(RLINETO), O(ENDCHAR)]);
+    let path = outline_of(cs(&v)).unwrap();
+    let (x, _) = first_point(&path);
+    x
+}
+fn first_point(path: &Path) -> (f64, f64) {
+    let flat = path.flatten(1.0).unwrap();
+    (flat[0].points[0].x(), flat[0].points[0].y())
+}
+
+#[test]
+fn arithmetic_and_stack_operators() {
+    assert_eq!(eval_x(&[N(3), N(4), E(10)]), 7.0);
+    assert_eq!(eval_x(&[N(10), N(3), E(11)]), 7.0);
+    assert_eq!(eval_x(&[N(6), N(7), E(24)]), 42.0);
+    assert_eq!(eval_x(&[N(84), N(2), E(12)]), 42.0);
+    assert_eq!(eval_x(&[N(5), E(14)]), -5.0);
+    assert_eq!(eval_x(&[N(-9), E(9)]), 9.0);
+    assert_eq!(eval_x(&[N(49), E(26)]), 7.0);
+    assert_eq!(eval_x(&[N(5), E(27), E(10)]), 10.0);
+    assert_eq!(eval_x(&[N(1), N(2), E(28), E(11)]), 1.0);
+    assert_eq!(eval_x(&[N(1), N(2), E(18)]), 1.0);
+    assert_eq!(
+        eval_x(&[
+            N(10),
+            N(20),
+            N(30),
+            N(2),
+            E(29),
+            N(0),
+            E(20),
+            E(18),
+            E(18),
+            E(18),
+            N(0),
+            E(21)
+        ]),
+        10.0
+    );
+    assert_eq!(eval_x(&[N(1), N(0), E(3)]), 0.0);
+    assert_eq!(eval_x(&[N(1), N(0), E(4)]), 1.0);
+    assert_eq!(eval_x(&[N(0), E(5)]), 1.0);
+    assert_eq!(eval_x(&[N(5), N(5), E(15)]), 1.0);
+    assert_eq!(eval_x(&[N(5), N(6), E(15)]), 0.0);
+    assert_eq!(eval_x(&[N(10), N(20), N(1), N(2), E(22)]), 10.0);
+    assert_eq!(eval_x(&[N(10), N(20), N(3), N(2), E(22)]), 20.0);
+    assert_eq!(eval_x(&[N(9), N(0), E(20), N(0), E(21)]), 9.0);
+    // roll: 1 2 3 3 1 roll = 3 1 2 ; -1 roll = 2 3 1.
+    assert_eq!(
+        eval_x(&[N(1), N(2), N(3), N(3), N(1), E(30), E(18), E(18)]),
+        3.0
+    );
+    assert_eq!(
+        eval_x(&[N(1), N(2), N(3), N(3), N(-1), E(30), E(18), E(18)]),
+        2.0
+    );
+    // dotsection is a no-op that clears the stack.
+    assert_eq!(eval_x(&[N(5), E(0), N(8)]), 8.0);
+    // Index with a negative operand copies the top element.
+    assert_eq!(eval_x(&[N(4), N(5), N(-3), E(29), E(18), E(18)]), 4.0);
+    // 16.16 fixed numbers and 16-bit integers.
+    assert_eq!(eval_x(&[R(&[255, 0, 1, 0x80, 0])]), 1.5);
+    assert_eq!(eval_x(&[R(&[255, 0xff, 0xfe, 0x80, 0])]), -1.5);
+    assert_eq!(eval_x(&[N(30000)]), 30000.0);
+    assert_eq!(eval_x(&[N(-1000), N(0), E(10)]), -1000.0);
+    assert_eq!(eval_x(&[N(1131)]), 1131.0);
+    assert_eq!(eval_x(&[N(-1131)]), -1131.0);
+}
+
+#[test]
+fn arithmetic_failures_are_typed() {
+    assert!(matches!(
+        outline_of(cs(&[N(1), N(0), E(12), N(1), O(RMOVETO), O(ENDCHAR)])),
+        Err(OutlineError::Geometry)
+    ));
+    assert!(matches!(
+        outline_of(cs(&[N(-4), E(26), N(1), O(RMOVETO), O(ENDCHAR)])),
+        Err(OutlineError::Geometry)
+    ));
+    assert!(matches!(
+        outline_of(cs(&[N(1), E(10), O(ENDCHAR)])),
+        Err(OutlineError::InvalidData(_))
+    ));
+    assert!(matches!(
+        outline_of(cs(&[N(1), N(40), E(21), O(ENDCHAR)])),
+        Err(OutlineError::InvalidData(_))
+    ));
+    assert!(matches!(
+        outline_of(cs(&[N(1), N(5), N(1), E(30), O(ENDCHAR)])),
+        Err(OutlineError::InvalidData(_))
+    ));
+    assert!(matches!(
+        outline_of(cs(&[E(23), O(ENDCHAR)])),
+        Err(OutlineError::Unsupported(_))
+    ));
+    assert!(matches!(
+        outline_of(cs(&[E(1), O(ENDCHAR)])),
+        Err(OutlineError::InvalidData(_))
+    ));
+    // Overflow through repeated multiplication: finite check on push.
+    let mut v = vec![N(30000)];
+    for _ in 0..40 {
+        v.extend([E(27), E(24)]);
+        v.push(E(27));
+        v.push(E(24));
+    }
+    v.extend([N(1), O(RMOVETO), O(ENDCHAR)]);
+    assert!(outline_of(cs(&v)).is_err());
+}
+
+// ---------------------------------------------------------------- subroutines
+
+fn ret() -> Vec<u8> {
+    cs(&[O(RETURN)])
+}
+fn line_sub(dx: i32, dy: i32) -> Vec<u8> {
+    cs(&[N(dx), N(dy), O(RLINETO), O(RETURN)])
+}
+fn call(local: bool, subr: i32, bias: i32) -> [T; 2] {
+    [N(subr - bias), O(if local { CALLSUBR } else { CALLGSUBR })]
+}
+
+#[test]
+fn local_and_global_subroutines_use_the_three_bias_ranges() {
+    for (count, bias) in [
+        (3usize, 107),
+        (1239, 107),
+        (1240, 1131),
+        (33899, 1131),
+        (33900, 32768),
+    ] {
+        for local in [true, false] {
+            let mut subrs = vec![ret(); count];
+            let last = count - 1;
+            subrs[0] = line_sub(5, 0);
+            subrs[last] = line_sub(0, 9);
+            let mut parts = vec![N(0), N(0), O(RMOVETO)];
+            parts.extend(call(local, 0, bias));
+            parts.extend(call(local, last as i32, bias));
+            parts.push(O(ENDCHAR));
+            let mut spec = simple(vec![cs(&[O(ENDCHAR)]), cs(&parts)]);
+            if local {
+                spec.fds[0].lsubrs = subrs;
+            } else {
+                spec.gsubrs = subrs;
+            }
+            assert_eq!(
+                outline_in(spec, 1).unwrap(),
+                Pb::new().m(0., 0.).l(5., 0.).l(5., 9.).z().done(),
+                "count {count} local {local}"
+            );
+        }
+    }
+}
+
+#[test]
+fn subroutines_nest_up_to_ten_levels_and_endchar_ends_the_glyph() {
+    let chain = |levels: usize| {
+        let mut subrs = Vec::new();
+        for k in 0..levels {
+            if k + 1 == levels {
+                subrs.push(line_sub(1, 1));
+            } else {
+                subrs.push(cs(&[N(k as i32 + 1 - 107), O(CALLSUBR), O(RETURN)]));
+            }
+        }
+        let mut spec = simple(vec![
+            cs(&[O(ENDCHAR)]),
+            cs(&[N(0), N(0), O(RMOVETO), N(-107), O(CALLSUBR), O(ENDCHAR)]),
+        ]);
+        spec.fds[0].lsubrs = subrs;
+        spec
+    };
+    assert_eq!(
+        outline_in(chain(10), 1).unwrap(),
+        Pb::new().m(0., 0.).l(1., 1.).z().done()
+    );
+    assert!(matches!(
+        outline_in(chain(11), 1),
+        Err(OutlineError::LimitExceeded("subroutine depth"))
+    ));
+    // A smaller caller depth is honoured, a larger one is capped at 10.
+    let bytes = build(&chain(10));
+    let font = CffFont::parse(&bytes).unwrap();
+    let shallow = OutlineLimits {
+        max_depth: 3,
+        ..OutlineLimits::default()
+    };
+    assert!(matches!(
+        font.outline(1, shallow),
+        Err(OutlineError::LimitExceeded("subroutine depth"))
+    ));
+    let bytes = build(&chain(11));
+    let font = CffFont::parse(&bytes).unwrap();
+    let deep = OutlineLimits {
+        max_depth: 64,
+        ..OutlineLimits::default()
+    };
+    assert!(matches!(
+        font.outline(1, deep),
+        Err(OutlineError::LimitExceeded("subroutine depth"))
+    ));
+    let too_deep = OutlineLimits {
+        max_depth: 65,
+        ..OutlineLimits::default()
+    };
+    assert!(matches!(
+        font.outline(1, too_deep),
+        Err(OutlineError::LimitExceeded("public depth cap"))
+    ));
+
+    // endchar inside a subroutine stops everything after the call.
+    let mut spec = simple(vec![
+        cs(&[O(ENDCHAR)]),
+        cs(&[
+            N(0),
+            N(0),
+            O(RMOVETO),
+            N(-107),
+            O(CALLSUBR),
+            N(9),
+            N(9),
+            O(RLINETO),
+            O(ENDCHAR),
+        ]),
+    ]);
+    spec.fds[0].lsubrs = vec![cs(&[N(2), N(2), O(RLINETO), O(ENDCHAR)])];
+    assert_eq!(
+        outline_in(spec, 1).unwrap(),
+        Pb::new().m(0., 0.).l(2., 2.).z().done()
+    );
+}
+
+#[test]
+fn subroutine_errors_and_budgets() {
+    // Self-recursion hits the depth bound, not the stack.
+    let mut spec = simple(vec![
+        cs(&[O(ENDCHAR)]),
+        cs(&[N(-107), O(CALLSUBR), O(ENDCHAR)]),
+    ]);
+    spec.fds[0].lsubrs = vec![cs(&[N(-107), O(CALLSUBR), O(RETURN)])];
+    assert!(matches!(
+        outline_in(spec.clone(), 1),
+        Err(OutlineError::LimitExceeded("subroutine depth"))
+    ));
+    // Out of range subroutine, missing local subrs, empty stack.
+    assert!(matches!(
+        outline_in(
+            simple(vec![
+                cs(&[O(ENDCHAR)]),
+                cs(&[N(0), O(CALLSUBR), O(ENDCHAR)])
+            ]),
+            1
+        ),
+        Err(OutlineError::InvalidData(_))
+    ));
+    assert!(matches!(
+        outline_in(
+            simple(vec![cs(&[O(ENDCHAR)]), cs(&[O(CALLGSUBR), O(ENDCHAR)])]),
+            1
+        ),
+        Err(OutlineError::InvalidData(_))
+    ));
+    // Total call budget (max_components) and the operation budget.
+    let mut fan = simple(vec![
+        cs(&[O(ENDCHAR)]),
+        cs(&[N(-107), O(CALLSUBR), O(ENDCHAR)]),
+    ]);
+    // Subr k calls subr k+1 five times; subr 9 is a no-op leaf. Fan-out 5^9.
+    let mut subrs = Vec::new();
+    for k in 0..9 {
+        let mut b = Vec::new();
+        for _ in 0..5 {
+            b.extend([N(k + 1 - 107), O(CALLSUBR)]);
+        }
+        b.push(O(RETURN));
+        subrs.push(cs(&b));
+    }
+    subrs.push(ret());
+    fan.fds[0].lsubrs = subrs;
+    let bytes = build(&fan);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert!(matches!(
+        font.outline(1, OutlineLimits::default()),
+        Err(OutlineError::LimitExceeded("components"))
+    ));
+    let unlimited = OutlineLimits {
+        max_components: usize::MAX,
+        ..OutlineLimits::default()
+    };
+    assert!(matches!(
+        font.outline(1, unlimited),
+        Err(OutlineError::LimitExceeded("operations"))
+    ));
+    assert_eq!(MAX_OPERATIONS, 1_000_000);
+}
+
+// ---------------------------------------------------------------- stack and budgets
+
+#[test]
+fn stack_points_and_contour_budgets() {
+    let mut v = ns(&[1; 49]);
+    v.push(O(ENDCHAR));
+    assert!(matches!(
+        outline_of(cs(&v)),
+        Err(OutlineError::LimitExceeded("argument stack"))
+    ));
+    let mut ok = ns(&[1; 48]);
+    ok.push(O(HSTEM));
+    ok.push(O(ENDCHAR));
+    assert!(outline_of(cs(&ok)).is_ok());
+
+    let code = drawn(&[1, 1, 1, 1, 1, 1], O(RLINETO));
+    let bytes = build(&simple(vec![cs(&[O(ENDCHAR)]), code]));
+    let font = CffFont::parse(&bytes).unwrap();
+    // 1 move + 3 lines = 4 points.
+    for (points, ok) in [(3usize, false), (4, true)] {
+        let r = font.outline(
+            1,
+            OutlineLimits {
+                max_points: points,
+                ..OutlineLimits::default()
+            },
+        );
+        assert_eq!(r.is_ok(), ok, "points {points}");
+        if !ok {
+            assert!(matches!(r, Err(OutlineError::LimitExceeded("points"))));
+        }
+    }
+    let two = cs(&[
+        N(0),
+        N(0),
+        O(RMOVETO),
+        N(1),
+        N(1),
+        O(RLINETO),
+        N(5),
+        N(5),
+        O(RMOVETO),
+        N(1),
+        N(1),
+        O(RLINETO),
+        O(ENDCHAR),
+    ]);
+    let bytes = build(&simple(vec![cs(&[O(ENDCHAR)]), two]));
+    let font = CffFont::parse(&bytes).unwrap();
+    assert!(
+        font.outline(
+            1,
+            OutlineLimits {
+                max_contours: 2,
+                ..OutlineLimits::default()
+            }
+        )
+        .is_ok()
+    );
+    assert!(matches!(
+        font.outline(
+            1,
+            OutlineLimits {
+                max_contours: 1,
+                ..OutlineLimits::default()
+            }
+        ),
+        Err(OutlineError::LimitExceeded("contours"))
+    ));
+    assert!(matches!(
+        font.outline(2, OutlineLimits::default()),
+        Err(OutlineError::InvalidGlyph)
+    ));
+}
+
+#[test]
+fn structural_charstring_errors_are_typed() {
+    for (name, code, kind) in [
+        ("no endchar", cs(&[N(1), N(1), O(RMOVETO)]), "invalid"),
+        ("reserved 0", vec![0], "invalid"),
+        ("reserved 2", vec![2], "invalid"),
+        ("reserved 9", vec![9], "invalid"),
+        ("reserved 13", vec![13], "invalid"),
+        ("reserved 15", vec![15], "invalid"),
+        ("return at top", cs(&[O(RETURN)]), "invalid"),
+        (
+            "seac 4",
+            cs(&[N(1), N(2), N(3), N(4), O(ENDCHAR)]),
+            "unsupported",
+        ),
+        (
+            "seac 5",
+            cs(&[N(0), N(1), N(2), N(3), N(4), O(ENDCHAR)]),
+            "unsupported",
+        ),
+        ("endchar 2 args", cs(&[N(1), N(2), O(ENDCHAR)]), "invalid"),
+        ("truncated shortint", vec![28, 0], "truncated"),
+        ("truncated fixed", vec![255, 0, 0], "truncated"),
+        ("truncated two-byte", vec![247], "truncated"),
+        ("truncated escape", vec![12], "truncated"),
+        ("empty", vec![], "invalid"),
+    ] {
+        let r = outline_of(code);
+        let ok = match kind {
+            "invalid" => matches!(r, Err(OutlineError::InvalidData(_))),
+            "unsupported" => matches!(r, Err(OutlineError::Unsupported(_))),
+            _ => matches!(r, Err(OutlineError::Truncated)),
+        };
+        assert!(ok, "{name}: {r:?}");
+    }
+}
+
+// ---------------------------------------------------------------- charset, strings, CID
+
+#[test]
+fn charsets_and_strings() {
+    let glyph = |_: usize| cs(&[O(ENDCHAR)]);
+    let mut spec = simple((0..4).map(glyph).collect());
+    spec.strings = vec![b"Alpha".to_vec(), b"Beta".to_vec()];
+    // Default builder charset: format 0.
+    let bytes = build(&spec);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(font.glyph_count(), 4);
+    assert!(!font.is_cid());
+    assert_eq!(font.charset().unwrap(), vec![0, 1, 2, 3]);
+    assert_eq!(font.glyph_id_in_charset(2).unwrap(), 2);
+    assert_eq!(font.string(391), Some(&b"Alpha"[..]));
+    assert_eq!(font.string(392), Some(&b"Beta"[..]));
+    assert_eq!(font.string(393), None);
+    assert_eq!(font.string(5), None);
+    assert!(matches!(
+        font.glyph_id_in_charset(4),
+        Err(OutlineError::InvalidGlyph)
+    ));
+    // Format 1 and 2 ranges.
+    spec.charset = Some(vec![1, 0x01, 0x90, 2]);
+    let bytes = build(&spec);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(font.charset().unwrap(), vec![0, 400, 401, 402]);
+    spec.charset = Some(vec![1, 0x00, 0x0a, 0, 0x00, 0x14, 1]);
+    let font_bytes = build(&spec);
+    assert_eq!(
+        CffFont::parse(&font_bytes).unwrap().charset().unwrap(),
+        vec![0, 10, 20, 21]
+    );
+    spec.charset = Some(vec![2, 0x00, 0x64, 0x00, 0x02]);
+    let bytes = build(&spec);
+    assert_eq!(
+        CffFont::parse(&bytes).unwrap().charset().unwrap(),
+        vec![0, 100, 101, 102]
+    );
+    // Range running past the glyph count, unknown format, SID overflow.
+    for bad in [
+        vec![2, 0x00, 0x64, 0x00, 0x03],
+        vec![3, 0, 0],
+        vec![1, 0xff, 0xff, 2],
+    ] {
+        spec.charset = Some(bad);
+        let bytes = build(&spec);
+        assert!(CffFont::parse(&bytes).unwrap().charset().is_err());
+    }
+    // Predefined ISOAdobe charset (offset 0) maps gid to SID.
+    let mut iso = build(&simple((0..3).map(glyph).collect()));
+    // Patch the charset operator operand in the Top DICT: find 29 .. 15 pattern for the charset.
+    let at = iso
+        .windows(6)
+        .position(|w| w[0] == 29 && w[5] == 15)
+        .unwrap();
+    iso[at + 1..at + 5].copy_from_slice(&0i32.to_be_bytes());
+    let font = CffFont::parse(&iso).unwrap();
+    assert_eq!(font.charset().unwrap(), vec![0, 1, 2]);
+    iso[at + 1..at + 5].copy_from_slice(&1i32.to_be_bytes());
+    assert!(matches!(
+        CffFont::parse(&iso).unwrap().charset(),
+        Err(OutlineError::Unsupported(_))
+    ));
+}
+
+fn cid_spec(fd_select: Vec<u8>) -> Spec {
+    let main = |sub_a: i32| {
+        cs(&[
+            N(0),
+            N(0),
+            O(RMOVETO),
+            N(sub_a - 107),
+            O(CALLSUBR),
+            O(ENDCHAR),
+        ])
+    };
+    Spec {
+        glyphs: vec![cs(&[O(ENDCHAR)]), main(0), main(0), main(0)],
+        fds: vec![
+            Fd {
+                lsubrs: vec![line_sub(1, 0)],
+                default_w: 111,
+                nominal_w: 0,
+            },
+            Fd {
+                lsubrs: vec![line_sub(0, 2)],
+                default_w: 222,
+                nominal_w: 0,
+            },
+        ],
+        fd_select: Some(fd_select),
+        charset: Some(vec![2, 0x00, 0x64, 0x00, 0x02]),
+        ..Spec::default()
+    }
+}
+
+#[test]
+fn cid_keyed_fonts_select_private_dicts_by_fdselect() {
+    // Format 3: glyphs 0..2 -> FD 0, glyphs 2..4 -> FD 1.
+    let f3 = vec![3, 0, 2, 0, 0, 0, 0, 2, 1, 0, 4];
+    // Format 0: glyph -> FD.
+    let f0 = vec![0, 0, 1, 1, 0];
+    for (name, sel, expect) in [("f3", f3, [0usize, 0, 1, 1]), ("f0", f0, [0usize, 1, 1, 0])] {
+        let bytes = build(&cid_spec(sel));
+        let font = CffFont::parse(&bytes).unwrap();
+        assert!(font.is_cid(), "{name}");
+        assert_eq!(font.font_dict_count(), 2);
+        assert_eq!(font.charset().unwrap(), vec![0, 100, 101, 102]);
+        assert!(font.registry_ordering_supplement().is_some());
+        for (gid, fd) in expect.iter().enumerate() {
+            assert_eq!(
+                font.font_dict_index(gid as u16).unwrap(),
+                *fd,
+                "{name} {gid}"
+            );
+        }
+        for gid in 1..4u16 {
+            let g = font.glyph(gid, OutlineLimits::default()).unwrap();
+            let (w, line) = if expect[usize::from(gid)] == 0 {
+                (111.0, (1., 0.))
+            } else {
+                (222.0, (0., 2.))
+            };
+            assert_eq!(g.width, w, "{name} {gid}");
+            assert_eq!(g.path, Pb::new().m(0., 0.).l(line.0, line.1).z().done());
+        }
+        assert!(matches!(
+            font.font_dict_index(4),
+            Err(OutlineError::InvalidGlyph)
+        ));
+    }
+}
+
+#[test]
+fn invalid_cid_structures_are_rejected() {
+    for (name, sel) in [
+        ("fd out of range", vec![0, 0, 1, 2, 0]),
+        ("short format 0", vec![0, 0, 1]),
+        ("first not zero", vec![3, 0, 1, 0, 1, 0, 0, 4]),
+        ("sentinel mismatch", vec![3, 0, 1, 0, 0, 0, 0, 3]),
+        ("not increasing", vec![3, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0, 4]),
+        ("range fd out of range", vec![3, 0, 1, 0, 0, 5, 0, 4]),
+        ("zero ranges", vec![3, 0, 0, 0, 4]),
+        ("unknown format", vec![9, 0, 0, 0, 0]),
+        ("range past glyphs", vec![3, 0, 2, 0, 0, 0, 0, 9, 1, 0, 4]),
+    ] {
+        let bytes = build(&cid_spec(sel));
+        assert!(CffFont::parse(&bytes).is_err(), "{name}");
+    }
+    // A CID font cannot use a predefined charset.
+    let mut spec = cid_spec(vec![0, 0, 0, 0, 0]);
+    spec.charset = Some(vec![0, 0, 1, 0, 2, 0, 3]);
+    let mut bytes = build(&spec);
+    let at = bytes
+        .windows(6)
+        .position(|w| w[0] == 29 && w[5] == 15)
+        .unwrap();
+    bytes[at + 1..at + 5].copy_from_slice(&0i32.to_be_bytes());
+    assert!(matches!(
+        CffFont::parse(&bytes),
+        Err(OutlineError::InvalidData(_))
+    ));
+}
+
+// ---------------------------------------------------------------- invalid tables
+
+#[test]
+fn headers_versions_and_indexes_are_validated() {
+    let good = build(&simple(vec![cs(&[O(ENDCHAR)]), cs(&[O(ENDCHAR)])]));
+    assert!(CffFont::parse(&good).is_ok());
+    let mut v2 = good.clone();
+    v2[0] = 2;
+    assert!(matches!(
+        CffFont::parse(&v2),
+        Err(OutlineError::Unsupported(_))
+    ));
+    let mut v0 = good.clone();
+    v0[0] = 0;
+    assert!(matches!(
+        CffFont::parse(&v0),
+        Err(OutlineError::InvalidData(_))
+    ));
+    let mut hdr = good.clone();
+    hdr[2] = 3;
+    assert!(CffFont::parse(&hdr).is_err());
+    let mut off = good.clone();
+    off[3] = 0;
+    assert!(CffFont::parse(&off).is_err());
+    // Name INDEX with offSize 0 / 5.
+    for bad in [0u8, 5] {
+        let mut b = good.clone();
+        b[4 + 2] = bad;
+        assert!(CffFont::parse(&b).is_err(), "offSize {bad}");
+    }
+    // First offset not 1.
+    let mut b = good.clone();
+    b[4 + 3] = 2;
+    assert!(CffFont::parse(&b).is_err());
+    // Type 1 charstrings are not supported.
+    let mut t1 = simple(vec![cs(&[O(ENDCHAR)])]);
+    t1.charstring_type = Some(1);
+    assert!(matches!(
+        CffFont::parse(&build(&t1)),
+        Err(OutlineError::Unsupported("Type 1 charstrings"))
+    ));
+    let mut t2 = simple(vec![cs(&[O(ENDCHAR)])]);
+    t2.charstring_type = Some(2);
+    assert!(CffFont::parse(&build(&t2)).is_ok());
+    // No glyphs.
+    assert!(CffFont::parse(&build(&simple(vec![]))).is_err());
+    // Every prefix of a valid table fails or parses without panicking.
+    for n in 0..good.len() {
+        let _ = CffFont::parse(&good[..n]);
+    }
+}
+
+#[test]
+fn dict_numbers_include_integers_and_reals() {
+    let spec = simple(vec![cs(&[O(ENDCHAR)]), cs(&[O(ENDCHAR)])]);
+    let mut bytes = build(&spec);
+    // defaultWidthX is encoded as `29 <i32> 20`; overwrite the 5-byte slot with the real
+    // number "2.50000" (nibbles 2 a 5 0 0 0 f).
+    let at = bytes
+        .windows(6)
+        .position(|w| w[0] == 29 && w[5] == 20)
+        .unwrap();
+    bytes[at..at + 5].copy_from_slice(&[30, 0x2a, 0x50, 0x00, 0xff]);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(font.glyph(1, OutlineLimits::default()).unwrap().width, 2.5);
+    // Negative exponent and sign nibbles: "-1.5E-1" = -0.15.
+    bytes[at..at + 5].copy_from_slice(&[30, 0xe1, 0xa5, 0xc1, 0xff]);
+    let font = CffFont::parse(&bytes).unwrap();
+    let w = font.glyph(1, OutlineLimits::default()).unwrap().width;
+    assert!((w + 0.15).abs() < 1e-12, "{w}");
+    // Reserved nibble and garbage.
+    bytes[at..at + 5].copy_from_slice(&[30, 0xd1, 0xff, 0xff, 0xff]);
+    assert!(CffFont::parse(&bytes).is_err());
+    bytes[at..at + 5].copy_from_slice(&[30, 0xee, 0xff, 0xff, 0xff]);
+    assert!(CffFont::parse(&bytes).is_err());
+    bytes[at..at + 5].copy_from_slice(&[31, 0, 0, 0, 0]);
+    assert!(CffFont::parse(&bytes).is_err());
+}
+
+// ---------------------------------------------------------------- sfnt integration
+
+fn put16(b: &mut [u8], p: usize, v: u16) {
+    b[p..p + 2].copy_from_slice(&v.to_be_bytes());
+}
+fn put32(b: &mut [u8], p: usize, v: u32) {
+    b[p..p + 4].copy_from_slice(&v.to_be_bytes());
+}
+
+/// Wrap raw tables in an `OTTO` sfnt with the mandatory metric tables.
+fn otto(glyphs: u16, extra: Vec<([u8; 4], Vec<u8>)>) -> Vec<u8> {
+    let mut head = vec![0; 54];
+    put32(&mut head, 0, 0x0001_0000);
+    put32(&mut head, 12, 0x5f0f_3cf5);
+    put16(&mut head, 18, 1000);
+    let mut hhea = vec![0; 36];
+    put32(&mut hhea, 0, 0x0001_0000);
+    put16(&mut hhea, 4, 800);
+    put16(&mut hhea, 6, (-200i16) as u16);
+    put16(&mut hhea, 34, 1);
+    let mut maxp = vec![0; 6];
+    put32(&mut maxp, 0, 0x0000_5000);
+    put16(&mut maxp, 4, glyphs);
+    let mut os2 = vec![0; 78];
+    put16(&mut os2, 4, 400);
+    put16(&mut os2, 6, 5);
+    let mut cmap = vec![0; 28];
+    put16(&mut cmap, 2, 1);
+    put16(&mut cmap, 4, 3);
+    put16(&mut cmap, 6, 10);
+    put32(&mut cmap, 8, 12);
+    put16(&mut cmap, 12, 12);
+    put32(&mut cmap, 16, 28);
+    put32(&mut cmap, 24, 1);
+    cmap.extend_from_slice(&0x41u32.to_be_bytes());
+    cmap.extend_from_slice(&0x41u32.to_be_bytes());
+    cmap.extend_from_slice(&1u32.to_be_bytes());
+    let mut post = vec![0; 32];
+    put32(&mut post, 0, 0x0003_0000);
+    let mut hmtx = vec![0x03, 0xe8, 0, 5];
+    hmtx.extend(vec![0; 2 * (usize::from(glyphs) - 1)]);
+    let mut tables: Vec<([u8; 4], Vec<u8>)> = vec![
+        (*b"head", head),
+        (*b"hhea", hhea),
+        (*b"hmtx", hmtx),
+        (*b"maxp", maxp),
+        (*b"name", vec![0, 0, 0, 0, 0, 6]),
+        (*b"OS/2", os2),
+        (*b"post", post),
+        (*b"cmap", cmap),
+    ];
+    tables.extend(extra);
+    let base = 12 + tables.len() * 16;
+    let total = base + tables.iter().map(|(_, v)| v.len() + 3).sum::<usize>();
+    let mut b = vec![0; total];
+    b[..4].copy_from_slice(b"OTTO");
+    put16(&mut b, 4, tables.len() as u16);
+    let mut off = base;
+    for (i, (tag, data)) in tables.iter().enumerate() {
+        let p = 12 + i * 16;
+        b[p..p + 4].copy_from_slice(tag);
+        put32(&mut b, p + 8, off as u32);
+        put32(&mut b, p + 12, data.len() as u32);
+        b[off..off + data.len()].copy_from_slice(data);
+        off += data.len() + 3;
+    }
+    b
+}
+
+fn sample_spec() -> Spec {
+    let mut spec = simple(vec![
+        cs(&[O(ENDCHAR)]),
+        cs(&[
+            N(10),
+            N(20),
+            O(RMOVETO),
+            N(30),
+            N(40),
+            O(RLINETO),
+            O(ENDCHAR),
+        ]),
+        drawn(&[1, 2, 3, 4, 5, 6], O(RRCURVETO)),
+    ]);
+    spec.gsubrs = vec![line_sub(3, 3)];
+    spec
+}
+
+#[test]
+fn face_outline_dispatches_to_cff_without_the_caller_knowing() {
+    let cff = build(&sample_spec());
+    let font = otto(3, vec![(*b"CFF ", cff.clone())]);
+    let face = FontFace::parse(&font).unwrap();
+    assert!(face.table(*b"glyf").is_none());
+    let direct = CffFont::parse(&cff).unwrap();
+    for gid in 0..3 {
+        assert_eq!(
+            face.outline(gid).unwrap(),
+            direct.outline(gid, OutlineLimits::default()).unwrap()
+        );
+    }
+    assert_eq!(
+        face.outline(1).unwrap(),
+        Pb::new().m(10., 20.).l(40., 60.).z().done()
+    );
+    assert!(matches!(face.outline(3), Err(OutlineError::InvalidGlyph)));
+    assert!(matches!(
+        face.outline_with_limits(
+            1,
+            OutlineLimits {
+                max_points: 1,
+                ..OutlineLimits::default()
+            }
+        ),
+        Err(OutlineError::LimitExceeded("points"))
+    ));
+    assert!(matches!(
+        face.outline_with_limits(
+            1,
+            OutlineLimits {
+                max_depth: 65,
+                ..OutlineLimits::default()
+            }
+        ),
+        Err(OutlineError::LimitExceeded("public depth cap"))
+    ));
+    // CID-keyed OpenType/CFF.
+    let cid = build(&cid_spec(vec![0, 0, 1, 1, 0]));
+    let font = otto(4, vec![(*b"CFF ", cid)]);
+    let face = FontFace::parse(&font).unwrap();
+    assert_eq!(
+        face.outline(2).unwrap(),
+        Pb::new().m(0., 0.).l(0., 2.).z().done()
+    );
+}
+
+#[test]
+fn cff2_and_missing_outline_tables_are_reported() {
+    let font = otto(3, vec![(*b"CFF2", vec![2, 0, 5, 0, 0, 0])]);
+    let face = FontFace::parse(&font).unwrap();
+    assert!(matches!(
+        face.outline(1),
+        Err(OutlineError::Unsupported("CFF2 variable outlines"))
+    ));
+    let table_in_cff = otto(3, vec![(*b"CFF ", vec![2, 0, 5, 0])]);
+    let face = FontFace::parse(&table_in_cff).unwrap();
+    assert!(matches!(face.outline(1), Err(OutlineError::Unsupported(_))));
+    let none = otto(3, vec![]);
+    let face = FontFace::parse(&none).unwrap();
+    assert!(matches!(
+        face.outline(1),
+        Err(OutlineError::MissingTable("loca"))
+    ));
+    let garbage = otto(3, vec![(*b"CFF ", vec![1, 0, 4])]);
+    let face = FontFace::parse(&garbage).unwrap();
+    assert!(face.outline(1).is_err());
+}
+
+// ---------------------------------------------------------------- mutation campaign
+
+struct Rng(u64);
+impl Rng {
+    fn step(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.step() % n as u64) as usize
+    }
+}
+
+fn exercise(bytes: &[u8]) {
+    let Ok(font) = CffFont::parse(bytes) else {
+        return;
+    };
+    let _ = font.charset();
+    for gid in 0..font.glyph_count().min(64) as u16 {
+        let _ = font.glyph(gid, OutlineLimits::default());
+        let _ = font.font_dict_index(gid);
+        let _ = font.glyph_id_in_charset(gid);
+    }
+    let _ = font.string(391);
+}
+
+fn rich_simple() -> Spec {
+    let mut glyphs = vec![cs(&[O(ENDCHAR)])];
+    glyphs.push(cs(&[
+        N(5),
+        N(1),
+        N(2),
+        O(HSTEMHM),
+        N(3),
+        N(4),
+        O(HINTMASK),
+        R(&[0x80]),
+        N(0),
+        N(0),
+        O(RMOVETO),
+        N(-107),
+        O(CALLSUBR),
+        N(-107),
+        O(CALLGSUBR),
+        O(ENDCHAR),
+    ]));
+    glyphs.push(drawn(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 50], E(35)));
+    glyphs.push(drawn(&[10, 20, 30, 40, 1, 2, 3, 4, 5], O(HVCURVETO)));
+    glyphs.push(drawn(&[10, 4, 20, 6, 30, 40, 50, 8, 60], E(36)));
+    glyphs.push(drawn(&[1, 2, 3, 4, 5, 6, 7, 8], O(RCURVELINE)));
+    glyphs.push(cs(&[
+        N(3),
+        N(4),
+        E(10),
+        N(1),
+        O(RMOVETO),
+        N(2),
+        N(2),
+        O(RLINETO),
+        O(ENDCHAR),
+    ]));
+    let mut spec = simple(glyphs);
+    spec.gsubrs = vec![line_sub(2, 2)];
+    spec.fds[0].lsubrs = vec![line_sub(7, 1)];
+    spec.strings = vec![b"x".to_vec()];
+    spec
+}
+
+#[test]
+fn seeded_mutation_and_truncation_campaign_never_panics() {
+    let bases = [
+        build(&rich_simple()),
+        build(&cid_spec(vec![3, 0, 2, 0, 0, 0, 0, 2, 1, 0, 4])),
+        build(&cid_spec(vec![0, 0, 1, 1, 0])),
+    ];
+    let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+    for base in &bases {
+        // Every truncation, and every single-byte value at every position for small bases.
+        for n in 0..=base.len() {
+            exercise(&base[..n]);
+        }
+        for pos in 0..base.len() {
+            for value in [0u8, 1, 0x7f, 0x80, 0xff, 0x0e, 0x0c, 0x1d] {
+                let mut m = base.clone();
+                m[pos] = value;
+                exercise(&m);
+            }
+        }
+        for _ in 0..15_000 {
+            let mut m = base.clone();
+            for _ in 0..=rng.below(4) {
+                let pos = rng.below(m.len());
+                m[pos] = rng.step() as u8;
+            }
+            if rng.below(8) == 0 {
+                m.truncate(rng.below(m.len() + 1));
+            }
+            exercise(&m);
+        }
+    }
+    // The same campaign through the sfnt wrapper and the public FontFace entry point.
+    let wrapped = otto(7, vec![(*b"CFF ", bases[0].clone())]);
+    let table_at = wrapped.windows(4).position(|w| w == [1, 0, 4, 4]).unwrap();
+    for _ in 0..3_000 {
+        let mut m = wrapped.clone();
+        let pos = table_at + rng.below(bases[0].len());
+        m[pos] = rng.step() as u8;
+        if let Ok(face) = FontFace::parse(&m) {
+            for gid in 0..7 {
+                let _ = face.outline(gid);
+            }
+        }
+    }
+    for n in 0..wrapped.len() {
+        if let Ok(face) = FontFace::parse(&wrapped[..n]) {
+            let _ = face.outline(1);
+        }
+    }
+}
+
+#[test]
+fn mutated_charstrings_never_loop_or_panic() {
+    // Random byte strings as charstrings, with subroutines available to call.
+    let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+    let mut spec = simple(vec![cs(&[O(ENDCHAR)]), cs(&[O(ENDCHAR)])]);
+    spec.gsubrs = vec![line_sub(1, 1), cs(&[N(-107), O(CALLGSUBR), O(RETURN)])];
+    spec.fds[0].lsubrs = vec![line_sub(2, 2), cs(&[N(-106), O(CALLSUBR), O(RETURN)])];
+    for _ in 0..20_000 {
+        let len = 1 + rng.below(40);
+        let code: Vec<u8> = (0..len).map(|_| rng.step() as u8).collect();
+        spec.glyphs[1] = code;
+        let bytes = build(&spec);
+        let font = CffFont::parse(&bytes).unwrap();
+        let _ = font.glyph(1, OutlineLimits::default());
+    }
+}
