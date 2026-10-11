@@ -12,7 +12,7 @@ Chaque ligne reçoit le filtre (None, Sub, Up, Average, Paeth) dont la somme des
 
 ## Limites et erreurs
 
-L’encodeur réutilise `DecodeLimits` et `ImageError` : le PNG produit est ainsi décodable avec les mêmes plafonds. Une dimension nulle ou supérieure à 2^31-1 ou un tampon de longueur inexacte donnent `InvalidData` ; un nombre de pixels supérieur à `max_pixels`, un tampon ou un PNG résultant supérieur à `max_input_bytes` donnent `LimitExceeded`. Les contrôles précèdent toute allocation et utilisent des opérations vérifiées ; aucune entrée ne provoque de panique. Les niveaux de gris sont décodés en RGBA (gris répliqué, alpha 255). Hors périmètre : 16 bits, palette, entrelacement, chunks de métadonnées.
+L’encodeur réutilise `DecodeLimits` et `ImageError` : le PNG produit est ainsi décodable avec les mêmes plafonds. Une dimension nulle ou supérieure à 2^31-1 ou un tampon de longueur inexacte donnent `InvalidData` ; un nombre de pixels supérieur à `max_pixels`, un tampon ou un PNG résultant supérieur à `max_input_bytes` donnent `LimitExceeded`. Les dimensions, la longueur du tampon et le nombre de pixels sont vérifiés avant les allocations. La taille du PNG résultant est vérifiée après compression ; cette limite borne la sortie retournée, sans garantir un plafond équivalent pour la mémoire temporaire utilisée pendant l’encodage. Les calculs de taille utilisent des opérations vérifiées. Les niveaux de gris sont décodés en RGBA (gris répliqué, alpha 255). Hors périmètre : 16 bits, palette, entrelacement, chunks de métadonnées.
 
 ## Vérification
 

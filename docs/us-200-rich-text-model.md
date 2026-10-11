@@ -133,6 +133,7 @@ entrée d'opération.
   `CodecError::InvalidData` (comme `decode` de `PlainTextDocument`). Les opérations
   riches ne sont donc pas encore sérialisables dans le journal.
 - Signets limités à un paragraphe (pas de signet à cheval sur plusieurs paragraphes).
+- Les cibles `LinkTarget::Bookmark` sont conservées même si le signet nommé n’existe pas ou a été supprimé. La validation structurelle ne promet pas de résoudre ces liens ; le consommateur doit traiter une cible absente.
 - Un lien ou un signet à cheval sur une scission est tronqué ; l'annulation restitue l'original exact.
 - `Transaction::apply` copie tout le document comme point de contrôle, et plusieurs
   inverses sont des instantanés de paragraphe ou de tableau : correct mais pas

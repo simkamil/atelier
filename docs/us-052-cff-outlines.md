@@ -24,4 +24,6 @@ Contrôle local hors dépôt : les 35 fichiers `.otf` de `C:\Windows\Fonts` (pol
 
 ## Non couvert
 
-CFF2 (polices variables), charstrings Type 1, `endchar` à quatre arguments (accents `seac`, `Unsupported`), opérateur `random` (`Unsupported`), `FontMatrix`, charsets Expert prédéfinis (`Unsupported`), table des chaînes standard (SID inférieurs à 391 non résolus en noms), hinting. Aucune police CID réelle n’a été testée, uniquement des fixtures synthétiques.
+CFF2 (polices variables), charstrings Type 1, `endchar` à quatre arguments (accents `seac`, `Unsupported`), opérateur `random` (`Unsupported`), transformations `FontMatrix`, charsets Expert prédéfinis (`Unsupported`), table des chaînes standard (SID inférieurs à 391 non résolus en noms), hinting. Aucune police CID réelle n’a été testée, uniquement des fixtures synthétiques. US-052 reste ouverte pour les cas CFF1 valides encore refusés ; l’intégration du module ne vaut pas clôture complète de cette US.
+
+La vérification d’intégration refuse désormais les sous-routines locales/globales qui arrivent en fin de données sans `return` ou `endchar`, conformément au [format Type 2, §2.3](https://partners.adobe.com/public/developer/en/font/5177.Type2.pdf). Le Top DICT accepte seulement une FontMatrix absente ou égale au défaut ; toute FontMatrix explicite de FD DICT est refusée jusqu’à prise en charge des transformations. Les six opérandes et le défaut Top DICT sont définis dans la [spécification CFF, table 9](https://adobe-type-tools.github.io/font-tech-notes/pdfs/5176.CFF.pdf).

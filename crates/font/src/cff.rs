@@ -163,6 +163,7 @@ const OP_SUBRS: u16 = 19;
 const OP_DEFAULT_WIDTH: u16 = 20;
 const OP_NOMINAL_WIDTH: u16 = 21;
 const OP_CHARSTRING_TYPE: u16 = 0x0c06;
+const OP_FONT_MATRIX: u16 = 0x0c07;
 const OP_ROS: u16 = 0x0c1e;
 const OP_FDARRAY: u16 = 0x0c24;
 const OP_FDSELECT: u16 = 0x0c25;
@@ -237,6 +238,25 @@ fn parse_dict(b: &[u8]) -> Res<Dict> {
         return Err(OutlineError::InvalidData("DICT operands without operator"));
     }
     Ok(Dict { entries })
+}
+
+fn validate_font_matrix(dict: &Dict) -> Res<()> {
+    if let Some(matrix) = dict.get(OP_FONT_MATRIX) {
+        if matrix.len() != 6 {
+            return Err(OutlineError::InvalidData("FontMatrix operand count"));
+        }
+        if matrix != [0.001, 0.0, 0.0, 0.001, 0.0, 0.0] {
+            return Err(OutlineError::Unsupported("non-default FontMatrix"));
+        }
+    }
+    Ok(())
+}
+
+fn reject_fd_font_matrix(dict: &Dict) -> Res<()> {
+    if dict.get(OP_FONT_MATRIX).is_some() {
+        return Err(OutlineError::Unsupported("FD FontMatrix"));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -338,6 +358,7 @@ impl<'a> CffFont<'a> {
             return Err(OutlineError::InvalidData("empty Top DICT INDEX"));
         }
         let top = parse_dict(tops.get(0)?)?;
+        validate_font_matrix(&top)?;
         if let Some(t) = top.number(OP_CHARSTRING_TYPE)?
             && t != 2.0
         {
@@ -376,6 +397,7 @@ impl<'a> CffFont<'a> {
             let mut fonts = Vec::with_capacity(fds.count);
             for i in 0..fds.count {
                 let d = parse_dict(fds.get(i)?)?;
+                reject_fd_font_matrix(&d)?;
                 fonts.push(Private::from_dict(data, &d)?);
             }
             let fd_select =
@@ -881,7 +903,11 @@ impl<'a> Interp<'a, '_> {
                 _ => return Err(OutlineError::InvalidData("reserved Type 2 operator")),
             }
         }
-        Ok(Flow::Return)
+        if depth == 0 {
+            Ok(Flow::Return)
+        } else {
+            Err(OutlineError::InvalidData("subroutine without return"))
+        }
     }
 
     fn count_stems(&mut self) -> Res<()> {

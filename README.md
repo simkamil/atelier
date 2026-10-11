@@ -66,3 +66,5 @@ sur cet hôte ; US-111 reste ouverte. Le premier [éditeur intégré de texte br
 L’éditeur ajoute la [navigation par mot et paragraphe](docs/us-221-keyboard-editing.md), Ctrl+A, F8/Échap, le [glisser de sélection et le double/triple-clic](docs/us-222-mouse-selection.md), ainsi que [copier/couper/coller en texte brut](docs/us-225-plain-clipboard.md). La colonne visuelle est conservée à travers les lignes courtes. Ces tranches ne clôturent pas les US complètes.
 
 Pour le tester : `cargo run -p atelier-desktop-win --release --locked --offline`, puis Ouvrir un `.txt`, modifier le texte et Enregistrer sous. Le binaire construit est `target/release/atelier.exe`. Le [suivi](docs/PROTOTYPE-PROGRESS.md) distingue les modules livrés des US complètes.
+
+Les livraisons parallèles ajoutent l’[encodeur PNG](docs/us-041-png-encoder.md), la [casse et normalisation Unicode](docs/us-013-case-normalization.md), un [décodeur CFF partiel](docs/us-052-cff-outlines.md) et le [modèle de document riche](docs/us-200-rich-text-model.md). Ce dernier expose ses opérations inversibles aux développeurs ; son raccordement à l’éditeur reste à réaliser.

@@ -221,6 +221,34 @@ fn rejects_dimensions_beyond_decoder_limits_without_allocating() {
 }
 
 #[test]
+fn output_limit_accepts_exact_png_size_and_rejects_one_byte_less() {
+    let pixels = [17, 34, 51, 255];
+    let generous = DecodeLimits {
+        max_pixels: 1,
+        max_input_bytes: 1 << 20,
+    };
+    let png = encode_png(1, 1, PngColor::Rgba8, &pixels, generous).unwrap();
+    assert!(png.len() > pixels.len());
+
+    let exact = DecodeLimits {
+        max_pixels: 1,
+        max_input_bytes: png.len(),
+    };
+    let encoded = encode_png(1, 1, PngColor::Rgba8, &pixels, exact).unwrap();
+    assert_eq!(encoded, png);
+    assert_eq!(decode_png(&encoded, exact).unwrap().pixels, pixels);
+
+    let one_byte_short = DecodeLimits {
+        max_pixels: 1,
+        max_input_bytes: png.len() - 1,
+    };
+    assert_eq!(
+        encode_png(1, 1, PngColor::Rgba8, &pixels, one_byte_short),
+        Err(ImageError::LimitExceeded)
+    );
+}
+
+#[test]
 fn reference_corpus_decodes_and_re_encodes_losslessly() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/image-reference");
     let mut checked = 0;

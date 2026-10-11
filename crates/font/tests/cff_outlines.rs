@@ -162,11 +162,24 @@ fn d29(v: i32) -> Vec<u8> {
     b
 }
 
+fn font_matrix_with_scale(scale: &[u8]) -> Vec<u8> {
+    let mut d = Vec::new();
+    d.extend_from_slice(scale);
+    d.extend(d29(0));
+    d.extend(d29(0));
+    d.extend_from_slice(scale);
+    d.extend(d29(0));
+    d.extend(d29(0));
+    d.extend([12, 7]);
+    d
+}
+
 #[derive(Clone, Default)]
 struct Fd {
     lsubrs: Vec<Vec<u8>>,
     default_w: i32,
     nominal_w: i32,
+    font_matrix: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Default)]
@@ -180,6 +193,7 @@ struct Spec {
     charset: Option<Vec<u8>>,
     strings: Vec<Vec<u8>>,
     charstring_type: Option<i32>,
+    font_matrix: Option<Vec<u8>>,
 }
 
 fn private_dict(fd: &Fd) -> (Vec<u8>, Vec<u8>) {
@@ -223,6 +237,9 @@ fn build(spec: &Spec) -> Vec<u8> {
             d.extend(d29(t));
             d.extend([12, 6]);
         }
+        if let Some(matrix) = &spec.font_matrix {
+            d.extend(matrix);
+        }
         if cid {
             for _ in 0..3 {
                 d.extend(d29(0));
@@ -256,20 +273,35 @@ fn build(spec: &Spec) -> Vec<u8> {
         top.extend(d29(t));
         top.extend([12, 6]);
     }
+    if let Some(matrix) = &spec.font_matrix {
+        top.extend(matrix);
+    }
     if cid {
         let sel = spec.fd_select.clone().unwrap();
         let fdselect_off = pos;
         pos += sel.len();
         tail.extend(&sel);
-        let fd_dict_len = 11;
-        let fdarray_len = index(&vec![vec![0; fd_dict_len]; spec.fds.len()]).len();
+        let fd_dicts: Vec<Vec<u8>> = spec
+            .fds
+            .iter()
+            .map(|fd| {
+                let mut d = fd.font_matrix.clone().unwrap_or_default();
+                let (pd, _) = private_dict(fd);
+                d.extend(d29(pd.len() as i32));
+                d.extend(d29(0));
+                d.push(18);
+                d
+            })
+            .collect();
+        let fdarray_len = index(&fd_dicts).len();
         let fdarray_off = pos;
         pos += fdarray_len;
         let mut dicts = Vec::new();
         let mut privates: Vec<u8> = Vec::new();
         for fd in &spec.fds {
             let (pd, subrs) = private_dict(fd);
-            let mut d = d29(pd.len() as i32);
+            let mut d = fd.font_matrix.clone().unwrap_or_default();
+            d.extend(d29(pd.len() as i32));
             d.extend(d29((pos + privates.len()) as i32));
             d.push(18);
             dicts.push(d);
@@ -1009,6 +1041,30 @@ fn subroutine_errors_and_budgets() {
         ),
         Err(OutlineError::InvalidData(_))
     ));
+    // Reaching the end of a subroutine without an explicit return is malformed.
+    for local in [true, false] {
+        let mut spec = simple(vec![
+            cs(&[O(ENDCHAR)]),
+            cs(&[
+                N(0),
+                N(0),
+                O(RMOVETO),
+                N(-107),
+                O(if local { CALLSUBR } else { CALLGSUBR }),
+                O(ENDCHAR),
+            ]),
+        ]);
+        let missing_return = cs(&[N(1), N(0), O(RLINETO)]);
+        if local {
+            spec.fds[0].lsubrs = vec![missing_return];
+        } else {
+            spec.gsubrs = vec![missing_return];
+        }
+        assert!(matches!(
+            outline_in(spec, 1),
+            Err(OutlineError::InvalidData("subroutine without return"))
+        ));
+    }
     // Total call budget (max_components) and the operation budget.
     let mut fan = simple(vec![
         cs(&[O(ENDCHAR)]),
@@ -1041,6 +1097,46 @@ fn subroutine_errors_and_budgets() {
         Err(OutlineError::LimitExceeded("operations"))
     ));
     assert_eq!(MAX_OPERATIONS, 1_000_000);
+}
+
+#[test]
+fn non_default_font_matrix_is_rejected() {
+    let mut spec = simple(vec![
+        cs(&[O(ENDCHAR)]),
+        cs(&[N(0), N(0), O(RMOVETO), N(100), N(0), O(RLINETO), O(ENDCHAR)]),
+    ]);
+    // This valid scale-2 matrix would change the 100-unit line to 200 units,
+    // while the outline API promises font-unit coordinates.
+    spec.font_matrix = Some(font_matrix_with_scale(&d29(2)));
+    let bytes = build(&spec);
+    assert!(matches!(
+        CffFont::parse(&bytes),
+        Err(OutlineError::Unsupported("non-default FontMatrix"))
+    ));
+}
+
+#[test]
+fn font_matrix_support_is_explicit_for_top_and_fd_dicts() {
+    let mut top_default = simple(vec![cs(&[O(ENDCHAR)])]);
+    let real_001 = [30, 0x0a, 0x00, 0x1f];
+    top_default.font_matrix = Some(font_matrix_with_scale(&real_001));
+    assert!(CffFont::parse(&build(&top_default)).is_ok());
+
+    let mut top_bad_arity = simple(vec![cs(&[O(ENDCHAR)])]);
+    top_bad_arity.font_matrix = Some([d29(1), vec![12, 7]].concat());
+    assert!(matches!(
+        CffFont::parse(&build(&top_bad_arity)),
+        Err(OutlineError::InvalidData("FontMatrix operand count"))
+    ));
+
+    for scale in [&real_001[..], &d29(2)[..]] {
+        let mut cid = cid_spec(vec![0, 0, 0, 0, 0]);
+        cid.fds[0].font_matrix = Some(font_matrix_with_scale(scale));
+        assert!(matches!(
+            CffFont::parse(&build(&cid)),
+            Err(OutlineError::Unsupported("FD FontMatrix"))
+        ));
+    }
 }
 
 // ---------------------------------------------------------------- stack and budgets
@@ -1239,11 +1335,13 @@ fn cid_spec(fd_select: Vec<u8>) -> Spec {
                 lsubrs: vec![line_sub(1, 0)],
                 default_w: 111,
                 nominal_w: 0,
+                ..Fd::default()
             },
             Fd {
                 lsubrs: vec![line_sub(0, 2)],
                 default_w: 222,
                 nominal_w: 0,
+                ..Fd::default()
             },
         ],
         fd_select: Some(fd_select),
