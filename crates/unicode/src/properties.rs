@@ -68,6 +68,15 @@ pub fn canonical_combining_class(c: char) -> u8 {
 pub fn line_break_class(c: char) -> &'static str {
     lookup(c, line_break_PAGES, line_break_DATA, line_break_VALUES)
 }
+/// East_Asian_Width value: N, Na, A, H, W or F (Unicode 17.0.0).
+pub fn east_asian_width(c: char) -> &'static str {
+    lookup(
+        c,
+        east_asian_width_PAGES,
+        east_asian_width_DATA,
+        east_asian_width_VALUES,
+    )
+}
 /// Grapheme_Cluster_Break value.
 pub fn grapheme_cluster_break_property(c: char) -> &'static str {
     lookup(

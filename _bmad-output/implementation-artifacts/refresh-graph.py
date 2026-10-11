@@ -36,7 +36,7 @@ for entry in previous.get('hyperedges',[]):
 document_paths={'docs/DEVELOPMENT.md','docs/us-014-encodings.md','docs/us-060-geometry.md','docs/us-070-indexed-tree.md','docs/us-020-021-compression.md','docs/us-071-transactions.md','docs/us-080-display-list.md','docs/us-022-023-zip.md','docs/us-030-031-xml.md','crates/compress/tests/corpus/mixed-utf8.txt','crates/compress/tests/corpus/repetitive.txt','.github/workflows/ci.yml'}
 document_paths.update({'crates/font/tests/fixtures/README.md', 'crates/font/tests/fixtures/fixtures.json', 'docs/us-050-opentype-tables.md', 'docs/us-073-selection.md', 'docs/us-074-recovery-journal.md', 'docs/MODEL-FONT-PROGRESS.md', 'docs/FORMATS-PROGRESS.md', 'docs/us-032-opaque-xml.md', 'docs/us-072-undo-history.md', 'docs/us-081-svg-backend.md', 'docs/EDITING-PROGRESS.md'})
 document_paths.update(['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md'])
-prototype_docs=['docs/us-011-segmentation.md','docs/us-053-kerning-ligatures.md','docs/us-091-binary-protocol.md','tests/font-layout-reference/README.md','docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
+prototype_docs=['docs/us-012-line-breaks.md','docs/us-054-latin-shaping.md','docs/us-055-font-manager.md','docs/us-011-segmentation.md','docs/us-053-kerning-ligatures.md','docs/us-091-binary-protocol.md','tests/font-layout-reference/README.md','docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
 document_paths.update(prototype_docs)
 document_paths.update({'README.md','web/README.md','tests/README.md'})
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'data/fonts/licenses').glob('*.txt'))
@@ -219,6 +219,8 @@ cost_path=out/'cost.json'
 if cost_path.is_file():
     cost=json.loads(cost_path.read_text(encoding='utf-8'))
     report += f'\nCoût CLI cumulé enregistré : {cost.get("total_input_tokens",0)} tokens en entrée et {cost.get("total_output_tokens",0)} en sortie ; la génération locale de ce rapport par API utilise 0 token LLM.\n'
+    if cost.get('unreported_runs'):
+        report += f'\nTentatives CLI dont les tokens ne sont pas rapportés : {len(cost["unreported_runs"])}. Les compteurs ci-dessus couvrent uniquement les usages observés ; aucune estimation inventée n’est ajoutée.\n'
 report += f'\n## Périmètre de cette mise à jour\n\nLa carte combine les dépendances documentaires déclarées (158 US), l’AST des sources Rust et les métadonnées Cargo réellement présentes. Les crates vides ne représentent pas des fonctionnalités implémentées. La commande `py -m graphify . --cargo` a réussi après mise en cache des documents et exclusion du runtime agent ; les API locales de Graphify régénèrent ce rapport et ses libellés. Cargo.toml est couvert par les métadonnées de ses {len(cargo["nodes"])} paquets, même si son extraction AST produit zéro nœud. Cette génération locale par API n’utilise pas de LLM ; les coûts des extractions CLI restent dans cost.json.\n'
 (out/'GRAPH_REPORT.md').write_text(report,encoding='utf-8')
 (out/'story-dependencies.json').write_text(json.dumps(doc,ensure_ascii=False,indent=2),encoding='utf-8')

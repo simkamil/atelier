@@ -10,6 +10,17 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 
 ## Validation
 
+### Preuve US-012, US-054 et US-055 — 2026-10-11
+
+Les [coupures Unicode](us-012-line-breaks.md), le [façonnage latin](us-054-latin-shaping.md) et le [registre de polices](us-055-font-manager.md) portent le backlog à **32 US terminées sur 158**. Trois agents GPT-6 Luna moyen ont développé en parallèle ; le coordinateur a finalisé les corrections après leur limite d'usage, puis trois agents frais Luna moyen ont conduit les revues indépendantes.
+
+Les [26 contrôles](../_bmad-output/implementation-artifacts/text-layout-validation.json) passent : 291 tests workspace, 101 tests release, LineBreakTest complet et contextes enrichis, 54 716 comparaisons HarfBuzz, quatre fontes système réelles et 10 000 mutations sans panic. Les sources et le lock restent identiques pendant les contrôles, les 32 paquets restent locaux et le WASM mesure 52 323 octets. La [revue triée](../_bmad-output/implementation-artifacts/text-layout-review.md) conserve chacun des onze constats et sa résolution, sans report. Elle fournit les commandes de reproduction.
+
+Le [suivi du démonstrateur](PROTOTYPE-PROGRESS.md) précise les travaux restants : Worker, interface, Canvas et pont natif. L'API de provenance System n'implémente pas le pont US-113. Les tests musl sont compilés sur Windows ; la CI Linux les exécute.
+
+Le lot précédent (`6f4b0b34ab39d5a15a73d21f615d2cbf75c7edf6`) a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38093368641). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-text-bridge.json) conserve la preuve.
+
+
 ### Preuve US-011, US-053 et US-091 — 2026-10-11
 
 La [segmentation Unicode](us-011-segmentation.md), le [crénage et les ligatures](us-053-kerning-ligatures.md) et le [protocole Rust/JS](us-091-binary-protocol.md) sont développés et validés. Le backlog compte **29 US terminées sur 158**. Les trois implémentations et trois revues indépendantes utilisent GPT-6 Luna moyen.

@@ -1,0 +1,29 @@
+{
+  "host": "Windows",
+  "system_faces": 4,
+  "results": [
+    "Arial\t400\tNormal\t21",
+    "Arial\t700\tNormal\t22",
+    "Arial\t400\tItalic\t23",
+    "Arial\t700\tItalic\t24"
+  ],
+  "inputs": [
+    {
+      "path": "C:\\WINDOWS\\Fonts\\arial.ttf",
+      "sha256": "b3658eadae55e682b5f69eb64c439c1ecc8f196c0bb8d4756d145d13bc86476a"
+    },
+    {
+      "path": "C:\\WINDOWS\\Fonts\\arialbd.ttf",
+      "sha256": "e8f4e3baf6cc35fed6fcce3a540e8b39e8f6cda1d22a28f2ec8f526fef7a43f5"
+    },
+    {
+      "path": "C:\\WINDOWS\\Fonts\\ariali.ttf",
+      "sha256": "86b32db9a06f9694e2a3760c42e5117bcdc5cc1255bb5186ca8ce0305e22f288"
+    },
+    {
+      "path": "C:\\WINDOWS\\Fonts\\arialbi.ttf",
+      "sha256": "267a411525980d648f10a7222a6ff1ebe4d4feeefbf9b3100cae2b5cfab5594a"
+    }
+  ],
+  "scope": "Actual system font bytes registered through the source API; native Host bridge remains US-113."
+}

@@ -176,6 +176,7 @@ fn parse_property_record<'a>(
 fn property_alias_key(name: &str) -> Option<&'static str> {
     match name {
         "line_break" => Some("lb"),
+        "east_asian_width" => Some("ea"),
         "grapheme_cluster_break" => Some("GCB"),
         "word_break" => Some("WB"),
         "indic_conjunct_break" => Some("InCB"),
@@ -215,11 +216,12 @@ fn property_value_aliases(root: &Path) -> Result<ValueAliases> {
                 line_no + 1
             )));
         }
-        if !matches!(record[0], "lb" | "GCB" | "WB" | "InCB") {
+        if !matches!(record[0], "lb" | "ea" | "GCB" | "WB" | "InCB") {
             continue;
         }
         let key = match record[0] {
             "lb" => "lb",
+            "ea" => "ea",
             "GCB" => "GCB",
             "WB" => "WB",
             "InCB" => "InCB",
@@ -233,7 +235,7 @@ fn property_value_aliases(root: &Path) -> Result<ValueAliases> {
                 .map(|value| value.to_string()),
         );
     }
-    for key in ["lb", "GCB", "WB", "InCB"] {
+    for key in ["lb", "ea", "GCB", "WB", "InCB"] {
         if !result.get(key).is_some_and(|values| !values.is_empty()) {
             return Err(err(format!(
                 "PropertyValueAliases.txt has no values for {key}"
@@ -605,6 +607,15 @@ fn load(root: &Path) -> Result<Data> {
     property_file(
         &mut d,
         prop_root,
+        "EastAsianWidth.txt",
+        "east_asian_width",
+        "N",
+        None,
+        &aliases,
+    )?;
+    property_file(
+        &mut d,
+        prop_root,
         "LineBreak.txt",
         "line_break",
         "XX",
@@ -822,6 +833,7 @@ fn emit(root: &Path, d: &Data) -> Result<Vec<u8>> {
         ("general_category", "Cn"),
         ("canonical_combining_class", "0"),
         ("line_break", "XX"),
+        ("east_asian_width", "N"),
         ("grapheme_cluster_break", "Other"),
         ("word_break", "Other"),
         ("indic_conjunct_break", "None"),

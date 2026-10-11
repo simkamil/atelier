@@ -8,6 +8,7 @@
 
 pub mod embedded;
 pub mod layout;
+pub mod manager;
 pub mod outline;
 pub use layout::{FontLayout, GlyphAdjustment, GlyphCluster, LayoutError, LayoutLimits};
 pub use outline::{OutlineError, OutlineLimits};

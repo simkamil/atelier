@@ -63,11 +63,11 @@ jobs:
       - name: Check workspace lock
         run: .\target\check-workspace.exe .
       - name: Compile WASM target
-        run: cargo build -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --target wasm32-unknown-unknown --locked --offline
+        run: cargo build -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape --target wasm32-unknown-unknown --locked --offline
       - name: Lint WASM target
-        run: cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
+        run: cargo clippy -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
       - name: Test engine on native host
-        run: cargo test -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image --locked --offline
+        run: cargo test -p atelier-core-wasm -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape --locked --offline
       - name: Build optimized WASM ABI
         run: cargo build -p atelier-core-wasm --profile wasm-release --target wasm32-unknown-unknown --locked --offline
       - name: Build isolated panic test hooks

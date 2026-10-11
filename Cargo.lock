@@ -110,6 +110,10 @@ version = "0.1.0"
 [[package]]
 name = "atelier-shape"
 version = "0.1.0"
+dependencies = [
+ "atelier-font",
+ "atelier-unicode",
+]
 
 [[package]]
 name = "atelier-sheet-model"

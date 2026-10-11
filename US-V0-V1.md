@@ -97,11 +97,13 @@ Réf : §6.4, §6.15 · Taille : M · Dépend de : US-010
 
 #### US-012 — Opportunités de coupure de ligne
 *En tant que* développeur, *je veux* les opportunités de coupure UAX#14 *afin de* couper les lignes correctement.
-- [ ] 100 % de `LineBreakTest.txt` de la version UCD figée par US-010 passent sur l'algorithme Unicode sans adaptation locale.
-- [ ] U+00A0 et U+202F suivent les règles de la classe GL, y compris l'exception LB12a autorisant notamment une coupure après une espace ordinaire précédant GL. Les tests couvrent le cas usuel sans coupure et ces exceptions ; l'insertion typographique française (US-228) ne modifie pas ces règles.
-- [ ] Coupures obligatoires (saut de ligne, saut de paragraphe) distinguées des coupures permises.
+- [x] 100 % de `LineBreakTest.txt` de la version UCD figée par US-010 passent sur l'algorithme Unicode sans adaptation locale.
+- [x] U+00A0 et U+202F suivent les règles de la classe GL, y compris l'exception LB12a autorisant notamment une coupure après une espace ordinaire précédant GL. Les tests couvrent le cas usuel sans coupure et ces exceptions ; l'insertion typographique française (US-228) ne modifie pas ces règles.
+- [x] Coupures obligatoires (saut de ligne, saut de paragraphe) distinguées des coupures permises.
 
 Réf : §6.4 · Taille : M · Dépend de : US-010
+
+Validation US-012 (2026-10-11) : [contrat et preuves](docs/us-012-line-breaks.md), [validation du lot](_bmad-output/implementation-artifacts/text-layout-validation.json).
 
 #### US-013 — Casse et normalisation
 *En tant que* développeur, *je veux* les conversions de casse et la normalisation NFC/NFD *afin de* gérer la recherche et les changements de casse.
@@ -267,20 +269,26 @@ Réf : §6.4 · Taille : L · Dépend de : US-050
 
 #### US-054 — Mise en forme du texte latin
 *En tant que* développeur, *je veux* transformer une chaîne en glyphes positionnés *afin que* la mise en page et le curseur s'appuient dessus.
-- [ ] Sortie : glyphes, avances, décalages et **clusters** (correspondance glyphe ↔ indices de caractères, y compris pour les ligatures).
-- [ ] Taille, interlettrage et chasse appliqués.
-- [ ] L'API traite des séquences génériques (prête pour les écritures complexes plus tard).
+- [x] Sortie : glyphes, avances, décalages et **clusters** (correspondance glyphe ↔ indices de caractères, y compris pour les ligatures).
+- [x] Taille, interlettrage et chasse appliqués.
+- [x] L'API traite des séquences génériques (prête pour les écritures complexes plus tard).
 
 Réf : §6.4 · Taille : M · Dépend de : US-053, US-011
 
+Validation US-054 (2026-10-11) : [contrat et preuves](docs/us-054-latin-shaping.md), [validation du lot](_bmad-output/implementation-artifacts/text-layout-validation.json).
+
 #### US-055 — Gestionnaire de polices
 *En tant que* développeur, *je veux* un registre de polices avec repli *afin que* chaque texte trouve une police métriquement correcte.
-- [ ] Sources : polices embarquées, polices système (via le pont natif), polices incorporées au document.
-- [ ] Correspondance famille / graisse / style avec règles de proximité.
-- [ ] Table de repli métrique : Calibri → Carlito, Cambria → Caladea, Arial → Liberation Sans, Times New Roman → Liberation Serif, Courier New → Liberation Mono ; police générique en dernier recours.
-- [ ] La police réellement utilisée est consultable (pour l'interface).
+- [x] Sources : polices embarquées, polices système (via le pont natif), polices incorporées au document.
+- [x] Correspondance famille / graisse / style avec règles de proximité.
+- [x] Table de repli métrique : Calibri → Carlito, Cambria → Caladea, Arial → Liberation Sans, Times New Roman → Liberation Serif, Courier New → Liberation Mono ; police générique en dernier recours.
+- [x] La police réellement utilisée est consultable (pour l'interface).
 
 Réf : §5.2 (3), §6.4 · Taille : M · Dépend de : US-050
+
+Le registre US-055 accepte les octets système par API ; leur découverte et transfert par le pont natif restent couverts par US-113.
+
+Validation US-055 (2026-10-11) : [contrat et preuves](docs/us-055-font-manager.md), [validation du lot](_bmad-output/implementation-artifacts/text-layout-validation.json).
 
 #### US-056 — Polices embarquées
 *En tant que* développeur, *je veux* embarquer les polices libres *afin de* garantir une mise en page identique partout.

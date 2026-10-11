@@ -53,3 +53,5 @@ cargo build -p atelier-core-wasm --example protocol_oracle --locked --offline
 node tests/wasm-protocol.mjs target/debug/examples/protocol_oracle.exe target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
 node tests/wasm-protocol-boundaries.mjs
 ```
+
+Le lot US-012/054/055 ajoute LineBreakTest complet (19 338 cas), ses contextes LB9 enrichis, le contrôle EAW sur tous les scalaires, et la façade de façonnage confrontée aux 54 716 sorties HarfBuzz à une taille/chasse fractionnaire. Les tests du registre vérifient familles, poids, styles, sources, couverture, TTC et atomicité. L'oracle de fontes système est un outil Windows local ; ses fontes ne sont pas distribuées et les tests Cargo restent autonomes.

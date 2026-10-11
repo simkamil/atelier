@@ -1,0 +1,9 @@
+{
+  "cases": 10000,
+  "faces": 20,
+  "accepted": 8199,
+  "rejected": 1801,
+  "panics": 0,
+  "validation_units_per_face": 100000,
+  "work_units_per_operation": 20000
+}

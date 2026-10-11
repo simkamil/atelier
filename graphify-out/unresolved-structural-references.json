@@ -115,7 +115,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L12",
+    "source_location": "L13",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -126,7 +126,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L13",
+    "source_location": "L14",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -137,7 +137,40 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L1187",
+    "source_location": "L1188",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_src_manager",
+    "target": "embedded_fonts",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/src/manager.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_src_manager",
+    "target": "ordering",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/src/manager.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_src_manager",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/src/manager.rs",
+    "source_location": "L8",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -182,6 +215,17 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/font/tests/layout_reference.rs",
     "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_tests_manager_reference",
+    "target": "manager",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/tests/manager_reference.rs",
+    "source_location": "L2",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -440,12 +484,133 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_shape_src_lib",
+    "target": "grapheme_boundaries",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/shape/src/lib.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_shape_src_lib",
+    "target": "rounded_ratio",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/shape/src/lib.rs",
+    "source_location": "L328",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_shape_tests_latin",
+    "target": "atelier_shape",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/shape/tests/latin.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_shape_tests_reference",
+    "target": "atelier_shape",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/shape/tests/reference.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_shape_tests_reference",
+    "target": "btreemap",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/shape/tests/reference.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_shape_tests_reference",
+    "target": "path",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/shape/tests/reference.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_unicode_src_lib",
     "target": "super",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/unicode/src/lib.rs",
-    "source_location": "L148",
+    "source_location": "L149",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_unicode_tests_east_asian_width",
+    "target": "east_asian_width",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/unicode/tests/east_asian_width.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_unicode_tests_line_break",
+    "target": "line_break",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/unicode/tests/line_break.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_unicode_tests_line_break",
+    "target": "line_break_class",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/unicode/tests/line_break.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_unicode_tests_line_break_contexts",
+    "target": "line_breaks",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/unicode/tests/line_break_contexts.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_unicode_tests_line_break_contexts",
+    "target": "line_break_class",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/unicode/tests/line_break_contexts.rs",
+    "source_location": "L3",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -984,7 +1149,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "tools/ucd-gen/src/lib.rs",
-    "source_location": "L990",
+    "source_location": "L1002",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"

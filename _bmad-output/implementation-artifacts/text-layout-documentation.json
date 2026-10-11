@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-11",
+  "validated_stories": 32,
+  "total_stories": 158,
+  "runtime_validation_sha256": "683f8623a0deda92de109f70ea8c7eded0d34e1301a085edb715985118e97b05",
+  "documentation_sha256": {
+    "README.md": "f1f10c09962b29b0f1689acacccaebb6f857f0c11608752af5922d9f32f06082",
+    "US-V0-V1.md": "cbd1bf70fb2e42ac86e9224a73ddf4cb5e2a308e6e1d1524844743fffdc0213e",
+    "tests/README.md": "a31e6d2deeb72af4282193d3a57bdb9e1ac5ff811d8ab9c346a33c20268e4351",
+    "docs/DEVELOPMENT.md": "fd271d725608cc51c39b2c837c80fa0e7737d75d2edd9cd11145cdd1c0a58d94",
+    "docs/PROTOTYPE-PROGRESS.md": "a52ac7435d1513f6603948b9560dfb7174f7dc1b2a607b6ce10c4dc45a7a7302",
+    "docs/us-012-line-breaks.md": "1750b8c853d67b077ad3df9aa0a1c10d95293592df597304c07f165520178ea6",
+    "docs/us-054-latin-shaping.md": "a4b4d1433e88c827edd8fe33f231a3d9a21d08d80a1871d780717d33f57b5155",
+    "docs/us-055-font-manager.md": "cbb50a89ba5eefdc7b369013fe04bab5a532f92c04278f5b624dbacafb4953fe",
+    "_bmad-output/implementation-artifacts/spec-us012-line-breaks.md": "52436a2a3d3daa725227d572dbbb6c9d6dd1e61a0da9c809bb030738fe69bd0a",
+    "_bmad-output/implementation-artifacts/spec-us054-latin-shaping.md": "8ec834e06c60c52f0f24182679547c4fdd4aa9bdd432a41e2acc8d5f60881d07",
+    "_bmad-output/implementation-artifacts/spec-us055-font-manager.md": "9fdcd7edfe5f8e24868179dae4a8b1521fe197f1bd19b46f340153f52023bbf4",
+    "_bmad-output/implementation-artifacts/text-layout-claims.md": "426a7114f15ac17789cb20350b2a0805aed1e00922272fd54dcbe4a84219e1e9",
+    "_bmad-output/implementation-artifacts/text-layout-review.md": "a05bfc65351232a1f8535e7ccf923e2421e7d562b695821fd9c02398c7326664"
+  },
+  "architecture_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "90ff02c1699014210f12fb0136b6f4c538f3c9a2a08eb38b000fe0d63d1cdf69",
+    "graphify-out/graph.json": "bd4b69e9764d21e23762af579762fdfc914f3140f2eb2c245937184fd2c28c83",
+    "graphify-out/graph.html": "581c365aefc1584b59d7e61ef1e89db788961bd3521f7e68bfe9a3ab56c9d568",
+    "graphify-out/story-dependencies.json": "843ec26272fa5d4e74b0e061c55b833f0301884b985878bd1fbc8553d5cb5e3d",
+    "graphify-out/unresolved-structural-references.json": "03f597950a08b8822d296c2ca57dde6331802fd9b6e7c8eea7487fe03f292e5d"
+  }
+}
