@@ -220,12 +220,133 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_desktop_win_src_files",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_files",
+    "target": "fs",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L10",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_files",
+    "target": "io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_files",
+    "target": "atomic",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L14",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_files",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L1023",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_files",
+    "target": "cursor",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L1024",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_files",
+    "target": "atomic",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L1025",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_files",
+    "target": "time",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/files.rs",
+    "source_location": "L1026",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_file_dialog",
+    "target": "files",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/file_dialog.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_file_dialog",
+    "target": "ptr",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/file_dialog.rs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_file_dialog",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/file_dialog.rs",
+    "source_location": "L508",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_desktop_win_src_main",
     "target": "finish_startup",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/main.rs",
-    "source_location": "L88",
+    "source_location": "L105",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -236,7 +357,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/main.rs",
-    "source_location": "L89",
+    "source_location": "L106",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -247,7 +368,51 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/main.rs",
-    "source_location": "L90",
+    "source_location": "L107",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_resources",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/resources.rs",
+    "source_location": "L207",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview_resources",
+    "target": "resources",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview-resources.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview_resources",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview-resources.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview_resources",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview-resources.rs",
+    "source_location": "L685",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -258,7 +423,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/webview.rs",
-    "source_location": "L5",
+    "source_location": "L6",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -269,7 +434,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/webview.rs",
-    "source_location": "L7",
+    "source_location": "L8",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -280,7 +445,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/webview.rs",
-    "source_location": "L9",
+    "source_location": "L10",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -291,7 +456,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/webview.rs",
-    "source_location": "L11",
+    "source_location": "L12",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -302,7 +467,18 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/webview.rs",
-    "source_location": "L12",
+    "source_location": "L13",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview",
+    "target": "resources",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview.rs",
+    "source_location": "L17",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -313,7 +489,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/webview.rs",
-    "source_location": "L849",
+    "source_location": "L993",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -379,7 +555,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L1688",
+    "source_location": "L1931",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -390,7 +566,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L1692",
+    "source_location": "L1935",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -423,7 +599,18 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/window.rs",
-    "source_location": "L289",
+    "source_location": "L298",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_tests_us113_file_access",
+    "target": "file_dialog",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/tests/us113_file_access.rs",
+    "source_location": "L5",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -897,6 +1084,50 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/shape/tests/reference.rs",
     "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_src_lib",
+    "target": "atelier_model",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/src/lib.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_src_lib",
+    "target": "segmentation",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/src/lib.rs",
+    "source_location": "L10",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_src_lib",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/src/lib.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_text",
+    "target": "atelier_text_model",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_text.rs",
+    "source_location": "L3",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -1515,6 +1746,127 @@
     "source_location": "L2",
     "weight": 1.0,
     "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_engine",
+    "target": "hashlib",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-engine.py",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_engine",
+    "target": "json",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-engine.py",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_engine",
+    "target": "pathlib",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-engine.py",
+    "source_location": "L5",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_engine",
+    "target": "subprocess",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-engine.py",
+    "source_location": "L6",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_engine_client_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_wasm_protocol_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_check_embedded_engine",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/check-embedded-engine.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_check_embedded_engine",
+    "target": "ref_node_crypto",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/check-embedded-engine.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_check_embedded_engine",
+    "target": "ref_node_fs_promises",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/check-embedded-engine.mjs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_check_embedded_engine",
+    "target": "ref_node_path",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/check-embedded-engine.mjs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_check_embedded_engine",
+    "target": "ref_node_url",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/check-embedded-engine.mjs",
+    "source_location": "L6",
+    "weight": 1.0,
     "_origin": "ast"
   },
   {

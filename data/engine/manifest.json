@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "artifact": "atelier_core_wasm.wasm",
+  "target": "wasm32-unknown-unknown",
+  "profile": "wasm-release",
+  "features": [],
+  "bytes": 52323,
+  "sha256": "ef6e3b6c91f74486df0cd9ef0ce6b2d937ed65172aa52610478d35cef1241888",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "source_hash_encoding": "UTF-8 bytes with CRLF normalized to LF",
+  "sources_sha256": {
+    "Cargo.toml": "2426bcf285ae2398384bc2f02205190282f016d3315f1f8510660baeccb2e322",
+    "crates/core-wasm/Cargo.toml": "34c10bfc5610425655dc6d1929f0e49d186c33b81afe711310cbcae99074ee8d",
+    "crates/core-wasm/src/lib.rs": "1e4b1dd25bad635482c4b40446c71642bee5d919c437ebb90af360e7f6ed739f",
+    "crates/core-wasm/src/protocol.rs": "6351d594777e44e53163fbb8f87acf59160be3723f6aaf74d3257fdb813562be"
+  },
+  "scope": "Real current ABI/protocol engine; dispatch still echoes, document handlers pending."
+}

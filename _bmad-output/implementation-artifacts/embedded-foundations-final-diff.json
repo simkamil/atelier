@@ -1,0 +1,8 @@
+{
+  "diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-embedded-foundations-2c3cncep\\changes.diff",
+  "bytes": 13902514,
+  "sha256": "0e403c9889b39e98b748bf79cc900b3f753e837de5f138403f24cc2584bf8e54",
+  "claims_file": "C:\\mon-bureau\\_bmad-output\\implementation-artifacts\\embedded-foundations-claims.md",
+  "baseline": "e901bde9cf4c3307fcf16f3da34a8ac9cd56a547",
+  "purpose": "Final exhaustive snapshot after reviewed corrections and documentation; independent review used the earlier snapshot recorded in embedded-foundations-review.md."
+}

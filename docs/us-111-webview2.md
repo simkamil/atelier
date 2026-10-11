@@ -1,6 +1,6 @@
 # US-111/114 — WebView2 dans la fenêtre Win32
 
-Le shell charge le contrôle WebView2 natif dans la fenêtre Win32 existante. Cette livraison démarre sur `about:blank`; elle ne fournit pas encore l’interface d’édition, les ressources embarquées ni le pont JavaScript.
+Le shell charge le contrôle WebView2 natif dans la fenêtre Win32 existante. La première livraison démarrait sur `about:blank`. Le lot [US-112](us-112-embedded-resources.md) charge maintenant la page embarquée `https://app.atelier/`; l’interface d’édition et le pont fichiers JavaScript restent à développer.
 
 ## ABI et liaison
 

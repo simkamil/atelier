@@ -8,7 +8,7 @@ fn main() {
     if let Err(error) = start() {
         if matches!(
             std::env::args_os().nth(1).as_deref(),
-            Some(arg) if arg == "--self-check" || arg == "--webview-self-check"
+            Some(arg) if arg == "--self-check" || arg == "--webview-self-check" || arg == "--resources-self-check"
         ) {
             eprintln!("{error}");
         } else {
@@ -48,6 +48,23 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
                 &directory.join("window-state.ini"),
                 &directory.join("webview"),
                 100,
+            )?
+        );
+        return Ok(());
+    }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--resources-self-check")) {
+        let directory = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--resources-self-check requires an isolated target directory")?;
+        if arguments.next().is_some() {
+            return Err("--resources-self-check accepts one target directory".into());
+        }
+        println!(
+            "{}",
+            window::resources_self_check(
+                &directory.join("window-state.ini"),
+                &directory.join("webview"),
             )?
         );
         return Ok(());

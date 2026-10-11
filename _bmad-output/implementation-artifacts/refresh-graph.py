@@ -39,7 +39,10 @@ document_paths.update(['tests/image-reference/README.md', 'data/fonts/README.md'
 prototype_docs=['docs/us-012-line-breaks.md','docs/us-054-latin-shaping.md','docs/us-055-font-manager.md','docs/us-011-segmentation.md','docs/us-053-kerning-ligatures.md','docs/us-091-binary-protocol.md','tests/font-layout-reference/README.md','docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
 prototype_docs.extend(['docs/us-092-worker.md','docs/us-110-win32-window.md','docs/us-116-portable-data.md'])
 prototype_docs.extend(['docs/us-101-canvas-renderer.md','docs/us-103-text-input.md','docs/us-111-webview2.md','data/webview2/README.md'])
+prototype_docs.extend(['web/index.html','web/app.css','web/i18n/fr-FR.txt'])
+prototype_docs.extend(['docs/us-112-embedded-resources.md','docs/us-113-file-access.md','docs/us-120-plain-text-model.md','data/engine/README.md'])
 document_paths.update(prototype_docs)
+document_paths.update({'web/index.html','web/app.css','web/i18n/fr-FR.txt'})
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
 document_paths.update({'README.md','web/README.md','tests/README.md'})
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'tests').glob('*browser.html'))
@@ -101,16 +104,29 @@ for rel in prototype_docs+['tests/image-reference/README.md', 'data/fonts/README
             doc['edges']=[e for e in doc['edges'] if not(e['source']==node_id and e['target']=='spec_document')]
             doc['edges'].append({'source':node_id,'target':'spec_document','relation':'references','confidence':'EXTRACTED','confidence_score':1.0,'source_file':str(p),'source_location':str(contents[:contents.index('SPEC.md')].count('\n')+1)})
 code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if 'target' not in p.parts]
+code += [root/'tools/package-engine.py']
 code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
 # Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
 manifest=root/'tests/format-reference/manifest.json'
 font_manifest=root/'crates/font/tests/fixtures/fixtures.json'
-code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tests/font-layout-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1',root/'tests/check-webview-assets.ps1',root/'tests/check-webview-host.ps1',root/'data/webview2/manifest.json') if p.is_file()]
+code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tests/font-layout-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1',root/'tests/check-webview-assets.ps1',root/'tests/check-webview-host.ps1',root/'data/webview2/manifest.json',root/'data/engine/manifest.json',root/'tests/check-embedded-resources.ps1') if p.is_file()]
 ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}
 node_ids={n['id'] for n in merged['nodes']}
+# Each include_bytes route directly names an actual compile-time resource.
+resource_source=root/'crates/desktop-win/src/resources.rs'
+resource_contents=resource_source.read_text(encoding='utf-8')
+for match in re.finditer(r'include_bytes!\("([^"]+)"\)',resource_contents):
+    asset=(resource_source.parent/match.group(1)).resolve()
+    relative=asset.relative_to(root).as_posix()
+    asset_id='embedded_'+relative.replace('/','_').replace('.','_').replace('-','_')
+    if asset_id not in node_ids:
+        merged['nodes'].append({'id':asset_id,'label':relative,'type':'embedded_asset','embedded_path':relative,'source_file':'crates/desktop-win/src/resources.rs','source_location':str(resource_contents[:match.start()].count('\n')+1)})
+        node_ids.add(asset_id)
+    merged['edges'].append({'source':'crates_desktop_win_src_resources','target':asset_id,'relation':'embeds','confidence':'EXTRACTED','confidence_score':1.0,'source_file':'crates/desktop-win/src/resources.rs','source_location':str(resource_contents[:match.start()].count('\n')+1)})
+
 # Remove hyperedges whose referenced fixture concepts were aggregated above.
 # Keep every resolvable member; build_from_json otherwise only warns and drops.
 valid_hyperedges=[]
@@ -152,6 +168,11 @@ for edge in merged['edges']:
 for source in code:
     for match in re.finditer(r'^(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;',source.read_text(encoding='utf-8'),re.M):
         target=source.parent/(match.group(1)+'.rs')
+        # An explicit #[path] attribute names the module source in Rust.
+        prefix=source.read_text(encoding='utf-8')[:match.start()]
+        attribute=re.search(r'#\[path\s*=\s*"([^"]+)"\]\s*$',prefix)
+        if attribute:
+            target=source.parent/attribute.group(1)
         if not target.is_file():
             continue
         source_id=source.relative_to(root).with_suffix('').as_posix().replace('/','_').replace('-','_')

@@ -130,6 +130,10 @@ version = "0.1.0"
 [[package]]
 name = "atelier-text-model"
 version = "0.1.0"
+dependencies = [
+ "atelier-model",
+ "atelier-unicode",
+]
 
 [[package]]
 name = "atelier-ucd-gen"

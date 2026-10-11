@@ -2,7 +2,12 @@
 //! Native shell foundations. Platform FFI is isolated in dedicated modules.
 
 pub mod data;
+pub mod files;
+pub mod resources;
 pub mod window;
+
+#[cfg(windows)]
+pub mod file_dialog;
 
 #[cfg(windows)]
 pub(crate) mod webview;

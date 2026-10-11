@@ -247,7 +247,9 @@ fn distance_to_rect(x: i64, y: i64, rect: Rect) -> u128 {
 mod win32;
 
 #[cfg(windows)]
-pub use win32::{initialize_dpi, run, self_check, show_error, webview_self_check};
+pub use win32::{
+    initialize_dpi, resources_self_check, run, self_check, show_error, webview_self_check,
+};
 
 #[cfg(not(windows))]
 pub fn initialize_dpi() -> io::Result<()> {
@@ -272,6 +274,13 @@ pub fn webview_self_check(
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "WebView2 self-check is only available on Windows",
+    ))
+}
+#[cfg(not(windows))]
+pub fn resources_self_check(_state_file: &Path, _cache: &Path) -> io::Result<String> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "WebView2 resource self-check is only available on Windows",
     ))
 }
 #[cfg(not(windows))]

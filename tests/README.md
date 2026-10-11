@@ -85,3 +85,9 @@ avec profil temporaire isolé et suppression de son propre profil. Il vérifie
 Canvas, saisie et composition intégrée. `canvas` ou `input` limite les suites.
 Le benchmark software n’est pas une validation de fluidité matérielle ; les
 événements synthétiques ne remplacent pas les tests AZERTY/IME natifs.
+
+## Ressources embarquées, fichiers et texte brut
+
+`node tests/check-embedded-engine.mjs` vérifie provenance, empreintes, imports/exports et écho du moteur livré, sans compilation préalable. Après un build optimisé avec la même toolchain, `--compare-artifact` compare les octets à l’artefact Cargo. `pwsh -NoProfile -File tests/check-embedded-resources.ps1 -Executable target/release/atelier.exe -TargetDirectory target/embedded-resources` attend la fin du diagnostic réel caché, y compris avec le sous-système Windows release. WebView2 Evergreen exposant `ICoreWebView2_22` est requis.
+
+`cargo test -p atelier-text-model --locked --offline` couvre UTF-8, sélection, graphèmes et historique. `cargo test -p atelier-desktop-win --locked --offline` couvre le broker fichiers, les pannes de publication et les ressources ; aucun dialogue interactif n’est ouvert. Les erreurs simulées vérifient la préservation des fichiers avant publication, sans promettre de CAS atomique face à un processus extérieur.

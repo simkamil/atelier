@@ -22,12 +22,12 @@ raisonnement moyen, puis relues et validées. Le backlog compte désormais
 Le démonstrateur US-120 reste à construire. Le socle texte, le Worker,
 la fenêtre Win32 et la résolution portable sont disponibles. La coque Windows
 peut être lancée avec `cargo run -p atelier-desktop-win --locked --offline` ;
-elle héberge WebView2 sur `about:blank` et mémorise sa géométrie.
+elle charge la page locale `https://app.atelier/` depuis les octets incorporés et mémorise sa géométrie.
 US-114 (runtime absent) est validée. US-111 héberge le contrôle réel, mais reste
 ouverte pour la hausse de handles au test strict de 100 cycles.
 Le Canvas (US-101) et la saisie clavier/IME (US-103) sont implémentés comme modules
 testés dans Chromium ; leurs critères d’intégration et de matériel restent ouverts.
-Il reste les ressources et le pont natif (US-112/113), puis leur intégration US-120.
+Les [ressources locales](us-112-embedded-resources.md), le [backend fichiers](us-113-file-access.md) et le [modèle de texte brut](us-120-plain-text-model.md) préparent le raccordement US-120. Le pont fichiers JS, la mise en page et la connexion saisie/rendu/moteur restent à développer.
 US-092 reste ouverte : le Worker transfère réellement les buffers avec progression et annulation
 pendant les copies par blocs ; le dispatch WASM synchrone n'est pas préemptible
 et conserve son écho ABI. Les handlers métier d'ouverture/export restent à intégrer.
@@ -123,3 +123,24 @@ le rapport conserve séparément l'échec strict des handles et US-111 reste ouv
 La [revue indépendante](../_bmad-output/implementation-artifacts/frontend-host-review.md)
 conserve un point IME natif de gravité moyenne non vérifiée à trancher sur matériel.
 Les tests musl sont compilés localement ; leur exécution appartient à la CI Linux.
+
+Le lot ressources, fichiers et texte brut a été développé en parallèle avec trois
+agents GPT-6 Luna moyen, puis corrigé après trois revues indépendantes.
+La [validation finale](../_bmad-output/implementation-artifacts/embedded-foundations-validation.json)
+réussit **37 contrôles, 351 tests workspace et 48 tests natifs release**,
+sur sources et lock inchangés. Les diagnostics debug/release chargent les onze
+ressources, vérifient le vrai Worker/WASM par écho Ping, HEAD/404/405 et six
+catégories de refus CSP avec traces natives. La [copie isolée de l’exécutable](../_bmad-output/implementation-artifacts/embedded-foundations-portable.json)
+fonctionne sans dossier web/data. Les [18 constats de revue](../_bmad-output/implementation-artifacts/embedded-foundations-review.md)
+sont triés ; les corrections retenues sont appliquées, aucun nouveau constat
+n’est différé. Les [échecs exploratoires](../_bmad-output/implementation-artifacts/embedded-foundations-exploration.json)
+restent conservés.
+
+US-112 reste ouverte pour la journalisation des violations CSP internes aux
+Workers et les scénarios service-worker. US-113 reste ouverte pour le pont
+fichiers JS, SharedBuffer, les polices/URL et les essais de dialogues natifs.
+US-120 reste ouverte pour la mise en page et la connexion saisie/modèle/rendu,
+ainsi que ses mesures de latence et démarrage. US-111 conserve l’échec strict
+de handles ; ses contrôles fonctionnels de 100 cycles et callbacks passent.
+Le backlog reste à **35 US entièrement validées sur 158**. Les tests musl sont
+compilés localement ; leur exécution appartient à la CI Linux du commit publié.

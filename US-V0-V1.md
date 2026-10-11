@@ -508,11 +508,13 @@ En cours (2026-10-11) : [hébergement réel et limite de validation](docs/us-111
 
 #### US-112 — Ressources embarquées et isolement réseau
 *En tant que* développeur, *je veux* servir les ressources depuis l'exe et bloquer tout le reste *afin que* l'application soit totalement déconnectée.
-- [ ] Ressources incorporées à la compilation, servies sur `https://app.atelier/` via `WebResourceRequested`, avec le bon type MIME.
+- [x] Ressources incorporées à la compilation, servies sur `https://app.atelier/` via `WebResourceRequested`, avec le bon type MIME.
 - [ ] CSP stricte ; toute requête ou navigation vers une autre origine est bloquée et journalisée.
-- [ ] Les liens externes ne naviguent jamais dans la WebView.
+- [x] Les liens externes ne naviguent jamais dans la WebView.
 
 Réf : §1, §6.8 · Taille : M · Dépend de : US-111
+
+Avancement US-112 (2026-10-11) : [origine embarquée, table HTTP et six catégories CSP validées](docs/us-112-embedded-resources.md). La journalisation CSP interne aux Workers et les scénarios service-worker restent ouverts ; l’US complète n’est pas terminée.
 
 #### US-113 — Pont natif ↔ JS
 *En tant que* développeur, *je veux* un pont entre le natif et le JS *afin d'accéder* aux fichiers et au système.
@@ -521,6 +523,8 @@ Réf : §1, §6.8 · Taille : M · Dépend de : US-111
 - [ ] Toute erreur système remontée avec un message traduisible.
 
 Réf : §6.8 · Taille : M · Dépend de : US-111
+
+Avancement US-113 (2026-10-11) : [backend fichiers et bindings dialogues](docs/us-113-file-access.md) implémentés et testés sans UI interactive. Pont fichiers JS, SharedBuffer, polices système, URL et validation manuelle restent à développer/valider.
 
 #### US-114 — Runtime WebView2 absent
 *En tant qu'*utilisateur, *je veux* un message clair si le runtime WebView2 manque *afin de* savoir comment y remédier.
@@ -557,6 +561,8 @@ Validation US-116 (2027-10-11) : [contrat et limites](docs/us-116-portable-data.
 - [ ] Latence de frappe mesurée < 16 ms sur un texte de 300 pages ; démarrage à froid < 1,5 s.
 
 Réf : §6 · Taille : M · Dépend de : US-012, US-054, US-055, US-072, US-101, US-103, US-113
+
+Avancement US-120 (2026-10-11) : [modèle concret de texte brut](docs/us-120-plain-text-model.md) validé : UTF-8/BOM, sélection, graphèmes et annuler/rétablir. Les critères de démonstration ci-dessus restent ouverts : aucun éditeur intégré n’est encore livré.
 
 ---
 

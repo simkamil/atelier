@@ -15,6 +15,7 @@
 *.rgba binary
 *.tgz binary
 *.lib binary
+*.wasm binary
 # Retain the Microsoft SDK oracle and license byte for byte.
 /data/webview2/** -text -whitespace
 /data/webview2/include/WebView2.h -diff

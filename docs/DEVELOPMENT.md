@@ -195,3 +195,24 @@ le rapport conserve séparément l'échec strict des handles et US-111 reste ouv
 La [revue indépendante](../_bmad-output/implementation-artifacts/frontend-host-review.md)
 conserve un point IME natif de gravité moyenne non vérifiée à trancher sur matériel.
 Les tests musl sont compilés localement ; leur exécution appartient à la CI Linux.
+
+Le lot ressources, fichiers et texte brut a été développé en parallèle avec trois
+agents GPT-6 Luna moyen, puis corrigé après trois revues indépendantes.
+La [validation finale](../_bmad-output/implementation-artifacts/embedded-foundations-validation.json)
+réussit **37 contrôles, 351 tests workspace et 48 tests natifs release**,
+sur sources et lock inchangés. Les diagnostics debug/release chargent les onze
+ressources, vérifient le vrai Worker/WASM par écho Ping, HEAD/404/405 et six
+catégories de refus CSP avec traces natives. La [copie isolée de l’exécutable](../_bmad-output/implementation-artifacts/embedded-foundations-portable.json)
+fonctionne sans dossier web/data. Les [18 constats de revue](../_bmad-output/implementation-artifacts/embedded-foundations-review.md)
+sont triés ; les corrections retenues sont appliquées, aucun nouveau constat
+n’est différé. Les [échecs exploratoires](../_bmad-output/implementation-artifacts/embedded-foundations-exploration.json)
+restent conservés.
+
+US-112 reste ouverte pour la journalisation des violations CSP internes aux
+Workers et les scénarios service-worker. US-113 reste ouverte pour le pont
+fichiers JS, SharedBuffer, les polices/URL et les essais de dialogues natifs.
+US-120 reste ouverte pour la mise en page et la connexion saisie/modèle/rendu,
+ainsi que ses mesures de latence et démarrage. US-111 conserve l’échec strict
+de handles ; ses contrôles fonctionnels de 100 cycles et callbacks passent.
+Le backlog reste à **35 US entièrement validées sur 158**. Les tests musl sont
+compilés localement ; leur exécution appartient à la CI Linux du commit publié.

@@ -1,0 +1,8 @@
+{
+  "exit_code": 0,
+  "result": "embedded resources: assets=11; worker-ping=echo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts=38; callback objects 0->0",
+  "stderr": "",
+  "executable_sha256": "ff099bc8a8c72ac6331fa7905f225fe9865fcdb1822bf2e9df8e86d6117c3562",
+  "cwd_contains_web_or_data": false,
+  "only_copied_input": "atelier.exe"
+}

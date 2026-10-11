@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Minimal WebView2 hosting through the official static loader and hand-written COM ABI.
 
+use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::io;
 use std::marker::PhantomData;
@@ -11,6 +12,10 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
+#[path = "webview-resources.rs"]
+mod embedded_resources;
+use crate::resources;
+
 pub(crate) const WEBVIEW_MESSAGE: u32 = 0x8000 + 0x111;
 pub(crate) const WEBVIEW_RUNTIME_URL: &str =
     "https://developer.microsoft.com/microsoft-edge/webview2/";
@@ -18,7 +23,7 @@ const S_OK: i32 = 0;
 const E_POINTER: i32 = 0x8000_4003u32 as i32;
 const E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 const WM_CLOSE_DRAIN_TIMEOUT_MS: u32 = 15_000;
-static LIVE_CALLBACK_OBJECTS: AtomicUsize = AtomicUsize::new(0);
+pub(super) static LIVE_CALLBACK_OBJECTS: AtomicUsize = AtomicUsize::new(0);
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -55,6 +60,12 @@ const IID_CONTROLLER: Guid = Guid {
     data2: 0xc9b7,
     data3: 0x4260,
     data4: [0x81, 0x27, 0xc9, 0xf5, 0xbd, 0xe7, 0xf6, 0x8c],
+};
+const IID_EXECUTE_SCRIPT_HANDLER: Guid = Guid {
+    data1: 0x49511172,
+    data2: 0xcc67,
+    data3: 0x4bca,
+    data4: [0x99, 0x23, 0x13, 0x71, 0x12, 0xf4, 0xc4, 0xcc],
 };
 
 #[link(name = "WebView2LoaderStatic")]
@@ -166,6 +177,10 @@ struct Shared {
     environment: Mutex<Option<usize>>,
     error: Mutex<Option<String>>,
     ready: AtomicBool,
+    resource_environment: AtomicUsize,
+    attempts: Mutex<resources::AttemptLog>,
+    registrations: Mutex<embedded_resources::Registrations>,
+    script_results: Mutex<VecDeque<io::Result<String>>>,
 }
 
 impl Shared {
@@ -210,6 +225,7 @@ struct Handler {
 enum CallbackKind {
     Environment,
     Controller,
+    ExecuteScript,
 }
 
 static HANDLER_VTABLE: HandlerVtable = HandlerVtable {
@@ -301,6 +317,26 @@ unsafe extern "system" fn handler_invoke(
         }
         // SAFETY: shared is an Arc allocation held by this handler until its final Release.
         let shared = unsafe { &*shared_ptr };
+        if matches!(kind, CallbackKind::ExecuteScript) {
+            let script_result = if error_code < 0 {
+                Err(hresult_error("ICoreWebView2::ExecuteScript", error_code))
+            } else if result.is_null() {
+                Err(io::Error::other(
+                    "ExecuteScript returned a null JSON result",
+                ))
+            } else {
+                // ExecuteScriptCompletedHandler::Invoke receives an LPCWSTR borrowed for this call.
+                match copy_webview_string(result.cast_const().cast()) {
+                    Some(value) => Ok(value),
+                    None => Err(io::Error::other(
+                        "ExecuteScript result string is unterminated",
+                    )),
+                }
+            };
+            lock(&shared.script_results).push_back(script_result);
+            shared.completed();
+            return S_OK;
+        }
         let mut callback_error = None;
         if error_code < 0 {
             callback_error =
@@ -320,6 +356,16 @@ unsafe extern "system" fn handler_invoke(
                                 env,
                             )
                         };
+                        // The resource callback needs the environment independently of the host's
+                        // initialization slot so it remains valid until callbacks are removed.
+                        unsafe {
+                            call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(env, 1)(
+                                env,
+                            );
+                        }
+                        shared
+                            .resource_environment
+                            .store(env as usize, Ordering::Release);
                         *lock(&shared.environment) = Some(env as usize);
                         let hwnd = shared.hwnd.load(Ordering::Acquire) as *mut c_void;
                         if hwnd.is_null() {
@@ -372,7 +418,7 @@ unsafe extern "system" fn handler_invoke(
                             callback_error = Some(error.to_string());
                         }
                     } else {
-                        if let Err(error) = configure_controller(result) {
+                        if let Err(error) = configure_controller(result, shared) {
                             // AddRef the borrowed result so Close and Release balance locally.
                             // SAFETY: `result` is the valid controller supplied to Invoke.
                             unsafe {
@@ -398,6 +444,9 @@ unsafe extern "system" fn handler_invoke(
                         }
                     }
                 }
+                CallbackKind::ExecuteScript => {
+                    unreachable!("handled before initialization callback dispatch")
+                }
             }
         }
         if let Some(message) = callback_error {
@@ -417,6 +466,7 @@ fn new_handler(shared: Arc<Shared>, kind: CallbackKind) -> *mut Handler {
         match kind {
             CallbackKind::Environment => IID_ENVIRONMENT,
             CallbackKind::Controller => IID_CONTROLLER,
+            CallbackKind::ExecuteScript => IID_EXECUTE_SCRIPT_HANDLER,
         },
         Arc::into_raw(shared),
     );
@@ -429,7 +479,7 @@ fn new_handler(shared: Arc<Shared>, kind: CallbackKind) -> *mut Handler {
     }))
 }
 
-fn configure_controller(controller: *mut c_void) -> io::Result<()> {
+fn configure_controller(controller: *mut c_void, shared: &Shared) -> io::Result<()> {
     // ICoreWebView2Controller::get_CoreWebView2 is SDK vtable slot 25.
     let mut core = null_mut();
     // SAFETY: controller is the live result argument from the completion callback.
@@ -444,52 +494,67 @@ fn configure_controller(controller: *mut c_void) -> io::Result<()> {
             "ICoreWebView2Controller::get_CoreWebView2 returned null",
         ));
     }
-    let result = (|| {
-        // ICoreWebView2::get_Settings is SDK vtable slot 3.
-        let mut settings = null_mut();
-        // SAFETY: core is the live interface returned above.
-        let hr = unsafe {
-            call_vtable::<unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32>(core, 3)(
-                core,
-                &mut settings,
-            )
-        };
-        check_hresult("ICoreWebView2::get_Settings", hr)?;
-        if settings.is_null() {
-            return Err(io::Error::other(
-                "ICoreWebView2::get_Settings returned null",
-            ));
-        }
-        let enabled = i32::from(cfg!(debug_assertions));
-        // ICoreWebView2Settings::put_AreDevToolsEnabled is SDK vtable slot 12.
-        // SAFETY: settings is live and BOOL is represented by i32.
-        let set_hr = unsafe {
-            call_vtable::<unsafe extern "system" fn(*mut c_void, i32) -> i32>(settings, 12)(
-                settings, enabled,
-            )
-        };
-        let result = check_hresult("ICoreWebView2Settings::put_AreDevToolsEnabled", set_hr)
-            .and_then(|()| {
-                // get_AreDevToolsEnabled is SDK vtable slot 11.
-                let mut actual = 0i32;
-                // SAFETY: output is initialized writable storage and settings is live.
-                let get_hr = unsafe {
-                    call_vtable::<unsafe extern "system" fn(*mut c_void, *mut i32) -> i32>(
-                        settings, 11,
-                    )(settings, &mut actual)
+    let result =
+        (|| {
+            // ICoreWebView2::get_Settings is SDK vtable slot 3.
+            let mut settings = null_mut();
+            // SAFETY: core is the live interface returned above.
+            let hr = unsafe {
+                call_vtable::<unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32>(
+                    core, 3,
+                )(core, &mut settings)
+            };
+            check_hresult("ICoreWebView2::get_Settings", hr)?;
+            if settings.is_null() {
+                return Err(io::Error::other(
+                    "ICoreWebView2::get_Settings returned null",
+                ));
+            }
+            let enabled = i32::from(cfg!(debug_assertions));
+            // ICoreWebView2Settings::put_AreDevToolsEnabled is SDK vtable slot 12.
+            // SAFETY: settings is live and BOOL is represented by i32.
+            let set_hr = unsafe {
+                call_vtable::<unsafe extern "system" fn(*mut c_void, i32) -> i32>(settings, 12)(
+                    settings, enabled,
+                )
+            };
+            let result = check_hresult("ICoreWebView2Settings::put_AreDevToolsEnabled", set_hr)
+                .and_then(|()| {
+                    // get_AreDevToolsEnabled is SDK vtable slot 11.
+                    let mut actual = 0i32;
+                    // SAFETY: output is initialized writable storage and settings is live.
+                    let get_hr = unsafe {
+                        call_vtable::<unsafe extern "system" fn(*mut c_void, *mut i32) -> i32>(
+                            settings, 11,
+                        )(settings, &mut actual)
+                    };
+                    check_hresult("ICoreWebView2Settings::get_AreDevToolsEnabled", get_hr)?;
+                    if actual != enabled {
+                        return Err(io::Error::other(format!(
+                            "WebView2 DevTools setting mismatch: expected {enabled}, got {actual}"
+                        )));
+                    }
+                    validate_devtools(actual != 0)
+                });
+            // SAFETY: get_Settings returned one owned COM reference.
+            unsafe { release_interface(settings) };
+            result.and_then(|()| {
+                embedded_resources::install(core, shared)?;
+                // ICoreWebView2::Navigate is SDK vtable slot 5.
+                let uri: Vec<u16> = resources::ORIGIN
+                    .to_owned()
+                    .encode_utf16()
+                    .chain(Some(0))
+                    .collect();
+                // SAFETY: core is live, URI is NUL-terminated and remains valid for the call.
+                let hr = unsafe {
+                    call_vtable::<unsafe extern "system" fn(*mut c_void, *const u16) -> i32>(
+                        core, 5,
+                    )(core, uri.as_ptr())
                 };
-                check_hresult("ICoreWebView2Settings::get_AreDevToolsEnabled", get_hr)?;
-                if actual != enabled {
-                    return Err(io::Error::other(format!(
-                        "WebView2 DevTools setting mismatch: expected {enabled}, got {actual}"
-                    )));
-                }
-                validate_devtools(actual != 0)
-            });
-        // SAFETY: get_Settings returned one owned COM reference.
-        unsafe { release_interface(settings) };
-        result
-    })();
+                check_hresult("ICoreWebView2::Navigate(embedded origin)", hr)
+            })
+        })();
     // SAFETY: get_CoreWebView2 returned one owned COM reference.
     unsafe { release_interface(core) };
     result
@@ -507,6 +572,27 @@ fn hresult_error(operation: &str, hr: i32) -> io::Error {
         "{operation} failed with HRESULT 0x{:08x}",
         hr as u32
     ))
+}
+
+fn copy_webview_string(value: *const u16) -> Option<String> {
+    if value.is_null() {
+        return None;
+    }
+    // SAFETY: ExecuteScriptCompletedHandler::Invoke guarantees a readable NUL-terminated LPCWSTR
+    // for the duration of the callback; this function copies it and never assumes ownership.
+    unsafe {
+        let mut length = 0usize;
+        while length < 1_048_576 && *value.add(length) != 0 {
+            length += 1;
+        }
+        if length == 1_048_576 {
+            None
+        } else {
+            Some(String::from_utf16_lossy(std::slice::from_raw_parts(
+                value, length,
+            )))
+        }
+    }
 }
 
 unsafe fn release_interface(interface: *mut c_void) {
@@ -616,6 +702,56 @@ impl WebView {
 
     pub(crate) fn pending_callbacks(&self) -> usize {
         self.shared.pending.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn resource_log_snapshot(&self) -> Vec<String> {
+        lock(&self.shared.attempts)
+            .entries()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    pub(crate) fn dropped_resource_attempts(&self) -> u64 {
+        lock(&self.shared.attempts).dropped()
+    }
+
+    pub(crate) fn execute_script(&self, script: &str) -> io::Result<()> {
+        let Some(controller) = self.controller else {
+            return Err(io::Error::other("WebView2 controller is not ready"));
+        };
+        let mut core = null_mut();
+        let hr = unsafe {
+            call_vtable::<unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32>(
+                controller as *mut c_void,
+                25,
+            )(controller as *mut c_void, &mut core)
+        };
+        check_hresult("ICoreWebView2Controller::get_CoreWebView2", hr)?;
+        if core.is_null() {
+            return Err(io::Error::other("WebView2 core interface is null"));
+        }
+        let script: Vec<u16> = script.encode_utf16().chain(Some(0)).collect();
+        let callback = new_handler(Arc::clone(&self.shared), CallbackKind::ExecuteScript);
+        // ICoreWebView2::ExecuteScript is SDK vtable slot 29.
+        let hr = unsafe {
+            call_vtable::<unsafe extern "system" fn(*mut c_void, *const u16, *mut Handler) -> i32>(
+                core, 29,
+            )(core, script.as_ptr(), callback)
+        };
+        unsafe {
+            handler_release(callback);
+            release_interface(core);
+        }
+        if hr < 0 {
+            self.shared.pending.fetch_sub(1, Ordering::AcqRel);
+            check_hresult("ICoreWebView2::ExecuteScript", hr)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn take_script_result(&self) -> Option<io::Result<String>> {
+        lock(&self.shared.script_results).pop_front()
     }
 
     pub(crate) fn live_callback_objects() -> usize {
@@ -759,6 +895,14 @@ impl WebView {
         }
         self.closed = true;
         self.shared.closing.store(true, Ordering::Release);
+        if let Err(error) = embedded_resources::unregister(&self.shared) {
+            self.shared.fail(error.to_string());
+        }
+        let resource_environment = self.shared.resource_environment.swap(0, Ordering::AcqRel);
+        if resource_environment != 0 {
+            // SAFETY: resource_environment owns its dedicated AddRef, released on this STA.
+            unsafe { release_interface(resource_environment as *mut c_void) };
+        }
         if let Some(environment) = lock(&self.shared.environment).take() {
             // SAFETY: the shared slot owns this reference; no later callback stores after closing.
             unsafe { release_interface(environment as *mut c_void) };

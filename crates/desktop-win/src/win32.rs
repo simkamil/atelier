@@ -1271,7 +1271,11 @@ fn pump_until_webview_ready(hwnd: Hwnd, context: &mut Context) -> io::Result<()>
     }
 }
 
-fn run_webview_check_cycle(state_file: &Path, webview_data: &Path) -> io::Result<()> {
+fn run_webview_check_cycle(
+    state_file: &Path,
+    webview_data: &Path,
+    probe_embedded_resources: bool,
+) -> io::Result<String> {
     let saved = load_state(state_file)?;
     let mut context = create_context(state_file, "Atelier WebView2 self-check", saved)?;
     let initial = restore_state(saved, &monitors()?, context.dpi);
@@ -1284,6 +1288,11 @@ fn run_webview_check_cycle(state_file: &Path, webview_data: &Path) -> io::Result
         return Err(error_from_last("SetTimer(WebView2 self-check)"));
     }
     pump_until_webview_ready(hwnd, &mut context)?;
+    let embedded_resources = if probe_embedded_resources {
+        embedded_resource_self_check(hwnd, &mut context)?
+    } else {
+        String::new()
+    };
     let devtools = context
         .webview
         .as_ref()
@@ -1360,6 +1369,7 @@ fn run_webview_check_cycle(state_file: &Path, webview_data: &Path) -> io::Result
     if unsafe { DestroyWindow(hwnd) } == 0 {
         return Err(error_from_last("DestroyWindow(WebView2 self-check)"));
     }
+    let report = embedded_resources;
     drop(window);
     drop(context);
     // WM_DESTROY posts WM_QUIT for this STA; remove it before the next independent cycle.
@@ -1374,7 +1384,204 @@ fn run_webview_check_cycle(state_file: &Path, webview_data: &Path) -> io::Result
     };
     // SAFETY: quit is writable; PM_REMOVE consumes only WM_QUIT messages left by this cycle.
     while unsafe { PeekMessageW(&mut quit, null_mut(), 0x0012, 0x0012, 0x0001) } != 0 {}
-    Ok(())
+    Ok(report)
+}
+
+fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result<String> {
+    use std::time::{Duration, Instant};
+
+    const START: &str = r#"(()=>{
+      if(location.origin!=='https://app.atelier')return false;
+      if(window.__atelierUs112Started)return true;
+      window.__atelierUs112Started=true;
+      window.__atelierUs112Violations=[];
+      addEventListener('securitypolicyviolation',e=>window.__atelierUs112Violations.push(e.effectiveDirective+'|'+e.blockedURI));
+      window.__atelierUs112Result=null;
+      void (async()=>{
+        try {
+          const paths=[
+            ['/', 'text/html'], ['/app.mjs','text/javascript'], ['/app.css','text/css'],
+            ['/i18n/fr-FR.txt','text/plain'], ['/engine-worker.mjs','text/javascript'],
+            ['/engine-client.mjs','text/javascript'], ['/wasm-loader.mjs','text/javascript'],
+            ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
+            ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
+          ];
+          const assets={};
+          for(const [path,mime] of paths){const r=await fetch(path,{cache:'no-store'});assets[path]={status:r.status,type:r.headers.get('content-type')||'',mime};}
+          const root=await fetch('/',{cache:'no-store'});
+          const encoded=await fetch('/%61pp.mjs?secret=do-not-log',{cache:'no-store'});
+          const getProbe=await fetch('/app.mjs',{cache:'no-store'});
+          const getBytes=await getProbe.arrayBuffer();
+          const headProbe=await fetch('/app.mjs',{method:'HEAD',cache:'no-store'});
+          const headBytes=await headProbe.arrayBuffer();
+          const missingProbe=await fetch('/__us112_missing__',{cache:'no-store'});
+          const postProbe=await fetch('/app.mjs',{method:'POST',cache:'no-store'});
+          const methodProbesOk=headProbe.status===200&&headBytes.byteLength===0
+            &&Number(headProbe.headers.get('content-length'))===getBytes.byteLength
+            &&getProbe.status===200&&missingProbe.status===404&&postProbe.status===405;
+          void fetch('https://us112-fetch.invalid/probe?private=1').catch(()=>{});
+          const image=new Image();image.src='https://us112-image.invalid/probe?private=1';
+          const frame=document.createElement('iframe');frame.src='https://us112-frame.invalid/probe?private=1';document.body.append(frame);
+          const script=document.createElement('script');script.src='https://us112-script.invalid/probe.js?private=1';document.head.append(script);
+          const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='https://us112-style.invalid/probe.css?private=1';document.head.append(stylesheet);
+          try{window.open('https://outside.invalid/us112-window?private=1','_blank')}catch{}
+          try{new WebSocket('wss://us112-socket.invalid/probe?private=1')}catch{}
+          try{location.assign('https://app.atelier.evil/us112-navigation')}catch{}
+          const required=['connect-src|https://us112-fetch.invalid','connect-src|wss://us112-socket.invalid','img-src|https://us112-image.invalid','frame-src|https://us112-frame.invalid','script-src-elem|https://us112-script.invalid','style-src-elem|https://us112-style.invalid'];
+          const deadline=Date.now()+12000;
+          while(Date.now()<deadline&&(document.documentElement.dataset.engineEcho!=='ok'||!required.every(prefix=>window.__atelierUs112Violations.some(v=>v.startsWith(prefix)))))await new Promise(r=>setTimeout(r,40));
+          window.__atelierUs112Result={
+            assets,
+            assetsOk:Object.entries(assets).length===paths.length&&Object.values(assets).every(x=>x.status===200&&x.type.startsWith(x.mime)),
+            origin:location.origin,
+            echo:document.documentElement.dataset.engineEcho||'',
+            csp:root.headers.get('content-security-policy')||'',
+            encodedStatus:encoded.status,
+            methodProbesOk,
+            violations:window.__atelierUs112Violations,
+            cspProbesOk:required.every(prefix=>window.__atelierUs112Violations.some(v=>v.startsWith(prefix)))
+          };
+        }catch(error){window.__atelierUs112Result={error:String(error)};}
+      })();
+      return true;
+    })()"#;
+    const POLL: &str =
+        r#"({done:!!window.__atelierUs112Result,result:window.__atelierUs112Result})"#;
+
+    let start_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let started = run_script_until(hwnd, context, START, Duration::from_secs(2))?;
+        if started.trim() == "true" {
+            break;
+        }
+        if Instant::now() >= start_deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("embedded origin did not become active; ExecuteScript returned {started}"),
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let payload = loop {
+        let value = run_script_until(hwnd, context, POLL, Duration::from_secs(3))?;
+        if value.contains("\"done\":true") {
+            break value;
+        }
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("embedded page self-check timed out; last result={value}"),
+            ));
+        }
+    };
+    if !payload.contains("\"assetsOk\":true")
+        || !payload.contains("\"origin\":\"https://app.atelier\"")
+        || !payload.contains("\"echo\":\"ok\"")
+        || !payload.contains("\"encodedStatus\":403")
+        || !payload.contains("\"methodProbesOk\":true")
+        || !payload.contains("connect-src https://app.atelier")
+        || !payload.contains("\"cspProbesOk\":true")
+    {
+        return Err(io::Error::other(format!(
+            "embedded resources/CSP/Worker self-check failed: {payload}"
+        )));
+    }
+    let view = context.webview.as_ref().expect("created WebView2");
+    let attempts = view.resource_log_snapshot();
+    for needle in [
+        "/atelier_core_wasm.wasm [served]",
+        "/engine-worker.mjs [served]",
+        "/app.css [served]",
+        "%61pp.mjs [refused]",
+        "us112-window [refused]",
+        "app.atelier.evil/us112-navigation [refused]",
+        "CSP connect-src https://us112-fetch.invalid/probe [blocked]",
+        "CSP connect-src wss://us112-socket.invalid/probe [blocked]",
+        "CSP img-src https://us112-image.invalid/probe [blocked]",
+        "CSP frame-src https://us112-frame.invalid [blocked]",
+        "CSP script-src-elem https://us112-script.invalid/probe.js [blocked]",
+        "CSP style-src-elem https://us112-style.invalid/probe.css [blocked]",
+    ] {
+        if !attempts.iter().any(|entry| entry.contains(needle)) {
+            return Err(io::Error::other(format!(
+                "embedded resource callback did not record {needle}; entries={attempts:?}"
+            )));
+        }
+    }
+    if view.dropped_resource_attempts() != 0 {
+        return Err(io::Error::other(
+            "embedded resource attempt log overflowed during self-check",
+        ));
+    }
+    Ok(format!(
+        "embedded resources: assets=11; worker-ping=echo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}",
+        attempts.len()
+    ))
+}
+
+fn run_script_until(
+    hwnd: Hwnd,
+    context: &mut Context,
+    script: &str,
+    timeout: std::time::Duration,
+) -> io::Result<String> {
+    use std::time::Instant;
+    let view = context.webview.as_ref().expect("created WebView2");
+    view.execute_script(script)?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Some(result) = context
+            .webview
+            .as_ref()
+            .expect("created WebView2")
+            .take_script_result()
+        {
+            return result;
+        }
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "WebView2 ExecuteScript self-check callback timed out",
+            ));
+        }
+        // Drain STA messages so the COM completion callback can run. The bounded wait keeps
+        // the hidden diagnostic responsive while avoiding a busy loop.
+        let wait = unsafe { MsgWaitForMultipleObjectsEx(0, null(), 25, 0x04ff, 0x0004) };
+        if wait == u32::MAX {
+            return Err(error_from_last(
+                "MsgWaitForMultipleObjectsEx(ExecuteScript self-check)",
+            ));
+        }
+        if wait == 0 {
+            let mut msg = Msg {
+                hwnd: null_mut(),
+                message: 0,
+                w_param: 0,
+                l_param: 0,
+                time: 0,
+                point: Point::default(),
+                private: 0,
+            };
+            while unsafe { PeekMessageW(&mut msg, null_mut(), 0, 0, 0x0001) } != 0 {
+                if msg.message == 0x0012 {
+                    return Err(io::Error::other(
+                        "unexpected WM_QUIT during embedded resource self-check",
+                    ));
+                }
+                unsafe {
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                if unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } == 0 {
+                    return Err(io::Error::other("hidden self-check window was destroyed"));
+                }
+            }
+        }
+        if let Some(error) = context.callback_error.take() {
+            return Err(error);
+        }
+    }
 }
 
 fn verify_webview_bounds_match_client(hwnd: Hwnd, context: &Context) -> io::Result<()> {
@@ -1478,6 +1685,42 @@ fn pump_after_webview_close(hwnd: Hwnd, context: &mut Context) -> io::Result<()>
     }
 }
 
+/// Run one hidden WebView2 cycle that exercises every embedded resource and security probe.
+pub fn resources_self_check(state_file: &Path, cache: &Path) -> io::Result<String> {
+    if probe_runtime_unavailable()? {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Microsoft Edge WebView2 Evergreen runtime is unavailable",
+        ));
+    }
+    let state_file = validate_self_check_path(state_file)?;
+    let cache_marker = validate_self_check_path(&cache.join(".self-check-path"))?;
+    let cache = cache_marker.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "WebView2 self-check cache needs a directory",
+        )
+    })?;
+    if let Some(parent) = state_file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::create_dir_all(cache)?;
+
+    let _apartment = webview::ComApartment::initialize_sta()?;
+    let callback_baseline = WebView::live_callback_objects();
+    let report = run_webview_check_cycle(&state_file, cache, true)?;
+    let callbacks_after = WebView::live_callback_objects();
+    if callbacks_after != callback_baseline {
+        return Err(io::Error::other(format!(
+            "WebView2 callback objects leaked during the resource self-check: {callback_baseline}->{callbacks_after}"
+        )));
+    }
+    let _ = std::fs::remove_file(&state_file);
+    Ok(format!(
+        "{report}; callback objects {callback_baseline}->{callbacks_after}"
+    ))
+}
+
 pub fn webview_self_check(
     state_file: &Path,
     webview_data: &Path,
@@ -1514,7 +1757,7 @@ pub fn webview_self_check(
 
     let _apartment = webview::ComApartment::initialize_sta()?;
     let callback_baseline = WebView::live_callback_objects();
-    run_webview_check_cycle(&state_file, &webview_data)?; // Warm runtime and graphics paths before measuring.
+    let _ = run_webview_check_cycle(&state_file, &webview_data, false)?; // Warm runtime and graphics paths before measuring.
     let handle_baseline = process_handle_count()?;
     if WebView::live_callback_objects() != callback_baseline {
         return Err(io::Error::other(
@@ -1524,7 +1767,7 @@ pub fn webview_self_check(
     let mut peak = handle_baseline;
     let mut handle_samples = Vec::new();
     for cycle in 1..=cycles {
-        run_webview_check_cycle(&state_file, &webview_data)?;
+        run_webview_check_cycle(&state_file, &webview_data, false)?;
         let live = WebView::live_callback_objects();
         if live != callback_baseline {
             return Err(io::Error::other(format!(
@@ -1547,7 +1790,7 @@ pub fn webview_self_check(
     let _ = std::fs::remove_file(&state_file);
     Ok(format!(
         "WebView2 OK; warm-up=1; cycles={cycles}; callback objects {callback_baseline}->{callback_baseline}; process handles baseline={handle_baseline}, samples={handle_samples:?}, peak={peak}, final={final_handles}; DevTools={}",
-        cfg!(debug_assertions)
+        cfg!(debug_assertions),
     ))
 }
 

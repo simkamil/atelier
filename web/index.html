@@ -1,0 +1,40 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Atelier — socle local</title>
+    <link rel="stylesheet" href="/app.css">
+    <script type="module" src="/app.mjs"></script>
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="page-title">
+      <header class="masthead">
+        <a class="wordmark" href="/" aria-label="Atelier, accueil"><span class="mark" aria-hidden="true">A</span><span>atelier</span></a>
+        <span class="origin"><span class="origin-dot" aria-hidden="true"></span><span data-i18n="local-origin">Origine embarquée</span></span>
+      </header>
+      <section class="intro">
+        <p class="eyebrow" data-i18n="eyebrow">ENVIRONNEMENT DE DÉMONSTRATION</p>
+        <h1 id="page-title" data-i18n="title">Le socle est en place.</h1>
+        <p class="lead" data-i18n="lead">Cette page est servie depuis les ressources intégrées à l’application. Le contrôle du moteur apparaît ci-dessous.</p>
+      </section>
+      <section class="status-card" aria-labelledby="status-title">
+        <div class="status-heading"><div><p class="eyebrow" data-i18n="check-label">CONTRÔLE DU MOTEUR</p><h2 id="status-title" data-i18n="status-waiting">Vérification en cours</h2></div><span id="status-indicator" class="status-indicator" role="status" aria-label="En cours"></span></div>
+        <p id="status-detail" class="status-detail" data-i18n="status-detail">Chargement du Worker et du module WebAssembly embarqué…</p>
+        <div class="engine-line"><span data-i18n="engine-label">Moteur Atelier</span><span id="engine-state" class="engine-state" data-i18n="engine-loading">Initialisation</span></div>
+      </section>
+      <section class="capabilities" aria-labelledby="capabilities-title">
+        <div class="section-heading"><div><p class="eyebrow" data-i18n="scope-label">CE QUE CETTE ÉTAPE VALIDE</p><h2 id="capabilities-title" data-i18n="scope-title">Un environnement local, prêt pour la suite</h2></div></div>
+        <div class="capability-grid">
+          <article class="capability"><span class="number">01</span><h3 data-i18n="cap-origin-title">Origine embarquée</h3><p data-i18n="cap-origin-body">Les modules, styles et polices sont servis depuis <code>https://app.atelier/</code>.</p></article>
+          <article class="capability"><span class="number">02</span><h3 data-i18n="cap-engine-title">Moteur réel</h3><p data-i18n="cap-engine-body">Le Worker et le WASM optimisé répondent au ping du protocole.</p></article>
+          <article class="capability"><span class="number">03</span><h3 data-i18n="cap-next-title">Une base, pas encore un éditeur</h3><p data-i18n="cap-next-body">La mise en page et l’édition du document viendront dans les prochaines étapes.</p></article>
+        </div>
+      </section>
+      <footer><span data-i18n="footer">Atelier · exécution locale</span><a href="/licenses/Carlito-OFL.txt" data-i18n="license">Licence de la police Carlito</a></footer>
+    </main>
+    <noscript>Atelier nécessite JavaScript pour vérifier son moteur.</noscript>
+  </body>
+</html>

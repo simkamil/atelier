@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-11",
+  "initial_resource_probe": {
+    "exit_code": -1073741819,
+    "status": "access violation",
+    "cause": "ExecuteScript COM slot 23 instead of SDK slot 29",
+    "correction": "SDK slot 29; ExecuteScript LPCWSTR copied as borrowed, never CoTaskMemFree"
+  },
+  "post_correction_agent_probes": {
+    "passed": 3,
+    "sequence": "same source bytes, sequential native wrapper runs"
+  },
+  "later_verification": "Six CSP categories, HEAD/404/405 and getter failure paths are covered by final embedded-foundations-validation.json. Pre-review 37 checks also retained separately.",
+  "open_runtime_issue": "US111 strict handles remain open; functional reports retain handle_acceptance_passed=false. No root cause inside WebView2 is asserted."
+}
