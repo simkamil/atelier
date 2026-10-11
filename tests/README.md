@@ -88,6 +88,14 @@ Le benchmark software n’est pas une validation de fluidité matérielle ; les
 
 ## Ressources embarquées, fichiers et texte brut
 
+Le premier éditeur intégré se vérifie avec `node tests/editor-protocol.mjs`,
+`node tests/editor-abi.mjs` et `node tests/run-editor-browser.mjs` après un build
+WASM optimisé. Le test ABI exerce la limite réelle de 128 Mio d’allocations et
+vérifie qu’un candidat refusé conserve document, révision, sélection et historique.
+Le navigateur utilise le vrai Worker/WASM/Canvas, avec Host factice et événements
+synthétiques. Le diagnostic natif des ressources vérifie aussi saisie accentuée,
+pixels de glyphes et undo/redo dans le WebView2 réel ; il n’ouvre pas de dialogue.
+
 `node tests/check-embedded-engine.mjs` vérifie provenance, empreintes, imports/exports et écho du moteur livré, sans compilation préalable. Après un build optimisé avec la même toolchain, `--compare-artifact` compare les octets à l’artefact Cargo. `pwsh -NoProfile -File tests/check-embedded-resources.ps1 -Executable target/release/atelier.exe -TargetDirectory target/embedded-resources` attend la fin du diagnostic réel caché, y compris avec le sous-système Windows release. WebView2 Evergreen exposant `ICoreWebView2_22` est requis.
 
 `cargo test -p atelier-text-model --locked --offline` couvre UTF-8, sélection, graphèmes et historique. `cargo test -p atelier-desktop-win --locked --offline` couvre le broker fichiers, les pannes de publication et les ressources ; aucun dialogue interactif n’est ouvert. Les erreurs simulées vérifient la préservation des fichiers avant publication, sans promettre de CAS atomique face à un processus extérieur.

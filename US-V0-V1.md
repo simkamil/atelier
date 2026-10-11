@@ -421,7 +421,7 @@ Réf : §6.7 · Taille : S · Dépend de : US-091
 
 ## E0.11 — Socle du front-end
 
-US-092 en cours (2027-10-11) : [transport et limites](docs/us-092-worker.md). Progression/annulation des copies vérifiées ; le critère opération métier ouverture/export reste ouvert.
+US-092 en cours (2026-10-11) : [transport et limites](docs/us-092-worker.md). Progression/annulation des copies vérifiées ; le critère opération métier ouverture/export reste ouvert.
 
 #### US-100 — Interface Host
 *En tant que* développeur, *je veux* une interface `Host` *afin que* le front-end soit identique sur le desktop et le web.
@@ -439,7 +439,7 @@ Réf : §6.1 · Taille : S · Dépend de : US-092
 
 Réf : §6.6 · Taille : L · Dépend de : US-051, US-080, US-092
 
-En cours (2026-10-11) : [module Canvas et tests Chromium](docs/us-101-canvas-renderer.md). Transport réel des contours et validation matérielle 60 fps restent à intégrer.
+En cours (2026-10-11) : [module Canvas](docs/us-101-canvas-renderer.md) raccordé aux contours ATDL réels du moteur de texte. Cache par glyphe et validation matérielle 60 fps restent ouverts.
 
 #### US-102 — Internationalisation
 *En tant que* développeur, *je veux* un catalogue de chaînes *afin qu'aucun* texte d'interface ne soit en dur.
@@ -458,7 +458,7 @@ Réf : D12, §6.15 · Taille : S · Dépend de : US-001
 
 Réf : §6.7 · Taille : M · Dépend de : US-092
 
-En cours (2026-10-11) : [adaptateur clavier/IME et composition Canvas](docs/us-103-text-input.md). Commandes métier et essais AZERTY/IME natifs restent ouverts.
+En cours (2026-10-11) : [adaptateur clavier/IME](docs/us-103-text-input.md) raccordé aux commandes métier, avec précomposition soulignée. Les essais AZERTY/IME physiques restent ouverts.
 
 #### US-104 — Bibliothèque de composants d'interface
 *En tant que* développeur, *je veux* des composants d'interface maison accessibles *afin de* construire ruban et dialogues.
@@ -524,7 +524,7 @@ Avancement US-112 (2026-10-11) : [origine embarquée, table HTTP et six catégor
 
 Réf : §6.8 · Taille : M · Dépend de : US-111
 
-Avancement US-113 (2026-10-11) : [backend fichiers et bindings dialogues](docs/us-113-file-access.md) implémentés et testés sans UI interactive. Pont fichiers JS, SharedBuffer, polices système, URL et validation manuelle restent à développer/valider.
+Avancement US-113 (2026-10-11) : [pont fichiers JS/natif](docs/us-113-file-bridge.md) raccordé au broker et aux dialogues TXT, avec erreurs traduisibles, bornes, anti-rejeu et protection contre la réentrance. SharedBuffer, polices système, URL et validation manuelle des dialogues restent ouverts.
 
 #### US-114 — Runtime WebView2 absent
 *En tant qu'*utilisateur, *je veux* un message clair si le runtime WebView2 manque *afin de* savoir comment y remédier.
@@ -562,7 +562,7 @@ Validation US-116 (2027-10-11) : [contrat et limites](docs/us-116-portable-data.
 
 Réf : §6 · Taille : M · Dépend de : US-012, US-054, US-055, US-072, US-101, US-103, US-113
 
-Avancement US-120 (2026-10-11) : [modèle concret de texte brut](docs/us-120-plain-text-model.md) validé : UTF-8/BOM, sélection, graphèmes et annuler/rétablir. Les critères de démonstration ci-dessus restent ouverts : aucun éditeur intégré n’est encore livré.
+Avancement US-120 (2026-10-11) : premier [éditeur intégré](docs/us-120-editor-ui.md), avec session WASM, pages A4/Carlito, saisie/sélection, annuler/rétablir et pont fichiers TXT. Les dialogues manuels, AZERTY/IME physique et performances restent à valider ; les critères complets ne sont pas encore cochés.
 
 ---
 

@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-11",
+  "baseline_commit": "3cb335442bc3b199b9e25ab177bcce396cf2cc55",
+  "previous_bytes": 52323,
+  "bytes": 1073118,
+  "sha256": "65d0448f89d2ae5f2ac2a734ec58f34d14db7403f4ce995d5d24be079a244cda",
+  "profile": "wasm-release",
+  "allowed_growth_percent": 10,
+  "maximum_bytes": 1180429,
+  "reason": "US-120 adds real plain-text editing, Unicode segmentation, A4 layout, shaping and embedded Carlito Regular to the previous ABI echo; 10% regression gate retained.",
+  "reference_bytes": 1073118,
+  "final_artifact_bytes": 1073971,
+  "final_artifact_sha256": "21fd3709de7597f60c7862cbaf33b5f91c5d7b197d0db31d436b0030ccdee162"
+}

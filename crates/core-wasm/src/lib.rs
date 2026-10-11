@@ -9,6 +9,9 @@ use std::collections::BTreeMap;
 #[cfg(target_arch = "wasm32")]
 use std::sync::{Mutex, OnceLock};
 
+pub mod editor;
+#[path = "editor-layout.rs"]
+mod editor_layout;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod protocol;
 
@@ -206,6 +209,12 @@ fn registry() -> &'static Mutex<AllocationRegistry> {
 }
 
 #[cfg(target_arch = "wasm32")]
+fn editor_session() -> &'static Mutex<editor::EditorSession> {
+    static SESSION: OnceLock<Mutex<editor::EditorSession>> = OnceLock::new();
+    SESSION.get_or_init(|| Mutex::new(editor::EditorSession::default()))
+}
+
+#[cfg(target_arch = "wasm32")]
 fn prefix_status(mut body: Vec<u8>, status: u32) -> Result<Vec<u8>, RegistryError> {
     let old_len = body.len();
     let new_len = 4usize.checked_add(old_len).ok_or(RegistryError::Limit)?;
@@ -249,6 +258,29 @@ fn dispatch_inner(ptr: u32, len: u32) -> u32 {
         panic!("US-090 test hook: deliberate WASM trap");
     }
 
+    let editor_type = (protocol::MessageType::Editor as u16).to_le_bytes();
+    let is_editor = input.starts_with(b"ATLM")
+        && input
+            .get(6..8)
+            .is_some_and(|kind| kind == editor_type.as_slice());
+    if is_editor {
+        return match protocol::decode(&input, protocol::Direction::Command) {
+            Ok(message) => dispatch_editor(&mut registry, input_charge, &message),
+            Err(_) => {
+                let request_id = input
+                    .get(12..20)
+                    .map(|bytes| u64::from_le_bytes(bytes.try_into().expect("fixed slice")))
+                    .unwrap_or(0);
+                dispatch_editor_failure(
+                    &mut registry,
+                    input_charge,
+                    request_id,
+                    "EDITOR_INVALID_ENVELOPE",
+                )
+            }
+        };
+    }
+
     let payload = match prefix_status(input, STATUS_OK) {
         Ok(payload) => payload,
         Err(_) => {
@@ -276,6 +308,99 @@ fn dispatch_inner(ptr: u32, len: u32) -> u32 {
             Err(_) => 0,
         },
         Err(RegistryError::Invalid) => 0,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn dispatch_editor(
+    registry: &mut AllocationRegistry,
+    input_charge: usize,
+    message: &protocol::Message,
+) -> u32 {
+    let mut state = editor_session()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let (mut candidate, response) = state.prepare_message(message);
+    let frame = match protocol::encode(&response) {
+        Ok(frame) => frame,
+        Err(_) => {
+            candidate = None;
+            let failed = protocol::Message {
+                kind: protocol::MessageType::Failed,
+                request_id: message.request_id,
+                payload: b"EDITOR_RESPONSE_LIMIT".to_vec(),
+            };
+            match protocol::encode(&failed) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    let _ = registry.release_in_flight(input_charge);
+                    return 0;
+                }
+            }
+        }
+    };
+    let payload = match prefix_status(frame, STATUS_OK) {
+        Ok(payload) => payload,
+        Err(_) => {
+            let _ = registry.release_in_flight(input_charge);
+            return 0;
+        }
+    };
+    match registry.replace_in_flight(input_charge, payload) {
+        Ok(payload_ptr) => {
+            let descriptor = register_descriptor(registry, payload_ptr);
+            if descriptor != 0 {
+                if let Some(candidate) = candidate {
+                    *state = candidate;
+                }
+            }
+            descriptor
+        }
+        Err(_) => match prefix_status(Vec::new(), STATUS_LIMIT) {
+            Ok(payload) => register_response(registry, payload),
+            Err(_) => 0,
+        },
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn dispatch_editor_failure(
+    registry: &mut AllocationRegistry,
+    input_charge: usize,
+    request_id: u64,
+    code: &'static str,
+) -> u32 {
+    if request_id == 0 {
+        let _ = registry.release_in_flight(input_charge);
+        return match prefix_status(Vec::new(), STATUS_INVALID_INPUT) {
+            Ok(payload) => register_response(registry, payload),
+            Err(_) => 0,
+        };
+    }
+    let frame = match protocol::encode(&protocol::Message {
+        kind: protocol::MessageType::Failed,
+        request_id,
+        payload: code.as_bytes().to_vec(),
+    }) {
+        Ok(frame) => frame,
+        Err(_) => {
+            let _ = registry.release_in_flight(input_charge);
+            return 0;
+        }
+    };
+    let payload = match prefix_status(frame, STATUS_OK) {
+        Ok(payload) => payload,
+        Err(_) => {
+            let _ = registry.release_in_flight(input_charge);
+            return 0;
+        }
+    };
+    match registry.replace_in_flight(input_charge, payload) {
+        Ok(ptr) => register_descriptor(registry, ptr),
+        Err(_) => match prefix_status(Vec::new(), STATUS_LIMIT) {
+            Ok(payload) => register_response(registry, payload),
+            Err(_) => 0,
+        },
     }
 }
 

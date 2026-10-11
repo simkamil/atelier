@@ -1,6 +1,6 @@
 # Développement
 
-Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus. Les polices embarquées et les corpus de référence sont versionnés ; le client web dispose du chargeur ABI WASM, tandis que son interface reste à développer.
+Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus. Les polices embarquées et les corpus de référence sont versionnés ; le client web dispose du chargeur ABI WASM, et le premier éditeur de texte brut relie Canvas, Worker/WASM et pont fichiers natif.
 
 Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques, historique annuler/rétablir, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; `atelier-font` lit les tables de base OpenType et les cmap 4/6/12/14 et expose vingt polices embarquées ; `atelier-image` décode PNG, GIF et BMP en RGBA8 avec limites explicites. Les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
@@ -9,6 +9,36 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Les liaisons WASM, Win32 et WebView2 isolent leurs blocs `unsafe` et documentent les contrats ABI selon la spécification.
 
 ## Validation
+
+## Validation du premier éditeur intégré — 2026-10-11
+
+Trois agents GPT-6 Luna moyen ont développé en parallèle le moteur, l’interface
+et le pont fichiers, puis corrigé le lot après trois revues indépendantes.
+La [validation finale](../_bmad-output/implementation-artifacts/editor-integration-validation.json)
+réussit **40 contrôles, 368 tests workspace et 55 tests natifs release**,
+avec sources et lock inchangés. Le navigateur utilise le vrai Worker/WASM/Canvas
+et un Host factice : saisie/sélection, pagination, composition, annulations,
+sauvegarde obsolète, raccourcis de la vraie page et miroir textuel accessible.
+L’ABI réelle vérifie aussi le rollback d’un candidat lorsque le registre de
+128 Mio ne peut réserver sa réponse.
+
+Les diagnostics WebView2 debug/release chargent les **17 ressources** et vérifient
+saisie accentuée, pixels de glyphes, undo/redo, HTTP et six catégories CSP.
+La [copie isolée](../_bmad-output/implementation-artifacts/editor-integration-portable.json)
+fonctionne sans dossier web/data. Les tests de routage natif injectent des résultats
+de dialogue contrôlés et passent par le broker réel ; ils n’ouvrent aucun dialogue.
+La [revue](../_bmad-output/implementation-artifacts/editor-integration-review.md)
+conserve les 12 constats séparément : cinq corrections retenues et trois fonctions
+V1 reportées (presse-papiers, navigation par mot, colonne préférée), avec les rejets
+motivés. Les limites de wrapping et de Tab sont également décrites dans le contrat UI.
+
+Le premier parcours TXT est testable avec `cargo run -p atelier-desktop-win --release --locked --offline`. La tranche reste limitée à
+128 Kio, latin gauche à droite et mise en page complète à chaque modification.
+Les dialogues manuels, AZERTY/IME physique et mesures de 300 pages/démarrage restent
+ouverts pour US-120. US-113 conserve SharedBuffer, polices/URL ; US-111 conserve
+l’échec strict de handles. Les **35/158 US complètes** sont inchangées. Les tests
+musl sont compilés localement ; leur exécution appartient à la CI Linux publiée.
+
 
 ### Lot Canvas, saisie et WebView2 — 2026-10-11
 
@@ -26,7 +56,7 @@ Preuves : [validation](../_bmad-output/implementation-artifacts/frontend-host-va
 [revue](../_bmad-output/implementation-artifacts/frontend-host-review.md).
 Le coordinateur a finalisé le natif après la limite d’usage de son agent.
 
-### Preuve US-092, US-110 et US-116 — 2027-10-11
+### Preuve US-092, US-110 et US-116 — 2026-10-11
 
 Le [Worker](us-092-worker.md), la [fenêtre Windows](us-110-win32-window.md) et le
 [stockage portable](us-116-portable-data.md) constituent ce lot ; les deux US Windows portent le backlog à **34/158 US validées**. US-092 reste ouverte pour l’annulation/progression d’une opération métier réelle.

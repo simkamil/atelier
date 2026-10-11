@@ -33,6 +33,15 @@ version = "0.1.0"
 [[package]]
 name = "atelier-core-wasm"
 version = "0.1.0"
+dependencies = [
+ "atelier-font",
+ "atelier-geom",
+ "atelier-model",
+ "atelier-render",
+ "atelier-shape",
+ "atelier-text-model",
+ "atelier-unicode",
+]
 
 [[package]]
 name = "atelier-crypto"

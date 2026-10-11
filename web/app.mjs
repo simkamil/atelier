@@ -1,75 +1,188 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createEngineClient } from "/engine-client.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "/wasm-protocol.mjs";
+import { createEditor, EditorError } from "/editor.mjs";
+import { createNativeHost } from "/native-host.mjs";
 
+const byId = id => document.getElementById(id);
 const nodes = {
-  title: document.querySelector("#status-title"),
-  detail: document.querySelector("#status-detail"),
-  indicator: document.querySelector("#status-indicator"),
-  engine: document.querySelector("#engine-state"),
+  title: byId("status-title"), detail: byId("status-detail"), indicator: byId("status-indicator"), engine: byId("engine-state"),
+  editorStatus: byId("editor-status"), documentState: byId("document-state"), canvas: byId("document-canvas"), textRepresentation: byId("document-text"),
+  scrollport: byId("document-scroll"), spacer: byId("page-spacer"),
+  new: byId("new-document"), open: byId("open-document"), save: byId("save-document"), undo: byId("undo"), redo: byId("redo"),
 };
+const FALLBACK = new Map(Object.entries({
+  "status-a11y-ok": "Écho confirmé", "status-a11y-failed": "Échec", "status-ok": "Le moteur a renvoyé l’écho Ping.",
+  "status-failed": "Le contrôle du moteur a échoué.", "status-success-detail": "Worker WebAssembly : transport vérifié, écho Ping reçu.",
+  "status-failure-detail": "Le contrôle local n’a pas abouti.", "engine-ready": "Transport vérifié", "engine-error": "Indisponible",
+  title: "Document texte",
+  "status-loading": "Initialisation du document…", "status-ready": "Document prêt.", "status-saved": "Document enregistré.",
+  "status-opened": "Document ouvert.", "status-new": "Document vierge créé.", "status-cancelled": "Opération annulée.",
+  "status-host-unavailable": "Le dialogue de fichiers est indisponible.", "status-open-error": "Le document n’a pas pu être ouvert.",
+  "status-save-error": "Le document n’a pas pu être enregistré.", "status-editor-error": "L’opération n’a pas pu être effectuée.",
+  "files.error.invalid_text": "Le fichier ne contient pas de texte UTF-8 valide.",
+  "files.error.too_large": "Le fichier dépasse la taille maximale de 128 Kio.",
+  "files.error.queue_full": "Une autre opération sur les fichiers est en cours.",
+  "status-stale-save": "Le document a changé pendant l’enregistrement. Enregistrez-le à nouveau.",
+  "status-unsupported-input": "Cette commande de saisie n’est pas disponible.", "status-invalid-document": "Le document ou sa mise en page est invalide.",
+  "confirm-discard": "Le document contient des modifications. Continuer sans les enregistrer ?",
+  "toolbar-label": "Actions du document", "document-text-label": "Texte du document",
+  "workspace-label": "Éditeur de texte", "pages-label": "Pages du document", "canvas-label": "Pages du document texte brut",
+  "state-clean": "Enregistré", "state-dirty": "Modifications non enregistrées",
+}));
+
+document.addEventListener("securitypolicyviolation", event => {
+  const blocked = event.blockedURI || "";
+  const directive = event.effectiveDirective || "";
+  const message = `us112-csp|${directive}|${blocked}`;
+  if (message.length <= 768) globalThis.chrome?.webview?.postMessage(message);
+});
 
 async function loadCatalog() {
-  const response = await fetch("/i18n/fr-FR.txt", { cache: "no-store" });
-  if (!response.ok) throw new Error("Le catalogue français embarqué est indisponible.");
-  const entries = new Map();
-  for (const line of (await response.text()).split(/\r?\n/)) {
-    if (!line || line.startsWith("#")) continue;
-    const separator = line.indexOf("=");
-    if (separator > 0) entries.set(line.slice(0, separator), line.slice(separator + 1));
-  }
+  const entries = new Map(FALLBACK);
+  try {
+    const response = await fetch("/i18n/fr-FR.txt", { cache: "no-store" });
+    if (response.ok) {
+      for (const line of (await response.text()).split(/\r?\n/)) {
+        if (!line || line.startsWith("#")) continue;
+        const separator = line.indexOf("=");
+        if (separator > 0) entries.set(line.slice(0, separator), line.slice(separator + 1));
+      }
+    }
+  } catch { /* French fallback keeps the shell understandable without the catalog. */ }
   for (const element of document.querySelectorAll("[data-i18n]")) {
     const value = entries.get(element.dataset.i18n);
     if (value !== undefined) element.textContent = value;
   }
+  for (const element of document.querySelectorAll("[data-i18n-aria-label]")) {
+    const value = entries.get(element.dataset.i18nAriaLabel);
+    if (value !== undefined) element.setAttribute("aria-label", value);
+  }
   return entries;
 }
 
-function showResult(ok, title, detail, entries) {
+function showPing(ok, messages) {
   document.documentElement.dataset.engineEcho = ok ? "ok" : "failed";
-  nodes.title.textContent = title;
-  nodes.detail.textContent = detail;
+  nodes.title.textContent = messages.get(ok ? "status-ok" : "status-failed");
+  nodes.detail.textContent = messages.get(ok ? "status-success-detail" : "status-failure-detail");
   nodes.indicator.className = `status-indicator ${ok ? "success" : "error"}`;
-  nodes.indicator.setAttribute("aria-label", entries.get(ok ? "status-a11y-ok" : "status-a11y-failed"));
-  nodes.engine.textContent = entries.get(ok ? "engine-ready" : "engine-error");
+  nodes.indicator.setAttribute("aria-label", messages.get(ok ? "status-a11y-ok" : "status-a11y-failed"));
+  nodes.engine.textContent = messages.get(ok ? "engine-ready" : "engine-error");
   nodes.engine.className = `engine-state ${ok ? "success" : "error"}`;
 }
 
-async function start() {
-  let catalog;
-  let client;
-  try {
-    catalog = await loadCatalog();
-    const response = await fetch("/atelier_core_wasm.wasm", { cache: "no-store" });
-    if (!response.ok) throw new Error("Le moteur WebAssembly embarqué est indisponible.");
-    const bytes = await response.arrayBuffer();
-    const worker = new Worker("/engine-worker.mjs", { type: "module", name: "atelier-engine" });
-    client = await createEngineClient({ worker, bytes });
-    const frame = encodeMessage({ type: MessageType.Ping, requestId: 1n, payload: new Uint8Array() });
-    const reply = decodeMessage(await client.request(frame), "command");
-    if (reply.type !== MessageType.Ping || reply.requestId !== 1n || reply.payload.byteLength !== 0) {
-      throw new Error("Le moteur n’a pas renvoyé l’écho exact de la commande Ping.");
-    }
-    showResult(true, catalog.get("status-ok"), catalog.get("status-success-detail"), catalog);
-  } catch {
-    const messages = catalog ?? new Map([
-      ["engine-error", "Indisponible"],
-      ["status-failed", "Le contrôle du moteur a échoué."],
-      ["status-failure-detail", "Le contrôle local n’a pas abouti. Réessayez plus tard."],
-      ["status-a11y-ok", "Écho confirmé"],
-      ["status-a11y-failed", "Échec"],
-    ]);
-    showResult(false, messages.get("status-failed"), messages.get("status-failure-detail"), messages);
-  } finally {
-    client?.close();
-  }
+function messageForError(error, messages) {
+  const key = error?.code === "EDITOR_STALE_SAVE" ? "status-stale-save"
+    : error?.code === "EDITOR_UNSUPPORTED_INPUT" ? "status-unsupported-input"
+      : ["EDITOR_INVALID_STATE", "EDITOR_INVALID_EXPORT", "INVALID_RESPONSE"].includes(error?.code) ? "status-invalid-document"
+        : "status-editor-error";
+  return messages.get(key) ?? FALLBACK.get(key);
 }
 
-document.addEventListener("securitypolicyviolation", (event) => {
-  const blocked = event.blockedURI || "";
-  const directive = event.effectiveDirective || "";
-  const message = `us112-csp|${directive}|${blocked}`;
-  if (message.length <= 768) window.chrome?.webview?.postMessage(message);
-});
+function showEditorMessage(text, isError = false) {
+  nodes.editorStatus.textContent = text;
+  nodes.editorStatus.classList.toggle("error", isError);
+}
 
-void start();
+async function start() {
+  const messages = await loadCatalog();
+  let client;
+  let host;
+  let editor;
+  let initialized = false;
+  let busy = false;
+  window.addEventListener("pagehide", () => { editor?.dispose(); host?.close?.(); client?.close(); }, { once: true });
+  const updateControls = state => {
+    const blocked = !initialized || busy;
+    nodes.new.disabled = blocked; nodes.open.disabled = blocked; nodes.save.disabled = blocked;
+    nodes.undo.disabled = blocked || !state?.canUndo; nodes.redo.disabled = blocked || !state?.canRedo;
+  };
+  const onBusy = value => { busy = value; updateControls(editor?.state); };
+  const onState = state => {
+    nodes.documentState.textContent = messages.get(state.dirty ? "state-dirty" : "state-clean");
+    nodes.documentState.classList.toggle("dirty", state.dirty);
+    updateControls(state);
+  };
+  const onError = error => {
+    showEditorMessage(messageForError(error, messages), true);
+  };
+  try {
+    const wasmResponse = await fetch("/atelier_core_wasm.wasm", { cache: "no-store" });
+    if (!wasmResponse.ok) throw new Error("WASM_UNAVAILABLE");
+    const bytes = await wasmResponse.arrayBuffer();
+    const worker = new Worker("/engine-worker.mjs", { type: "module", name: "atelier-engine" });
+    client = await createEngineClient({ worker, bytes });
+    const ping = encodeMessage({ type: MessageType.Ping, requestId: 1n, payload: new Uint8Array() });
+    const reply = decodeMessage(await client.request(ping), "command");
+    if (reply.type !== MessageType.Ping || reply.requestId !== 1n || reply.payload.byteLength !== 0) throw new Error("PING_ECHO_FAILED");
+    showPing(true, messages);
+
+    try { host = createNativeHost(); }
+    catch {
+      host = {
+        open: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
+        save: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
+        notifyDirty: async () => ({ kind: "ok" }),
+        close() {},
+      };
+    }
+    editor = createEditor({
+      client, host, canvas: nodes.canvas, scrollport: nodes.scrollport, spacer: nodes.spacer,
+      confirmDiscard: messages.get("confirm-discard"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
+    });
+    const state = await editor.initialize();
+    initialized = true;
+    onState(state);
+    showEditorMessage(messages.get("status-ready"));
+
+    nodes.new.addEventListener("click", async () => {
+      try {
+        const result = await editor.newDocument();
+        if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
+        else showEditorMessage(messages.get("status-new"));
+      } catch (error) { onError(error); }
+    });
+    nodes.open.addEventListener("click", async () => {
+      try {
+        const result = await editor.openDocument();
+        if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
+        else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
+        else showEditorMessage(messages.get(result.key) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
+      } catch (error) { onError(error); }
+    });
+    nodes.save.addEventListener("click", async () => {
+      try {
+        const result = await editor.saveAs();
+        if (result.kind === "ok") showEditorMessage(messages.get("status-saved"));
+        else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
+        else showEditorMessage(messages.get(result.key) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
+      } catch (error) { onError(error); }
+    });
+    nodes.undo.addEventListener("click", () => { void editor.undo().catch(onError); });
+    nodes.redo.addEventListener("click", () => { void editor.redo().catch(onError); });
+    document.addEventListener("keydown", event => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
+      const action = event.key.toLowerCase();
+      const button = action === "n" ? nodes.new : action === "o" ? nodes.open : action === "s" ? nodes.save : null;
+      if (!button || button.disabled) return;
+      event.preventDefault();
+      button.click();
+    });
+    updateControls(editor.state);
+    editor.focus();
+    return Object.freeze({
+      status: "ready",
+      getState: () => editor.getState(),
+      exportDocument: () => editor.exportDocument(),
+      editor,
+    });
+  } catch (error) {
+    showPing(false, messages);
+    showEditorMessage(messages.get("status-editor-error"), true);
+    client?.close(); host?.close?.();
+    return Object.freeze({ status: "failed", code: error?.code ?? "EDITOR_INITIALIZATION_FAILED" });
+  }
+
+}
+
+export const editorReady = start();

@@ -61,4 +61,6 @@ la coque native sur la [page locale embarquée](docs/us-112-embedded-resources.m
 hors du fil principal. Les modules [Canvas](docs/us-101-canvas-renderer.md) et
 [saisie clavier/IME](docs/us-103-text-input.md) disposent de tests Chromium réels.
 Le [test strict WebView2](docs/us-111-webview2.md) conserve un échec de handles
-sur cet hôte ; US-111 reste ouverte. Le [backend fichiers natif](docs/us-113-file-access.md) et le [modèle de texte brut](docs/us-120-plain-text-model.md) sont disponibles. Le pont fichiers JS, la mise en page et leur intégration restent nécessaires au démonstrateur US-120. La page actuelle ne permet pas encore de modifier un document.
+sur cet hôte ; US-111 reste ouverte. Le premier [éditeur intégré de texte brut](docs/us-120-editor-ui.md) permet de saisir, sélectionner, annuler/rétablir et utiliser Ouvrir/Enregistrer sous, avec des pages A4 et Carlito 11 pt. Le [pont natif](docs/us-113-file-bridge.md) conserve les octets UTF-8, BOM et fins de ligne. Le périmètre actuel est limité à 128 Kio de texte, latin gauche à droite ; les essais physiques AZERTY/IME, les dialogues manuels et les objectifs de performance restent ouverts.
+
+Pour le tester : `cargo run -p atelier-desktop-win --release --locked --offline`, puis Ouvrir un `.txt`, modifier le texte et Enregistrer sous. Le binaire construit est `target/release/atelier.exe`. Le [suivi](docs/PROTOTYPE-PROGRESS.md) distingue les modules livrés des US complètes.

@@ -174,6 +174,7 @@ unsafe extern "system" fn event_invoke(
 
 fn web_message_received(shared: &Shared, args: *mut c_void) -> i32 {
     const MAX_MESSAGE_CHARS: usize = 768;
+    const MAX_FILE_MESSAGE_CHARS: usize = 175_000;
     const MAX_BLOCKED_URI_CHARS: usize = 512;
     let mut source = null_mut();
     // get_Source is slot 3; WebView2 returns a CoTaskMem-owned LPWSTR.
@@ -202,7 +203,16 @@ fn web_message_received(shared: &Shared, args: *mut c_void) -> i32 {
     if hr < 0 {
         return S_OK;
     }
-    let message = wide_string(message).unwrap_or_default();
+    let Some(message) = wide_string_bounded(message, MAX_FILE_MESSAGE_CHARS) else {
+        return S_OK;
+    };
+    if message.starts_with("us120-file|") {
+        let mut queue = lock(&shared.file_messages);
+        if queue.accept(&source, &message).is_ok() || queue.has_rejections() {
+            shared.notify();
+        }
+        return S_OK;
+    }
     if message.chars().count() > MAX_MESSAGE_CHARS {
         return S_OK;
     }
@@ -246,19 +256,23 @@ fn web_message_received(shared: &Shared, args: *mut c_void) -> i32 {
 }
 
 fn wide_string(ptr: *mut u16) -> Option<String> {
+    wide_string_bounded(ptr, 32_768)
+}
+
+fn wide_string_bounded(ptr: *mut u16, limit: usize) -> Option<String> {
     if ptr.is_null() {
         return None;
     }
     // SAFETY: WebView2 string getters return CoTaskMem-owned, NUL-terminated UTF-16.
     let value = unsafe {
         let mut n = 0usize;
-        while n < 32_768 && *ptr.add(n) != 0 {
+        while n < limit && *ptr.add(n) != 0 {
             n += 1;
         }
-        if n == 32_768 {
+        if n == limit {
             None
         } else {
-            Some(String::from_utf16_lossy(std::slice::from_raw_parts(ptr, n)))
+            String::from_utf16(std::slice::from_raw_parts(ptr, n)).ok()
         }
     };
     // SAFETY: the returned string allocation is released with CoTaskMemFree.
@@ -292,6 +306,15 @@ fn navigation_starting(shared: &Shared, args: *mut c_void) -> i32 {
     let decision = resources::classify(&url, "GET");
     let allowed = matches!(decision, Decision::Serve(_) | Decision::NotFound);
     if !allowed {
+        return refuse_navigation(shared, args, Some(&url));
+    }
+    // Only the initial internal document may start. WebView2 may run a nested
+    // STA message loop while dialogs are open; refusing every later document
+    // navigation prevents dirty state loss and stale IDs reaching a new page.
+    let file_work_active = shared
+        .file_working
+        .load(std::sync::atomic::Ordering::Acquire);
+    if !lock(&shared.file_messages).begin_page_navigation(file_work_active) {
         return refuse_navigation(shared, args, Some(&url));
     }
     S_OK

@@ -13,3 +13,12 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 abi-test-hooks = []
+
+[dependencies]
+atelier-font = { path = "../font" }
+atelier-geom = { path = "../geom" }
+atelier-model = { path = "../model" }
+atelier-render = { path = "../render" }
+atelier-shape = { path = "../shape" }
+atelier-text-model = { path = "../text-model" }
+atelier-unicode = { path = "../unicode" }

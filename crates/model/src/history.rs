@@ -64,12 +64,14 @@ impl<E: fmt::Display> fmt::Display for HistoryError<E> {
 
 impl<E: fmt::Debug + fmt::Display> std::error::Error for HistoryError<E> {}
 
+#[derive(Clone)]
 struct TypingGroup {
     segment: u64,
     last_ms: u64,
     closed_after: bool,
 }
 
+#[derive(Clone)]
 struct Entry<O, Selection> {
     /// This is the one direction currently needed to move away from this entry.
     /// A successful navigation replaces it with the inverse returned by apply.
@@ -82,6 +84,7 @@ struct Entry<O, Selection> {
 
 /// An in-memory undo/redo controller. `Selection` is deliberately opaque to the
 /// model and only needs to be clonable so snapshots remain owned by history.
+#[derive(Clone)]
 pub struct History<O, Selection> {
     undo: VecDeque<Entry<O, Selection>>,
     redo: VecDeque<Entry<O, Selection>>,

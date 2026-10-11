@@ -95,7 +95,7 @@ export async function createEngineClient({ worker, workerUrl, module, bytes } = 
       if (!(["input", "output", "complete"].includes(message.phase)
           && Number.isSafeInteger(message.copiedBytes) && message.copiedBytes >= entry.lastProgress
           && Number.isSafeInteger(message.totalBytes) && message.totalBytes >= message.copiedBytes
-          && message.copiedBytes <= entry.frame.byteLength * 2)) {
+          && message.copiedBytes <= MAX_MESSAGE_BYTES * 2)) {
         failAll(new WorkerClientError("Worker sent incompatible progress counters.", "WorkerProtocolError"));
         return;
       }
@@ -119,18 +119,21 @@ export async function createEngineClient({ worker, workerUrl, module, bytes } = 
       failAll(new WorkerClientError("Worker returned an incompatible response.", "WorkerProtocolError"));
       return;
     }
-    if (message.bytes.byteLength !== entry.frame.byteLength || message.bytes.byteLength < HEADER_BYTES) {
-      failAll(new WorkerClientError("Worker response does not match the submitted command.", "WorkerProtocolError"));
+    if (message.bytes.byteLength > MAX_MESSAGE_BYTES || message.bytes.byteLength < HEADER_BYTES) {
+      failAll(new WorkerClientError("Worker response is outside the protocol size limit.", "WorkerProtocolError"));
       return;
     }
-    const header = new DataView(message.bytes.buffer, message.bytes.byteOffset, HEADER_BYTES);
-    if (header.getUint8(0) !== 0x41 || header.getUint8(1) !== 0x54 || header.getUint8(2) !== 0x4c || header.getUint8(3) !== 0x4d
-        || header.getUint16(4, true) !== 1
-        || header.getUint16(6, true) !== entry.decoded.type
-        || header.getUint16(8, true) !== 0
-        || header.getUint16(10, true) !== 0
-        || header.getBigUint64(12, true) !== requestId
-        || header.getUint32(20, true) !== message.bytes.byteLength - HEADER_BYTES) {
+    let reply;
+    try {
+      reply = decodeMessage(message.bytes, entry.decoded.type === MessageType.Editor ? "event" : "command");
+    } catch (error) {
+      failAll(new WorkerClientError(error.message, "WorkerProtocolError", error.code));
+      return;
+    }
+    const validType = entry.decoded.type === MessageType.Editor
+      ? reply.type === MessageType.EditorResult || reply.type === MessageType.Failed
+      : reply.type === entry.decoded.type && message.bytes.byteLength === entry.frame.byteLength;
+    if (!validType || reply.requestId !== requestId) {
       failAll(new WorkerClientError("Worker response header does not match the submitted command.", "WorkerProtocolError"));
       return;
     }

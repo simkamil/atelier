@@ -40,11 +40,12 @@ prototype_docs=['docs/us-012-line-breaks.md','docs/us-054-latin-shaping.md','doc
 prototype_docs.extend(['docs/us-092-worker.md','docs/us-110-win32-window.md','docs/us-116-portable-data.md'])
 prototype_docs.extend(['docs/us-101-canvas-renderer.md','docs/us-103-text-input.md','docs/us-111-webview2.md','data/webview2/README.md'])
 prototype_docs.extend(['web/index.html','web/app.css','web/i18n/fr-FR.txt'])
+prototype_docs.extend(['docs/us-120-editor-engine.md','docs/us-120-editor-ui.md','docs/us-113-file-bridge.md'])
 prototype_docs.extend(['docs/us-112-embedded-resources.md','docs/us-113-file-access.md','docs/us-120-plain-text-model.md','data/engine/README.md'])
 document_paths.update(prototype_docs)
 document_paths.update({'web/index.html','web/app.css','web/i18n/fr-FR.txt'})
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
-document_paths.update({'README.md','web/README.md','tests/README.md'})
+document_paths.update({'README.md','web/README.md','tests/README.md','US-V0-V1.md'})
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'tests').glob('*browser.html'))
 browser_html_lines = (root/'tests/worker-browser.html').read_text(encoding='utf-8').splitlines()
 for node in previous['nodes'] + doc['nodes']:

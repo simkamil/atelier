@@ -729,6 +729,7 @@ pub trait Operation<S>: Sized {
 }
 
 /// An ordered group of operations. The codec is deterministic and versioned.
+#[derive(Clone)]
 pub struct Transaction<O> {
     operations: Vec<O>,
 }

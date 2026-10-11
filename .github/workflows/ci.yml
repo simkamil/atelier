@@ -113,10 +113,18 @@ jobs:
         run: node tests/wasm-protocol.mjs target/debug/examples/protocol_oracle.exe target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
       - name: Check exact protocol capacity boundary in JavaScript
         run: node tests/wasm-protocol-boundaries.mjs
+      - name: Verify editor protocol and actual WASM rollback under ABI memory pressure
+        run: |
+          node tests/editor-protocol.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/editor-abi.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise real Worker transfers and cancellation
         run: node tests/wasm-worker.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
       - name: Exercise default browser Worker bootstrap in headless Edge
         run: node tests/run-worker-browser.mjs
+      - name: Exercise Canvas editor, composition and file adapter in headless Edge
+        run: node tests/run-editor-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests

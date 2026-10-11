@@ -96,6 +96,7 @@ impl fmt::Display for PlainTextError {
 }
 impl std::error::Error for PlainTextError {}
 
+#[derive(Clone)]
 struct TextState(String);
 impl TransactionalState for TextState {
     type Checkpoint = String;
@@ -158,6 +159,7 @@ impl Operation<TextState> for ReplaceText {
 }
 
 /// Owned plain text with directed selection and bounded undo/redo history.
+#[derive(Clone)]
 pub struct PlainTextDocument {
     state: TextState,
     history: History<ReplaceText, Selection>,

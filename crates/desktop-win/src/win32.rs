@@ -4,6 +4,9 @@
 use super::{
     MonitorArea, Rect, WindowState, encode_state, load_state, minimum_size, restore_state,
 };
+use crate::file_bridge::{self, Request};
+use crate::file_dialog::{DialogOwner, FileFilter, StaFileDialogs};
+use crate::files::FileBroker;
 use crate::webview::{self, WebView};
 use std::ffi::c_void;
 use std::io;
@@ -232,6 +235,92 @@ struct Context {
     webview: Option<WebView>,
     close_requested: bool,
     minimized: bool,
+    file_runtime: Option<FileRuntime>,
+}
+
+struct FileRuntime {
+    broker: FileBroker,
+    dialogs: StaFileDialogs,
+    dirty: bool,
+}
+
+impl FileRuntime {
+    fn new() -> Result<Self, crate::files::FileError> {
+        Ok(Self {
+            broker: FileBroker::new(),
+            dialogs: StaFileDialogs::initialize_current_thread()?,
+            dirty: false,
+        })
+    }
+}
+
+fn file_reply(id: &str, result: Result<Option<Vec<u8>>, &'static str>) -> String {
+    match result {
+        Ok(Some(bytes)) => format!(
+            "us120-file|1|{id}|ok|{}",
+            file_bridge::encode_base64(&bytes)
+        ),
+        Ok(None) => format!("us120-file|1|{id}|cancelled|"),
+        Err(key) => format!("us120-file|1|{id}|error|{key}"),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileDialogKind {
+    Open,
+    Save,
+}
+
+/// Shared native routing for production dialogs and deterministic path-injected
+/// tests. Only trusted dialog code supplies `choose`.
+fn route_file_request(
+    request: Request,
+    broker: &FileBroker,
+    mut choose: impl FnMut(FileDialogKind) -> Result<Option<PathBuf>, &'static str>,
+) -> String {
+    match request {
+        Request::Open { id } => match choose(FileDialogKind::Open) {
+            Ok(selected) => file_bridge::process_selection(Request::Open { id }, selected, broker),
+            Err(key) => file_reply(&id, Err(key)),
+        },
+        Request::Save { id, bytes } => match choose(FileDialogKind::Save) {
+            Ok(selected) => {
+                file_bridge::process_selection(Request::Save { id, bytes }, selected, broker)
+            }
+            Err(key) => file_reply(&id, Err(key)),
+        },
+        Request::Dirty { .. } => unreachable!("dirty messages are handled before dialog routing"),
+    }
+}
+
+fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request) -> String {
+    let id = request.id().to_owned();
+    if let Request::Dirty { dirty, .. } = request {
+        runtime.dirty = dirty;
+        return format!("us120-file|1|{id}|ok|");
+    }
+    let filters = match FileFilter::new("Fichier texte", ["txt"]) {
+        Ok(filter) => vec![filter],
+        Err(error) => return file_reply(&id, Err(error.message_key)),
+    };
+    // SAFETY: this handler runs on the UI STA while hwnd is the live owner window.
+    let owner = unsafe { DialogOwner::from_raw(hwnd) };
+    let broker = &runtime.broker;
+    let dialogs = &mut runtime.dialogs;
+    route_file_request(request, broker, |kind| match kind {
+        FileDialogKind::Open => dialogs
+            .open(owner.as_ref(), "Ouvrir un fichier texte", &filters, 0)
+            .map_err(|error| error.message_key),
+        FileDialogKind::Save => dialogs
+            .save(
+                owner.as_ref(),
+                "Enregistrer le fichier texte",
+                &filters,
+                0,
+                Some("Sans titre.txt"),
+            )
+            .map_err(|error| error.message_key),
+    })
 }
 
 impl Context {
@@ -614,6 +703,15 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     }
                 }
                 webview::WEBVIEW_MESSAGE => {
+                    // Common file dialogs pump this STA. An owned guard prevents
+                    // nested wakes from entering the WebView or file runtime.
+                    let Some(_file_work) = (*context)
+                        .webview
+                        .as_ref()
+                        .and_then(WebView::begin_file_work)
+                    else {
+                        return 0;
+                    };
                     if let Some(webview) = (*context).webview.as_mut() {
                         match webview.take_completed() {
                             Ok(ready) if ready => {
@@ -644,6 +742,34 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                                 }
                                 let _ = DestroyWindow(hwnd);
                                 return 0;
+                            }
+                        }
+                    }
+                    let rejections: Vec<String> = (*context)
+                        .webview
+                        .as_ref()
+                        .map(|view| std::iter::from_fn(|| view.take_file_rejection()).collect())
+                        .unwrap_or_default();
+                    for reply in rejections {
+                        if let Some(view) = (*context).webview.as_ref() {
+                            if let Err(error) = view.post_web_message_as_string(&reply) {
+                                (*context).record(Err(error));
+                            }
+                        }
+                    }
+                    let requests: Vec<Request> = (*context)
+                        .webview
+                        .as_ref()
+                        .map(|view| std::iter::from_fn(|| view.take_file_message()).collect())
+                        .unwrap_or_default();
+                    for request in requests {
+                        let reply = (*context)
+                            .file_runtime
+                            .as_mut()
+                            .map(|runtime| process_file_request(hwnd, runtime, request));
+                        if let (Some(reply), Some(view)) = (reply, (*context).webview.as_ref()) {
+                            if let Err(error) = view.post_web_message_as_string(&reply) {
+                                (*context).record(Err(error));
                             }
                         }
                     }
@@ -723,6 +849,37 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     }
                 }
                 WM_CLOSE => {
+                    if let Some(view) = (*context).webview.as_ref()
+                        && view.file_work_active()
+                    {
+                        view.defer_close_until_file_work_finishes();
+                        return 0;
+                    }
+                    let dirty_hint = (*context)
+                        .webview
+                        .as_ref()
+                        .and_then(WebView::pending_dirty_hint);
+                    let dirty = dirty_hint.unwrap_or_else(|| {
+                        (*context)
+                            .file_runtime
+                            .as_ref()
+                            .is_some_and(|runtime| runtime.dirty)
+                    });
+                    if dirty {
+                        let prompt: Vec<u16> = "Des modifications ne sont pas enregistrées. Quitter sans enregistrer ?"
+                            .encode_utf16().chain(Some(0)).collect();
+                        let caption: Vec<u16> = "Atelier".encode_utf16().chain(Some(0)).collect();
+                        // SAFETY: hwnd is the live owner window and both strings are NUL-terminated for this synchronous call.
+                        let answer = MessageBoxW(
+                            hwnd,
+                            prompt.as_ptr(),
+                            caption.as_ptr(),
+                            0x0000_0024 | 0x0000_0100,
+                        );
+                        if answer != 6 {
+                            return 0;
+                        } // IDYES proceeds; IDNO cancels closing.
+                    }
                     if !(*context).persisted {
                         let path = (*context).state_file.clone();
                         let dpi = (*context).dpi;
@@ -736,6 +893,7 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             webview: None,
                             close_requested: false,
                             minimized: false,
+                            file_runtime: None,
                         };
                         (*context).record(save(hwnd, &snapshot));
                         (*context).persisted = true;
@@ -785,6 +943,7 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             webview: None,
                             close_requested: false,
                             minimized: false,
+                            file_runtime: None,
                         };
                         (*context).record(save(hwnd, &snapshot));
                         (*context).persisted = true;
@@ -1007,6 +1166,7 @@ fn create_context(
         webview: None,
         close_requested: false,
         minimized: false,
+        file_runtime: None,
     }))
 }
 
@@ -1023,6 +1183,8 @@ pub fn run(state_file: &Path, title: &str, webview_data: &Path) -> io::Result<()
     let _apartment = webview::ComApartment::initialize_sta()?;
     let saved = load_state(state_file)?;
     let mut context = create_context(state_file, title, saved)?;
+    context.file_runtime =
+        Some(FileRuntime::new().map_err(|error| io::Error::other(error.message_key))?);
     let initial = restore_state(saved, &monitors()?, context.dpi);
     let window = create_window(&mut context, initial)?;
     let hwnd = window.hwnd;
@@ -1403,6 +1565,9 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/', 'text/html'], ['/app.mjs','text/javascript'], ['/app.css','text/css'],
             ['/i18n/fr-FR.txt','text/plain'], ['/engine-worker.mjs','text/javascript'],
             ['/engine-client.mjs','text/javascript'], ['/wasm-loader.mjs','text/javascript'],
+            ['/editor-protocol.mjs','text/javascript'], ['/editor.mjs','text/javascript'],
+            ['/native-host.mjs','text/javascript'], ['/display-list.mjs','text/javascript'],
+            ['/canvas-renderer.mjs','text/javascript'], ['/text-input.mjs','text/javascript'],
             ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
             ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
           ];
@@ -1430,6 +1595,25 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
           const required=['connect-src|https://us112-fetch.invalid','connect-src|wss://us112-socket.invalid','img-src|https://us112-image.invalid','frame-src|https://us112-frame.invalid','script-src-elem|https://us112-script.invalid','style-src-elem|https://us112-style.invalid'];
           const deadline=Date.now()+12000;
           while(Date.now()<deadline&&(document.documentElement.dataset.engineEcho!=='ok'||!required.every(prefix=>window.__atelierUs112Violations.some(v=>v.startsWith(prefix)))))await new Promise(r=>setTimeout(r,40));
+          const ready=await (await import('/app.mjs')).editorReady;
+          if(ready.status!=='ready')throw new Error('EDITOR_NOT_READY');
+          const editor=ready.editor;
+          const input=editor.element;
+          input.focus();
+          const expected='Bonjour é€\n';
+          input.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:expected,bubbles:true,cancelable:true}));
+          const exported=await ready.exportDocument();
+          const edited=ready.getState();
+          const typedOk=new TextDecoder().decode(exported.bytes)===expected&&edited.dirty&&edited.pages.length===1;
+          const canvas=document.querySelector('canvas');
+          const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+          let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]<100&&pixels[i+1]<100&&pixels[i+2]<100&&pixels[i+3]>0)ink++;
+          await editor.undo();
+          const undoOk=ready.getState().text===''&&!ready.getState().dirty;
+          await editor.redo();
+          const redoOk=ready.getState().text===expected&&ready.getState().dirty;
+          await editor.undo();
+          const editorOk=typedOk&&undoOk&&redoOk&&ink>20&&!ready.getState().dirty;
           window.__atelierUs112Result={
             assets,
             assetsOk:Object.entries(assets).length===paths.length&&Object.values(assets).every(x=>x.status===200&&x.type.startsWith(x.mime)),
@@ -1438,6 +1622,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             csp:root.headers.get('content-security-policy')||'',
             encodedStatus:encoded.status,
             methodProbesOk,
+            editorOk,typedOk,undoOk,redoOk,ink,
             violations:window.__atelierUs112Violations,
             cspProbesOk:required.every(prefix=>window.__atelierUs112Violations.some(v=>v.startsWith(prefix)))
           };
@@ -1480,6 +1665,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
         || !payload.contains("\"echo\":\"ok\"")
         || !payload.contains("\"encodedStatus\":403")
         || !payload.contains("\"methodProbesOk\":true")
+        || !payload.contains("\"editorOk\":true")
         || !payload.contains("connect-src https://app.atelier")
         || !payload.contains("\"cspProbesOk\":true")
     {
@@ -1515,7 +1701,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
         ));
     }
     Ok(format!(
-        "embedded resources: assets=11; worker-ping=echo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}",
+        "embedded resources: assets=17; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}",
         attempts.len()
     ))
 }
@@ -1929,11 +2115,112 @@ pub fn show_error(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, WPF_RESTORETOMAXIMIZED, atomic_write_to_temp,
-        placement_is_maximized, validate_self_check_path,
+        FileDialogKind, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, WPF_RESTORETOMAXIMIZED,
+        atomic_write_to_temp, placement_is_maximized, route_file_request, validate_self_check_path,
     };
+    use crate::file_bridge::{self, Request};
+    use crate::files::FileBroker;
     use std::io;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn common_file_route_uses_distinct_dialogs_and_selected_paths() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock after epoch")
+            .as_nanos();
+        let directory =
+            std::env::temp_dir().join(format!("atelier-file-route-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&directory).expect("create isolated fixture directory");
+        let open_path = directory.join("open.txt");
+        let save_path = directory.join("save.txt");
+        std::fs::write(&open_path, b"selected open bytes\r\n").expect("open fixture");
+        std::fs::write(&save_path, b"old save bytes").expect("save fixture");
+        let broker = FileBroker::new();
+        let mut selected_kinds = Vec::new();
+
+        let open_reply = route_file_request(Request::Open { id: "1".into() }, &broker, |kind| {
+            selected_kinds.push(kind);
+            assert_eq!(kind, FileDialogKind::Open);
+            Ok(Some(open_path.clone()))
+        });
+        assert_eq!(
+            open_reply,
+            format!(
+                "us120-file|1|1|ok|{}",
+                file_bridge::encode_base64(b"selected open bytes\r\n")
+            )
+        );
+
+        let save_reply = route_file_request(
+            Request::Save {
+                id: "2".into(),
+                bytes: b"new saved bytes\r\n".to_vec(),
+            },
+            &broker,
+            |kind| {
+                selected_kinds.push(kind);
+                assert_eq!(kind, FileDialogKind::Save);
+                Ok(Some(save_path.clone()))
+            },
+        );
+        assert_eq!(save_reply, "us120-file|1|2|ok|");
+        assert_eq!(std::fs::read(&save_path).unwrap(), b"new saved bytes\r\n");
+        assert_eq!(selected_kinds, [FileDialogKind::Open, FileDialogKind::Save]);
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn common_file_route_returns_cancel_and_dialog_errors() {
+        let broker = FileBroker::new();
+        let mut selected = None;
+        let cancelled = route_file_request(Request::Open { id: "3".into() }, &broker, |kind| {
+            selected = Some(kind);
+            Ok(None)
+        });
+        assert_eq!(selected, Some(FileDialogKind::Open));
+        assert_eq!(cancelled, "us120-file|1|3|cancelled|");
+
+        let failed = route_file_request(
+            Request::Save {
+                id: "4".into(),
+                bytes: b"save".to_vec(),
+            },
+            &broker,
+            |kind| {
+                assert_eq!(kind, FileDialogKind::Save);
+                Err("files.error.dialog_failed")
+            },
+        );
+        assert_eq!(failed, "us120-file|1|4|error|files.error.dialog_failed");
+
+        let missing = std::env::temp_dir().join(format!(
+            "atelier-route-missing-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let broker_error = route_file_request(Request::Open { id: "5".into() }, &broker, |_| {
+            Ok(Some(missing.clone()))
+        });
+        assert_eq!(broker_error, "us120-file|1|5|error|files.error.not_found");
+
+        let directory_error = route_file_request(
+            Request::Save {
+                id: "6".into(),
+                bytes: b"save".to_vec(),
+            },
+            &broker,
+            |_| Ok(Some(std::env::temp_dir())),
+        );
+        assert_eq!(
+            directory_error,
+            "us120-file|1|6|error|files.error.destination_is_directory"
+        );
+    }
 
     #[test]
     fn temporary_name_collision_preserves_the_existing_file() {

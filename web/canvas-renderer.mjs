@@ -66,10 +66,11 @@ function makePath(elements) {
  */
 export class CanvasRenderer {
   constructor(canvas, { resolveGlyph = () => null, resolveImage = () => null,
-    maxGlyphCache = 4096, pageGap = 16, onDiagnostic = () => {} } = {}) {
+    maxGlyphCache = 4096, pageGap = 16, pageBackground = null, onDiagnostic = () => {} } = {}) {
     if (!canvas?.getContext) throw new TypeError("CanvasRenderer needs a canvas element");
     if (!Number.isInteger(maxGlyphCache) || maxGlyphCache < 0) throw new RangeError("invalid glyph cache size");
     if (!Number.isFinite(pageGap) || pageGap < 0) throw new RangeError("invalid page gap");
+    if (pageBackground !== null && typeof pageBackground !== "string") throw new TypeError("invalid page background");
     if (typeof resolveGlyph !== "function" || typeof resolveImage !== "function" ||
         typeof onDiagnostic !== "function") {
       throw new TypeError("resource resolvers and diagnostic handler must be functions");
@@ -81,9 +82,11 @@ export class CanvasRenderer {
     this.resolveImage = resolveImage;
     this.maxGlyphCache = maxGlyphCache;
     this.pageGap = pageGap;
+    this.pageBackground = pageBackground;
     this.onDiagnostic = onDiagnostic;
     this.pages = [];
     this.overlay = [];
+    this.editorOverlay = { selectionRects: [], caret: null, compositionRects: [], caretVisible: true };
     this.zoom = 1;
     this.scrollX = 0;
     this.scrollY = 0;
@@ -92,10 +95,14 @@ export class CanvasRenderer {
     this.dpr = globalThis.devicePixelRatio || 1;
     this.glyphCache = new Map();
     this.stats = this._emptyStats();
-    this._resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(entries => {
-      const rect = entries[0]?.contentRect;
-      if (rect) this.setViewport({ width: rect.width, height: rect.height,
-        dpr: globalThis.devicePixelRatio || 1 });
+    this._resizeFrame = 0;
+    this._resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
+      if (this._resizeFrame) return;
+      this._resizeFrame = requestAnimationFrame(() => {
+        this._resizeFrame = 0;
+        this.setViewport({ width: canvas.clientWidth, height: canvas.clientHeight,
+          dpr: globalThis.devicePixelRatio || 1 });
+      });
     });
     this._resizeObserver?.observe(canvas);
     this._onWindowResize = () => this.setViewport({
@@ -111,6 +118,8 @@ export class CanvasRenderer {
   }
   destroy() {
     this._resizeObserver?.disconnect();
+    if (this._resizeFrame) cancelAnimationFrame(this._resizeFrame);
+    this._resizeFrame = 0;
     globalThis.removeEventListener?.("resize", this._onWindowResize);
     this.glyphCache.clear();
   }
@@ -154,6 +163,27 @@ export class CanvasRenderer {
   clearOverlay() {
     return this.setOverlay([]);
   }
+  setEditorOverlay({ selectionRects = [], caret = null, compositionRects = [], caretVisible = true } = {}) {
+    const rects = (value, name) => {
+      if (!Array.isArray(value)) throw new TypeError(`${name} must be an array`);
+      return value.map(rect => {
+        for (const key of ["x", "y", "width", "height"]) {
+          if (!Number.isFinite(rect?.[key])) throw new TypeError(`invalid ${name} rectangle`);
+        }
+        if (rect.width < 0 || rect.height < 0) throw new RangeError(`invalid ${name} dimensions`);
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      });
+    };
+    if (typeof caretVisible !== "boolean") throw new TypeError("caretVisible must be boolean");
+    const normalizedCaret = caret === null ? null : rects([caret], "caret")[0];
+    this.editorOverlay = {
+      selectionRects: rects(selectionRects, "selection"),
+      caret: normalizedCaret,
+      compositionRects: rects(compositionRects, "composition"),
+      caretVisible,
+    };
+    return this.render();
+  }
   render(dirty = null) {
     const { ctx, width, height, dpr } = this;
     const clip = dirty || { x: 0, y: 0, width, height };
@@ -181,6 +211,10 @@ export class CanvasRenderer {
         const viewport = { x: 0, y: 0, width, height };
         if (width > 0 && height > 0 && intersects(visible, viewport) && intersects(visible, clip)) {
           this.stats.pagesDrawn++;
+          if (this.pageBackground !== null) {
+            ctx.fillStyle = this.pageBackground;
+            ctx.fillRect(visible.x, visible.y, visible.width, visible.height);
+          }
           this._drawPage(page, top, clip);
         }
         top += pageHeight + this.pageGap;
@@ -361,5 +395,24 @@ export class CanvasRenderer {
         ctx.restore();
       }
     }
+    const editor = this.editorOverlay;
+    ctx.save();
+    try {
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      ctx.fillStyle = "rgba(35,108,87,0.24)";
+      for (const rect of editor.selectionRects) ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.strokeStyle = "#236c57";
+      ctx.lineWidth = 1;
+      for (const rect of editor.compositionRects) {
+        ctx.beginPath();
+        ctx.moveTo(rect.x, rect.y + rect.height);
+        ctx.lineTo(rect.x + rect.width, rect.y + rect.height);
+        ctx.stroke();
+      }
+      if (editor.caretVisible && editor.caret) {
+        ctx.fillStyle = "#172a2a";
+        ctx.fillRect(editor.caret.x, editor.caret.y, Math.max(1, editor.caret.width), editor.caret.height);
+      }
+    } finally { ctx.restore(); }
   }
 }

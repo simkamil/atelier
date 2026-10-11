@@ -10,4 +10,8 @@ pub mod window;
 pub mod file_dialog;
 
 #[cfg(windows)]
+#[path = "file-bridge.rs"]
+mod file_bridge;
+
+#[cfg(windows)]
 pub(crate) mod webview;

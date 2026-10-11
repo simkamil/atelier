@@ -1,0 +1,13 @@
+{
+  "diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-editor-review-fca0zxff\\changes.diff",
+  "bytes": 1783772,
+  "sha256": "bbf4b2dc2a090846bc6d33428653120bce1e2b5b25d806334a439defeba8d4e7",
+  "claims_file": "C:\\mon-bureau\\_bmad-output\\implementation-artifacts\\editor-integration-claims.md",
+  "baseline_commit": "3cb335442bc3b199b9e25ab177bcce396cf2cc55",
+  "patched_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-editor-review-fca0zxff\\patched-changes.diff",
+  "patched_bytes": 15516702,
+  "patched_sha256": "dfbe05af910c3f4319a73796f88bab203293750598b1635218ba2d5b63e878d6",
+  "patched_snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/editor-integration-review-snapshot.json (self-referential metadata)"
+  ]
+}

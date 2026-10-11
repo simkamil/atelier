@@ -41,7 +41,7 @@ Le collage `text/plain` est inséré comme texte. Pour les types non pris en cha
 
 Les vérifications synthétiques de `tests/input-browser.mjs` exercent le routage DOM dans Chromium et retournent `runInputChecks()`, un tableau des scénarios réussis. Elles ne valident pas les pilotes clavier ni les services IME natifs. Avant de clôturer US-103, vérifier manuellement sous Windows/WebView2 avec un clavier AZERTY : touches mortes `^`, `¨`, `` ` `` ; AltGr `€`, `@`, `#`, `{`, `[` ; Alt+code numérique ; composition IME, validation et annulation ; focus d’un dialogue et d’un autre champ. Les événements synthétiques ne constituent pas une preuve de ces essais matériels.
 
-Cet adaptateur prépare US-120 ; il ne fournit ni moteur d’édition, ni géométrie de sélection, ni rendu de texte ou de soulignement. Le dispatch WASM reste l’écho décrit par [US-092](us-092-worker.md).
+Cet adaptateur reçoit maintenant la sélection et la géométrie du [contrôleur US-120](us-120-editor-ui.md), qui envoie les commandes au moteur et dessine texte, caret, sélection et précomposition soulignée. L’adaptateur reste indépendant du document. Les preuves synthétiques ne remplacent pas les essais physiques AZERTY/IME.
 
 Validation finale du lot : [34 contrôles fonctionnels et qualité](../_bmad-output/implementation-artifacts/frontend-host-validation.json),
 **318 tests workspace et 27 tests shell release**, sur sources et lock inchangés.

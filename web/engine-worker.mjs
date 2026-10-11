@@ -44,9 +44,20 @@ export function installEngineWorker(scope) {
         },
       });
       if (job.controller.signal.aborted) throw asAbortError();
-      if (bytes.byteLength !== job.frame.byteLength) throw Object.assign(new Error("WASM dispatch changed the echoed command length."), { name: "WorkerProtocolError", code: "ECHO_MISMATCH" });
-      for (let index = 0; index < bytes.byteLength; index += 1) {
-        if (bytes[index] !== job.frame[index]) throw Object.assign(new Error("WASM dispatch changed the echoed command bytes."), { name: "WorkerProtocolError", code: "ECHO_MISMATCH" });
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength > 64 * 1024 * 1024 - 4) {
+        throw Object.assign(new Error("WASM dispatch returned an invalid or oversized frame."), { name: "WorkerProtocolError", code: "INVALID_RESPONSE" });
+      }
+      if (job.decoded.type === MessageType.Editor) {
+        const response = decodeMessage(bytes, "event");
+        if ((response.type !== MessageType.EditorResult && response.type !== MessageType.Failed)
+            || response.requestId !== job.requestId) {
+          throw Object.assign(new Error("WASM Editor response does not match its request."), { name: "WorkerProtocolError", code: "EDITOR_RESPONSE_MISMATCH" });
+        }
+      } else {
+        if (bytes.byteLength !== job.frame.byteLength) throw Object.assign(new Error("WASM dispatch changed the echoed command length."), { name: "WorkerProtocolError", code: "ECHO_MISMATCH" });
+        for (let index = 0; index < bytes.byteLength; index += 1) {
+          if (bytes[index] !== job.frame[index]) throw Object.assign(new Error("WASM dispatch changed the echoed command bytes."), { name: "WorkerProtocolError", code: "ECHO_MISMATCH" });
+        }
       }
       send({ kind: "result", requestId: job.requestId, bytes }, [bytes.buffer]);
     } catch (error) {
@@ -131,7 +142,7 @@ export function installEngineWorker(scope) {
         send({ kind: "error", requestId: decoded.requestId, error: serializeError(Object.assign(new Error("Request ID is already active."), { name: "DuplicateRequestIdError", code: "DUPLICATE_REQUEST_ID" })) });
         return;
       }
-      const job = { requestId: decoded.requestId, frame: message.frame, controller: new AbortController(), chunkBytes: message.chunkBytes };
+      const job = { requestId: decoded.requestId, decoded, frame: message.frame, controller: new AbortController(), chunkBytes: message.chunkBytes };
       queue.push(job);
       jobsById.set(job.requestId, job);
       queuedBytes += message.frame.byteLength;

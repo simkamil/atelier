@@ -17,11 +17,13 @@ pub enum MessageType {
     ApplyOps = 0x0011,
     Render = 0x0012,
     Cancel = 0x0013,
+    Editor = 0x0020,
     Pong = 0x8001,
     Completed = 0x8010,
     Failed = 0x8011,
     Progress = 0x8012,
     Cancelled = 0x8013,
+    EditorResult = 0x8020,
 }
 
 impl MessageType {
@@ -32,23 +34,31 @@ impl MessageType {
             0x0011 => Self::ApplyOps,
             0x0012 => Self::Render,
             0x0013 => Self::Cancel,
+            0x0020 => Self::Editor,
             0x8001 => Self::Pong,
             0x8010 => Self::Completed,
             0x8011 => Self::Failed,
             0x8012 => Self::Progress,
             0x8013 => Self::Cancelled,
+            0x8020 => Self::EditorResult,
             _ => return None,
         })
     }
 
     fn direction(self) -> Direction {
         match self {
-            Self::Ping | Self::LoadText | Self::ApplyOps | Self::Render | Self::Cancel => {
-                Direction::Command
-            }
-            Self::Pong | Self::Completed | Self::Failed | Self::Progress | Self::Cancelled => {
-                Direction::Event
-            }
+            Self::Ping
+            | Self::LoadText
+            | Self::ApplyOps
+            | Self::Render
+            | Self::Cancel
+            | Self::Editor => Direction::Command,
+            Self::Pong
+            | Self::Completed
+            | Self::Failed
+            | Self::Progress
+            | Self::Cancelled
+            | Self::EditorResult => Direction::Event,
         }
     }
 
@@ -215,11 +225,13 @@ mod tests {
             (MessageType::ApplyOps, Direction::Command),
             (MessageType::Render, Direction::Command),
             (MessageType::Cancel, Direction::Command),
+            (MessageType::Editor, Direction::Command),
             (MessageType::Pong, Direction::Event),
             (MessageType::Completed, Direction::Event),
             (MessageType::Failed, Direction::Event),
             (MessageType::Progress, Direction::Event),
             (MessageType::Cancelled, Direction::Event),
+            (MessageType::EditorResult, Direction::Event),
         ];
         for (kind, direction) in cases {
             let payload = if kind.requires_empty_payload() {

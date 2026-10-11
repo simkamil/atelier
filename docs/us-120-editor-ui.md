@@ -1,0 +1,55 @@
+# US-120 — Interface éditeur texte brut Canvas
+
+La page embarquée fournit un éditeur de texte paginé. Le moteur WASM reste propriétaire du texte, des offsets UTF-8, des sélections, de l'historique, du rendu ATDL et de l'état modifié. Le navigateur possède le Canvas, le viewport, le focus et les événements d'entrée. Le host natif possède les dialogues et l'accès aux fichiers.
+
+## Exercice local
+
+Après compilation du WASM optimisé et préparation de l'hôte WebView, lancer les contrôles ciblés :
+
+```powershell
+node tests/editor-protocol.mjs
+node tests/run-editor-browser.mjs
+```
+
+Le premier contrôle couvre les codecs ATED/ATES/ATEX, les rejets de tailles et de formats invalides, les octets UTF-8/BOM, la corrélation des réponses et la file host bornée. Le second démarre un navigateur Edge/Chrome headless, charge l'artefact WASM réel avec un Worker et un Canvas, puis injecte un host de fichiers contrôlé. Il exerce la saisie rapide, les sélections, undo/redo, suppression, annulation et erreur d'ouverture, préservation BOM/CRLF, pagination et défilement du caret, composition IME simulée, sauvegarde, rejet d'une confirmation de révision obsolète et hit-test Canvas. Il charge aussi le véritable `index.html` et `app.mjs` dans un DOM isolé avec un faux `chrome.webview` pour vérifier Ctrl+N/O/S sans dialogue système.
+
+Le test navigateur conserve une sonde Ping exacte et valide le montage de l'éditeur par l'API `editorReady`. Il ne remplace pas le contrôle natif du bridge WebView ni les anciens contrôles du transport.
+
+## Limites de preuve
+
+Les événements de composition du navigateur sont synthétiques : ils ne prouvent pas le comportement d'un IME physique ni des touches mortes. Les contrôles headless ne valident pas la sensation de caret, le contraste ou l'accessibilité avec un lecteur d'écran. Le host utilisé par la suite JS est injecté ; les dialogues, permissions et erreurs du vrai bridge sont à vérifier dans le self-check natif. Cette tranche ne revendique pas les objectifs de latence à 300 pages, la mise en forme riche, le bidi ou la validation clavier/IME physique.
+
+L'interface n'expose aucun chemin de fichier. Les erreurs affichées sont des clés traduites, les octets du document transitent entre le moteur et le bridge, et les notifications dirty ne bloquent pas l'ouverture ou la sauvegarde lorsque les notifications intermédiaires sont coalescées.
+
+## Limites d'édition de ce prototype
+
+La représentation accessible expose le texte courant comme contenu DOM lisible, mais le Canvas reste la surface d'édition et cette tranche ne revendique pas une expérience complète d'édition assistive. Copier/couper, le déplacement Ctrl+flèche par mots, la préférence de retour à la ligne, la conservation de la colonne verticale et des tabulations configurables restent rattachés aux stories US-225, US-221, US-210, US-214 et US-211 respectivement.
+
+## Validation du premier éditeur intégré — 2026-10-11
+
+Trois agents GPT-6 Luna moyen ont développé en parallèle le moteur, l’interface
+et le pont fichiers, puis corrigé le lot après trois revues indépendantes.
+La [validation finale](../_bmad-output/implementation-artifacts/editor-integration-validation.json)
+réussit **40 contrôles, 368 tests workspace et 55 tests natifs release**,
+avec sources et lock inchangés. Le navigateur utilise le vrai Worker/WASM/Canvas
+et un Host factice : saisie/sélection, pagination, composition, annulations,
+sauvegarde obsolète, raccourcis de la vraie page et miroir textuel accessible.
+L’ABI réelle vérifie aussi le rollback d’un candidat lorsque le registre de
+128 Mio ne peut réserver sa réponse.
+
+Les diagnostics WebView2 debug/release chargent les **17 ressources** et vérifient
+saisie accentuée, pixels de glyphes, undo/redo, HTTP et six catégories CSP.
+La [copie isolée](../_bmad-output/implementation-artifacts/editor-integration-portable.json)
+fonctionne sans dossier web/data. Les tests de routage natif injectent des résultats
+de dialogue contrôlés et passent par le broker réel ; ils n’ouvrent aucun dialogue.
+La [revue](../_bmad-output/implementation-artifacts/editor-integration-review.md)
+conserve les 12 constats séparément : cinq corrections retenues et trois fonctions
+V1 reportées (presse-papiers, navigation par mot, colonne préférée), avec les rejets
+motivés. Les limites de wrapping et de Tab sont également décrites dans le contrat UI.
+
+Le premier parcours TXT est testable avec `cargo run -p atelier-desktop-win --release --locked --offline`. La tranche reste limitée à
+128 Kio, latin gauche à droite et mise en page complète à chaque modification.
+Les dialogues manuels, AZERTY/IME physique et mesures de 300 pages/démarrage restent
+ouverts pour US-120. US-113 conserve SharedBuffer, polices/URL ; US-111 conserve
+l’échec strict de handles. Les **35/158 US complètes** sont inchangées. Les tests
+musl sont compilés localement ; leur exécution appartient à la CI Linux publiée.

@@ -4,7 +4,9 @@
   "target": "wasm32-unknown-unknown",
   "profile": "wasm-release",
   "features": [],
-  "reference_bytes": 52323,
+  "reference_bytes": 1073118,
   "allowed_growth_percent": 10,
-  "measured_on": "2026-10-10"
+  "measured_on": "2026-10-11",
+  "previous_reference_bytes": 52323,
+  "rebaseline_reason": "US-120 adds real plain-text editing, Unicode segmentation, A4 layout, shaping and embedded Carlito Regular to the previous ABI echo; 10% regression gate retained."
 }

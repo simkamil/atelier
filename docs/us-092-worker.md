@@ -24,7 +24,7 @@ const outputFrame = await client.request(commandFrame, {
 client.close();
 ```
 
-Le client traite uniquement le transport et l’écho ABI de US-090. La réponse n’est pas un événement métier `Completed`; les handlers document et rendu restent à US-120. La validation Node ci-dessous exerce les modules de production et le véritable artefact WASM dans `worker_threads`. Elle ne valide ni clavier/IME ni WebView2.
+Le client transporte les anciens types par écho ABI de US-090 et les commandes métier `Editor`/`EditorResult` de l’[éditeur intégré](us-120-editor-ui.md). Les sondes historiques ci-dessous vérifient l’écho ; les tests `editor-abi.mjs` et `run-editor-browser.mjs` exercent la session réelle. La validation Node ne valide ni clavier physique/IME ni WebView2. L’annulation des copies ne préempte pas le dispatch WASM synchrone.
 
 ## Vérification
 

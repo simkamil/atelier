@@ -1,0 +1,9 @@
+{
+  "passed": false,
+  "exit_code": 1,
+  "result": "",
+  "stderr": "self-check state path must resolve beneath the workspace target/ directory",
+  "executable_sha256": "79abc9e86c598b434f2a5ebeaa3031125012f0bb8b24ebf1bc2e0e438b9e4091",
+  "cwd_contains_web_or_data": false,
+  "only_copied_input": "atelier.exe"
+}

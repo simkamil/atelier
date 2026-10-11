@@ -6,11 +6,13 @@ export const MessageType = Object.freeze({
   ApplyOps: 0x0011,
   Render: 0x0012,
   Cancel: 0x0013,
+  Editor: 0x0020,
   Pong: 0x8001,
   Completed: 0x8010,
   Failed: 0x8011,
   Progress: 0x8012,
   Cancelled: 0x8013,
+  EditorResult: 0x8020,
 });
 
 export const HEADER_BYTES = 24;
@@ -18,7 +20,7 @@ export const MAX_MESSAGE_BYTES = 64 * 1024 * 1024 - 4;
 const MAGIC = [0x41, 0x54, 0x4c, 0x4d];
 const MAX_U64 = (1n << 64n) - 1n;
 const TYPES = new Map(Object.values(MessageType).map((value) => [value, value]));
-const COMMANDS = new Set([MessageType.Ping, MessageType.LoadText, MessageType.ApplyOps, MessageType.Render, MessageType.Cancel]);
+const COMMANDS = new Set([MessageType.Ping, MessageType.LoadText, MessageType.ApplyOps, MessageType.Render, MessageType.Cancel, MessageType.Editor]);
 const EMPTY_TYPES = new Set([MessageType.Ping, MessageType.Pong, MessageType.Cancel, MessageType.Cancelled]);
 
 export class ProtocolError extends Error {

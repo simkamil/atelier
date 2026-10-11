@@ -19,19 +19,56 @@ raisonnement moyen, puis relues et validées. Le backlog compte désormais
   optimisée mesure 52 323 octets, avec seuil de régression à 57 555 octets.
   Les tests tournent sur les vrais artefacts WASM dans Node.
 
-Le démonstrateur US-120 reste à construire. Le socle texte, le Worker,
-la fenêtre Win32 et la résolution portable sont disponibles. La coque Windows
-peut être lancée avec `cargo run -p atelier-desktop-win --locked --offline` ;
-elle charge la page locale `https://app.atelier/` depuis les octets incorporés et mémorise sa géométrie.
-US-114 (runtime absent) est validée. US-111 héberge le contrôle réel, mais reste
-ouverte pour la hausse de handles au test strict de 100 cycles.
-Le Canvas (US-101) et la saisie clavier/IME (US-103) sont implémentés comme modules
-testés dans Chromium ; leurs critères d’intégration et de matériel restent ouverts.
-Les [ressources locales](us-112-embedded-resources.md), le [backend fichiers](us-113-file-access.md) et le [modèle de texte brut](us-120-plain-text-model.md) préparent le raccordement US-120. Le pont fichiers JS, la mise en page et la connexion saisie/rendu/moteur restent à développer.
-US-092 reste ouverte : le Worker transfère réellement les buffers avec progression et annulation
-pendant les copies par blocs ; le dispatch WASM synchrone n'est pas préemptible
-et conserve son écho ABI. Les handlers métier d'ouverture/export restent à intégrer.
-Il n'existe pas encore d'interface pour ouvrir et modifier un document.
+Un premier [éditeur de texte brut intégré](us-120-editor-ui.md) est disponible :
+`cargo run -p atelier-desktop-win --release --locked --offline` démarre la fenêtre,
+avec Nouveau, Ouvrir, Enregistrer sous, saisie, sélection et annuler/rétablir.
+Le [moteur](us-120-editor-engine.md) produit des pages A4 et des contours Carlito
+11 pt ; le [pont natif](us-113-file-bridge.md) utilise les dialogues TXT et le broker
+atomique. Texte UTF-8, BOM et fins de ligne sont conservés. Le plafond courant est
+128 Kio de texte, avec budget de réponse de 32 Mio ; le façonnage simplifié est
+latin gauche à droite, graphème par graphème.
+
+Ce jalon permet des premiers essais utilisateur. US-120 reste ouverte pour
+les dialogues natifs vérifiés manuellement, le clavier AZERTY/IME physique et
+les mesures de latence sur 300 pages/démarrage à froid. US-101 conserve les
+critères de cache et de fluidité matériels ; US-103 conserve les essais de clavier.
+US-113 conserve SharedBuffer, polices/URL et les essais de dialogues. US-111
+conserve son échec strict de handles. US-092 reste ouverte pour l’annulation
+métier : le dispatch WASM synchrone n’est pas préemptible. US-114 est validée.
+
+## Validation du premier éditeur intégré — 2026-10-11
+
+Trois agents GPT-6 Luna moyen ont développé en parallèle le moteur, l’interface
+et le pont fichiers, puis corrigé le lot après trois revues indépendantes.
+La [validation finale](../_bmad-output/implementation-artifacts/editor-integration-validation.json)
+réussit **40 contrôles, 368 tests workspace et 55 tests natifs release**,
+avec sources et lock inchangés. Le navigateur utilise le vrai Worker/WASM/Canvas
+et un Host factice : saisie/sélection, pagination, composition, annulations,
+sauvegarde obsolète, raccourcis de la vraie page et miroir textuel accessible.
+L’ABI réelle vérifie aussi le rollback d’un candidat lorsque le registre de
+128 Mio ne peut réserver sa réponse.
+
+Les diagnostics WebView2 debug/release chargent les **17 ressources** et vérifient
+saisie accentuée, pixels de glyphes, undo/redo, HTTP et six catégories CSP.
+La [copie isolée](../_bmad-output/implementation-artifacts/editor-integration-portable.json)
+fonctionne sans dossier web/data. Les tests de routage natif injectent des résultats
+de dialogue contrôlés et passent par le broker réel ; ils n’ouvrent aucun dialogue.
+La [revue](../_bmad-output/implementation-artifacts/editor-integration-review.md)
+conserve les 12 constats séparément : cinq corrections retenues et trois fonctions
+V1 reportées (presse-papiers, navigation par mot, colonne préférée), avec les rejets
+motivés. Les limites de wrapping et de Tab sont également décrites dans le contrat UI.
+
+Le premier parcours TXT est testable avec `cargo run -p atelier-desktop-win --release --locked --offline`. La tranche reste limitée à
+128 Kio, latin gauche à droite et mise en page complète à chaque modification.
+Les dialogues manuels, AZERTY/IME physique et mesures de 300 pages/démarrage restent
+ouverts pour US-120. US-113 conserve SharedBuffer, polices/URL ; US-111 conserve
+l’échec strict de handles. Les **35/158 US complètes** sont inchangées. Les tests
+musl sont compilés localement ; leur exécution appartient à la CI Linux publiée.
+
+Les preuves des lots antérieurs ci-dessous décrivent leurs périmètres à leur date.
+La référence WASM de 52 323 octets concernait le transport écho ; l’éditeur ajoute
+le modèle, Unicode, le façonnage et Carlito. La [nouvelle référence mesurée](../_bmad-output/implementation-artifacts/editor-integration-wasm-size.json)
+conserve le seuil de régression de 10 %.
 
 Les [21 contrôles du lot précédent](../_bmad-output/implementation-artifacts/prototype-foundations-validation.json)
 passent : 233 tests workspace, 43 tests release, builds Windows/WASM/musl,

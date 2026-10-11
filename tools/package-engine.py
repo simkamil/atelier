@@ -3,6 +3,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
@@ -14,12 +15,52 @@ artifact = root / 'target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.
 data = artifact.read_bytes()
 if data[:8] != b'\0asm\x01\0\0\0':
     raise SystemExit('Optimized engine is not a WebAssembly 1 module')
-sources = sorted([
-    root / 'Cargo.toml', root / 'crates/core-wasm/Cargo.toml',
-    *(root / 'crates/core-wasm/src').rglob('*.rs'),
-])
+metadata = json.loads(subprocess.check_output([
+    'cargo', 'metadata', '--format-version', '1', '--locked', '--offline',
+], cwd=root, text=True, encoding='utf-8'))
+packages = {p['id']: p for p in metadata['packages']}
+nodes = {n['id']: n for n in metadata['resolve']['nodes']}
+pending = [next(p['id'] for p in packages.values() if p['name'] == 'atelier-core-wasm')]
+closure = set()
+while pending:
+    package_id = pending.pop()
+    if package_id in closure:
+        continue
+    package = packages[package_id]
+    if package['source'] is not None:
+        raise SystemExit('The packaged engine must have only local dependencies')
+    closure.add(package_id)
+    pending.extend(d['pkg'] for d in nodes[package_id]['deps']
+                   if any(k['kind'] in (None, 'build') for k in d['dep_kinds']))
+sources = {root / 'Cargo.toml', root / 'Cargo.lock', Path(__file__).resolve()}
+for package_id in closure:
+    manifest_path = Path(packages[package_id]['manifest_path']).resolve()
+    sources.add(manifest_path)
+    sources.update((manifest_path.parent / 'src').rglob('*.rs'))
+    build = manifest_path.parent / 'build.rs'
+    if build.is_file():
+        sources.add(build)
+resources = set()
+for path in list(sources):
+    if path.suffix != '.rs':
+        continue
+    content = path.read_text(encoding='utf-8')
+    for match in re.finditer(r'include_(bytes|str)!\s*\(\s*"([^"]+)"\s*\)', content):
+        included = (path.parent / match[2]).resolve()
+        included.relative_to(root)
+        if not included.is_file():
+            raise SystemExit(f'Missing embedded engine input: {included.relative_to(root)}')
+        (sources if match[1] == 'str' else resources).add(included)
+# unicode/build.rs regenerates and checks src/generated.rs from this pinned
+# corpus. Include every corpus file conservatively, including its provenance.
+if any(packages[p]['name'] == 'atelier-unicode' for p in closure):
+    for path in (root / 'data/ucd/17.0.0').rglob('*'):
+        if path.is_file():
+            (resources if path.suffix.lower() == '.pdf' else sources).add(path)
+sources = sorted(sources)
+resources = sorted(resources - set(sources))
 manifest = {
-    'schema_version': 1,
+    'schema_version': 2,
     'artifact': 'atelier_core_wasm.wasm',
     'target': 'wasm32-unknown-unknown',
     'profile': 'wasm-release',
@@ -32,7 +73,13 @@ manifest = {
         path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes().replace(b'\r\n', b'\n')).hexdigest()
         for path in sources
     },
-    'scope': 'Real current ABI/protocol engine; dispatch still echoes, document handlers pending.',
+    'resources_sha256': {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in resources
+    },
+    'local_packages': sorted(packages[p]['name'] for p in closure),
+    'inventory_policy': 'Conservative local normal/build dependency closure, Rust sources, static include inputs and pinned Unicode corpus; includes unused cfg/test resources.',
+    'scope': 'Real ABI/protocol and plain-text editor engine; legacy transport probes still echo.',
 }
 destination = root / 'data/engine'
 destination.mkdir(parents=True, exist_ok=True)

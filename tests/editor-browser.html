@@ -1,0 +1,16 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/web/app.css"></head>
+  <body>
+    <main class="shell">
+      <header class="masthead"><span>atelier</span></header>
+      <section class="editor-heading"><h1>Document de test</h1><span id="document-state"></span></section>
+      <div class="toolbar"><button id="action">Action</button><span id="editor-status"></span></div>
+      <section class="workspace"><div id="document-scroll" class="document-scroll"><div class="page-stack"><div id="document-text" class="accessible-document" role="region" aria-label="Texte du document"></div><canvas id="document-canvas"></canvas><div id="page-spacer"></div></div></div></section>
+    </main>
+    <pre id="result">running</pre>
+    <script type="module" src="/tests/editor-browser-watchdog.mjs"></script>
+    <script type="module" src="/tests/editor-browser.mjs"></script>
+  </body>
+</html>

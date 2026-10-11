@@ -181,6 +181,10 @@ struct Shared {
     attempts: Mutex<resources::AttemptLog>,
     registrations: Mutex<embedded_resources::Registrations>,
     script_results: Mutex<VecDeque<io::Result<String>>>,
+    file_messages: Mutex<crate::file_bridge::Queue>,
+    file_working: AtomicBool,
+    deferred_file_wake: AtomicBool,
+    deferred_file_close: AtomicBool,
 }
 
 impl Shared {
@@ -201,6 +205,30 @@ impl Shared {
     fn completed(&self) {
         self.pending.fetch_sub(1, Ordering::AcqRel);
         self.notify();
+    }
+}
+
+pub(crate) struct FileWorkGuard {
+    shared: Arc<Shared>,
+}
+
+impl Drop for FileWorkGuard {
+    fn drop(&mut self) {
+        self.shared.file_working.store(false, Ordering::Release);
+        if self
+            .shared
+            .deferred_file_close
+            .swap(false, Ordering::AcqRel)
+        {
+            let hwnd = self.shared.hwnd.load(Ordering::Acquire) as *mut c_void;
+            if !hwnd.is_null() {
+                // SAFETY: the deferred close targets the still-owned HWND after the modal operation returns.
+                unsafe { PostMessageW(hwnd, 0x0010, 0, 0) };
+            }
+        }
+        if self.shared.deferred_file_wake.swap(false, Ordering::AcqRel) {
+            self.shared.notify();
+        }
     }
 }
 
@@ -702,6 +730,79 @@ impl WebView {
 
     pub(crate) fn pending_callbacks(&self) -> usize {
         self.shared.pending.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn take_file_message(&self) -> Option<crate::file_bridge::Request> {
+        lock(&self.shared.file_messages).pop()
+    }
+
+    pub(crate) fn pending_dirty_hint(&self) -> Option<bool> {
+        lock(&self.shared.file_messages).dirty_hint()
+    }
+
+    pub(crate) fn take_file_rejection(&self) -> Option<String> {
+        lock(&self.shared.file_messages).pop_rejection()
+    }
+
+    /// Keep a native file drain exclusive across modal STA dialogs, whose
+    /// message pump can dispatch a nested WEBVIEW_MESSAGE callback.
+    pub(crate) fn begin_file_work(&self) -> Option<FileWorkGuard> {
+        match self.shared.file_working.compare_exchange(
+            false,
+            true,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => Some(FileWorkGuard {
+                shared: Arc::clone(&self.shared),
+            }),
+            Err(_) => {
+                self.shared
+                    .deferred_file_wake
+                    .store(true, Ordering::Release);
+                None
+            }
+        }
+    }
+
+    pub(crate) fn file_work_active(&self) -> bool {
+        self.shared.file_working.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn defer_close_until_file_work_finishes(&self) {
+        self.shared
+            .deferred_file_close
+            .store(true, Ordering::Release);
+    }
+
+    pub(crate) fn post_web_message_as_string(&self, message: &str) -> io::Result<()> {
+        let Some(controller) = self.controller else {
+            return Err(io::Error::other("WebView2 controller is not ready"));
+        };
+        let mut core = null_mut();
+        // SAFETY: controller is an owned live COM interface; slot 25 is get_CoreWebView2.
+        let hr = unsafe {
+            call_vtable::<unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32>(
+                controller as *mut c_void,
+                25,
+            )(controller as *mut c_void, &mut core)
+        };
+        check_hresult("ICoreWebView2Controller::get_CoreWebView2", hr)?;
+        if core.is_null() {
+            return Err(io::Error::other("WebView2 core interface is null"));
+        }
+        let message: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
+        // The pinned SDK's ICoreWebView2 vtable places PostWebMessageAsString at slot 33.
+        // SAFETY: `message` is NUL-terminated and remains live for the synchronous COM call.
+        let hr = unsafe {
+            call_vtable::<unsafe extern "system" fn(*mut c_void, *const u16) -> i32>(core, 33)(
+                core,
+                message.as_ptr(),
+            )
+        };
+        // SAFETY: get_CoreWebView2 returned one owned interface reference.
+        unsafe { release_interface(core) };
+        check_hresult("ICoreWebView2::PostWebMessageAsString", hr)
     }
 
     pub(crate) fn resource_log_snapshot(&self) -> Vec<String> {

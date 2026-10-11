@@ -10,7 +10,7 @@ Chaque réponse ajoute une CSP restrictive et `X-Content-Type-Options: nosniff`.
 
 ## Reproduction et couverture
 
-Les tests ciblés de `resources.rs` vérifient les routes, méthodes, origines, cas ambigus et bornes du journal; les tests fake-vtable vérifient le refus par défaut lorsque les getters de navigation, popup ou requête échouent. Sur Windows avec un runtime Evergreen exposant `ICoreWebView2_22`, le self-check caché vérifie chaque ressource et son MIME, HEAD avec corps vide et Content-Length égal au GET, 404 pour une route inconnue, 405 pour POST, le chargement du Worker et l’écho Ping, le refus d’un chemin encodé, ainsi que les refus par `connect-src` d’un fetch et d’un WebSocket, par `img-src` d’une image, `frame-src` d’une frame, `script-src-elem` d’un script et `style-src-elem` d’une feuille de style. Il exige à la fois les six événements CSP côté page et leurs entrées correspondantes dans le journal natif, ainsi que les refus `window.open` et navigation top-level externes. Le relais utilise `ICoreWebView2::add_WebMessageReceived`/`remove_WebMessageReceived` (slots 34/35, IID `57213f19-00e6-49fa-8e07-898ea01ecbd2`) et ne fait que journaliser : il accepte des chaînes d’au plus 768 caractères depuis la source exacte `https://app.atelier/`, une directive CSP reconnue (dont `script-src-elem`, `script-src-attr`, `style-src-elem` et `style-src-attr`) et une URI de blocage bornée; il n’expose aucune fonction de fichiers. Le journal conserve au plus 64 entrées, retire credentials/query/fragment et borne chaque entrée. Les messages de la page sont non fiables; le handler ne les interprète jamais comme commandes.
+Les tests ciblés de `resources.rs` vérifient les routes, méthodes, origines, cas ambigus et bornes du journal; les tests fake-vtable vérifient le refus par défaut lorsque les getters de navigation, popup ou requête échouent. Sur Windows avec un runtime Evergreen exposant `ICoreWebView2_22`, le self-check caché vérifie chaque ressource et son MIME, HEAD avec corps vide et Content-Length égal au GET, 404 pour une route inconnue, 405 pour POST, le chargement du Worker et l’écho Ping, le refus d’un chemin encodé, ainsi que les refus par `connect-src` d’un fetch et d’un WebSocket, par `img-src` d’une image, `frame-src` d’une frame, `script-src-elem` d’un script et `style-src-elem` d’une feuille de style. Il exige à la fois les six événements CSP côté page et leurs entrées correspondantes dans le journal natif, ainsi que les refus `window.open` et navigation top-level externes. Le relais utilise `ICoreWebView2::add_WebMessageReceived`/`remove_WebMessageReceived` (slots 34/35, IID `57213f19-00e6-49fa-8e07-898ea01ecbd2`) et ne fait que journaliser : il accepte des chaînes d’au plus 768 caractères depuis la source exacte `https://app.atelier/`, une directive CSP reconnue (dont `script-src-elem`, `script-src-attr`, `style-src-elem` et `style-src-attr`) et une URI de blocage bornée; les messages CSP restent distincts des commandes du [pont fichiers](us-113-file-bridge.md). Le journal conserve au plus 64 entrées, retire credentials/query/fragment et borne chaque entrée. Les messages de la page sont non fiables; la branche CSP ne les interprète jamais comme commandes fichier.
 
 Le contrôle ne revendique pas une preuve générale de tous les refus CSP possibles : il exécute ces six catégories et journalise les directives définies par la policy, y compris les variantes `*-elem` et `*-attr`. Selon le runtime, `blockedURI` peut être réduit à l’origine pour confidentialité; le test de frame a ainsi produit `https://us112-frame.invalid` sans chemin. La preuve associe alors la directive à l’origine unique du scénario. Les imports externes depuis un Worker, les autres schémas de transport, les extensions CSP et les chemins de service-worker ne font pas partie des scénarios exécutés ici. Les violations CSP produites à l’intérieur du Worker, l’installation et le cycle de vie de service-worker restent hors critères. Aucun isolement réseau au niveau transport n’est revendiqué. L’artefact requis est `data/engine/atelier_core_wasm.wasm`; `data/engine/manifest.json`, `tools/package-engine.py` et `node tests/check-embedded-engine.mjs --compare-artifact` documentent et vérifient sa reconstruction reproductible.
 
@@ -40,3 +40,32 @@ ainsi que ses mesures de latence et démarrage. US-111 conserve l’échec stric
 de handles ; ses contrôles fonctionnels de 100 cycles et callbacks passent.
 Le backlog reste à **35 US entièrement validées sur 158**. Les tests musl sont
 compilés localement ; leur exécution appartient à la CI Linux du commit publié.
+
+## Validation du premier éditeur intégré — 2026-10-11
+
+Trois agents GPT-6 Luna moyen ont développé en parallèle le moteur, l’interface
+et le pont fichiers, puis corrigé le lot après trois revues indépendantes.
+La [validation finale](../_bmad-output/implementation-artifacts/editor-integration-validation.json)
+réussit **40 contrôles, 368 tests workspace et 55 tests natifs release**,
+avec sources et lock inchangés. Le navigateur utilise le vrai Worker/WASM/Canvas
+et un Host factice : saisie/sélection, pagination, composition, annulations,
+sauvegarde obsolète, raccourcis de la vraie page et miroir textuel accessible.
+L’ABI réelle vérifie aussi le rollback d’un candidat lorsque le registre de
+128 Mio ne peut réserver sa réponse.
+
+Les diagnostics WebView2 debug/release chargent les **17 ressources** et vérifient
+saisie accentuée, pixels de glyphes, undo/redo, HTTP et six catégories CSP.
+La [copie isolée](../_bmad-output/implementation-artifacts/editor-integration-portable.json)
+fonctionne sans dossier web/data. Les tests de routage natif injectent des résultats
+de dialogue contrôlés et passent par le broker réel ; ils n’ouvrent aucun dialogue.
+La [revue](../_bmad-output/implementation-artifacts/editor-integration-review.md)
+conserve les 12 constats séparément : cinq corrections retenues et trois fonctions
+V1 reportées (presse-papiers, navigation par mot, colonne préférée), avec les rejets
+motivés. Les limites de wrapping et de Tab sont également décrites dans le contrat UI.
+
+Le premier parcours TXT est testable avec `cargo run -p atelier-desktop-win --release --locked --offline`. La tranche reste limitée à
+128 Kio, latin gauche à droite et mise en page complète à chaque modification.
+Les dialogues manuels, AZERTY/IME physique et mesures de 300 pages/démarrage restent
+ouverts pour US-120. US-113 conserve SharedBuffer, polices/URL ; US-111 conserve
+l’échec strict de handles. Les **35/158 US complètes** sont inchangées. Les tests
+musl sont compilés localement ; leur exécution appartient à la CI Linux publiée.

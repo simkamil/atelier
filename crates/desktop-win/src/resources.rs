@@ -66,6 +66,36 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/wasm-protocol.mjs"),
     },
     Resource {
+        path: "/editor-protocol.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/editor-protocol.mjs"),
+    },
+    Resource {
+        path: "/editor.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/editor.mjs"),
+    },
+    Resource {
+        path: "/native-host.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/native-host.mjs"),
+    },
+    Resource {
+        path: "/display-list.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/display-list.mjs"),
+    },
+    Resource {
+        path: "/canvas-renderer.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/canvas-renderer.mjs"),
+    },
+    Resource {
+        path: "/text-input.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/text-input.mjs"),
+    },
+    Resource {
         path: "/atelier_core_wasm.wasm",
         mime: "application/wasm",
         bytes: include_bytes!("../../../data/engine/atelier_core_wasm.wasm"),

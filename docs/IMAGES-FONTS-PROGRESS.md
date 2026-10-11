@@ -43,10 +43,7 @@ les tests musl ; l’hôte Windows les compile seulement.
 
 ## Prochain jalon testable
 
-US-120 vise un éditeur de texte brut paginé. Il n’est pas encore disponible :
-le shell Windows, le pont WASM et le front-end sont encore des squelettes.
-Ses six dépendances directes encore ouvertes sont US-012, US-054, US-055,
-US-101, US-103 et US-113 ; US-072 est déjà validée.
+Un premier [éditeur texte brut paginé](us-120-editor-ui.md) est maintenant intégré. Le [suivi courant](PROTOTYPE-PROGRESS.md) précise son lancement, ses preuves et ses limites ; les travaux Unicode et typographiques décrits ci-dessous correspondent aux lots historiques. L’US-120 complète reste ouverte pour les essais physiques et les mesures de performance.
 
 Les prochains lots doivent faire avancer en parallèle Unicode (US-010 puis
 US-011/012), polices et texte (US-051/053/055 puis US-054), et intégration

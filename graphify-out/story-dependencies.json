@@ -3031,6 +3031,126 @@
       "source_url": null
     },
     {
+      "id": "web_i18n_fr_fr_action_save",
+      "label": "action-save",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "concept",
+      "norm_label": "action-save",
+      "rationale": null,
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": 9,
+      "source_url": null
+    },
+    {
+      "id": "web_i18n_fr_fr_local_origin",
+      "label": "local-origin",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "concept",
+      "norm_label": "local-origin",
+      "rationale": null,
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": 2,
+      "source_url": null
+    },
+    {
+      "id": "web_i18n_fr_fr_status_stale_save",
+      "label": "status-stale-save",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "concept",
+      "norm_label": "status-stale-save",
+      "rationale": null,
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": 27,
+      "source_url": null
+    },
+    {
+      "id": "web_i18n_fr_fr_txt",
+      "label": "French Localization (fr-FR)",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "document",
+      "norm_label": "french localization (fr-fr)",
+      "rationale": "Localization file containing UI strings for a plain text editor application named 'Atelier'.",
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": null,
+      "source_url": null
+    },
+    {
+      "id": "web_i18n_fr_fr_files_error",
+      "label": "File Errors",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "concept",
+      "norm_label": "file errors",
+      "rationale": null,
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": 16,
+      "source_url": null
+    },
+    {
+      "id": "us_v0_v1",
+      "label": "User Stories V0/V1",
+      "file_type": "document",
+      "norm_label": "user stories v0/v1",
+      "rationale": "Comprehensive roadmap and requirements for foundations (V0) and MVP (V1).",
+      "source_file": "US-V0-V1.md"
+    },
+    {
+      "id": "concept_us_120",
+      "label": "US-120 Plain Text Editor",
+      "file_type": "concept",
+      "norm_label": "us-120 plain text editor",
+      "rationale": "The first end-to-end demonstrator integrating WASM, Canvas, and Native Bridge.",
+      "source_file": "docs/us-120-editor-ui.md"
+    },
+    {
+      "id": "tests_editor_browser_document_canvas",
+      "label": "Document Canvas",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "concept",
+      "norm_label": "document canvas",
+      "rationale": null,
+      "source_file": "tests/editor-browser.html",
+      "source_location": null,
+      "source_url": null
+    },
+    {
+      "id": "tests_editor_browser_document_text",
+      "label": "Document Text Container",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "concept",
+      "norm_label": "document text container",
+      "rationale": null,
+      "source_file": "tests/editor-browser.html",
+      "source_location": null,
+      "source_url": null
+    },
+    {
+      "id": "tests_editor_browser_html",
+      "label": "Editor Browser Test Page",
+      "author": null,
+      "captured_at": null,
+      "contributor": null,
+      "file_type": "document",
+      "norm_label": "editor browser test page",
+      "rationale": null,
+      "source_file": "tests/editor-browser.html",
+      "source_location": null,
+      "source_url": null
+    },
+    {
       "id": "document_docs_us-012-line-breaks_md",
       "label": "docs/us-012-line-breaks.md",
       "file_type": "document",
@@ -3189,6 +3309,27 @@
       "label": "web/i18n/fr-FR.txt",
       "file_type": "document",
       "source_file": "web/i18n/fr-FR.txt",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-120-editor-engine_md",
+      "label": "docs/us-120-editor-engine.md",
+      "file_type": "document",
+      "source_file": "docs/us-120-editor-engine.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-120-editor-ui_md",
+      "label": "docs/us-120-editor-ui.md",
+      "file_type": "document",
+      "source_file": "docs/us-120-editor-ui.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-113-file-bridge_md",
+      "label": "docs/us-113-file-bridge.md",
+      "file_type": "document",
+      "source_file": "docs/us-113-file-bridge.md",
       "source_location": "1"
     },
     {
@@ -9285,6 +9426,44 @@
       "weight": 1.0
     },
     {
+      "source": "readme",
+      "target": "us_v0_v1",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "README.md"
+    },
+    {
+      "source": "web_i18n_fr_fr_txt",
+      "target": "web_i18n_fr_fr_local_origin",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": 2,
+      "weight": 1.0
+    },
+    {
+      "source": "web_i18n_fr_fr_txt",
+      "target": "web_i18n_fr_fr_action_save",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": 9,
+      "weight": 1.0
+    },
+    {
+      "source": "web_i18n_fr_fr_status_stale_save",
+      "target": "web_i18n_fr_fr_action_save",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.9,
+      "source_file": "web/i18n/fr-FR.txt",
+      "source_location": 27,
+      "weight": 1.0
+    },
+    {
       "source": "document_readme_md",
       "target": "spec_document",
       "relation": "references",
@@ -9300,7 +9479,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\docs\\DEVELOPMENT.md",
-      "source_location": "182"
+      "source_location": "212"
     }
   ],
   "hyperedges": [
@@ -9436,6 +9615,32 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/us-120-plain-text-model.md"
+    },
+    {
+      "id": "file_management_flow",
+      "label": "File Management Operations",
+      "nodes": [
+        "web_i18n_fr_fr_action_save",
+        "web_i18n_fr_fr_files_error",
+        "web_i18n_fr_fr_status_stale_save"
+      ],
+      "relation": "participate_in",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "web/i18n/fr-FR.txt"
+    },
+    {
+      "id": "editor_ui_structure",
+      "label": "Editor UI Components",
+      "nodes": [
+        "tests_editor_browser_document_text",
+        "tests_editor_browser_document_canvas",
+        "tests_editor_browser_html"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 0.9,
+      "source_file": "tests/editor-browser.html"
     }
   ],
   "input_tokens": 0,
