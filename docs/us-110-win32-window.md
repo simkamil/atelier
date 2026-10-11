@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 # US-110 — Fenêtre Win32 persistante et DPI
 
-`atelier-desktop-win::window` expose `initialize_dpi()`, `run(state_file, title)`, `self_check(state_file)` (Windows) et `show_error(message)` (Windows). Le coordinateur appelle l’initialisation PMv2 avant la création du moindre HWND et transmet le chemin d’état déjà résolu par `data`.
+`atelier-desktop-win::window` expose `initialize_dpi()`, `run(state_file, title, webview_data)`, `self_check(state_file)` (Windows) et `show_error(message)` (Windows). Le coordinateur appelle l’initialisation PMv2 avant la création du moindre HWND et transmet les chemins d’état et de cache WebView2 déjà résolus par `data`. L’hébergement actuel et ses limites sont décrits dans [US-111/114](us-111-webview2.md).
 
 Le fichier d’état est un texte UTF-8 versionné, borné à 128 octets :
 

@@ -2,7 +2,7 @@
 
 US-010/011/012, US-051/053/054/055 et US-090/091 ont été développées en parallèle avec GPT-6 Luna,
 raisonnement moyen, puis relues et validées. Le backlog compte désormais
-**34 US terminées sur 158**.
+**35 US terminées sur 158**.
 
 - [Unicode](us-010-ucd-tables.md) : 71 fichiers officiels Unicode 17.0.0,
   licence et SHA-256, générateur local et build reproductible. L’[oracle](../_bmad-output/implementation-artifacts/prototype-ucd-oracle.json)
@@ -22,9 +22,12 @@ raisonnement moyen, puis relues et validées. Le backlog compte désormais
 Le démonstrateur US-120 reste à construire. Le socle texte, le Worker,
 la fenêtre Win32 et la résolution portable sont disponibles. La coque Windows
 peut être lancée avec `cargo run -p atelier-desktop-win --locked --offline` ;
-elle affiche une fenêtre native vide et mémorise sa géométrie.
-Il reste WebView2 (US-111), ses ressources et le pont natif (US-112/113),
-le Canvas (US-101), la saisie clavier/IME (US-103) et leur intégration US-120.
+elle héberge WebView2 sur `about:blank` et mémorise sa géométrie.
+US-114 (runtime absent) est validée. US-111 héberge le contrôle réel, mais reste
+ouverte pour la hausse de handles au test strict de 100 cycles.
+Le Canvas (US-101) et la saisie clavier/IME (US-103) sont implémentés comme modules
+testés dans Chromium ; leurs critères d’intégration et de matériel restent ouverts.
+Il reste les ressources et le pont natif (US-112/113), puis leur intégration US-120.
 US-092 reste ouverte : le Worker transfère réellement les buffers avec progression et annulation
 pendant les copies par blocs ; le dispatch WASM synchrone n'est pas préemptible
 et conserve son écho ABI. Les handlers métier d'ouverture/export restent à intégrer.
@@ -99,3 +102,24 @@ Les sources et le lock sont restés identiques pendant la validation.
 La [revue indépendante](../_bmad-output/implementation-artifacts/worker-shell-review.md)
 ne laisse aucun constat différé dans le transport livré et les deux US Windows. Le multi-écran synthétique ne remplace pas un
 essai sur plusieurs écrans physiques ; les tests natifs n'affichent pas de fenêtre.
+
+Le lot front-end a été développé en parallèle avec GPT-6 Luna moyen :
+[Canvas](us-101-canvas-renderer.md), [saisie](us-103-text-input.md) et
+[WebView2/runtime absent](us-111-webview2.md). Le navigateur vérifie aussi
+l’apparition et l’effacement du soulignement de composition dans un vrai Canvas.
+La [validation locale](../_bmad-output/implementation-artifacts/frontend-host-validation.json)
+distingue les contrôles fonctionnels de l’acceptation stricte des handles.
+Le [journal d’exploration](../_bmad-output/implementation-artifacts/frontend-host-exploration.json)
+conserve les échecs ; le [signalement Microsoft similaire](https://github.com/MicrosoftEdge/WebView2Feedback/issues/5704)
+reste une piste, sans preuve de cause interne. Le benchmark headless ne valide
+pas les 60 images/s physiques et les événements synthétiques ne valident pas
+le clavier AZERTY ou l’IME du système.
+
+Validation finale du lot : [34 contrôles fonctionnels et qualité](../_bmad-output/implementation-artifacts/frontend-host-validation.json),
+**318 tests workspace et 27 tests shell release**, sur sources et lock inchangés.
+Les tests Chromium couvrent Canvas, saisie et leur composition intégrée.
+Les deux profils WebView2 accomplissent 100 cycles fonctionnels avec callbacks équilibrés ;
+le rapport conserve séparément l'échec strict des handles et US-111 reste ouverte.
+La [revue indépendante](../_bmad-output/implementation-artifacts/frontend-host-review.md)
+conserve un point IME natif de gravité moyenne non vérifiée à trancher sur matériel.
+Les tests musl sont compilés localement ; leur exécution appartient à la CI Linux.

@@ -6,7 +6,10 @@
 #[cfg(windows)]
 fn main() {
     if let Err(error) = start() {
-        if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--self-check")) {
+        if matches!(
+            std::env::args_os().nth(1).as_deref(),
+            Some(arg) if arg == "--self-check" || arg == "--webview-self-check"
+        ) {
             eprintln!("{error}");
         } else {
             atelier_desktop_win::window::show_error(&error.to_string());
@@ -22,12 +25,31 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
 
     window::initialize_dpi()?;
     let mut arguments = std::env::args_os().skip(1);
-    if arguments.next().as_deref() == Some(std::ffi::OsStr::new("--self-check")) {
+    let first = arguments.next();
+    if first.as_deref() == Some(std::ffi::OsStr::new("--self-check")) {
         let state_file = arguments
             .next()
             .map(PathBuf::from)
             .ok_or("--self-check requires an isolated state file")?;
         println!("{}", window::self_check(&state_file)?);
+        return Ok(());
+    }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--webview-self-check")) {
+        let directory = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--webview-self-check requires an isolated target directory")?;
+        if arguments.next().is_some() {
+            return Err("--webview-self-check accepts one target directory".into());
+        }
+        println!(
+            "{}",
+            window::webview_self_check(
+                &directory.join("window-state.ini"),
+                &directory.join("webview"),
+                100,
+            )?
+        );
         return Ok(());
     }
     let executable = std::env::current_exe()?;
@@ -43,14 +65,14 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(windows)]
 fn finish_startup(
     outcome: atelier_desktop_win::data::StartupOutcome,
-    open_window: impl FnOnce(&std::path::Path, &str) -> std::io::Result<()>,
+    open_window: impl FnOnce(&std::path::Path, &str, &std::path::Path) -> std::io::Result<()>,
     show_move: impl FnOnce(),
 ) -> std::io::Result<()> {
     use atelier_desktop_win::data;
     match outcome {
         data::StartupOutcome::Ready(paths) => {
             let title = format!("Atelier — {}", paths.mode_label());
-            open_window(&paths.window_state_file(), &title)?;
+            open_window(&paths.window_state_file(), &title, &paths.webview_dir())?;
         }
         data::StartupOutcome::MoveRequired => show_move(),
         data::StartupOutcome::Quit => {}
@@ -84,9 +106,10 @@ mod tests {
             resolve_data_paths(&executable, None, |_| panic!("portable is writable")).unwrap();
         finish_startup(
             portable,
-            |path, title| {
+            |path, title, webview| {
                 assert_eq!(path, root.join("atelier-data/window-state.ini"));
                 assert_eq!(title, "Atelier — Portable");
+                assert_eq!(webview, root.join("atelier-data/webview"));
                 Ok(())
             },
             || panic!("portable must open a window"),
@@ -99,9 +122,10 @@ mod tests {
             resolve_data_paths(&executable, Some(&local_root), |_| StartupChoice::Local).unwrap();
         let error = finish_startup(
             local,
-            |path, title| {
+            |path, title, webview| {
                 assert_eq!(path, local_root.join("Atelier/window-state.ini"));
                 assert_eq!(title, "Atelier — Mode local");
+                assert_eq!(webview, local_root.join("Atelier/webview"));
                 Err(std::io::Error::other("window creation failed"))
             },
             || panic!("local must open a window"),
@@ -113,7 +137,7 @@ mod tests {
             let outcome = resolve_data_paths(&executable, None, |_| choice).unwrap();
             finish_startup(
                 outcome,
-                |_, _| panic!("move/quit must not open a window"),
+                |_, _, _| panic!("move/quit must not open a window"),
                 || moved.set(true),
             )
             .unwrap();

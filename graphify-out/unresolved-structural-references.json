@@ -1,5 +1,16 @@
 [
   {
+    "source": "crates_desktop_win_build",
+    "target": "pathbuf",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/build.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_unicode_build",
     "target": "std",
     "relation": "imports_from",
@@ -214,7 +225,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/main.rs",
-    "source_location": "L66",
+    "source_location": "L88",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -225,7 +236,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/main.rs",
-    "source_location": "L67",
+    "source_location": "L89",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -236,7 +247,73 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/main.rs",
-    "source_location": "L68",
+    "source_location": "L90",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview",
+    "target": "io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview",
+    "target": "osstrext",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview",
+    "target": "ptr",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview",
+    "target": "atomic",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview",
+    "target": "sync",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview.rs",
+    "source_location": "L12",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_webview",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/webview.rs",
+    "source_location": "L849",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -258,7 +335,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L8",
+    "source_location": "L9",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -269,7 +346,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L9",
+    "source_location": "L10",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -280,7 +357,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L11",
+    "source_location": "L12",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -291,7 +368,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L12",
+    "source_location": "L13",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -302,7 +379,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L1098",
+    "source_location": "L1688",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -313,7 +390,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L1102",
+    "source_location": "L1692",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -346,7 +423,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/window.rs",
-    "source_location": "L278",
+    "source_location": "L289",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -688,6 +765,17 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/model/src/selection.rs",
     "source_location": "L266",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_render_examples_display_list_oracle",
+    "target": "atelier_render",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/render/examples/display_list_oracle.rs",
+    "source_location": "L4",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -1459,6 +1547,105 @@
     "confidence": "EXTRACTED",
     "source_file": "tests/check-wasm-size.mjs",
     "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_display_list",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/display-list.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_display_list",
+    "target": "ref_node_child_process",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/display-list.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_frontend_browser",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-frontend-browser.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_frontend_browser",
+    "target": "ref_node_child_process",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-frontend-browser.mjs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_frontend_browser",
+    "target": "ref_node_http",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-frontend-browser.mjs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_frontend_browser",
+    "target": "ref_node_fs_promises",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-frontend-browser.mjs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_frontend_browser",
+    "target": "ref_node_os",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-frontend-browser.mjs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_frontend_browser",
+    "target": "ref_node_path",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-frontend-browser.mjs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_frontend_browser",
+    "target": "ref_node_url",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-frontend-browser.mjs",
+    "source_location": "L9",
     "weight": 1.0,
     "_origin": "ast"
   },

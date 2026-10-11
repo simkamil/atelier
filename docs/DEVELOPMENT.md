@@ -6,9 +6,25 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 
 ## Crates autorisant FFI
 
-`atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Aucun bloc `unsafe` n'est nécessaire dans ce socle ; toute future utilisation devra être isolée et commentée selon la spécification.
+`atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Les liaisons WASM, Win32 et WebView2 isolent leurs blocs `unsafe` et documentent les contrats ABI selon la spécification.
 
 ## Validation
+
+### Lot Canvas, saisie et WebView2 — 2026-10-11
+
+Développement en parallèle avec GPT-6 Luna moyen. US-114 porte le backlog à
+**35/158 US validées**. US-101/103 restent ouvertes pour l’intégration document,
+les contours réels et les essais matériels. US-111 reste ouverte car le test
+strict de 100 cycles détecte une hausse des handles, malgré le retour à zéro
+des callbacks applicatifs. La CI fonctionnelle rapporte cette limite
+explicitement ; elle ne valide pas ce critère d’acceptation.
+
+Contrats : [Canvas](us-101-canvas-renderer.md), [saisie](us-103-text-input.md),
+[hébergement natif et diagnostic](us-111-webview2.md).
+Preuves : [validation](../_bmad-output/implementation-artifacts/frontend-host-validation.json),
+[exploration native](../_bmad-output/implementation-artifacts/frontend-host-exploration.json),
+[revue](../_bmad-output/implementation-artifacts/frontend-host-review.md).
+Le coordinateur a finalisé le natif après la limite d’usage de son agent.
 
 ### Preuve US-092, US-110 et US-116 — 2027-10-11
 
@@ -170,3 +186,12 @@ Cas réellement exécutés dans le socle : parcours Unicode avec `char` et tri d
 Validation indépendante après corrections : build Windows du workspace, build de `atelier-core-wasm` pour WASM, 25 tests du workspace (dont 19 pour le banc), Clippy avec `-D warnings`, rustfmt et contrôle SPDX réussissent hors ligne. Cargo et Cargo.lock contiennent exactement 30 membres locaux : les 28 crates produit de SPEC §6.2 et deux outils, sans dépendance externe. La limite d'itérations, les médianes paires/impaires et proches de `u128::MAX`, les références invalides, la préservation de la référence, les arguments OS non Unicode, la sélection et stdout sont couverts. Le test du chemin de sortie non inscriptible utilise des composants de chemin portables ; les tests du banc et Clippy ont été relancés après cette correction.
 
 Essai release : deux cas mesurés sur 100 itérations, CSV relu et comparaison sans régression (code 0). Une référence contrôlée à 1 ns déclenche bien le code 2 ; les tests déterministes vérifient aussi 110 accepté et 111 refusé pour une référence de 100. La sortie standard reste un CSV valide avec une comparaison, une référence identique à la sortie est préservée et refusée (code 1), et les entrées extrêmes retournent un diagnostic sans panique. Ces mesures valident le fonctionnement de l'outil, pas les performances des futurs éditeurs.
+
+Validation finale du lot : [34 contrôles fonctionnels et qualité](../_bmad-output/implementation-artifacts/frontend-host-validation.json),
+**318 tests workspace et 27 tests shell release**, sur sources et lock inchangés.
+Les tests Chromium couvrent Canvas, saisie et leur composition intégrée.
+Les deux profils WebView2 accomplissent 100 cycles fonctionnels avec callbacks équilibrés ;
+le rapport conserve séparément l'échec strict des handles et US-111 reste ouverte.
+La [revue indépendante](../_bmad-output/implementation-artifacts/frontend-host-review.md)
+conserve un point IME natif de gravité moyenne non vérifiée à trancher sur matériel.
+Les tests musl sont compilés localement ; leur exécution appartient à la CI Linux.

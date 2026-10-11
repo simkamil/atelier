@@ -61,3 +61,27 @@ FIFO, octets exacts, transfert/détachement, progression/annulation et reprise.
 `cargo test -p atelier-desktop-win --locked --offline` couvre stockage et géométrie ;
 la CI lance aussi `atelier.exe --self-check target/shell-check/window-state.txt`
 pour exercer une fenêtre Win32 cachée sans interaction. Voir les [preuves](../_bmad-output/implementation-artifacts/worker-shell-validation.json).
+
+## Front-end et hébergement natif
+
+```powershell
+cargo build -p atelier-render --example display_list_oracle --locked --offline
+node tests/display-list.mjs
+node tests/run-frontend-browser.mjs
+pwsh -NoProfile -File tests/check-webview-assets.ps1
+cargo build -p atelier-desktop-win --locked --offline
+.\target\debug\atelier.exe --webview-self-check target/webview-strict-check
+```
+
+Le dernier contrôle est strict et reste en échec sur cet hôte : US-111 n’est pas
+clôturée. La CI appelle `check-webview-host.ps1 -Executable ... -TargetDirectory ...
+-AllowKnownRuntimeHandleGrowth` pour distinguer les 100 cycles fonctionnels et
+les callbacks équilibrés de `handle_acceptance_passed: false`. Une erreur
+fonctionnelle, un timeout, un callback restant ou un autre diagnostic échoue
+ce wrapper. Sans option, il conserve également l’échec de handles.
+
+`run-frontend-browser.mjs` lance Edge/Chrome headless sur un serveur local,
+avec profil temporaire isolé et suppression de son propre profil. Il vérifie
+Canvas, saisie et composition intégrée. `canvas` ou `input` limite les suites.
+Le benchmark software n’est pas une validation de fluidité matérielle ; les
+événements synthétiques ne remplacent pas les tests AZERTY/IME natifs.

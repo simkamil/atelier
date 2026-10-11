@@ -14,3 +14,8 @@ data/ucd/17.0.0/**
 
 # Golden Latin layout data are represented by manifest, README and Rust test.
 tests/font-layout-reference/layout.tsv
+
+# Microsoft system ABI is represented by its pinned manifest and host bindings.
+data/webview2/include/WebView2.h
+data/webview2/x64/WebView2LoaderStatic.lib
+data/webview2/LICENSE.txt

@@ -4,6 +4,7 @@
 use super::{
     MonitorArea, Rect, WindowState, encode_state, load_state, minimum_size, restore_state,
 };
+use crate::webview::{self, WebView};
 use std::ffi::c_void;
 use std::io;
 use std::os::windows::ffi::OsStrExt;
@@ -20,6 +21,7 @@ type Wparam = usize;
 type Lresult = isize;
 
 const WM_SIZE: u32 = 0x0005;
+const WM_SETFOCUS: u32 = 0x0007;
 const WM_CLOSE: u32 = 0x0010;
 const WM_DESTROY: u32 = 0x0002;
 const WM_NCCREATE: u32 = 0x0081;
@@ -27,8 +29,12 @@ const WM_NCDESTROY: u32 = 0x0082;
 const WM_DPICHANGED: u32 = 0x02e0;
 const WM_SETTINGCHANGE: u32 = 0x001a;
 const WM_THEMECHANGED: u32 = 0x031a;
+const WM_TIMER: u32 = 0x0113;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const GWLP_USERDATA: i32 = -21;
+const TIMER_WEBVIEW_INIT: usize = 0x1110;
+const TIMER_WEBVIEW_CLOSE: usize = 0x1111;
+const SIZE_MINIMIZED: usize = 1;
 const MONITOR_DEFAULTTONEAREST: u32 = 2;
 const SW_SHOWNORMAL: i32 = 1;
 const SW_SHOWMAXIMIZED: i32 = 3;
@@ -158,7 +164,19 @@ unsafe extern "system" {
     fn GetMessageW(msg: *mut Msg, hwnd: Hwnd, min: u32, max: u32) -> i32;
     fn TranslateMessage(msg: *const Msg) -> i32;
     fn DispatchMessageW(msg: *const Msg) -> Lresult;
+    fn PeekMessageW(msg: *mut Msg, hwnd: Hwnd, min: u32, max: u32, remove: u32) -> i32;
     fn PostQuitMessage(code: i32);
+    fn GetProcessHandleCount(process: *mut c_void, count: *mut u32) -> i32;
+    fn GetCurrentProcess() -> *mut c_void;
+    fn MsgWaitForMultipleObjectsEx(
+        count: u32,
+        handles: *const Hwnd,
+        milliseconds: u32,
+        wake_mask: u32,
+        flags: u32,
+    ) -> u32;
+    fn SetTimer(hwnd: Hwnd, id: usize, milliseconds: u32, callback: *mut c_void) -> usize;
+    fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
     fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
     fn IsWindowVisible(hwnd: Hwnd) -> i32;
     fn UpdateWindow(hwnd: Hwnd) -> i32;
@@ -211,6 +229,9 @@ struct Context {
     dpi: u32,
     persisted: bool,
     callback_error: Option<io::Error>,
+    webview: Option<WebView>,
+    close_requested: bool,
+    minimized: bool,
 }
 
 impl Context {
@@ -543,6 +564,19 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             client.right.saturating_sub(client.left),
                             client.bottom.saturating_sub(client.top),
                         );
+                        (*context).minimized = w == SIZE_MINIMIZED;
+                        if let Some(webview) = (*context).webview.as_ref() {
+                            (*context).record(webview.set_bounds(
+                                client.right - client.left,
+                                client.bottom - client.top,
+                            ));
+                            (*context).record(webview.set_visible(!(*context).minimized));
+                        }
+                    }
+                }
+                WM_SETFOCUS => {
+                    if let Some(webview) = (*context).webview.as_ref() {
+                        (*context).record(webview.move_focus_programmatic());
                     }
                 }
                 WM_DPICHANGED => {
@@ -561,7 +595,108 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                         ) == 0
                         {
                             (*context).record(Err(error_from_last("SetWindowPos(WM_DPICHANGED)")));
+                        } else if let Some(webview) = (*context).webview.as_ref() {
+                            let mut client = NativeRect::default();
+                            if GetClientRect(hwnd, &mut client) != 0 {
+                                (*context).client = (
+                                    client.right.saturating_sub(client.left),
+                                    client.bottom.saturating_sub(client.top),
+                                );
+                                (*context).record(webview.set_bounds(
+                                    client.right - client.left,
+                                    client.bottom - client.top,
+                                ));
+                            } else {
+                                (*context)
+                                    .record(Err(error_from_last("GetClientRect(WM_DPICHANGED)")));
+                            }
                         }
+                    }
+                }
+                webview::WEBVIEW_MESSAGE => {
+                    if let Some(webview) = (*context).webview.as_mut() {
+                        match webview.take_completed() {
+                            Ok(ready) if ready => {
+                                let _ = KillTimer(hwnd, TIMER_WEBVIEW_INIT);
+                                let mut client = NativeRect::default();
+                                if GetClientRect(hwnd, &mut client) != 0 {
+                                    (*context).client = (
+                                        client.right.saturating_sub(client.left),
+                                        client.bottom.saturating_sub(client.top),
+                                    );
+                                    (*context).record(webview.set_bounds(
+                                        client.right - client.left,
+                                        client.bottom - client.top,
+                                    ));
+                                    (*context).record(webview.set_visible(!(*context).minimized));
+                                } else {
+                                    (*context).record(Err(error_from_last(
+                                        "GetClientRect(WebView2 ready)",
+                                    )));
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(error) => {
+                                (*context).record(Err(error));
+                                if let Some(webview) = (*context).webview.as_mut() {
+                                    webview.close();
+                                    webview.detach_window();
+                                }
+                                let _ = DestroyWindow(hwnd);
+                                return 0;
+                            }
+                        }
+                    }
+                    if (*context).close_requested
+                        && (*context)
+                            .webview
+                            .as_ref()
+                            .is_none_or(|view| view.pending_callbacks() == 0)
+                    {
+                        let _ = KillTimer(hwnd, TIMER_WEBVIEW_CLOSE);
+                        if let Some(view) = (*context).webview.as_ref() {
+                            view.detach_window();
+                        }
+                        if DestroyWindow(hwnd) == 0 {
+                            (*context).record(Err(error_from_last(
+                                "DestroyWindow(after WebView2 callback drain)",
+                            )));
+                            PostQuitMessage(1);
+                        }
+                        return 0;
+                    }
+                }
+                WM_TIMER => {
+                    if w == TIMER_WEBVIEW_INIT {
+                        let _ = KillTimer(hwnd, TIMER_WEBVIEW_INIT);
+                        (*context).record(Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "WebView2 initialization callback timed out",
+                        )));
+                        if let Some(webview) = (*context).webview.as_mut() {
+                            webview.close();
+                            webview.detach_window();
+                        }
+                        let _ = DestroyWindow(hwnd);
+                        return 0;
+                    }
+                    if w == TIMER_WEBVIEW_CLOSE {
+                        let _ = KillTimer(hwnd, TIMER_WEBVIEW_CLOSE);
+                        let pending = (*context)
+                            .webview
+                            .as_ref()
+                            .map_or(0, |view| view.pending_callbacks());
+                        if pending != 0 {
+                            (*context).record(Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                format!("WebView2 close timed out with {pending} runtime callback(s) still owned by WebView2"),
+                            )));
+                        }
+                        if let Some(webview) = (*context).webview.as_ref() {
+                            webview.detach_window();
+                        }
+                        let _ = DestroyWindow(hwnd);
+                        return 0;
                     }
                 }
                 WM_SETTINGCHANGE | WM_THEMECHANGED => (*context).record(apply_theme(hwnd)),
@@ -598,9 +733,34 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             dpi,
                             persisted: false,
                             callback_error: None,
+                            webview: None,
+                            close_requested: false,
+                            minimized: false,
                         };
                         (*context).record(save(hwnd, &snapshot));
                         (*context).persisted = true;
+                    }
+                    if let Some(webview) = (*context).webview.as_mut() {
+                        webview.close();
+                        if webview.pending_callbacks() != 0 {
+                            (*context).close_requested = true;
+                            let _ = ShowWindow(hwnd, SW_HIDE as i32);
+                            // Keep the STA alive to drain callbacks; the timer bounds normal shutdown.
+                            if SetTimer(
+                                hwnd,
+                                TIMER_WEBVIEW_CLOSE,
+                                webview::timeout_ms(),
+                                null_mut(),
+                            ) == 0
+                            {
+                                (*context)
+                                    .record(Err(error_from_last("SetTimer(WebView2 close drain)")));
+                                webview.detach_window();
+                                let _ = DestroyWindow(hwnd);
+                            }
+                            return 0;
+                        }
+                        webview.detach_window();
                     }
                     // SAFETY: hwnd is the live window receiving WM_CLOSE; Context remains boxed while destroy callbacks run.
                     if DestroyWindow(hwnd) == 0 {
@@ -610,6 +770,10 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     return 0;
                 }
                 WM_DESTROY => {
+                    if let Some(webview) = (*context).webview.as_mut() {
+                        webview.close();
+                        webview.detach_window();
+                    }
                     if !(*context).persisted {
                         let snapshot = Context {
                             state_file: (*context).state_file.clone(),
@@ -618,6 +782,9 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             dpi: (*context).dpi,
                             persisted: false,
                             callback_error: None,
+                            webview: None,
+                            close_requested: false,
+                            minimized: false,
                         };
                         (*context).record(save(hwnd, &snapshot));
                         (*context).persisted = true;
@@ -709,10 +876,20 @@ impl Drop for RegisteredClass {
 // The class guard remains owned alongside the HWND until the HWND is destroyed.
 struct OwnedWindow {
     hwnd: Hwnd,
+    context: *mut Context,
     _class: RegisteredClass,
 }
 impl Drop for OwnedWindow {
     fn drop(&mut self) {
+        // SAFETY: Context is declared before OwnedWindow by every caller, so it remains alive here.
+        unsafe {
+            if !self.context.is_null() {
+                if let Some(webview) = (*self.context).webview.as_mut() {
+                    webview.close();
+                    webview.detach_window();
+                }
+            }
+        }
         // SAFETY: this owner is dropped on the creating thread while the Context Box is still alive.
         if unsafe { GetWindowLongPtrW(self.hwnd, GWLP_USERDATA) != 0 } {
             // SAFETY: nonzero user data proves the owned HWND is still live; destruction runs on its owner thread.
@@ -751,6 +928,7 @@ fn create_window(context: &mut Box<Context>, initial: WindowState) -> io::Result
     }
     Ok(OwnedWindow {
         hwnd,
+        context: (&mut **context) as *mut Context,
         _class: class,
     })
 }
@@ -826,21 +1004,58 @@ fn create_context(
         dpi: state.dpi,
         persisted: false,
         callback_error: None,
+        webview: None,
+        close_requested: false,
+        minimized: false,
     }))
 }
 
-pub fn run(state_file: &Path, title: &str) -> io::Result<()> {
+pub fn run(state_file: &Path, title: &str, webview_data: &Path) -> io::Result<()> {
+    match webview::probe_runtime()? {
+        Some(_) => {}
+        None => {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                webview::diagnostic(),
+            ));
+        }
+    }
+    let _apartment = webview::ComApartment::initialize_sta()?;
     let saved = load_state(state_file)?;
     let mut context = create_context(state_file, title, saved)?;
     let initial = restore_state(saved, &monitors()?, context.dpi);
     let window = create_window(&mut context, initial)?;
     let hwnd = window.hwnd;
+    match WebView::begin(hwnd, webview_data) {
+        Ok(control) => context.webview = Some(control),
+        Err(error) => {
+            return Err(io::Error::new(
+                error.kind(),
+                format!("{error}\n\n{}", webview::diagnostic()),
+            ));
+        }
+    }
+    if unsafe { SetTimer(hwnd, TIMER_WEBVIEW_INIT, webview::timeout_ms(), null_mut()) } == 0 {
+        return Err(error_from_last("SetTimer(WebView2 initialization)"));
+    }
     // SAFETY: hwnd is the live, owned window created above; this pointer-free call obtains its monitor DPI.
     context.dpi = unsafe { GetDpiForWindow(hwnd) }.clamp(48, 960);
     let screens = monitors_with_window_dpi(initial.normal, context.dpi)?;
     let state = restore_state(saved, &screens, context.dpi);
     apply_state(hwnd, state, true)?;
     apply_theme(hwnd)?;
+    let mut initial_client = NativeRect::default();
+    // SAFETY: hwnd is a live owned window and initial_client is writable RECT storage.
+    if unsafe { GetClientRect(hwnd, &mut initial_client) } == 0 {
+        return Err(error_from_last("GetClientRect(initial WebView2 bounds)"));
+    }
+    if let Some(webview) = context.webview.as_ref() {
+        webview.set_bounds(
+            initial_client.right - initial_client.left,
+            initial_client.bottom - initial_client.top,
+        )?;
+        webview.set_visible(false)?;
+    }
     // SAFETY: hwnd was created on this thread and is still live.
     unsafe {
         ShowWindow(
@@ -859,7 +1074,18 @@ pub fn run(state_file: &Path, title: &str) -> io::Result<()> {
         context.persisted = true;
     }
     if let Some(error) = context.callback_error.take() {
-        return Err(error);
+        if let Some(control) = context.webview.as_mut() {
+            control.close();
+            control.detach_window();
+        }
+        return Err(io::Error::new(
+            error.kind(),
+            format!("{error}\n\n{}", webview::diagnostic()),
+        ));
+    }
+    if let Some(control) = context.webview.as_mut() {
+        control.close();
+        control.detach_window();
     }
     drop(window);
     result.map(|_| ())
@@ -882,6 +1108,9 @@ fn monitors_with_window_dpi(rect: Rect, dpi: u32) -> io::Result<Vec<MonitorArea>
 
 pub fn self_check(state_file: &Path) -> io::Result<String> {
     let state_file = validate_self_check_path(state_file)?;
+    if let Some(parent) = state_file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let saved = load_state(&state_file)?;
     let mut context = create_context(&state_file, "Atelier window self-check", saved)?;
     let initial = restore_state(saved, &monitors()?, context.dpi);
@@ -991,6 +1220,341 @@ pub fn self_check(state_file: &Path) -> io::Result<String> {
     ))
 }
 
+fn process_handle_count() -> io::Result<u32> {
+    let mut count = 0u32;
+    // SAFETY: GetCurrentProcess returns a pseudo-handle and count is writable output storage.
+    if unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count) } == 0 {
+        return Err(error_from_last("GetProcessHandleCount"));
+    }
+    Ok(count)
+}
+
+fn pump_until_webview_ready(hwnd: Hwnd, context: &mut Context) -> io::Result<()> {
+    let mut msg = Msg {
+        hwnd: null_mut(),
+        message: 0,
+        w_param: 0,
+        l_param: 0,
+        time: 0,
+        point: Point::default(),
+        private: 0,
+    };
+    loop {
+        // SAFETY: `msg` is writable and null HWND requests messages from this STA queue.
+        let status = unsafe { GetMessageW(&mut msg, null_mut(), 0, 0) };
+        if status == -1 {
+            return Err(error_from_last("GetMessageW(WebView2 self-check)"));
+        }
+        if status == 0 {
+            return Err(io::Error::other(
+                "WebView2 self-check window closed before initialization completed",
+            ));
+        }
+        // SAFETY: msg was filled by GetMessageW and is valid for these dispatch calls.
+        unsafe {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        if let Some(error) = context.callback_error.take() {
+            return Err(error);
+        }
+        if context
+            .webview
+            .as_mut()
+            .is_some_and(|view| view.take_completed().is_ok_and(|ready| ready))
+        {
+            return Ok(());
+        }
+        if unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } == 0 {
+            return Err(io::Error::other("WebView2 self-check window was destroyed"));
+        }
+    }
+}
+
+fn run_webview_check_cycle(state_file: &Path, webview_data: &Path) -> io::Result<()> {
+    let saved = load_state(state_file)?;
+    let mut context = create_context(state_file, "Atelier WebView2 self-check", saved)?;
+    let initial = restore_state(saved, &monitors()?, context.dpi);
+    let window = create_window(&mut context, initial)?;
+    let hwnd = window.hwnd;
+    // SAFETY: hwnd is a live hidden window; use the actual DPI context of its current monitor.
+    context.dpi = unsafe { GetDpiForWindow(hwnd) }.clamp(48, 960);
+    context.webview = Some(WebView::begin(hwnd, webview_data)?);
+    if unsafe { SetTimer(hwnd, TIMER_WEBVIEW_INIT, webview::timeout_ms(), null_mut()) } == 0 {
+        return Err(error_from_last("SetTimer(WebView2 self-check)"));
+    }
+    pump_until_webview_ready(hwnd, &mut context)?;
+    let devtools = context
+        .webview
+        .as_ref()
+        .expect("created WebView2")
+        .devtools_enabled()?;
+    webview::validate_devtools(devtools)?;
+    {
+        let webview = context.webview.as_ref().expect("created WebView2");
+        webview.set_bounds(317, 211)?;
+        if webview.bounds()? != (0, 0, 317, 211) {
+            return Err(io::Error::other(
+                "WebView2 controller did not retain the self-check bounds",
+            ));
+        }
+        webview.set_visible(false)?;
+        if webview.is_visible()? {
+            return Err(io::Error::other(
+                "WebView2 controller remained visible after put_IsVisible(FALSE)",
+            ));
+        }
+        webview.set_visible(true)?;
+        if !webview.is_visible()? {
+            return Err(io::Error::other(
+                "WebView2 controller remained hidden after put_IsVisible(TRUE)",
+            ));
+        }
+    }
+    // Exercise the real WM_SIZE and WM_DPICHANGED handlers with the live WebView2 controller.
+    // The host remains hidden, so this cannot flash a window during the diagnostic.
+    // SAFETY: hwnd is the hidden self-check window and remains owned through this cycle.
+    if unsafe {
+        SetWindowPos(
+            hwnd,
+            null_mut(),
+            120,
+            110,
+            860,
+            620,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    } == 0
+    {
+        return Err(error_from_last("SetWindowPos(WebView2 resize self-check)"));
+    }
+    verify_webview_bounds_match_client(hwnd, &context)?;
+    let mut dpi_rect = NativeRect {
+        left: 120,
+        top: 110,
+        right: 980,
+        bottom: 730,
+    };
+    // SAFETY: the RECT remains valid for this synchronous synthetic WM_DPICHANGED call.
+    unsafe {
+        SendMessageW(
+            hwnd,
+            WM_DPICHANGED,
+            ((144usize) << 16) | 144,
+            &mut dpi_rect as *mut _ as isize,
+        );
+    }
+    verify_webview_bounds_match_client(hwnd, &context)?;
+    {
+        let webview = context.webview.as_mut().expect("created WebView2");
+        webview.set_visible(false)?;
+        webview.close_for_check()?;
+    }
+    pump_after_webview_close(hwnd, &mut context)?;
+    context
+        .webview
+        .as_mut()
+        .expect("created WebView2")
+        .detach_window();
+    // SAFETY: this routine owns hwnd and destroys it before context is dropped.
+    if unsafe { DestroyWindow(hwnd) } == 0 {
+        return Err(error_from_last("DestroyWindow(WebView2 self-check)"));
+    }
+    drop(window);
+    drop(context);
+    // WM_DESTROY posts WM_QUIT for this STA; remove it before the next independent cycle.
+    let mut quit = Msg {
+        hwnd: null_mut(),
+        message: 0,
+        w_param: 0,
+        l_param: 0,
+        time: 0,
+        point: Point::default(),
+        private: 0,
+    };
+    // SAFETY: quit is writable; PM_REMOVE consumes only WM_QUIT messages left by this cycle.
+    while unsafe { PeekMessageW(&mut quit, null_mut(), 0x0012, 0x0012, 0x0001) } != 0 {}
+    Ok(())
+}
+
+fn verify_webview_bounds_match_client(hwnd: Hwnd, context: &Context) -> io::Result<()> {
+    let mut client = NativeRect::default();
+    // SAFETY: hwnd is a live hidden HWND and client is writable RECT storage.
+    if unsafe { GetClientRect(hwnd, &mut client) } == 0 {
+        return Err(error_from_last("GetClientRect(WebView2 bounds self-check)"));
+    }
+    if let Some(error) = &context.callback_error {
+        return Err(io::Error::other(error.to_string()));
+    }
+    let actual = context
+        .webview
+        .as_ref()
+        .expect("created WebView2")
+        .bounds()?;
+    let expected = (0, 0, client.right - client.left, client.bottom - client.top);
+    if actual != expected {
+        return Err(io::Error::other(format!(
+            "WebView2 bounds did not track host resize/DPI change: expected {expected:?}, got {actual:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn pump_after_webview_close(hwnd: Hwnd, context: &mut Context) -> io::Result<()> {
+    use std::time::{Duration, Instant};
+
+    const QS_ALLINPUT: u32 = 0x04ff;
+    const MWMO_INPUTAVAILABLE: u32 = 0x0004;
+    const WAIT_OBJECT_0: u32 = 0;
+    const WAIT_TIMEOUT: u32 = 258;
+    const WAIT_FAILED: u32 = u32::MAX;
+    const QUIET_PERIOD: Duration = Duration::from_millis(100);
+    const MAX_DRAIN: Duration = Duration::from_secs(5);
+
+    let started = Instant::now();
+    let mut last_message = started;
+    loop {
+        if let Some(error) = context.callback_error.take() {
+            return Err(error);
+        }
+        if started.elapsed() >= MAX_DRAIN {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "STA message queue did not become idle after WebView2 controller Close",
+            ));
+        }
+        if last_message.elapsed() >= QUIET_PERIOD {
+            return Ok(());
+        }
+        let remaining = QUIET_PERIOD
+            .saturating_sub(last_message.elapsed())
+            .min(MAX_DRAIN.saturating_sub(started.elapsed()));
+        let wait_ms = remaining.as_millis().clamp(1, u128::from(u32::MAX)) as u32;
+        // SAFETY: count 0 means no handles; this waits for messages on the current STA thread.
+        let wait = unsafe {
+            MsgWaitForMultipleObjectsEx(0, null(), wait_ms, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+        };
+        if wait == WAIT_FAILED {
+            return Err(error_from_last(
+                "MsgWaitForMultipleObjectsEx(WebView2 close drain)",
+            ));
+        }
+        if wait == WAIT_TIMEOUT {
+            continue;
+        }
+        if wait != WAIT_OBJECT_0 {
+            return Err(io::Error::other(format!(
+                "unexpected STA wait result 0x{wait:08x} during WebView2 close drain"
+            )));
+        }
+        let mut message = Msg {
+            hwnd: null_mut(),
+            message: 0,
+            w_param: 0,
+            l_param: 0,
+            time: 0,
+            point: Point::default(),
+            private: 0,
+        };
+        // SAFETY: message is writable; PM_REMOVE drains the current thread's queued messages.
+        while unsafe { PeekMessageW(&mut message, null_mut(), 0, 0, 0x0001) } != 0 {
+            if message.message == 0x0012 {
+                return Err(io::Error::other(
+                    "unexpected WM_QUIT during WebView2 close drain",
+                ));
+            }
+            // SAFETY: message was filled by PeekMessageW and is valid for dispatch.
+            unsafe {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+            last_message = Instant::now();
+            if unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } == 0 {
+                return Err(io::Error::other(
+                    "WebView2 parent window was destroyed while draining close messages",
+                ));
+            }
+        }
+    }
+}
+
+pub fn webview_self_check(
+    state_file: &Path,
+    webview_data: &Path,
+    cycles: usize,
+) -> io::Result<String> {
+    if !(1..=100).contains(&cycles) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "WebView2 self-check cycles must be between 1 and 100",
+        ));
+    }
+    if probe_runtime_unavailable()? {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "Microsoft Edge WebView2 Evergreen runtime is unavailable",
+        ));
+    }
+    // Validate every requested path before creating any state or cache directory.
+    let state_file = validate_self_check_path(state_file)?;
+    let cache_marker = validate_self_check_path(&webview_data.join(".self-check-path"))?;
+    let webview_data = cache_marker
+        .parent()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "WebView2 self-check cache needs a directory",
+            )
+        })?
+        .to_path_buf();
+    if let Some(parent) = state_file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::create_dir_all(&webview_data)?;
+
+    let _apartment = webview::ComApartment::initialize_sta()?;
+    let callback_baseline = WebView::live_callback_objects();
+    run_webview_check_cycle(&state_file, &webview_data)?; // Warm runtime and graphics paths before measuring.
+    let handle_baseline = process_handle_count()?;
+    if WebView::live_callback_objects() != callback_baseline {
+        return Err(io::Error::other(
+            "WebView2 callback references did not return to their pre-warm-up count",
+        ));
+    }
+    let mut peak = handle_baseline;
+    let mut handle_samples = Vec::new();
+    for cycle in 1..=cycles {
+        run_webview_check_cycle(&state_file, &webview_data)?;
+        let live = WebView::live_callback_objects();
+        if live != callback_baseline {
+            return Err(io::Error::other(format!(
+                "WebView2 callback objects leaked: baseline {callback_baseline}, now {live}"
+            )));
+        }
+        let handles = process_handle_count()?;
+        peak = peak.max(handles);
+        if cycle == 1 || cycle == 10 || cycle == 100 || cycle == cycles {
+            handle_samples.push((cycle, handles));
+        }
+    }
+    let final_handles = process_handle_count()?;
+    if final_handles > handle_baseline {
+        return Err(io::Error::other(format!(
+            "WebView2 functional OK; cycles={cycles}; callback objects {callback_baseline}->{callback_baseline}; DevTools={}; process handle count grew: baseline {handle_baseline}, samples {handle_samples:?}, final {final_handles}, peak {peak}",
+            cfg!(debug_assertions)
+        )));
+    }
+    let _ = std::fs::remove_file(&state_file);
+    Ok(format!(
+        "WebView2 OK; warm-up=1; cycles={cycles}; callback objects {callback_baseline}->{callback_baseline}; process handles baseline={handle_baseline}, samples={handle_samples:?}, peak={peak}, final={final_handles}; DevTools={}",
+        cfg!(debug_assertions)
+    ))
+}
+
+fn probe_runtime_unavailable() -> io::Result<bool> {
+    Ok(webview::probe_runtime()?.is_none())
+}
+
 fn validate_self_check_path(path: &Path) -> io::Result<PathBuf> {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -1034,7 +1598,8 @@ fn validate_self_check_path(path: &Path) -> io::Result<PathBuf> {
     })?;
     let canonical_target = target.canonicalize()?;
     let mut current = canonical_target.clone();
-    for component in relative_parent.components() {
+    let components: Vec<_> = relative_parent.components().collect();
+    for (index, component) in components.iter().enumerate() {
         let std::path::Component::Normal(name) = component else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -1045,7 +1610,16 @@ fn validate_self_check_path(path: &Path) -> io::Result<PathBuf> {
         match std::fs::symlink_metadata(&child) {
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                std::fs::create_dir(&child)?;
+                for remaining in &components[index..] {
+                    if !matches!(remaining, std::path::Component::Normal(_)) {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            "invalid self-check parent",
+                        ));
+                    }
+                    current.push(remaining.as_os_str());
+                }
+                break;
             }
             Err(error) => return Err(error),
         }
@@ -1070,7 +1644,23 @@ fn validate_self_check_path(path: &Path) -> io::Result<PathBuf> {
             "self-check path escapes target/",
         ));
     }
-    Ok(current.join(file_name))
+    let requested = current.join(file_name);
+    match std::fs::symlink_metadata(&requested) {
+        Ok(_) => {
+            let resolved = requested.canonicalize()?;
+            if !strip_verbatim_prefix(&resolved)
+                .starts_with(strip_verbatim_prefix(&canonical_target))
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "self-check file resolves outside workspace target/",
+                ));
+            }
+            Ok(resolved)
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(requested),
+        Err(error) => Err(error),
+    }
 }
 
 fn strip_verbatim_prefix(path: &Path) -> PathBuf {

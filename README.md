@@ -7,7 +7,7 @@ Socle de développement de la suite bureautique Atelier, sous AGPL-3.0-or-later.
 - Rust stable avec `rustfmt` et `clippy` (`rust-toolchain.toml`).
 - Pour la cible WASM : `rustup target add wasm32-unknown-unknown`.
 - Pour WASM : installer aussi le composant Clippy (`rustup component add clippy`) pour reproduire le lint CI.
-- Pour Windows MSVC : toolchain MSVC et éditeur de liens correspondants.
+- Pour Windows MSVC : toolchain MSVC et éditeur de liens correspondants ; runtime Microsoft Edge WebView2 Evergreen installé pour lancer le shell. Le chargeur officiel est lié statiquement et vérifié par empreinte.
 - Pour Linux musl : Rust stable, la cible `x86_64-unknown-linux-musl` et `musl-tools` (`rustup target add x86_64-unknown-linux-musl`; Ubuntu/Debian : `sudo apt-get install musl-tools`). Les tests musl doivent s'exécuter sur Linux.
 
 ## Commandes
@@ -57,5 +57,9 @@ Pour des mesures comparables, utiliser le profil release, consigner la machine (
 
 La [fenêtre Win32](docs/us-110-win32-window.md) et le [stockage portable](docs/us-116-portable-data.md)
 sont disponibles : `cargo run -p atelier-desktop-win --locked --offline` démarre
-la coque native vide. Le [Worker WASM](docs/us-092-worker.md) assure le transport
-hors du fil principal. WebView2, le Canvas et la saisie restent nécessaires au démonstrateur.
+la coque native avec WebView2 sur `about:blank`. Le [Worker WASM](docs/us-092-worker.md) assure le transport
+hors du fil principal. Les modules [Canvas](docs/us-101-canvas-renderer.md) et
+[saisie clavier/IME](docs/us-103-text-input.md) disposent de tests Chromium réels.
+Le [test strict WebView2](docs/us-111-webview2.md) conserve un échec de handles
+sur cet hôte ; US-111 reste ouverte. Les ressources, le pont natif et
+l’intégration du document restent nécessaires au démonstrateur US-120.

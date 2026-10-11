@@ -439,6 +439,8 @@ Réf : §6.1 · Taille : S · Dépend de : US-092
 
 Réf : §6.6 · Taille : L · Dépend de : US-051, US-080, US-092
 
+En cours (2026-10-11) : [module Canvas et tests Chromium](docs/us-101-canvas-renderer.md). Transport réel des contours et validation matérielle 60 fps restent à intégrer.
+
 #### US-102 — Internationalisation
 *En tant que* développeur, *je veux* un catalogue de chaînes *afin qu'aucun* texte d'interface ne soit en dur.
 - [ ] Catalogue `web/i18n/fr-FR.txt` (clé = valeur), paramètres nommés, pluriels.
@@ -455,6 +457,8 @@ Réf : D12, §6.15 · Taille : S · Dépend de : US-001
 - [ ] Texte en cours de composition affiché souligné dans le document.
 
 Réf : §6.7 · Taille : M · Dépend de : US-092
+
+En cours (2026-10-11) : [adaptateur clavier/IME et composition Canvas](docs/us-103-text-input.md). Commandes métier et essais AZERTY/IME natifs restent ouverts.
 
 #### US-104 — Bibliothèque de composants d'interface
 *En tant que* développeur, *je veux* des composants d'interface maison accessibles *afin de* construire ruban et dialogues.
@@ -494,11 +498,13 @@ Validation US-110 (2027-10-11) : [contrat et limites](docs/us-110-win32-window.m
 #### US-111 — Liaisons WebView2
 *En tant que* développeur, *je veux* des liaisons COM WebView2 écrites à la main *afin d'afficher* le front-end sans Tauri.
 - [ ] Tables virtuelles des interfaces nécessaires déclarées en Rust ; comptage de références correct (pas de fuite au test de 100 ouvertures/fermetures).
-- [ ] Environnement créé avec le dossier de données résolu par US-116 (`atelier-data/` en mode portable) ; aucun cache n'est créé avant la résolution de ce dossier.
-- [ ] Redimensionnement, focus et DPI suivis.
-- [ ] Outils de développement activés en build de debug uniquement.
+- [x] Environnement créé avec le dossier de données résolu par US-116 (`atelier-data/` en mode portable) ; aucun cache n'est créé avant la résolution de ce dossier.
+- [x] Redimensionnement, focus et DPI suivis.
+- [x] Outils de développement activés en build de debug uniquement.
 
 Réf : D9, §6.8 · Taille : L · Dépend de : US-110, US-116
+
+En cours (2026-10-11) : [hébergement réel et limite de validation](docs/us-111-webview2.md). Le test strict de 100 cycles reste en échec sur le compte de handles ; US-111 reste ouverte.
 
 #### US-112 — Ressources embarquées et isolement réseau
 *En tant que* développeur, *je veux* servir les ressources depuis l'exe et bloquer tout le reste *afin que* l'application soit totalement déconnectée.
@@ -518,9 +524,11 @@ Réf : §6.8 · Taille : M · Dépend de : US-111
 
 #### US-114 — Runtime WebView2 absent
 *En tant qu'*utilisateur, *je veux* un message clair si le runtime WebView2 manque *afin de* savoir comment y remédier.
-- [ ] Détection avant création de la WebView ; boîte de dialogue native expliquant le problème avec l'adresse de téléchargement Microsoft (texte copiable) ; pas de plantage.
+- [x] Détection avant création de la WebView ; boîte de dialogue native expliquant le problème avec l'adresse de téléchargement Microsoft (texte copiable) ; pas de plantage.
 
 Réf : §6.8, §10 · Taille : S · Dépend de : US-110
+
+Validation US-114 (2026-10-11) : [sonde injectée, diagnostic natif et barrière avant cache](docs/us-111-webview2.md).
 
 #### US-115 — Instance unique et arguments
 *En tant qu'*utilisateur, *je veux* que l'ouverture d'un document depuis l'Explorateur utilise la fenêtre déjà ouverte *afin de* garder mes documents ensemble.

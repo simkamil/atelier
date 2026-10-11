@@ -38,10 +38,11 @@ document_paths.update({'crates/font/tests/fixtures/README.md', 'crates/font/test
 document_paths.update(['tests/image-reference/README.md', 'data/fonts/README.md', 'docs/us-040-png.md', 'docs/us-043-gif-bmp.md', 'docs/us-056-embedded-fonts.md', 'docs/IMAGES-FONTS-PROGRESS.md'])
 prototype_docs=['docs/us-012-line-breaks.md','docs/us-054-latin-shaping.md','docs/us-055-font-manager.md','docs/us-011-segmentation.md','docs/us-053-kerning-ligatures.md','docs/us-091-binary-protocol.md','tests/font-layout-reference/README.md','docs/us-010-ucd-tables.md','docs/us-051-truetype-outlines.md','docs/us-090-wasm-abi.md','docs/PROTOTYPE-PROGRESS.md','tests/unicode-reference/README.md','data/ucd/README.md']
 prototype_docs.extend(['docs/us-092-worker.md','docs/us-110-win32-window.md','docs/us-116-portable-data.md'])
+prototype_docs.extend(['docs/us-101-canvas-renderer.md','docs/us-103-text-input.md','docs/us-111-webview2.md','data/webview2/README.md'])
 document_paths.update(prototype_docs)
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
 document_paths.update({'README.md','web/README.md','tests/README.md'})
-document_paths.add('tests/worker-browser.html')
+document_paths.update(p.relative_to(root).as_posix() for p in (root/'tests').glob('*browser.html'))
 browser_html_lines = (root/'tests/worker-browser.html').read_text(encoding='utf-8').splitlines()
 for node in previous['nodes'] + doc['nodes']:
     if node.get('source_file','').replace('\\','/') == 'tests/worker-browser.html':
@@ -105,7 +106,7 @@ code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
 manifest=root/'tests/format-reference/manifest.json'
 font_manifest=root/'crates/font/tests/fixtures/fixtures.json'
-code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tests/font-layout-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1') if p.is_file()]
+code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tests/font-layout-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1',root/'tests/check-webview-assets.ps1',root/'tests/check-webview-host.ps1',root/'data/webview2/manifest.json') if p.is_file()]
 ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}
@@ -149,7 +150,7 @@ for edge in merged['edges']:
         edge['target']=replacement
 # File modules must retain a located link to their declaring root module.
 for source in code:
-    for match in re.finditer(r'^(?:pub\s+)?mod\s+(\w+)\s*;',source.read_text(encoding='utf-8'),re.M):
+    for match in re.finditer(r'^(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;',source.read_text(encoding='utf-8'),re.M):
         target=source.parent/(match.group(1)+'.rs')
         if not target.is_file():
             continue
@@ -211,6 +212,17 @@ for node in removed:
         fixture_manifest=json.loads((root/'tests/image-reference/manifest.json').read_text(encoding='utf-8'))
         if source.removeprefix('tests/image-reference/') in {c['file'] for c in fixture_manifest['cases']}:
             replacement='tests_image_reference_manifest' if 'tests_image_reference_manifest' in g else 'document_tests_image_reference_readme_md'
+    if source.lower() == 'data/webview2/include/webview2.h':
+        # System SDK symbols are deliberately excluded by .graphifyignore;
+        # preserve their exact provenance via the checked manifest, not product AST.
+        import hashlib
+        sdk_manifest=json.loads((root/'data/webview2/manifest.json').read_text(encoding='utf-8'))
+        assert hashlib.sha256((root/source).read_bytes()).hexdigest() == 'dff1e3181ec7ec203a34ef6efa966590e0ef0ba1a5c3fe3b69da6508c2f8a02e'
+        replacement='document_data_webview2_readme_md'
+    if source.lower() == 'data/webview2/license.txt':
+        import hashlib
+        assert hashlib.sha256((root/source).read_bytes()).hexdigest() == '0af8f1b807512aae39c2ac1aa4d0cae65cabecb6fd554b8439a5162a0d6eca55'
+        replacement='document_data_webview2_readme_md'
     if node['id']=='sil_ofl_1_1' and not source:
         replacement='document_data_fonts_readme_md'
     if not placeholder and replacement is None:

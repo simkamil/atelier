@@ -3,3 +3,6 @@
 
 pub mod data;
 pub mod window;
+
+#[cfg(windows)]
+pub(crate) mod webview;

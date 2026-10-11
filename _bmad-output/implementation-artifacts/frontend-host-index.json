@@ -1,0 +1,88 @@
+{
+  "checked_index_counts": {
+    "frontend-host-validation.json": 240,
+    "frontend-host-documentation.json": 17,
+    "frontend-host-graph.json": 5
+  },
+  "checkout_crlf_manifest_normalizations": {
+    "crates/base/Cargo.toml": {
+      "validated_checkout_sha256": "9c53a42e0512c787f823f13edebebc5e1e94194b3f7d822492f15f98f70617d3",
+      "git_index_sha256": "7e7896c717be08e674adaf0acd40a3a80008eb4a2b4015ed0881bc2fd8a0bfb6"
+    },
+    "crates/calc/Cargo.toml": {
+      "validated_checkout_sha256": "87a0d108a99a8e0c81df6b8f62ed8513fa5a8ad2bb5815bb6275a8014a3b7fc0",
+      "git_index_sha256": "cf2f36460554dbeb4378aceb40f790061aa098f0f2d72c0926790cd4e3fb1c06"
+    },
+    "crates/cfb/Cargo.toml": {
+      "validated_checkout_sha256": "36d68a7f10df374f41e130cff7c0e1fc3482e6ef8c12a032f51e3eac17980ff4",
+      "git_index_sha256": "ebc72b70923dbbfa1d53de57bbf5a9959357ba035b2df13949bfea6f63d6eec2"
+    },
+    "crates/compress/Cargo.toml": {
+      "validated_checkout_sha256": "efd37c30a7282983f87c20322b86a2a8e3965eb057c69d9c0238b95e8b130fd1",
+      "git_index_sha256": "e58b8044e29ed2bfaa73d7dc16ec4aad15af6691d5658d378aafdacfbf5ba27e"
+    },
+    "crates/crypto/Cargo.toml": {
+      "validated_checkout_sha256": "bbdce1d9ff33815a4b24b20edb4429425ab1d27ae93d64dbd3a30997e6fe1239",
+      "git_index_sha256": "37b4ecaab60c2e6d9b39e3c25758420a15e35c58eb0e33bdc61119f8ad96483b"
+    },
+    "crates/fmt-legacy/Cargo.toml": {
+      "validated_checkout_sha256": "4dfd82e2eeaf201891dc6c93f3cab164a64f6d7a8c23399d793d4e25c087832c",
+      "git_index_sha256": "6b92806777c223d4c740e69c92d7c894610dc8dd24af0dfa0649a3b401f807a2"
+    },
+    "crates/fmt-markdown/Cargo.toml": {
+      "validated_checkout_sha256": "ee15bd9c0e75705dabc1eb2d377a8623421e50b8909f554162f8a0b01efbe0b6",
+      "git_index_sha256": "d2069271d37eefed7ae762f2f81462a99daf1259ec50951c3f20a590a1674beb"
+    },
+    "crates/fmt-odf/Cargo.toml": {
+      "validated_checkout_sha256": "1145efdfdaf7722b195690539b653bad0e475cbf3b521f8f004ca0b3bd277573",
+      "git_index_sha256": "c0e65ed741a49ba2880fffc20a309cec543e0a88fceb58b64f7cefd6c4c18b28"
+    },
+    "crates/fmt-ooxml/Cargo.toml": {
+      "validated_checkout_sha256": "c58bd4df6071b7789b4507785e83a7e0d68c7a8f25e32d0fd36475f8fbf6fc6e",
+      "git_index_sha256": "cccc449c8bba054650d51ee03658335469650da86801a448d8f97790c45c6aa3"
+    },
+    "crates/fmt-pdf/Cargo.toml": {
+      "validated_checkout_sha256": "66a0672f3a5fd606d5bd8b5ed894fbf51730f2288b87563e5dbd4a8a8d04b340",
+      "git_index_sha256": "e4e7b329450994f6194ccb93b37ecdf7f688ca04ec6b7dbbf196a9fc46c24bc1"
+    },
+    "crates/geom/Cargo.toml": {
+      "validated_checkout_sha256": "bb2489c147bbf89b5eda327248419150db61d4a38d8108f08d7147faf13ae751",
+      "git_index_sha256": "c5ea12496d35e8cfdfd8410911655eacbd9caa9389117f12b579644bd295cd60"
+    },
+    "crates/lua/Cargo.toml": {
+      "validated_checkout_sha256": "f6de231344cb1653f0858e16b59259df55c306664f89b676f6d9f100c5b8e1f3",
+      "git_index_sha256": "169822ee815a3942379fd2155ed7d9b70fe07b23c370fd8f27e7edb583733e7e"
+    },
+    "crates/raster/Cargo.toml": {
+      "validated_checkout_sha256": "9ec1cdb21ab0b6da7d3be61235b58da07f93fe0ed13b6c3f96f1ac809847c2e2",
+      "git_index_sha256": "c7d324a9d10d5bc5375c6fc308ec9c67294b732cc64b8aa0f953adf1ccb211c2"
+    },
+    "crates/server/Cargo.toml": {
+      "validated_checkout_sha256": "8b490eed33a4884448707e1dc237a057ccc44d9611d3b63dd63ee07145a3ff63",
+      "git_index_sha256": "f74de34f62e1979028442a39fe65e3c634cfe0362729a0f1de1696952fe061f9"
+    },
+    "crates/sheet-model/Cargo.toml": {
+      "validated_checkout_sha256": "e2381d506db93f7da331dc168914569aaa7f10da5f8df162da852b006b83750f",
+      "git_index_sha256": "b2d4590c3698203c65a11ef599d11cfad17eaf10f5bc28482241853b53feadfe"
+    },
+    "crates/slide-model/Cargo.toml": {
+      "validated_checkout_sha256": "b4a54406fc76031db4ef09992f2354b5700bec6699f795d093afe5acc4607d8a",
+      "git_index_sha256": "be9d044ba2d89e76dc2bc6b74e6418d5917a85c9850aa19fbd032262dac21901"
+    },
+    "crates/text-layout/Cargo.toml": {
+      "validated_checkout_sha256": "879cc0825164b02b9ef1bee01594ac5bff94e6fca9648a0885b769db42fb3272",
+      "git_index_sha256": "805f38d28d99c1299e3c939c3204d052787956b8b71d575ec9783541320faa3a"
+    },
+    "crates/text-model/Cargo.toml": {
+      "validated_checkout_sha256": "64fa275236997fc1bf01772336edb314be2edbd226243a3713418e1e2f96be3b",
+      "git_index_sha256": "d81b9c7b782b0904d6a2677d243424172409105cfa42a9f115a77e747affb582"
+    },
+    "tools/check-license/Cargo.toml": {
+      "validated_checkout_sha256": "4e65a7f5ff0eda5a1eac9777e0359efe92a3b3630ba7fea01d2cebef4d4109ad",
+      "git_index_sha256": "59a8a16537e7766a7b43583cda8f449315c93eb0e33679daa854818917b8c15a"
+    }
+  },
+  "local_document_links_checked": 226,
+  "reviewed_diff_sha256": "775adf3b5ccb1409275542d24af66e2cded923cf236f033049f92015c5e75203",
+  "no_code_or_resource_content_changed_during_staging": true
+}

@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-11",
+  "initial_native_self_check": {
+    "status": "failed",
+    "cycles": 100,
+    "warmup": 1,
+    "baseline_handles": 235,
+    "final_handles": 933,
+    "peak_handles": 933,
+    "error": "process handle count grew across WebView2 cycles",
+    "disposition": "Investigating asynchronous COM/runtime teardown; no tolerance threshold added."
+  },
+  "additional_probes": [
+    {
+      "name": "STA quiet-message drain100",
+      "baseline": 235,
+      "final": 995,
+      "result": "failed"
+    },
+    {
+      "name": "idle-after-COM10cycles",
+      "baseline": 233,
+      "after_return": 311,
+      "idle29s": 312,
+      "result": "persistent growth"
+    },
+    {
+      "name": "probe_runtime101calls",
+      "baseline": 120,
+      "final": 120,
+      "result": "stable"
+    },
+    {
+      "name": "shared environment100controllers",
+      "baseline": 235,
+      "final": 1014,
+      "result": "failed; experimental reuse removed"
+    },
+    {
+      "name": "PSS type inspection3cycles",
+      "result": "32 retained handles target terminated child processes; ownership unknown; no forced CloseHandle"
+    }
+  ],
+  "upstream": {
+    "url": "https://github.com/MicrosoftEdge/WebView2Feedback/issues/5704",
+    "checked": "2026-10-11",
+    "status": "open",
+    "inference": "Matching symptom reported for MSVC x64 on Windows11; no confirmed vendor root cause or fix."
+  },
+  "disposition": "US-111 remains in progress. Strict command exits1 on growth. CI functional wrapper reports handle_acceptance_passed=false; no acceptance threshold or unknown-handle closure.",
+  "validation_harness_correction": {
+    "initial_release_invocation": "PowerShell native GUI invocation returned null LASTEXITCODE and empty output; independent driver assertion rejected it.",
+    "correction": "ProcessStartInfo UseShellExecute=false and redirected pipes, asynchronous reads plus bounded WaitForExit; validate result grammar even for exit0; no false native result accepted."
+  },
+  "host_runtime": {
+    "installed_directory_version": "154.0.4258.62",
+    "source": "Directory inventory under C:/Program Files (x86)/Microsoft/EdgeWebView/Application; this is installation evidence, not a per-controller version query."
+  }
+}

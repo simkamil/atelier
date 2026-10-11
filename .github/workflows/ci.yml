@@ -31,6 +31,9 @@ jobs:
       - name: Check font and image resource integrity
         shell: pwsh
         run: ./tests/check-assets.ps1
+      - name: Check pinned Microsoft WebView2 system loader and ABI oracle
+        shell: pwsh
+        run: ./tests/check-webview-assets.ps1
       - name: Check Unicode sources and outline reference integrity
         shell: pwsh
         run: ./tests/check-ucd.ps1
@@ -40,6 +43,20 @@ jobs:
         run: cargo test --workspace --target x86_64-pc-windows-msvc --locked --offline
       - name: Exercise native window without displaying it
         run: .\target\x86_64-pc-windows-msvc\debug\atelier.exe --self-check target\shell-check\window-state.txt
+      - name: Exercise real WebView2; report open US-111 handle acceptance
+        shell: pwsh
+        run: ./tests/check-webview-host.ps1 -Executable ./target/x86_64-pc-windows-msvc/debug/atelier.exe -TargetDirectory target/webview-check -AllowKnownRuntimeHandleGrowth
+      - name: Build release native host
+        run: cargo build -p atelier-desktop-win --release --locked --offline
+      - name: Check release WebView2 DevTools; report handle acceptance
+        shell: pwsh
+        run: ./tests/check-webview-host.ps1 -Executable ./target/release/atelier.exe -TargetDirectory target/webview-release-check -AllowKnownRuntimeHandleGrowth
+      - name: Build Rust display-list oracle
+        run: cargo build -p atelier-render --example display_list_oracle --locked --offline
+      - name: Cross-check JavaScript display-list decoder
+        run: node tests/display-list.mjs
+      - name: Check real Canvas and textarea in headless Edge
+        run: node tests/run-frontend-browser.mjs
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
       - name: Check formatting

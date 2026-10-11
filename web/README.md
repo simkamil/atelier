@@ -9,3 +9,14 @@ Les tests croisés exécutent un oracle Rust natif et transportent des trames
 dans le véritable WASM, dont dispatch conserve son comportement d'écho.
 
 Le [client et son Worker](../docs/us-092-worker.md) exécutent le transport WASM hors du fil principal. L’interface d’édition reste à développer. Les chaînes d’interface seront externalisées dans des catalogues fr-FR conformément à `SPEC.md`.
+
+## Canvas et saisie
+
+`display-list.mjs` décode ATDL 1.0 produit par Rust. `canvas-renderer.mjs`
+rejoue les pages visibles avec DPR, régions sales, cache borné de glyphes et
+overlay de composition. Le propriétaire fournit les contours/images résolus.
+`text-input.mjs` traduit les événements d’une textarea invisible en commandes
+et previews ; le propriétaire fournit la sélection et la géométrie du curseur.
+Voir les [contrats Canvas](../docs/us-101-canvas-renderer.md) et
+[saisie](../docs/us-103-text-input.md). Ces modules attendent encore leur
+branchement au document, aux ressources et aux handlers métier US-120.
