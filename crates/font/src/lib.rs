@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cff;
 pub mod embedded;
 pub mod layout;
 pub mod manager;
