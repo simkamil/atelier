@@ -6,6 +6,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod rich;
+
 use atelier_model::{EditKind, History, HistoryError, Operation, Transaction, TransactionalState};
 use atelier_unicode::segmentation::{OffsetError, grapheme_boundaries};
 use core::fmt;
