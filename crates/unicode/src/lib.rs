@@ -3,7 +3,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod case;
 pub mod line_break;
+pub mod normalization;
 pub mod properties;
 pub mod segmentation;
 
