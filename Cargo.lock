@@ -118,6 +118,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "atelier-image-diff"
+version = "0.1.0"
+dependencies = [
+ "atelier-geom",
+ "atelier-image",
+ "atelier-raster",
+ "atelier-render",
+]
+
+[[package]]
 name = "atelier-lua"
 version = "0.1.0"
 

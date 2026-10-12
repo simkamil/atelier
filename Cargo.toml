@@ -34,6 +34,7 @@ members = [
     "tools/bench",
     "tools/ucd-gen",
     "tools/fuzz",
+    "tools/image-diff",
 ]
 
 [workspace.package]
