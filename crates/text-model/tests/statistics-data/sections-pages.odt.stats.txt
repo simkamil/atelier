@@ -1,0 +1,6 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=12 chars=64 chars_spaces=72 paragraphs=4
+B Page portrait.
+B Début du mode paysage.
+B Dans une section.
+B Retour au portrait.

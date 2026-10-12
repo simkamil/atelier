@@ -1,0 +1,4 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=11 chars=55 chars_spaces=65 paragraphs=2
+B Image dans le texte:  puis du texte.
+B Paragraphe avec image ancrée.

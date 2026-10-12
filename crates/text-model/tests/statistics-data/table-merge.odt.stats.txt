@@ -1,0 +1,12 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=17 chars=66 chars_spaces=73 paragraphs=10
+B Avant le tableau.
+B En-tête fusionné
+B Col 3
+B Haut
+B b2
+B c2
+B c2 bis
+B b3
+B c3
+B Après le tableau.

@@ -1,0 +1,5 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=23 chars=115 chars_spaces=136 paragraphs=3
+B Éléphant à l’œuvre — «ça» ñandú, Ελλάδα, 日本語 😀.
+B Espaces   multiples, tab\tulation et\vsaut de ligne.
+B Deuxième paragraphe, avec texte normal.
