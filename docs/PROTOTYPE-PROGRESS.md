@@ -1,9 +1,32 @@
 # Préparation du démonstrateur — 2026-10-12
 
-Le backlog compte désormais **48 US terminées sur 158**. Le dernier lot raccorde
+Le backlog compte désormais **50 US terminées sur 158**. Le dernier lot raccorde
 l’ouverture DOCX à un aperçu A4 en lecture seule, avec des agents GPT-6 Luna moyen.
 Le glisser-déposer TXT, les espaces françaises et le cache incrémental restent disponibles.
 US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves Word.
+
+## Lot formats et outils — 2026-10-13
+
+Cinq stories développées en parallèle avec des agents Sonnet 5.5 moyen, chacune relue
+par un agent indépendant au contexte neuf, puis corrigée avant fusion :
+
+- [Tests par images de référence](us-003-image-reference-tests.md) (US-003, validée) :
+  comparaison à tolérance, image de différence, mise à jour explicite refusée en CI.
+- [Sous-ensembles de polices](us-330-font-subsetting.md) (US-330, validée) : TrueType et
+  CFF, droits d’incorporation ; contrôlé avec FontTools sur les polices installées.
+- [Tableaux DOCX](us-303-docx-tables.md) (US-303, ouverte) : grille, fusions, propriétés,
+  styles conditionnels ; aucune vérification contre Word.
+- [Import ODT](us-310-odt-import.md) (US-310, ouverte) : contenu importé et vérifié sur un
+  corpus LibreOffice ; la pagination attend la mise en page complète.
+- [Import DOC](us-312-doc-import.md) (US-312, ouverte) : texte, mise en forme et styles ;
+  corpus LibreOffice, `Prm0` non appliqué.
+
+Les relectures ont trouvé quatorze défauts, tous corrigés sauf mention contraire dans les
+contrats : notamment une allocation non bornée sur un tableau ODT répété, une table de
+soulignements `.doc` fausse que le constructeur de test masquait, et un opérateur CFF
+refusé au sous-ensemble. Le fuzzer reçoit quatre cibles (`doc-import`, `odt-import`,
+`subset-font`, `subset-cff`). Validation locale après fusion : tests du workspace, Clippy
+hôte et WASM, format, SPDX et garde du lock.
 
 - [Unicode](us-010-ucd-tables.md) : 71 fichiers officiels Unicode 17.0.0,
   licence et SHA-256, générateur local et build reproductible. L’[oracle](../_bmad-output/implementation-artifacts/prototype-ucd-oracle.json)

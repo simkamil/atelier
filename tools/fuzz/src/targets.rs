@@ -9,8 +9,11 @@
 use crate::target::{FnTarget, FuzzTarget, Outcome};
 use atelier_cfb::{Compound as CfbCompound, Limits as CfbLimits};
 use atelier_compress::{Format, InflateState, Level, Status, compress_with_format};
+use atelier_fmt_legacy::doc::import_doc;
+use atelier_fmt_odf::odt::import_odt;
 use atelier_fmt_ooxml::{Package, PartUri, TargetMode, import_docx};
 use atelier_font::cff::CffFont;
+use atelier_font::subset::{subset_cff, subset_font};
 use atelier_font::{FontFace, GlyphCluster, OutlineLimits};
 use atelier_geom::{Point, Rect};
 use atelier_image::{
@@ -103,6 +106,26 @@ pub fn registry() -> Vec<Arc<dyn FuzzTarget>> {
             FnTarget::new("cfb", cfb)
                 .dictionary(CFB_TOKENS)
                 .seeds(cfb_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("doc-import", doc_import_target)
+                .dictionary(CFB_TOKENS)
+                .seeds(doc_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("odt-import", odt_import_target)
+                .dictionary(ODT_TOKENS)
+                .seeds(odt_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("subset-font", subset_font_target)
+                .dictionary(SFNT_TOKENS)
+                .seeds(font_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("subset-cff", subset_cff_target)
+                .dictionary(CFF_TOKENS)
+                .seeds(cff_seeds),
         ),
         Arc::new(
             FnTarget::new("encodings", encodings)
@@ -888,6 +911,91 @@ fn cfb_seeds() -> Vec<Vec<u8>> {
         include_bytes!("../../../tests/cfb-reference/native-v3.cfb").to_vec(),
         include_bytes!("../../../tests/cfb-reference/native-v4.cfb").to_vec(),
     ]
+}
+
+// --------------------------------------------------------------- doc import
+fn doc_import_target(input: &[u8]) -> Outcome {
+    match import_doc(input) {
+        Err(error) => Outcome::rejected(&error),
+        Ok(mut imported) => {
+            let ids = imported.paragraph_ids().to_vec();
+            let mut work = ids.len() as u64;
+            for id in ids {
+                work += u64::from(imported.resolved_paragraph(id).is_ok());
+            }
+            Outcome::accepted(work)
+        }
+    }
+}
+
+fn doc_seeds() -> Vec<Vec<u8>> {
+    vec![
+        include_bytes!("../../../tests/doc-reference/text-accents.doc").to_vec(),
+        include_bytes!("../../../tests/doc-reference/char-formatting.doc").to_vec(),
+        include_bytes!("../../../tests/doc-reference/para-formatting.doc").to_vec(),
+        include_bytes!("../../../tests/doc-reference/styles.doc").to_vec(),
+        include_bytes!("../../../tests/doc-reference/underlines.doc").to_vec(),
+    ]
+}
+
+// --------------------------------------------------------------- odt import
+fn odt_import_target(input: &[u8]) -> Outcome {
+    match import_odt(input) {
+        Err(error) => Outcome::rejected(&error),
+        Ok(mut imported) => {
+            let ids = imported.paragraph_ids().to_vec();
+            let mut work = ids.len() as u64;
+            for id in ids {
+                work += u64::from(imported.resolved_paragraph(id).is_ok());
+            }
+            Outcome::accepted(work)
+        }
+    }
+}
+
+const ODT_TOKENS: &[&[u8]] = &[
+    b"PK",
+    b"mimetype",
+    b"application/vnd.oasis.opendocument.text",
+    b"content.xml",
+    b"styles.xml",
+    b"<office:text",
+    b"<text:p",
+    b"<text:span",
+    b"<table:table",
+    b"number-columns-repeated",
+    b"number-rows-repeated",
+];
+
+fn odt_seeds() -> Vec<Vec<u8>> {
+    vec![
+        include_bytes!("../../../tests/odt-reference/text-accents.odt").to_vec(),
+        include_bytes!("../../../tests/odt-reference/lists.odt").to_vec(),
+        include_bytes!("../../../tests/odt-reference/table-merge.odt").to_vec(),
+        include_bytes!("../../../tests/odt-reference/table-merge.fodt").to_vec(),
+        include_bytes!("../../../tests/odt-reference/header-footer.odt").to_vec(),
+    ]
+}
+
+// ------------------------------------------------------------ font subsetting
+const SUBSET_GLYPHS: &[u16] = &[0, 1, 2, 5, 40, 0xff];
+
+fn subset_font_target(input: &[u8]) -> Outcome {
+    match subset_font(input, 0, SUBSET_GLYPHS) {
+        Err(error) => Outcome::rejected(&error),
+        Ok(subset) => Outcome::accepted(subset.data.len() as u64),
+    }
+}
+
+fn subset_cff_target(input: &[u8]) -> Outcome {
+    match subset_cff(input, SUBSET_GLYPHS) {
+        Err(error) => Outcome::rejected(&error),
+        // A subset the outline reader cannot parse back is a defect.
+        Ok(subset) => match CffFont::parse(&subset.data) {
+            Ok(_) => Outcome::accepted(subset.data.len() as u64),
+            Err(error) => panic!("subset is not a valid CFF font: {error:?}"),
+        },
+    }
 }
 
 // -------------------------------------------------------------- encodings

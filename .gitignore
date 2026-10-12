@@ -7,6 +7,10 @@
 *.obj
 *.exe
 
+# Failure artifacts of the reference-image tests (US-003).
+*.actual.png
+*.diff.png
+
 # Installed agent tooling and local review baselines.
 /.claude/worktrees/
 /_bmad/

@@ -13,6 +13,8 @@ atelier-xml = { path = "../../crates/xml" }
 atelier-image = { path = "../../crates/image" }
 atelier-font = { path = "../../crates/font" }
 atelier-fmt-ooxml = { path = "../../crates/fmt-ooxml" }
+atelier-fmt-legacy = { path = "../../crates/fmt-legacy" }
+atelier-fmt-odf = { path = "../../crates/fmt-odf" }
 atelier-model = { path = "../../crates/model" }
 atelier-unicode = { path = "../../crates/unicode" }
 atelier-render = { path = "../../crates/render" }

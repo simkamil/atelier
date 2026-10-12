@@ -110,6 +110,8 @@ version = "0.1.0"
 dependencies = [
  "atelier-cfb",
  "atelier-compress",
+ "atelier-fmt-legacy",
+ "atelier-fmt-odf",
  "atelier-fmt-ooxml",
  "atelier-font",
  "atelier-geom",

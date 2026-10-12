@@ -54,9 +54,11 @@ Validation locale US-002 (2026-10-10) : [preuves et limites](docs/DEVELOPMENT.md
 
 #### US-003 — Tests par images de référence
 *En tant que* développeur, *je veux* comparer des rendus à des images de référence *afin de* détecter toute régression visuelle.
-- [ ] Comparaison PNG pixel à pixel avec tolérance paramétrable (écart par canal et pourcentage de pixels).
-- [ ] En cas d'échec : image de différence générée à côté du test.
-- [ ] Mode « mise à jour » explicite pour régénérer les références.
+- [x] Comparaison PNG pixel à pixel avec tolérance paramétrable (écart par canal et pourcentage de pixels).
+- [x] En cas d'échec : image de différence générée à côté du test.
+- [x] Mode « mise à jour » explicite pour régénérer les références.
+
+Validation US-003 (2026-10-13) : développée, relue par un agent indépendant et corrigée ; [contrat](docs/us-003-image-reference-tests.md).
 
 Réf : §8 · Taille : M · Dépend de : US-041, US-082
 
@@ -1114,6 +1116,9 @@ Réf : F-TXT-023 · Taille : M · Dépend de : US-301, US-253
 #### US-303 — Lecture docx : tableaux
 *En tant qu'*utilisateur, *je veux* que mes tableaux s'ouvrent correctement *afin de* conserver mes données mises en forme.
 - [ ] Grille, largeurs, fusions (`gridSpan`, `vMerge`), propriétés de tableau, ligne et cellule, styles de tableau conditionnels.
+
+Avancement US-303 (2026-10-13) : lecture livrée dans `atelier-fmt-ooxml`, relue par un agent indépendant et corrigée ; [contrat](docs/us-303-docx-tables.md). Reste ouvert : aucune vérification contre Word, ordre de priorité des styles conditionnels non confirmé, propriétés rangées hors du modèle riche.
+
 - [ ] Tableaux imbriqués importés : lecture, affichage via US-261 et préservation à l'enregistrement via US-306/307. Leur contenu reste en lecture seule en V1 ; aucune création ou édition de tableau imbriqué avant V3 (F-TXT-031).
 
 Réf : F-TXT-030 · Taille : M · Dépend de : US-301, US-261
@@ -1167,9 +1172,11 @@ Réf : §5.1 · Taille : S · Dépend de : US-306
 
 #### US-310 — Ouvrir un fichier ODT
 *En tant qu'*utilisateur, *je veux* ouvrir des documents LibreOffice *afin de* les lire et les modifier.
-- [ ] `content.xml`, `styles.xml`, `meta.xml` : texte, styles (héritage ODF, styles automatiques), listes, tableaux, images, en-têtes et pieds, mise en page, liens, signets, champs page/date.
+- [x] `content.xml`, `styles.xml`, `meta.xml` : texte, styles (héritage ODF, styles automatiques), listes, tableaux, images, en-têtes et pieds, mise en page, liens, signets, champs page/date.
 - [ ] À l'enregistrement : proposition d'enregistrer en docx (ODF non pris en charge en écriture).
 - [ ] Rendu conforme à LibreOffice sur un corpus de 50 documents (nombre de pages identique pour ≥ 90 %).
+
+Avancement US-310 (2026-10-13) : import livré dans `atelier-fmt-odf`, relu par un agent indépendant et corrigé ; [contrat](docs/us-310-odt-import.md), [corpus LibreOffice](tests/odt-reference/README.md). Le critère de pagination n'est pas vérifiable avant la mise en page complète ; la proposition d'enregistrer en docx relève de US-322.
 
 Réf : D2, §5.1 · Taille : L · Dépend de : US-022, US-030, US-200
 
@@ -1184,6 +1191,8 @@ Validation US-311 (2026-10-12) : développée, revue et validée ; [contrat](doc
 #### US-312 — Ouvrir un .doc : texte, mise en forme, styles
 *En tant qu'*utilisateur, *je veux* ouvrir mes anciens documents Word *afin de* les retrouver et les convertir.
 - [ ] FIB, table des pièces (texte compressé ANSI et Unicode), CHPX, PAPX, feuille de styles STSH, polices, propriétés du document.
+
+Avancement US-312 (2026-10-13) : lecture livrée dans `atelier-fmt-legacy`, relue par un agent indépendant et corrigée ; [contrat](docs/us-312-doc-import.md), [corpus](tests/doc-reference/README.md) produit par LibreOffice et non par Word. Reste ouvert : modifications simples de la table des pièces (`Prm0`) non appliquées, Word 6/95 refusé.
 
 Réf : D2, [MS-DOC] · Taille : L · Dépend de : US-311, US-014, US-200
 
@@ -1309,8 +1318,10 @@ Réf : F-COM-022 · Taille : M · Dépend de : US-116, US-104
 
 #### US-330 — Sous-ensemble de polices
 *En tant que* développeur, *je veux* extraire un sous-ensemble de police *afin d'incorporer* uniquement les glyphes utilisés dans le PDF.
-- [ ] Sous-ensembles TrueType (`glyf`/`loca`, composites inclus) et CFF ; tables minimales reconstruites.
-- [ ] Respect des droits d'incorporation (`OS/2 fsType`) : police non incorporable → repli avec avertissement.
+- [x] Sous-ensembles TrueType (`glyf`/`loca`, composites inclus) et CFF ; tables minimales reconstruites.
+- [x] Respect des droits d'incorporation (`OS/2 fsType`) : police non incorporable → repli avec avertissement.
+
+Validation US-330 (2026-10-13) : développée, relue par un agent indépendant et corrigée ; [contrat](docs/us-330-font-subsetting.md). Polices CID et glyphes `seac` vérifiés sur fixtures synthétiques uniquement.
 
 Réf : §6.12 · Taille : M · Dépend de : US-051, US-052
 
