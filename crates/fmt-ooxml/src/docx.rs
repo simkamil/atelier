@@ -629,12 +629,11 @@ pub fn import_docx_with_limits(
         breaks: break_records,
         symbols: symbol_records,
         run_styles: run_style_records,
-        mut ids,
         ..
     } = sink;
-    if paragraphs.is_empty() {
-        ids.extend(document.paragraph_ids());
-    }
+    // Every paragraph of the document, in document order: cells, the empty
+    // paragraph kept after a final table and padding paragraphs included.
+    let ids = document.paragraph_ids();
     document.validate().map_err(model_error)?;
     for part in package.parts().values() {
         if part.uri != main_uri
@@ -1125,7 +1124,6 @@ struct ParagraphSink<'a> {
     breaks: Vec<ImportedBreak>,
     symbols: Vec<ImportedSymbol>,
     run_styles: Vec<ImportedRunStyle>,
-    ids: Vec<NodeId>,
 }
 impl<'a> ParagraphSink<'a> {
     fn new(limits: &'a DocxLimits, theme: &'a Theme, default_style: Option<String>) -> Self {
@@ -1138,7 +1136,6 @@ impl<'a> ParagraphSink<'a> {
             breaks: Vec::new(),
             symbols: Vec::new(),
             run_styles: Vec::new(),
-            ids: Vec::new(),
         }
     }
     fn read(&mut self, node: &XmlNode) -> Result<(Paragraph, ParagraphMeta), DocxError> {
@@ -1164,7 +1161,6 @@ impl<'a> ParagraphSink<'a> {
         ))
     }
     fn record(&mut self, para_id: NodeId, meta: ParagraphMeta) {
-        self.ids.push(para_id);
         for (start, end, style_id) in meta.runs {
             self.run_styles.push(ImportedRunStyle {
                 paragraph: para_id,

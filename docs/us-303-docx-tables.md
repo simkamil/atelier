@@ -83,8 +83,12 @@ Le modèle exige une grille exactement rectangulaire. Chaque règle émet un avi
 1. propriétés `tblPr`/`trPr`/`tcPr` du style de tableau (zone `wholeTable`
    comprise), de la base vers le dérivé le long de `basedOn` ;
 2. zones conditionnelles applicables, dans l’ordre `ConditionalKind::APPLY_ORDER` :
-   `wholeTable`, `band1Vert`/`band2Vert`, `band1Horz`/`band2Horz`, `firstCol`,
-   `lastCol`, `firstRow`, `lastRow`, `nwCell`, `neCell`, `swCell`, `seCell`.
+   `wholeTable`, `band1Vert`/`band2Vert`, `band1Horz`/`band2Horz`, `firstRow`,
+   `lastRow`, `firstCol`, `lastCol`, `nwCell`, `neCell`, `swCell`, `seCell`.
+   Cet ordre suit la lecture d’ECMA-376 §17.7.6 mais n’est **pas vérifié contre
+   Word**. Il n’a d’effet que là où une ligne spéciale croise une colonne
+   spéciale sans coin défini. Endroit unique à modifier pour l’inverser :
+   `ConditionalKind::APPLY_ORDER` dans `crates/fmt-ooxml/src/docx/tables.rs`.
    Pour chaque zone, la chaîne `basedOn` est fusionnée (le dérivé l’emporte) ;
 3. propriétés directes du tableau (`tblPr`), puis exceptions de ligne
    (`tblPrEx`), puis propriétés directes de la cellule (`tcPr`).
@@ -154,7 +158,7 @@ seulement dans `ImportedTables::styles`).
 
 ## Preuves
 
-* `crates/fmt-ooxml/tests/docx_tables.rs` : 26 tests sur des documents OPC
+* `crates/fmt-ooxml/tests/docx_tables.rs` : 29 tests sur des documents OPC
   montés en mémoire — grille et largeurs, `gridSpan`, `vMerge` (nominal,
   orphelin, contenu), `hMerge`, lignes décalées, lignes inégales, grille
   incohérente, imbrication et limite de profondeur, limites typées, valeurs
@@ -168,8 +172,8 @@ seulement dans `ImportedTables::styles`).
 * Fidélité : **Microsoft Word n’est pas installé** sur la machine de
   livraison ; elle n’est vérifiée que sur des documents construits à la main.
   Le corpus `tests/docx-reference/` n’a donc pas été étendu (aucun attendu
-  produit par Word). L’ordre de priorité des zones conditionnelles (`firstRow`
-  après `firstCol`) suit les implémentations usuelles et reste à confirmer
+  produit par Word). L’ordre de priorité des zones conditionnelles
+  (lignes avant colonnes) suit la lecture de la norme et reste à confirmer
   contre Word.
 
 ## Changements dans `docx.rs`

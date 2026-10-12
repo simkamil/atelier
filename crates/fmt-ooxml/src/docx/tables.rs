@@ -367,17 +367,19 @@ pub enum ConditionalKind {
 }
 
 impl ConditionalKind {
-    /// Application order: later entries override earlier ones.
+    /// Application order: later entries override earlier ones. This is the
+    /// single place to change if Word turns out to rank columns above rows.
+    /// Reading of ECMA-376 §17.7.6, not yet checked against Word.
     pub const APPLY_ORDER: [ConditionalKind; 13] = [
         ConditionalKind::WholeTable,
         ConditionalKind::Band1Vert,
         ConditionalKind::Band2Vert,
         ConditionalKind::Band1Horz,
         ConditionalKind::Band2Horz,
-        ConditionalKind::FirstCol,
-        ConditionalKind::LastCol,
         ConditionalKind::FirstRow,
         ConditionalKind::LastRow,
+        ConditionalKind::FirstCol,
+        ConditionalKind::LastCol,
         ConditionalKind::NwCell,
         ConditionalKind::NeCell,
         ConditionalKind::SwCell,
@@ -1121,10 +1123,34 @@ fn has_content(tc: &XmlNode) -> bool {
     if texts.iter().any(|t| !t.text.is_empty()) {
         return true;
     }
+    // Anything else a run can carry: drawings, tabs, breaks, fields...
+    let mut runs = Vec::new();
+    tc.descendants(W_NS, "r", &mut runs);
+    tc.descendants(W_STRICT_NS, "r", &mut runs);
+    let in_run = runs.iter().any(|r| {
+        r.children.iter().any(|c| {
+            matches!(
+                c.name.local.as_str(),
+                "drawing"
+                    | "pict"
+                    | "object"
+                    | "tab"
+                    | "br"
+                    | "cr"
+                    | "sym"
+                    | "fldChar"
+                    | "instrText"
+                    | "noBreakHyphen"
+                    | "softHyphen"
+                    | "footnoteReference"
+                    | "endnoteReference"
+            )
+        })
+    });
     let mut tables = Vec::new();
     tc.descendants(W_NS, "tbl", &mut tables);
     tc.descendants(W_STRICT_NS, "tbl", &mut tables);
-    !tables.is_empty()
+    in_run || !tables.is_empty()
 }
 
 // ---------------------------------------------------------------------------
@@ -1966,10 +1992,8 @@ impl ImportedTables {
             .or_else(|| chain.iter().rev().find_map(|s| s.table.look))
             .unwrap_or_default();
         let band = |sel: fn(&TableProps) -> Option<u32>| -> usize {
-            chain
-                .iter()
-                .rev()
-                .find_map(|s| sel(&s.table))
+            sel(&it.props)
+                .or_else(|| chain.iter().rev().find_map(|s| sel(&s.table)))
                 .unwrap_or(1)
                 .max(1) as usize
         };

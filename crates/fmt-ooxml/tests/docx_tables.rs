@@ -376,7 +376,8 @@ fn nested_tables_are_imported_and_mapped_to_their_cells() {
         _ => panic!(),
     };
     assert_eq!(d.tables.paragraph_cell[&inner_para], inner_cell);
-    assert_eq!(d.paragraph_ids().len(), 4);
+    // lead, deep, tail, side and the final empty paragraph of the section.
+    assert_eq!(d.paragraph_ids().len(), 5);
 }
 
 #[test]
@@ -620,7 +621,7 @@ fn conditional_formatting_follows_the_specification_order_on_overlaps() {
     // Corner: first row, first column and the corner zone overlap -> corner wins.
     assert_eq!(
         conds_of(&d, t, 0, 0),
-        vec![WholeTable, FirstCol, FirstRow, NwCell]
+        vec![WholeTable, FirstRow, FirstCol, NwCell]
     );
     assert_eq!(fill_of(&d, t, 0, 0), rgb(0xFF, 0, 0));
     // First row (no banding on the header row).
@@ -633,12 +634,13 @@ fn conditional_formatting_follows_the_specification_order_on_overlaps() {
     assert_eq!(fill_of(&d, t, 1, 1), rgb(0xDD, 0xDD, 0xDD));
     assert_eq!(conds_of(&d, t, 2, 1), vec![WholeTable, Band2Horz]);
     assert_eq!(fill_of(&d, t, 2, 1), None);
-    // Last row overrides the first column.
+    // Rows rank below columns: the first column zone is applied after the last
+    // row zone and wins where they cross without a corner definition.
     assert_eq!(
         conds_of(&d, t, 3, 0),
-        vec![WholeTable, FirstCol, LastRow, SwCell]
+        vec![WholeTable, LastRow, FirstCol, SwCell]
     );
-    assert_eq!(fill_of(&d, t, 3, 0), rgb(0xAA, 0xAA, 0xAA));
+    assert_eq!(fill_of(&d, t, 3, 0), rgb(0, 0xFF, 0));
     // Borders: the style's outer top / inside horizontal borders map to cell edges.
     let cell = |r, c| cell_ids(&d, t.rows[r])[c];
     let top_row = d.tables.resolve_cell(cell(0, 1), &d.theme).unwrap();
@@ -1033,4 +1035,71 @@ fn mutated_and_truncated_table_documents_never_panic() {
         }
     }
     assert!(accepted > 300, "mutations were all rejected: {accepted}");
+}
+
+#[test]
+fn row_band_size_set_directly_on_the_table_overrides_the_style() {
+    use ConditionalKind::*;
+    let body = fancy_table(
+        r#"<w:tblLook w:val="0400"/><w:tblStyleRowBandSize w:val="2"/>"#,
+        "",
+        "",
+    );
+    let d = import_docx(&docx(&body, Some(FANCY))).unwrap();
+    let (_, t) = first_table(&d);
+    // The style says 1; the table says 2: rows 0-1 band 1, rows 2-3 band 2.
+    assert_eq!(conds_of(&d, t, 1, 1), vec![WholeTable, Band1Horz]);
+    assert_eq!(conds_of(&d, t, 2, 1), vec![WholeTable, Band2Horz]);
+}
+
+#[test]
+fn paragraph_ids_lists_every_paragraph_including_the_final_empty_one() {
+    let d = import(&format!("<w:tbl>{}{}</w:tbl>", grid(1), row(&["x"])));
+    assert_eq!(d.paragraph_ids().len(), 2);
+    assert_eq!(d.paragraph_ids(), d.document.paragraph_ids().as_slice());
+    let d = import("<w:tbl><w:tr><w:tc/></w:tr></w:tbl>");
+    assert_eq!(d.paragraph_ids(), d.document.paragraph_ids().as_slice());
+    assert_eq!(d.paragraph_ids().len(), 2);
+}
+
+fn continuation_doc(cont_paragraph: &str) -> ImportedDocx {
+    let cont = format!("<w:tc><w:tcPr><w:vMerge/></w:tcPr>{cont_paragraph}</w:tc>");
+    let body = format!(
+        "<w:tbl>{}<w:tr>{}{}</w:tr><w:tr>{cont}{}</w:tr></w:tbl>",
+        grid(2),
+        vmerge_cell("restart", "a"),
+        tc("b"),
+        tc("d")
+    );
+    import(&body)
+}
+
+fn anchor_block_count(d: &ImportedDocx) -> usize {
+    let (_, t) = first_table(d);
+    let first = cell_ids(d, t.rows[0])[0];
+    let Some(Node::Cell(c)) = d.document.node(first) else {
+        panic!()
+    };
+    c.blocks.len()
+}
+
+#[test]
+fn vmerge_continuation_keeping_only_non_text_content_is_not_dropped() {
+    for content in [
+        "<w:r><w:drawing/></w:r>",
+        "<w:r><w:pict/></w:r>",
+        "<w:r><w:tab/></w:r>",
+        "<w:r><w:br/></w:r>",
+        r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r>"#,
+    ] {
+        let d = continuation_doc(&format!("<w:p>{content}</w:p>"));
+        d.document.validate().unwrap();
+        assert_eq!(anchor_block_count(&d), 2, "content kept for {content}");
+        assert!(has_notice(&d, "vMerge"), "{content}");
+    }
+    // Tab stops in paragraph properties are not content.
+    let d = continuation_doc(
+        r#"<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="100"/></w:tabs></w:pPr></w:p>"#,
+    );
+    assert_eq!(anchor_block_count(&d), 1);
 }
