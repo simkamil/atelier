@@ -6,7 +6,7 @@
 
 use atelier_geom::{Point, Rect};
 use atelier_image_diff::{
-    Config, DIFF_MARK, Image, MatchError, Tolerance, check_image_matches, load_png,
+    Config, DIFF_MARK, Image, MatchError, Tolerance, artifact_paths, check_image_matches, load_png,
 };
 use atelier_raster::display_list::{
     RenderOptions, Resolution, ResourceProvider, SvgImage, render_image,
@@ -106,8 +106,12 @@ fn simulated_regression_produces_actual_and_diff_images() {
     else {
         panic!("unexpected error: {error}");
     };
-    assert_eq!(*actual_path, out.join("page.actual.png"));
-    assert_eq!(*diff_path, out.join("page.diff.png"));
+    let expected_paths = artifact_paths(&reference, Some(&out));
+    assert_eq!(
+        (actual_path, diff_path),
+        (&expected_paths.0, &expected_paths.1)
+    );
+    assert!(actual_path.starts_with(&out) && diff_path.starts_with(&out));
     assert_eq!(load_png(actual_path).unwrap(), regressed);
     let bounds = report.bounds.unwrap();
     assert_eq!((bounds.x, bounds.width), (38, 4)); // x = 18 + 20 .. 18 + 24
@@ -118,7 +122,7 @@ fn simulated_regression_produces_actual_and_diff_images() {
     };
     assert_eq!(at(39, 15), DIFF_MARK);
     assert_ne!(at(2, 2), DIFF_MARK);
-    assert!(error.to_string().contains("page.diff.png"));
+    assert!(error.to_string().contains(&diff_path.display().to_string()));
 }
 
 fn crate_path(relative: &str) -> PathBuf {

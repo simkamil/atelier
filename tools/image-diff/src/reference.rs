@@ -3,10 +3,12 @@
 
 use crate::{DiffError, Image, Report, Tolerance, compare, diff_image};
 use atelier_image::{DecodeLimits, ImageError, decode_png, encode_png_rgba};
+use std::ffi::OsString;
 use std::fmt;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Environment variable that enables the update mode when set to `1`.
 pub const UPDATE_ENV: &str = "ATELIER_UPDATE_REFERENCES";
@@ -28,7 +30,13 @@ impl Config {
     /// Reads `ATELIER_UPDATE_REFERENCES` (`1` enables the update), `ATELIER_REFERENCE_OUT_DIR`
     /// and `CI` (any non-empty value other than `0`/`false` marks continuous integration).
     pub fn from_env() -> Self {
-        let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+        Self::from_lookup(|name| std::env::var_os(name))
+    }
+
+    /// [`Config::from_env`] over an explicit variable lookup, so the rules can be tested
+    /// without touching the process environment.
+    pub fn from_lookup(lookup: impl Fn(&str) -> Option<OsString>) -> Self {
+        let var = |name: &str| lookup(name).filter(|v| !v.is_empty());
         Self {
             update: var(UPDATE_ENV).is_some_and(|v| v == "1"),
             ci: var("CI").is_some_and(|v| v != "0" && v != "false"),
@@ -149,18 +157,44 @@ pub fn save_png(path: &Path, image: &Image) -> Result<(), MatchError> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent).map_err(|e| io_error(parent, &e))?;
     }
-    fs::write(path, bytes).map_err(|e| io_error(path, &e))
+    // Write beside the target then rename, so a concurrent reader never sees a partial file.
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(
+        ".{}-{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let temporary = path.with_file_name(name);
+    fs::write(&temporary, bytes).map_err(|e| io_error(&temporary, &e))?;
+    fs::rename(&temporary, path).map_err(|e| {
+        let _ = fs::remove_file(&temporary);
+        io_error(path, &e)
+    })
 }
 
-/// Paths of `<name>.actual.png` and `<name>.diff.png` for a reference `<name>.png`, next to the
-/// reference or in `output_dir`.
+/// Paths of `<name>.actual.png` and `<name>.diff.png` for a reference `<name>.png` next to the
+/// reference. In `output_dir` the name is `<name>-<hash>`, where the hash is derived from the
+/// whole reference path, so references of the same name in different directories never share
+/// an artifact.
 pub fn artifact_paths(reference: &Path, output_dir: Option<&Path>) -> (PathBuf, PathBuf) {
-    let stem = reference
+    let mut stem = reference
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "image".to_owned());
     let dir = match output_dir {
-        Some(dir) => dir.to_path_buf(),
+        Some(dir) => {
+            // FNV-1a over the path with separators normalised.
+            let hash = reference
+                .to_string_lossy()
+                .bytes()
+                .map(|b| if b == b'\\' { b'/' } else { b })
+                .fold(0xcbf2_9ce4_8422_2325_u64, |hash, b| {
+                    (hash ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+                });
+            stem.push_str(&format!("-{:08x}", hash as u32));
+            dir.to_path_buf()
+        }
         None => reference
             .parent()
             .map(Path::to_path_buf)
@@ -170,6 +204,13 @@ pub fn artifact_paths(reference: &Path, output_dir: Option<&Path>) -> (PathBuf, 
         dir.join(format!("{stem}.actual.png")),
         dir.join(format!("{stem}.diff.png")),
     )
+}
+
+/// Artifacts of an earlier failure would mislead once they no longer describe the image.
+fn remove_stale(paths: &[&Path]) {
+    for path in paths {
+        let _ = fs::remove_file(path);
+    }
 }
 
 /// Compares `actual` with the reference PNG at `reference` and applies `config`.
@@ -186,11 +227,13 @@ pub fn check_image_matches(
     if config.update && config.ci {
         return Err(MatchError::UpdateInCi);
     }
+    let (actual_path, diff_path) = artifact_paths(reference, config.output_dir.as_deref());
     let bytes = match fs::read(reference) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == ErrorKind::NotFound => {
             if config.update {
                 save_png(reference, actual)?;
+                remove_stale(&[&actual_path, &diff_path]);
                 return Ok(Outcome::Created);
             }
             return Err(MatchError::ReferenceMissing {
@@ -203,6 +246,7 @@ pub fn check_image_matches(
         Ok(image) => image,
         Err(_) if config.update => {
             save_png(reference, actual)?;
+            remove_stale(&[&actual_path, &diff_path]);
             return Ok(Outcome::Updated);
         }
         Err(error) => {
@@ -212,14 +256,16 @@ pub fn check_image_matches(
             });
         }
     };
-    let (actual_path, diff_path) = artifact_paths(reference, config.output_dir.as_deref());
     let report = match compare(&expected, actual, tolerance) {
         Ok(report) => report,
         Err(error) => {
             if config.update && !matches!(error, DiffError::InvalidTolerance) {
                 save_png(reference, actual)?;
+                remove_stale(&[&actual_path, &diff_path]);
                 return Ok(Outcome::Updated);
             }
+            // No difference image can be produced here: an older one would not match.
+            remove_stale(&[&diff_path]);
             let written = save_png(&actual_path, actual).ok().map(|()| actual_path);
             return Err(MatchError::Incomparable {
                 error,
@@ -229,13 +275,12 @@ pub fn check_image_matches(
         }
     };
     if report.passed {
-        // Stale artifacts of an earlier failure would mislead.
-        let _ = fs::remove_file(&actual_path);
-        let _ = fs::remove_file(&diff_path);
+        remove_stale(&[&actual_path, &diff_path]);
         return Ok(Outcome::Matched(report));
     }
     if config.update {
         save_png(reference, actual)?;
+        remove_stale(&[&actual_path, &diff_path]);
         return Ok(Outcome::Updated);
     }
     save_png(&actual_path, actual)?;

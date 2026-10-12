@@ -255,7 +255,7 @@ fn mismatch_writes_artifacts_and_reports_paths_and_numbers() {
     };
     let error = check_image_matches(&actual, &reference, &Tolerance::exact(), &config).unwrap_err();
     let (actual_path, diff_path) = artifact_paths(&reference, Some(&out));
-    assert_eq!(actual_path, out.join("ref.actual.png"));
+    assert!(actual_path.starts_with(&out) && diff_path.starts_with(&out));
     let message = error.to_string();
     assert!(
         message.contains(&actual_path.display().to_string()),
@@ -299,6 +299,144 @@ fn dimension_mismatch_writes_actual_only() {
     ));
     assert!(dir.join("ref.actual.png").exists());
     assert!(!dir.join("ref.diff.png").exists());
+}
+
+#[test]
+fn stale_difference_image_is_removed_when_dimensions_change() {
+    let dir = temp_dir("stale-dims");
+    let reference = dir.join("ref.png");
+    save_png(&reference, &solid(2, 2, [0; 4])).unwrap();
+    let config = Config::default();
+    // First failure: same size, both artifacts are written.
+    let wrong = solid(2, 2, [9, 9, 9, 255]);
+    assert!(check_image_matches(&wrong, &reference, &Tolerance::exact(), &config).is_err());
+    assert!(dir.join("ref.diff.png").exists());
+    // Second failure: another size, so the old difference image no longer applies.
+    let resized = solid(3, 2, [0; 4]);
+    assert!(check_image_matches(&resized, &reference, &Tolerance::exact(), &config).is_err());
+    assert_eq!(load_png(&dir.join("ref.actual.png")).unwrap(), resized);
+    assert!(!dir.join("ref.diff.png").exists());
+}
+
+#[test]
+fn update_removes_artifacts_of_the_earlier_failure() {
+    let dir = temp_dir("stale-update");
+    let reference = dir.join("ref.png");
+    save_png(&reference, &solid(2, 2, [0; 4])).unwrap();
+    let wrong = solid(2, 2, [9, 9, 9, 255]);
+    let failing = Config::default();
+    assert!(check_image_matches(&wrong, &reference, &Tolerance::exact(), &failing).is_err());
+    assert!(dir.join("ref.actual.png").exists() && dir.join("ref.diff.png").exists());
+    let update = Config {
+        update: true,
+        ..Config::default()
+    };
+    assert_eq!(
+        check_image_matches(&wrong, &reference, &Tolerance::exact(), &update),
+        Ok(Outcome::Updated)
+    );
+    assert!(!dir.join("ref.actual.png").exists() && !dir.join("ref.diff.png").exists());
+    // Same after a resize and after recreating a deleted reference.
+    assert!(check_image_matches(&wrong, &reference, &Tolerance::exact(), &failing).is_ok());
+    let resized = solid(3, 2, [0; 4]);
+    assert!(check_image_matches(&resized, &reference, &Tolerance::exact(), &failing).is_err());
+    assert_eq!(
+        check_image_matches(&resized, &reference, &Tolerance::exact(), &update),
+        Ok(Outcome::Updated)
+    );
+    assert!(!dir.join("ref.actual.png").exists());
+    assert!(check_image_matches(&wrong, &reference, &Tolerance::exact(), &failing).is_err());
+    std::fs::remove_file(&reference).unwrap();
+    assert_eq!(
+        check_image_matches(&wrong, &reference, &Tolerance::exact(), &update),
+        Ok(Outcome::Created)
+    );
+    assert!(!dir.join("ref.actual.png").exists() && !dir.join("ref.diff.png").exists());
+}
+
+#[test]
+fn same_named_references_do_not_share_artifacts_in_an_output_directory() {
+    let out = PathBuf::from("out");
+    let a = artifact_paths(&PathBuf::from("a/page.png"), Some(&out));
+    let b = artifact_paths(&PathBuf::from("b/page.png"), Some(&out));
+    assert_ne!(a.0, b.0);
+    assert_ne!(a.1, b.1);
+    // Stable, and independent of the separator style.
+    assert_eq!(a, artifact_paths(&PathBuf::from(r"a\page.png"), Some(&out)));
+    let name = a.0.file_name().unwrap().to_string_lossy().into_owned();
+    assert!(
+        name.starts_with("page-") && name.ends_with(".actual.png"),
+        "{name}"
+    );
+    // Next to the reference the plain name is kept.
+    assert_eq!(
+        artifact_paths(&PathBuf::from("a/page.png"), None),
+        (
+            PathBuf::from("a/page.actual.png"),
+            PathBuf::from("a/page.diff.png")
+        )
+    );
+}
+
+#[test]
+fn save_png_leaves_no_temporary_file() {
+    let dir = temp_dir("atomic");
+    let path = dir.join("image.png");
+    save_png(&path, &solid(2, 2, [1, 2, 3, 255])).unwrap();
+    // Replacing an existing file works too.
+    save_png(&path, &solid(3, 1, [4, 5, 6, 255])).unwrap();
+    assert_eq!(load_png(&path).unwrap(), solid(3, 1, [4, 5, 6, 255]));
+    let names: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(names, ["image.png"]);
+}
+
+#[test]
+fn environment_rules_for_update_and_ci() {
+    let config = |update: Option<&str>, ci: Option<&str>, out: Option<&str>| {
+        Config::from_lookup(|name| {
+            match name {
+                "ATELIER_UPDATE_REFERENCES" => update,
+                "CI" => ci,
+                "ATELIER_REFERENCE_OUT_DIR" => out,
+                _ => None,
+            }
+            .map(Into::into)
+        })
+    };
+    assert_eq!(config(None, None, None), Config::default());
+    // Only the exact value `1` enables the update mode.
+    assert!(config(Some("1"), None, None).update);
+    for value in ["", "0", "false", "true", "yes", " 1", "11"] {
+        assert!(!config(Some(value), None, None).update, "{value:?}");
+    }
+    // Any non-empty value other than `0` and `false` marks continuous integration.
+    for value in ["1", "true", "yes"] {
+        assert!(config(None, Some(value), None).ci, "{value:?}");
+    }
+    for value in ["", "0", "false"] {
+        assert!(!config(None, Some(value), None).ci, "{value:?}");
+    }
+    assert_eq!(
+        config(None, None, Some("out")).output_dir,
+        Some(PathBuf::from("out"))
+    );
+    assert_eq!(config(None, None, Some("")).output_dir, None);
+    // The combination is what the assertion refuses.
+    let both = config(Some("1"), Some("true"), None);
+    let dir = temp_dir("env-ci");
+    assert_eq!(
+        check_image_matches(
+            &solid(1, 1, [0; 4]),
+            &dir.join("r.png"),
+            &Tolerance::exact(),
+            &both
+        ),
+        Err(MatchError::UpdateInCi)
+    );
+    assert!(!dir.join("r.png").exists());
 }
 
 // ------------------------------------------------------------------ command line

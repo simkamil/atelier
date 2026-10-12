@@ -56,10 +56,14 @@ ce qui correspond à ce que voit l'utilisateur.
 ## En cas d'échec
 
 Sont écrits `<nom>.actual.png` (image obtenue) et `<nom>.diff.png` (différence) à côté de la référence
-`<nom>.png`, ou dans le dossier de `ATELIER_REFERENCE_OUT_DIR` (ou `Config::output_dir`). Le message
-d'erreur donne les deux chemins, le nombre et la proportion de pixels différents, les écarts maximal
-et moyen et la boîte englobante. Une réussite ultérieure supprime ces fichiers périmés. Avec des
-dimensions différentes, seule l'image obtenue est écrite.
+`<nom>.png`, ou dans le dossier de `ATELIER_REFERENCE_OUT_DIR` (ou `Config::output_dir`). Dans ce
+dossier commun, le nom devient `<nom>-<empreinte>`, l'empreinte étant dérivée du chemin complet de la
+référence : deux références de même nom dans des dossiers différents ne partagent jamais un fichier.
+Le message d'erreur donne les deux chemins, le nombre et la proportion de pixels différents, les
+écarts maximal et moyen et la boîte englobante. Une réussite ou une mise à jour ultérieure supprime
+ces fichiers périmés. Avec des dimensions différentes, seule l'image obtenue est écrite et une
+ancienne image de différence est supprimée. Les PNG sont écrits dans un fichier temporaire puis
+renommés, pour qu'un test concurrent ne lise jamais un fichier partiel.
 
 Ces fichiers ne doivent pas être versionnés ; ligne proposée pour `.gitignore` :
 
