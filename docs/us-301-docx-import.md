@@ -73,6 +73,8 @@ passent avec 540 tests workspace et sources/lock inchangés. La [revue](../_bmad
 conserve chaque constat et son traitement. Cette livraison expose des API de
 bibliothèque; le raccordement au parcours d’ouverture de l’éditeur riche reste séparé.
 
+Les tableaux (`w:tbl`) sont importés en tableaux du modèle riche : voir [US-303](us-303-docx-tables.md).
+
 ## Intégration au MVP
 
 Un [aperçu DOCX en lecture seule](rich-docx-preview.md) utilise désormais cette API dans l’application Windows. Les limites du lot, les critères encore ouverts et les preuves intégrées sont consignés dans ce contrat. L’édition riche et la comparaison à Word restent séparées.

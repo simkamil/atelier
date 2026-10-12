@@ -8,9 +8,12 @@
 
 pub mod docx;
 pub use docx::{
-    DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, ImportNotice, ImportedBreak,
-    ImportedDocx, ImportedRunStyle, ImportedSymbol, LatentStyleInfo, import_docx,
-    import_docx_with_limits,
+    Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
+    DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice,
+    ImportedBreak, ImportedCell, ImportedDocx, ImportedRow, ImportedRunStyle, ImportedSymbol,
+    ImportedTable, ImportedTables, LatentStyleInfo, ResolvedCell, RowHeight, RowProps, Shading,
+    TableAlign, TableColor, TableLayout, TableLook, TableProps, TableStyleDef, TableWidth, VMerge,
+    import_docx, import_docx_with_limits,
 };
 
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader, Writer as XmlWriter};
