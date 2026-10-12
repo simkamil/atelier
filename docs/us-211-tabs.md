@@ -1,0 +1,12 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+# US-211 — Tabulations
+
+Text positions, advances, stop positions and decorations use 1/64 typographic point. The default interval is 2268 units (1.25 cm rounded to the engine unit). Explicit stop positions are measured from the content area's left margin; paragraph indents move the current pen and therefore affect the next-stop calculation.
+
+`layout_paragraph` keeps its existing return type and uses default tab settings. For explicit stops, call `tabs::layout_paragraph_with_tabs` with `TabSettings` and read its `TabLayout { layout, decorations }`. Reuse the same `&TabSettings` for each paragraph to apply one document-wide policy. Stops must be positive, sorted and unique; the default interval must be positive. Alignments are left, center, right, decimal comma, and bar. A decimal stop without a comma behaves like a right stop. Bars are fixed decorations and do not consume tabs; they are emitted on every eligible paragraph line, including lines with no U+0009.
+
+Tabs remain in source ranges and produce a control `LayoutGlyph` with glyph id zero, source equal to the tab byte, zero offsets, and the computed advance. Consumers use the source text to recognize this control and skip rasterizing it. Leaders and bars are returned separately as positioned `TabDecoration` values. A bar has `width == 0`; render it as a vertical stroke whose y and height come from the referenced `LayoutLine` metrics. A terminal tab retains its source and advance; terminal ordinary spaces continue to be trimmed.
+
+Wrapping and placement resolve the same tab advances. If an aligned segment would move the pen backwards, the resolver tries the next stop. If content exceeds the available line width, normal grapheme-safe wrapping continues; exact overflow matching with Word is not measured yet and remains open for a later comparison.
+
+Custom non-bar alignment stops take priority until the pen has passed all of them; automatic stops then resume at the next interval multiple beyond the last non-bar custom stop. This follows the OOXML rule for custom stops and automatic stops in [Microsoft's `defaultTabStop` reference](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.defaulttabstop?view=openxml-3.0.1#remarks). The project retains its specified 2268-unit interval; that is independent of Word's 720-twentieths-of-a-point value when its document setting is omitted. This documents the rule and does not claim a rendered comparison with Word.

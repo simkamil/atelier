@@ -1,8 +1,8 @@
 # Préparation du démonstrateur — 2026-10-12
 
-Le backlog compte désormais **46 US terminées sur 158**. Le dernier lot intègre
-CFF, CFB et le backend raster avec des agents GPT-6 Luna en raisonnement moyen.
-US-004 reste partielle pour la mémoire réelle ; US-210 pour la preuve Word.
+Le backlog compte désormais **47 US terminées sur 158**. Le dernier lot développe
+les tabulations, la pagination et le curseur riche avec des agents GPT-6 Luna moyen.
+US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves Word.
 
 - [Unicode](us-010-ucd-tables.md) : 71 fichiers officiels Unicode 17.0.0,
   licence et SHA-256, générateur local et build reproductible. L’[oracle](../_bmad-output/implementation-artifacts/prototype-ucd-oracle.json)
@@ -35,6 +35,42 @@ critères de cache et de fluidité matériels ; US-103 conserve les essais de cl
 US-113 conserve SharedBuffer, polices/URL et les essais de dialogues. US-111
 conserve son échec strict de handles. US-092 reste ouverte pour l’annulation
 métier : le dispatch WASM synchrone n’est pas préemptible. US-114 est validée.
+
+## Tabulations, pagination et curseur riche — 2026-10-12
+
+Trois agents GPT-6 Luna, raisonnement moyen, ont développé US-211, US-212 et
+US-214 en parallèle, puis trois autres agents ont relu le lot indépendamment.
+**US-214 est validée : 47 US terminées sur 158.** US-211 et US-212 restent
+partielles pour la comparaison authentique avec Word.
+
+- [Tabulations](us-211-tabs.md) : gauche, centre, droite, décimal virgule,
+  barres et trois points de suite; grille 1,25 cm, retraits et wrapping testés.
+- [Pagination](us-212-pagination.md) : espacements contextuels, solidarités,
+  veuves/orphelines, sauts explicites prioritaires et diagnostics des contraintes
+  impossibles. Toutes les lignes sont conservées une fois, avec budgets vérifiés.
+- [Curseur riche](us-214-caret-geometry.md) : position/point, graphèmes et
+  clusters, sélection entre pages, navigation verticale préservant colonne
+  et affinité aux coupures souples. Arrêts internes de ligatures interpolés
+  uniformément sans GDEF. L'adaptateur `flow::caret_from_pagination` teste la
+  chaîne avec les vraies polices, les tabs et les espacements du layout.
+
+La [validation finale](../_bmad-output/implementation-artifacts/rich-page-geometry-validation.json)
+passe **20 contrôles, 707 tests workspace et 57 tests text-layout release** :
+builds Windows/WASM/musl, compilation des tests musl, Clippy hôte/WASM,
+format, SPDX, garde, reproduction DOCX, ABI réelle, Worker et navigateur.
+Les sources et le lock restent inchangés pendant ces contrôles. Les 33 paquets
+restent locaux, sans dépendance de registre ni cycle Cargo. Le moteur embarqué
+reste à 1 041 817 octets, sous le plafond inchangé de 1 180 429.
+La [revue triée](../_bmad-output/implementation-artifacts/rich-page-geometry-review.md),
+l'[audit des matrices](../_bmad-output/implementation-artifacts/rich-page-geometry-matrix.json)
+et le [reçu Graphify](../_bmad-output/implementation-artifacts/rich-page-geometry-graph.json)
+conservent les preuves et limites.
+
+US-210/212 attendent la mesure de fidélité Word; US-211 le dépassement de marge
+observé dans Word. L'interface testable reste TXT; ces API ne raccordent pas
+encore DOCX ou le layout riche à l'éditeur. Les tests musl sont compilés ici,
+sans exécution Linux locale. Le dernier diagnostic distant connu reste le
+blocage Actions pour paiement/plafond, documenté dans le lot précédent.
 
 ## CFF, CFB, backend raster et fuzz — 2026-10-12
 

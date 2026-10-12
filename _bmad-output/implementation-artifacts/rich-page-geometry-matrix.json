@@ -1,0 +1,240 @@
+{
+  "date": "2026-10-12",
+  "matrix_rows": 23,
+  "all_rows_traced": true,
+  "runtime_tests_actually_executed": true,
+  "validation_sha256": "7eaf83861bdda545ff7f94621b7f5dbd176d87673b004fdbf33a3e94968d2018",
+  "word_fidelity_established": false,
+  "rows": [
+    {
+      "spec": "spec-us211-tabs.md",
+      "scenario": "Défaut",
+      "executed_windows_and_release_tests": [
+        "default_tab_uses_2268_grid_and_keeps_terminal_control_source",
+        "default_tab_grid_accounts_for_first_line_and_hanging_indents",
+        "tab_only_lines_retain_default_and_resolved_font_metrics"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us211-tabs.md",
+      "scenario": "Alignements",
+      "executed_windows_and_release_tests": [
+        "explicit_right_decimal_and_leader_stops_have_numeric_positions",
+        "center_and_decimal_without_comma_align_by_segment_width"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us211-tabs.md",
+      "scenario": "Décorations",
+      "executed_windows_and_release_tests": [
+        "bars_are_fixed_and_invalid_settings_fail_without_partial_layout",
+        "all_leader_kinds_cover_the_consumed_gap_and_respect_decoration_limits"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us211-tabs.md",
+      "scenario": "Sources",
+      "executed_windows_and_release_tests": [
+        "tabs_survive_wrapping_with_contiguous_utf8_sources",
+        "default_tab_uses_2268_grid_and_keeps_terminal_control_source",
+        "line_wrapping_does_not_split_a_shaping_cluster",
+        "mandatory_lines_without_tabs_respect_a_tight_range_scan_budget"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us211-tabs.md",
+      "scenario": "Marge",
+      "executed_windows_and_release_tests": [
+        "tabs_survive_wrapping_with_contiguous_utf8_sources",
+        "custom_stops_precede_the_default_grid_then_automatic_stops_resume"
+      ],
+      "status": "deterministic_behavior_verified_word_comparison_open",
+      "word_verified": false
+    },
+    {
+      "spec": "spec-us211-tabs.md",
+      "scenario": "Malformé",
+      "executed_windows_and_release_tests": [
+        "bars_are_fixed_and_invalid_settings_fail_without_partial_layout"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us212-pagination.md",
+      "scenario": "Espacements",
+      "executed_windows_and_release_tests": [
+        "normal_and_contextual_spacing_use_resolved_maximum"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us212-pagination.md",
+      "scenario": "Page suivante",
+      "executed_windows_and_release_tests": [
+        "automatic_page_top_drops_spacing_but_explicit_break_preserves_it",
+        "keep_together_moves_intact_and_baseline_uses_each_lines_input_offset",
+        "break_after_survives_empty_paragraphs_without_creating_a_trailing_page"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us212-pagination.md",
+      "scenario": "Solidarité",
+      "executed_windows_and_release_tests": [
+        "keep_with_next_moves_a_fitting_chain_and_reports_an_impossible_one",
+        "keep_together_moves_intact_and_baseline_uses_each_lines_input_offset",
+        "widow_rule_moves_a_line_when_the_previous_page_can_keep_its_minimum",
+        "five_short_lines_split_three_and_two_without_relaxation",
+        "explicit_breaks_take_precedence_over_keep_with_next"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us212-pagination.md",
+      "scenario": "Sauts",
+      "executed_windows_and_release_tests": [
+        "manual_line_break_splits_exactly_once_and_page_ranges_are_contiguous",
+        "break_after_survives_empty_paragraphs_without_creating_a_trailing_page",
+        "widow_backtracking_never_crosses_an_explicit_manual_break"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us212-pagination.md",
+      "scenario": "Cas extrêmes",
+      "executed_windows_and_release_tests": [
+        "overheight_line_and_unavoidable_widow_are_reported_without_losing_lines",
+        "keep_with_next_moves_a_fitting_chain_and_reports_an_impossible_one",
+        "automatic_page_top_drops_spacing_but_explicit_break_preserves_it",
+        "many_single_line_pages_conserve_sources_under_a_linear_work_budget"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us212-pagination.md",
+      "scenario": "Malformé",
+      "executed_windows_and_release_tests": [
+        "malformed_inputs_and_limits_return_typed_errors"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us214-caret-geometry.md",
+      "scenario": "Position et point",
+      "executed_windows_and_release_tests": [
+        "hit_test_chooses_the_y_containing_line_before_considering_x",
+        "real_tabbed_layout_paginates_and_maps_carets_between_pages",
+        "invalid_ranges_geometry_and_exhausted_budgets_fail_without_partial_results"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us214-caret-geometry.md",
+      "scenario": "Unicode",
+      "executed_windows_and_release_tests": [
+        "combining_grapheme_rejects_internal_byte_and_ligature_stops_are_interpolated",
+        "same_source_multiglyph_cluster_aggregates_advance_once",
+        "independent_glyph_advances_are_not_interpolated_as_one_cluster"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us214-caret-geometry.md",
+      "scenario": "Fin de ligne",
+      "executed_windows_and_release_tests": [
+        "trailing_spaces_have_distinct_zero_advance_positions_and_selection_keeps_pages",
+        "crlf_before_and_after_map_to_previous_and_following_lines",
+        "terminal_break_needs_an_empty_following_line_and_line_boxes_must_not_overlap"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us214-caret-geometry.md",
+      "scenario": "Sélection",
+      "executed_windows_and_release_tests": [
+        "real_tabbed_layout_paginates_and_maps_carets_between_pages",
+        "trailing_spaces_have_distinct_zero_advance_positions_and_selection_keeps_pages",
+        "included_paragraph_spacing_is_counted_once_across_the_pipeline"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us214-caret-geometry.md",
+      "scenario": "Vertical",
+      "executed_windows_and_release_tests": [
+        "vertical_motion_retains_preferred_column_across_a_short_line",
+        "affinity_aware_upward_moves_keep_the_preceding_soft_wrap_line"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us214-caret-geometry.md",
+      "scenario": "Malformé",
+      "executed_windows_and_release_tests": [
+        "invalid_ranges_geometry_and_exhausted_budgets_fail_without_partial_results",
+        "adapter_rejects_forged_page_ranges_and_source_indices"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-rich-page-geometry-integration.md",
+      "scenario": "Chaîne complète",
+      "executed_windows_and_release_tests": [
+        "real_tabbed_layout_paginates_and_maps_carets_between_pages"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-rich-page-geometry-integration.md",
+      "scenario": "Espacement",
+      "executed_windows_and_release_tests": [
+        "included_paragraph_spacing_is_counted_once_across_the_pipeline"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-rich-page-geometry-integration.md",
+      "scenario": "Sélection",
+      "executed_windows_and_release_tests": [
+        "real_tabbed_layout_paginates_and_maps_carets_between_pages",
+        "vertical_motion_retains_preferred_column_across_a_short_line"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-rich-page-geometry-integration.md",
+      "scenario": "Régression",
+      "executed_windows_and_release_tests": [
+        "independently_packaged_docx_resolves_styles_and_embedded_font_into_lines"
+      ],
+      "status": "functional_verified",
+      "additional_gates": [
+        "docx_reference_reproducible",
+        "packaged_engine",
+        "editor_real_abi",
+        "worker_real_transfer",
+        "editor_browser"
+      ]
+    },
+    {
+      "spec": "spec-rich-page-geometry-integration.md",
+      "scenario": "Publication",
+      "executed_windows_and_release_tests": [],
+      "status": "process_verified",
+      "evidence": [
+        "rich-page-geometry-validation.json",
+        "rich-page-geometry-review.md",
+        "rich-page-geometry-graph.json"
+      ],
+      "limitations": [
+        "Word fidelity remains unmeasured",
+        "Rich library APIs are not yet connected to the UI",
+        "musl tests compiled, not executed locally"
+      ]
+    }
+  ]
+}

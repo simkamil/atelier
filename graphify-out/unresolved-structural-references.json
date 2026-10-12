@@ -1617,30 +1617,52 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_text_layout_src_caret",
+    "target": "grapheme_boundaries",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/caret.rs",
+    "source_location": "L12",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_src_caret",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/caret.rs",
+    "source_location": "L15",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_src_flow",
+    "target": "caret",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/flow.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_src_flow",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/flow.rs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_text_layout_src_lib",
     "target": "manager",
-    "relation": "imports_from",
-    "confidence": "EXTRACTED",
-    "source_file": "crates/text-layout/src/lib.rs",
-    "source_location": "L11",
-    "weight": 1.0,
-    "context": "import",
-    "_origin": "ast"
-  },
-  {
-    "source": "crates_text_layout_src_lib",
-    "target": "atelier_shape",
-    "relation": "imports_from",
-    "confidence": "EXTRACTED",
-    "source_file": "crates/text-layout/src/lib.rs",
-    "source_location": "L14",
-    "weight": 1.0,
-    "context": "import",
-    "_origin": "ast"
-  },
-  {
-    "source": "crates_text_layout_src_lib",
-    "target": "rich",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/text-layout/src/lib.rs",
@@ -1651,7 +1673,7 @@
   },
   {
     "source": "crates_text_layout_src_lib",
-    "target": "line_break",
+    "target": "atelier_shape",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/text-layout/src/lib.rs",
@@ -1662,7 +1684,7 @@
   },
   {
     "source": "crates_text_layout_src_lib",
-    "target": "grapheme_boundaries",
+    "target": "rich",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/text-layout/src/lib.rs",
@@ -1673,11 +1695,88 @@
   },
   {
     "source": "crates_text_layout_src_lib",
-    "target": "fmt",
+    "target": "line_break",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/text-layout/src/lib.rs",
     "source_location": "L22",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_src_lib",
+    "target": "grapheme_boundaries",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/lib.rs",
+    "source_location": "L23",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_src_lib",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/lib.rs",
+    "source_location": "L26",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_src_pagination",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/pagination.rs",
+    "source_location": "L10",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_src_tabs",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/src/tabs.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_caret",
+    "target": "manager",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/caret.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_caret",
+    "target": "caret",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/caret.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_caret",
+    "target": "atelier_text_layout",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/caret.rs",
+    "source_location": "L7",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -1749,6 +1848,72 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_text_layout_tests_flow",
+    "target": "fontmanager",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/flow.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_flow",
+    "target": "caret",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/flow.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_flow",
+    "target": "flow",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/flow.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_flow",
+    "target": "pagination",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/flow.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_flow",
+    "target": "atelier_text_layout",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/flow.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_flow",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/flow.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_text_layout_tests_layout",
     "target": "atelier_text_layout",
     "relation": "imports_from",
@@ -1777,6 +1942,39 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/text-layout/tests/layout.rs",
     "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_pagination",
+    "target": "atelier_text_layout",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/pagination.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_tabs",
+    "target": "atelier_text_layout",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/tabs.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_layout_tests_tabs",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-layout/tests/tabs.rs",
+    "source_location": "L10",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"

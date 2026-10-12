@@ -1,0 +1,30 @@
+{
+  "baseline_commit": "13c605b19926bd08b439fc711d132d5a638f8e5e",
+  "initial_worktree_clean": true,
+  "shell": "cmd.exe, login=false; PowerShell startup hangs on this host",
+  "planning": "Three separate ready specs and one integrated validation spec; persistent user authorization for parallel Luna medium and pushes.",
+  "preflight_corrections": [
+    "caret adjacent glyph clusters were merged: changed to real overlap only",
+    "caret i64 movement distance corrected to i128; vertical hit selection prioritized",
+    "tab explicit stops must override earlier automatic grid (Microsoft Learn DefaultTabStop)",
+    "pagination contextual spacing must subtract from resolved maximum, not re-add before",
+    "pagination must append final partial page and maintain manual break precedence",
+    "pagination repeated scans and impossible explicit spacing require bounded work",
+    "caret nested cluster scans require bounded work and cached paragraph boundaries"
+  ],
+  "graphify": {
+    "root_initial_cli": "py -m graphify . --code-only (0 LLM tokens)",
+    "agents_also_refreshed": true,
+    "cost_totals_at_exploration": {
+      "input": 129535,
+      "output": 22799
+    },
+    "final_refresh_policy": "Root canonical refresh preserves source-grounded semantics and fresh AST/Cargo. Agent refreshes may transiently use different node deduplication."
+  },
+  "primary_contract_sources": [
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.defaulttabstop?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.contextualspacing?view=openxml-3.0.1",
+    "https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.wordprocessing.spacingbetweenlines?view=openxml-3.0.1"
+  ],
+  "word_measurement": "No new Word reference or corpus result; US-210/212 fidelity and US-211 Word overflow stay open."
+}

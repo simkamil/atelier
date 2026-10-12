@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "13c605b19926bd08b439fc711d132d5a638f8e5e",
+  "snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/rich-page-geometry-review-snapshot.json (self-referential metadata)"
+  ],
+  "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-page-geometry-review-xo2y3u2q\\complete.diff",
+  "complete_bytes": 10561990,
+  "complete_sha256": "241bc8e26197059a23f05a9ce4456f805ef7c83b31df91a735fcb9169011209e",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-page-geometry-review-xo2y3u2q\\sources.diff",
+  "sources_bytes": 176187,
+  "sources_sha256": "c8b72f3caa016716f73f4c7dec89ba5c8869b62e9ff74f5ff16d453ac1504b38"
+}

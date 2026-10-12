@@ -46,11 +46,16 @@ prototype_docs.extend(['docs/us-221-keyboard-editing.md','docs/us-222-mouse-sele
 prototype_docs.extend(['docs/us-013-case-normalization.md','docs/us-041-png-encoder.md','docs/us-052-cff-outlines.md','docs/us-200-rich-text-model.md'])
 prototype_docs.extend(['docs/us-042-jpeg.md','docs/us-061-software-rasterizer.md','docs/us-201-style-engine.md','docs/us-300-opc-package.md','crates/image/tests/fixtures/jpeg/README.md'])
 prototype_docs.extend(['docs/us-301-docx-import.md','docs/us-210-rich-line-layout.md','tests/docx-reference/README.md','tests/text-layout-reference/README.md'])
+prototype_docs.extend(['docs/us-211-tabs.md','docs/us-212-pagination.md','docs/us-214-caret-geometry.md'])
 prototype_docs.extend(['docs/us-004-fuzzer.md','docs/us-082-raster-backend.md','docs/us-311-cfb-container.md','tests/cfb-reference/README.md','tests/font-cff-reference/README.md'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'crates/image/tests/fixtures/jpeg').glob('*.jpg'))
+# The incremental CLI can restore cached semantic nodes for the three versioned
+# raster PNGs. Preserve their real source paths, like the JPEG fixture concepts;
+# reference_images_are_unchanged verifies these exact files in the workspace tests.
+document_paths.update(p.relative_to(root).as_posix() for p in (root/'crates/raster/tests/reference').glob('*.png'))
 document_paths.update({'web/index.html','web/app.css','web/i18n/fr-FR.txt'})
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
 document_paths.update({'README.md','web/README.md','tests/README.md','US-V0-V1.md'})

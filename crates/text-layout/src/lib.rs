@@ -7,6 +7,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod caret;
+pub mod flow;
+pub mod pagination;
+
 use atelier_font::FontFace;
 use atelier_font::manager::{
     FontId, FontManager, FontRequest, FontStyle, GenericFamily, ManagerError,
@@ -20,6 +24,8 @@ use atelier_unicode::segmentation::grapheme_boundaries;
 use core::ops::Range;
 use std::error::Error;
 use std::fmt;
+
+pub mod tabs;
 
 const MAX_TEXT_BYTES: usize = 1_048_576;
 const MAX_GLYPHS: usize = 65_536;
@@ -153,6 +159,7 @@ struct ShapedGlyph {
     ascent: i64,
     descent: i64,
     gap: i64,
+    control: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -185,6 +192,9 @@ struct ShapeContext<'ctx, 'face, 'font> {
     boundaries: &'ctx [usize],
     fallback: FaceExtents,
     options: LayoutOptions,
+    control_font_id: FontId,
+    control_family: String,
+    control_size: i64,
 }
 
 struct FragmentPlacement<'a> {
@@ -206,7 +216,25 @@ pub fn layout_paragraph(
     fonts: &FontManager<'_>,
     options: LayoutOptions,
 ) -> Result<ParagraphLayout, LayoutError> {
+    Ok(layout_paragraph_impl(
+        paragraph,
+        defaults,
+        fonts,
+        options,
+        &tabs::TabSettings::default(),
+    )?
+    .layout)
+}
+
+fn layout_paragraph_impl(
+    paragraph: &Paragraph,
+    defaults: &ResolvedProperties,
+    fonts: &FontManager<'_>,
+    options: LayoutOptions,
+    tab_settings: &tabs::TabSettings,
+) -> Result<tabs::TabLayout, LayoutError> {
     validate_input(paragraph, options)?;
+    validate_tab_settings(tab_settings, options.max_work)?;
     paragraph
         .validate_local()
         .map_err(|_| LayoutError::InvalidParagraph("model invariants are not satisfied"))?;
@@ -225,6 +253,10 @@ pub fn layout_paragraph(
         &mut work,
     )?;
     let fallback_extents = default_extents(&defaults.character, fonts)?;
+    let control_attrs = &defaults.character;
+    let control_size = i64::from(control_attrs.size_half_points.unwrap_or(22)) * 32;
+    let control_request = request_for_attrs(control_attrs);
+    let control_face = fonts.resolve(&control_request)?;
     let shapers = build_shapers(fonts, &spans)?;
     let shape_context = ShapeContext {
         paragraph,
@@ -233,6 +265,9 @@ pub fn layout_paragraph(
         boundaries: &boundaries,
         fallback: fallback_extents,
         options,
+        control_font_id: control_face.id,
+        control_family: control_face.family.to_owned(),
+        control_size,
     };
     let (whole_shape, _) = shape_range(&shape_context, 0..paragraph.text.len(), &mut work)?;
     let mut forbidden = vec![false; boundaries.len()];
@@ -255,6 +290,7 @@ pub fn layout_paragraph(
     let first_indent = twips_to_units(i64::from(para.indent_first_line.unwrap_or(0)))?;
 
     let mut lines = Vec::new();
+    let mut decorations = Vec::new();
     let mut start_slot = 0usize;
     let mut vertical = twips_to_units(i64::from(para.space_before.unwrap_or(0)))?;
     let mut paragraph_width = 0i64;
@@ -299,8 +335,17 @@ pub fn layout_paragraph(
             .collect::<Vec<_>>();
         for slot in legal_slots {
             let candidate_end = trim_trailing_space(&paragraph.text, &boundaries, start_slot, slot);
-            let (candidate_glyphs, _) =
+            let (mut candidate_glyphs, _) =
                 shape_range(&shape_context, start..candidate_end, &mut work)?;
+            resolve_tab_advances(
+                &mut candidate_glyphs,
+                left,
+                tab_settings,
+                &paragraph.text,
+                &mut work,
+                options,
+                None,
+            )?;
             work = add_work(work, 1, options.max_work)?;
             if glyph_advance(&candidate_glyphs)? <= available {
                 chosen_legal = Some((
@@ -331,8 +376,17 @@ pub fn layout_paragraph(
                 }
                 let candidate_end =
                     trim_trailing_space(&paragraph.text, &boundaries, start_slot, slot);
-                let (candidate_glyphs, _) =
+                let (mut candidate_glyphs, _) =
                     shape_range(&shape_context, start..candidate_end, &mut work)?;
+                resolve_tab_advances(
+                    &mut candidate_glyphs,
+                    left,
+                    tab_settings,
+                    &paragraph.text,
+                    &mut work,
+                    options,
+                    None,
+                )?;
                 work = add_work(work, 1, options.max_work)?;
                 if glyph_advance(&candidate_glyphs)? <= available {
                     chosen_grapheme = Some(slot);
@@ -385,6 +439,15 @@ pub fn layout_paragraph(
         let visible_end_slot = boundary_index(&boundaries, visible_end)?;
         let (mut shaped_line, line_extents) =
             shape_range(&shape_context, start..visible_end, &mut work)?;
+        resolve_tab_advances(
+            &mut shaped_line,
+            left,
+            tab_settings,
+            &paragraph.text,
+            &mut work,
+            options,
+            Some((lines.len(), &mut decorations)),
+        )?;
         total_glyphs = total_glyphs
             .checked_add(shaped_line.len())
             .ok_or(LayoutError::ArithmeticOverflow)?;
@@ -394,7 +457,9 @@ pub fn layout_paragraph(
         let natural_width = glyph_advance(&shaped_line)?;
         let final_line = end_slot == boundaries.len() - 1 && !terminal_control;
         let mandatory_break = break_kind == BreakKind::Mandatory && !final_line;
-        let justify = alignment == Alignment::Justify && !final_line && !mandatory_break;
+        let has_tabs = shaped_line.iter().any(|glyph| glyph.control);
+        let justify =
+            alignment == Alignment::Justify && !has_tabs && !final_line && !mandatory_break;
         let space_slots = if justify {
             (start_slot..visible_end_slot)
                 .filter(|&slot| &paragraph.text[boundaries[slot]..boundaries[slot + 1]] == " ")
@@ -420,15 +485,35 @@ pub fn layout_paragraph(
         let line_width = natural_width
             .checked_add(extra)
             .ok_or(LayoutError::ArithmeticOverflow)?;
+        work = add_work(work, tab_settings.stops.len(), options.max_work)?;
+        for stop in tab_settings.stops.iter().filter(|stop| {
+            stop.alignment == tabs::TabAlignment::Bar
+                && stop.position >= left
+                && stop.position <= options.width.saturating_sub(indent_right)
+        }) {
+            if decorations.len() >= options.max_glyphs {
+                return Err(LayoutError::LimitExceeded("tab decorations"));
+            }
+            decorations.push(tabs::TabDecoration {
+                line: lines.len(),
+                x: stop.position,
+                width: 0,
+                kind: tabs::TabDecorationKind::Bar,
+            });
+        }
         let remaining = available.saturating_sub(natural_width).max(0);
-        let x = match alignment {
-            Alignment::Left | Alignment::Justify => left,
-            Alignment::Center => left
-                .checked_add(remaining / 2)
-                .ok_or(LayoutError::ArithmeticOverflow)?,
-            Alignment::Right => left
-                .checked_add(remaining)
-                .ok_or(LayoutError::ArithmeticOverflow)?,
+        let x = if has_tabs {
+            left
+        } else {
+            match alignment {
+                Alignment::Left | Alignment::Justify => left,
+                Alignment::Center => left
+                    .checked_add(remaining / 2)
+                    .ok_or(LayoutError::ArithmeticOverflow)?,
+                Alignment::Right => left
+                    .checked_add(remaining)
+                    .ok_or(LayoutError::ArithmeticOverflow)?,
+            }
         };
 
         let (ascent, descent, gap) =
@@ -479,9 +564,6 @@ pub fn layout_paragraph(
         .ok_or(LayoutError::ArithmeticOverflow)?;
 
     let mut unsupported = Vec::new();
-    if paragraph.text.contains('\t') {
-        unsupported.push("tab stops (US-211)");
-    }
     if paragraph
         .runs
         .iter()
@@ -502,11 +584,15 @@ pub fn layout_paragraph(
     if !paragraph.links.is_empty() {
         unsupported.push("hyperlink decoration");
     }
-    Ok(ParagraphLayout {
+    let layout = ParagraphLayout {
         width: paragraph_width,
         height: vertical,
         lines,
         unsupported,
+    };
+    Ok(tabs::TabLayout {
+        layout,
+        decorations,
     })
 }
 
@@ -719,6 +805,7 @@ fn shape_range(
                 ascent: face_extents.ascent,
                 descent: face_extents.descent,
                 gap: face_extents.gap,
+                control: false,
             });
             *work = add_work(*work, 1, context.options.max_work)?;
             if output.len() > context.options.max_glyphs {
@@ -726,6 +813,39 @@ fn shape_range(
             }
         }
     }
+    let first_boundary = context
+        .boundaries
+        .partition_point(|&boundary| boundary < range.start);
+    let end_boundary = context
+        .boundaries
+        .partition_point(|&boundary| boundary < range.end);
+    let scanned = end_boundary.saturating_sub(first_boundary);
+    *work = add_work(*work, scanned, context.options.max_work)?;
+    for pair in context.boundaries[first_boundary..=end_boundary].windows(2) {
+        let source = pair[0]..pair[1];
+        if &context.paragraph.text[source.clone()] == "\t" {
+            output.push(ShapedGlyph {
+                glyph_id: 0,
+                source,
+                advance: 0,
+                y_advance: 0,
+                x_offset: 0,
+                y_offset: 0,
+                font_id: context.control_font_id,
+                family: context.control_family.clone(),
+                size: context.control_size,
+                ascent: 0,
+                descent: 0,
+                gap: 0,
+                control: true,
+            });
+            *work = add_work(*work, 1, context.options.max_work)?;
+            if output.len() > context.options.max_glyphs {
+                return Err(LayoutError::LimitExceeded("glyphs"));
+            }
+        }
+    }
+    output.sort_by_key(|glyph| glyph.source.start);
     Ok((output, extents))
 }
 
@@ -741,11 +861,11 @@ fn extents_for_range(
     all: FaceExtents,
     fallback: FaceExtents,
 ) -> (i64, i64, i64) {
-    if glyphs.is_empty() {
+    if glyphs.is_empty() || glyphs.iter().all(|glyph| glyph.control) {
         return (fallback.ascent, fallback.descent, fallback.gap);
     }
     let mut result = FaceExtents::default();
-    for glyph in glyphs {
+    for glyph in glyphs.iter().filter(|glyph| !glyph.control) {
         result.ascent = result.ascent.max(glyph.ascent);
         result.descent = result.descent.max(glyph.descent);
         result.gap = result.gap.max(glyph.gap);
@@ -760,6 +880,153 @@ fn glyph_advance(glyphs: &[ShapedGlyph]) -> Result<i64, LayoutError> {
             .checked_add(glyph.advance)
             .ok_or(LayoutError::ArithmeticOverflow)
     })
+}
+
+fn validate_tab_settings(settings: &tabs::TabSettings, max_work: usize) -> Result<(), LayoutError> {
+    if settings.default_interval <= 0 {
+        return Err(LayoutError::InvalidOptions("tab interval must be positive"));
+    }
+    if settings.stops.len() > max_work {
+        return Err(LayoutError::LimitExceeded("tab stops"));
+    }
+    let mut previous = None;
+    for stop in &settings.stops {
+        if stop.position <= 0
+            || stop.position == i64::MAX
+            || previous.is_some_and(|value| value >= stop.position)
+        {
+            return Err(LayoutError::InvalidOptions(
+                "tab stops must be positive, sorted and unique",
+            ));
+        }
+        previous = Some(stop.position);
+    }
+    Ok(())
+}
+
+fn resolve_tab_advances(
+    glyphs: &mut [ShapedGlyph],
+    line_x: i64,
+    settings: &tabs::TabSettings,
+    text: &str,
+    work: &mut usize,
+    options: LayoutOptions,
+    mut output: Option<(usize, &mut Vec<tabs::TabDecoration>)>,
+) -> Result<(), LayoutError> {
+    let mut pen = line_x;
+    let mut i = 0;
+    while i < glyphs.len() {
+        if !glyphs[i].control {
+            pen = pen
+                .checked_add(glyphs[i].advance)
+                .ok_or(LayoutError::ArithmeticOverflow)?;
+            i += 1;
+            continue;
+        }
+        let next = glyphs[i + 1..]
+            .iter()
+            .position(|glyph| glyph.control)
+            .map_or(glyphs.len(), |n| i + 1 + n);
+        let segment_width = glyph_advance(&glyphs[i + 1..next])?;
+        *work = add_work(*work, settings.stops.len(), options.max_work)?;
+        let mut pre_comma = 0i64;
+        let mut comma_seen = false;
+        let segment_start = glyphs[i].source.end;
+        let segment_end = glyphs.get(next).map_or_else(
+            || glyphs.last().map_or(segment_start, |g| g.source.end),
+            |g| g.source.start,
+        );
+        let comma_byte = text
+            .get(segment_start..segment_end)
+            .and_then(|s| s.find(','))
+            .map(|n| segment_start + n);
+        if let Some(comma_byte) = comma_byte {
+            comma_seen = true;
+            for glyph in &glyphs[i + 1..next] {
+                if glyph.source.start < comma_byte {
+                    pre_comma = pre_comma
+                        .checked_add(glyph.advance)
+                        .ok_or(LayoutError::ArithmeticOverflow)?;
+                }
+            }
+        }
+        let mut selected = None;
+        for stop in settings
+            .stops
+            .iter()
+            .copied()
+            .filter(|stop| stop.position > pen && stop.alignment != tabs::TabAlignment::Bar)
+        {
+            let aligned = match stop.alignment {
+                tabs::TabAlignment::Left => 0,
+                tabs::TabAlignment::Center => segment_width / 2,
+                tabs::TabAlignment::Right => segment_width,
+                tabs::TabAlignment::Decimal => {
+                    if comma_seen {
+                        pre_comma
+                    } else {
+                        segment_width
+                    }
+                }
+                tabs::TabAlignment::Bar => 0,
+            };
+            let advance = stop
+                .position
+                .checked_sub(pen)
+                .and_then(|v| v.checked_sub(aligned))
+                .ok_or(LayoutError::ArithmeticOverflow)?;
+            if advance > 0 {
+                selected = Some((stop, advance));
+                break;
+            }
+        }
+        if selected.is_none() {
+            // Automatic stops begin only after all custom stops are passed.
+            // Keep the project's 2268-unit default interval independent of
+            // Word's separate OOXML default when that property is omitted.
+            let last_custom = settings
+                .stops
+                .iter()
+                .rev()
+                .find(|stop| stop.alignment != tabs::TabAlignment::Bar)
+                .map_or(pen, |stop| stop.position.max(pen));
+            let next_grid = last_custom
+                .div_euclid(settings.default_interval)
+                .checked_add(1)
+                .and_then(|n| n.checked_mul(settings.default_interval))
+                .ok_or(LayoutError::ArithmeticOverflow)?;
+            selected = Some((
+                tabs::TabStop {
+                    position: next_grid,
+                    alignment: tabs::TabAlignment::Left,
+                    leader: None,
+                },
+                next_grid
+                    .checked_sub(pen)
+                    .ok_or(LayoutError::ArithmeticOverflow)?,
+            ));
+        }
+        let (stop, advance) = selected.ok_or(LayoutError::ArithmeticOverflow)?;
+        glyphs[i].advance = advance;
+        if let Some((line, decorations)) = output.as_mut() {
+            if let Some(leader) = stop.leader {
+                if decorations.len() >= options.max_glyphs {
+                    return Err(LayoutError::LimitExceeded("tab decorations"));
+                }
+                decorations.push(tabs::TabDecoration {
+                    line: *line,
+                    x: pen,
+                    width: advance,
+                    kind: tabs::TabDecorationKind::Leader(leader),
+                });
+            }
+        }
+        pen = pen
+            .checked_add(advance)
+            .ok_or(LayoutError::ArithmeticOverflow)?;
+        i += 1;
+    }
+    Ok(())
 }
 
 fn make_fragments(
@@ -847,9 +1114,10 @@ fn trim_trailing_space(text: &str, boundaries: &[usize], start: usize, end: usiz
     }
     while slot > start {
         let grapheme = &text[boundaries[slot - 1]..boundaries[slot]];
-        if grapheme
-            .chars()
-            .all(|c| c.is_whitespace() && !matches!(c, '\u{00a0}' | '\u{202f}' | '\u{2060}'))
+        if grapheme != "\t"
+            && grapheme
+                .chars()
+                .all(|c| c.is_whitespace() && !matches!(c, '\u{00a0}' | '\u{202f}' | '\u{2060}'))
         {
             slot -= 1;
         } else {

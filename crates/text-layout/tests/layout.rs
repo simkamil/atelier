@@ -476,7 +476,7 @@ fn unsupported_rich_controls_are_reported() {
     );
 
     let tabs = layout("a\tb", 6400);
-    assert!(tabs.unsupported.contains(&"tab stops (US-211)"));
+    assert!(!tabs.unsupported.contains(&"tab stops (US-211)"));
 }
 
 #[test]

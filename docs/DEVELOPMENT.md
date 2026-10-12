@@ -4,13 +4,49 @@ Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Auc
 
 Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages, la casse et la normalisation Unicode, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions, historique, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent les conteneurs ZIP et le XML en flux avec capture opaque. `atelier-font` expose vingt polices embarquées, les contours TrueType, les [contours CFF1](us-052-cff-outlines.md) et le façonnage latin.
 
-`atelier-image` décode PNG, GIF, BMP et [JPEG](us-042-jpeg.md) en RGBA8 et [encode PNG](us-041-png-encoder.md), avec limites explicites. `atelier-text-model::rich` fournit le [modèle riche](us-200-rich-text-model.md) et le [moteur de styles](us-201-style-engine.md). `atelier-raster` expose les [primitives logicielles](us-061-software-rasterizer.md) et le [backend de listes d’affichage](us-082-raster-backend.md), et `atelier-fmt-ooxml` lit et écrit le [paquet OPC](us-300-opc-package.md). L’[import DOCX](us-301-docx-import.md) et les [lignes riches](us-210-rich-line-layout.md) sont disponibles en API; US-210 attend la comparaison Word. Le raccordement à l’éditeur riche reste à développer. `atelier-cfb` fournit le [conteneur CFB](us-311-cfb-container.md). Le garde `atelier-check-workspace`, le vérificateur de licence, `atelier-bench`, le générateur Unicode et le [fuzzer](us-004-fuzzer.md) sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+`atelier-image` décode PNG, GIF, BMP et [JPEG](us-042-jpeg.md) en RGBA8 et [encode PNG](us-041-png-encoder.md), avec limites explicites. `atelier-text-model::rich` fournit le [modèle riche](us-200-rich-text-model.md) et le [moteur de styles](us-201-style-engine.md). `atelier-raster` expose les [primitives logicielles](us-061-software-rasterizer.md) et le [backend de listes d’affichage](us-082-raster-backend.md), et `atelier-fmt-ooxml` lit et écrit le [paquet OPC](us-300-opc-package.md). L’[import DOCX](us-301-docx-import.md) et les [lignes riches](us-210-rich-line-layout.md) sont disponibles en API; US-210 attend la comparaison Word. Les [tabulations](us-211-tabs.md), la [pagination](us-212-pagination.md) et le [curseur riche](us-214-caret-geometry.md) sont disponibles en API avec un adaptateur commun. US-214 est validée; US-211/212 restent partielles pour Word. Le raccordement à l’éditeur riche reste à développer. `atelier-cfb` fournit le [conteneur CFB](us-311-cfb-container.md). Le garde `atelier-check-workspace`, le vérificateur de licence, `atelier-bench`, le générateur Unicode et le [fuzzer](us-004-fuzzer.md) sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Les liaisons WASM, Win32 et WebView2 isolent leurs blocs `unsafe` et documentent les contrats ABI selon la spécification.
 
 ## Validation
+
+## Tabulations, pagination et curseur riche — 2026-10-12
+
+Trois agents GPT-6 Luna, raisonnement moyen, ont développé US-211, US-212 et
+US-214 en parallèle, puis trois autres agents ont relu le lot indépendamment.
+**US-214 est validée : 47 US terminées sur 158.** US-211 et US-212 restent
+partielles pour la comparaison authentique avec Word.
+
+- [Tabulations](us-211-tabs.md) : gauche, centre, droite, décimal virgule,
+  barres et trois points de suite; grille 1,25 cm, retraits et wrapping testés.
+- [Pagination](us-212-pagination.md) : espacements contextuels, solidarités,
+  veuves/orphelines, sauts explicites prioritaires et diagnostics des contraintes
+  impossibles. Toutes les lignes sont conservées une fois, avec budgets vérifiés.
+- [Curseur riche](us-214-caret-geometry.md) : position/point, graphèmes et
+  clusters, sélection entre pages, navigation verticale préservant colonne
+  et affinité aux coupures souples. Arrêts internes de ligatures interpolés
+  uniformément sans GDEF. L'adaptateur `flow::caret_from_pagination` teste la
+  chaîne avec les vraies polices, les tabs et les espacements du layout.
+
+La [validation finale](../_bmad-output/implementation-artifacts/rich-page-geometry-validation.json)
+passe **20 contrôles, 707 tests workspace et 57 tests text-layout release** :
+builds Windows/WASM/musl, compilation des tests musl, Clippy hôte/WASM,
+format, SPDX, garde, reproduction DOCX, ABI réelle, Worker et navigateur.
+Les sources et le lock restent inchangés pendant ces contrôles. Les 33 paquets
+restent locaux, sans dépendance de registre ni cycle Cargo. Le moteur embarqué
+reste à 1 041 817 octets, sous le plafond inchangé de 1 180 429.
+La [revue triée](../_bmad-output/implementation-artifacts/rich-page-geometry-review.md),
+l'[audit des matrices](../_bmad-output/implementation-artifacts/rich-page-geometry-matrix.json)
+et le [reçu Graphify](../_bmad-output/implementation-artifacts/rich-page-geometry-graph.json)
+conservent les preuves et limites.
+
+US-210/212 attendent la mesure de fidélité Word; US-211 le dépassement de marge
+observé dans Word. L'interface testable reste TXT; ces API ne raccordent pas
+encore DOCX ou le layout riche à l'éditeur. Les tests musl sont compilés ici,
+sans exécution Linux locale. Le dernier diagnostic distant connu reste le
+blocage Actions pour paiement/plafond, documenté dans le lot précédent.
 
 ## CFF, CFB, backend raster et fuzz — 2026-10-12
 

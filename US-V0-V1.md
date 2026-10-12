@@ -628,16 +628,24 @@ Réf : §6.5 · Taille : L · Dépend de : US-054, US-201
 
 #### US-211 — Tabulations
 *En tant qu'*utilisateur, *je veux* utiliser des tabulations *afin d'aligner* du texte.
-- [ ] Taquets gauche, centré, droit, décimal (virgule en fr-FR), barre ; points de suite (points, tirets, traits).
+- [x] Taquets gauche, centré, droit, décimal (virgule en fr-FR), barre ; points de suite (points, tirets, traits).
 - [ ] Taquets par défaut tous les 1,25 cm ; comportement de Word en dépassement de marge.
+
+API et géométrie validées : [tabulations](docs/us-211-tabs.md), intervalle par défaut et retraits testés. **US partielle** : comportement de dépassement de marge non comparé à Word; le critère composé reste ouvert. Décorations retournées à l’appelant, sans raccordement UI riche.
+
+Preuve du lot : 707 tests workspace, 57 tests text-layout release et 20 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-page-geometry-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-page-geometry-matrix.json).
 
 Réf : F-TXT-011 · Taille : M · Dépend de : US-210
 
 #### US-212 — Pagination
 *En tant qu'*utilisateur, *je veux* que le texte soit réparti en pages comme dans Word *afin d'obtenir* le même nombre de pages.
-- [ ] Espacements avant/après, y compris l'espacement contextuel et la suppression de l'espacement avant en haut de page selon les règles de Word.
-- [ ] Veuves et orphelines, paragraphes solidaires, lignes solidaires, saut de page avant, sauts de page manuels.
+- [x] Espacements avant/après, y compris l'espacement contextuel et la suppression de l'espacement avant en haut de page selon les règles de Word.
+- [x] Veuves et orphelines, paragraphes solidaires, lignes solidaires, saut de page avant, sauts de page manuels.
 - [ ] Sur le corpus de référence, ≥ 95 % des documents ont le même nombre de pages que dans Word.
+
+Règles fonctionnelles validées : [pagination](docs/us-212-pagination.md), tests numériques et chaîne layout → pages → curseur. **US partielle** : le seuil de 95 % de documents ayant le même nombre de pages que Word n’est pas mesuré; aucune référence Word authentique disponible.
+
+Preuve du lot : 707 tests workspace, 57 tests text-layout release et 20 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-page-geometry-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-page-geometry-matrix.json).
 
 Réf : F-TXT-012, §6.5 · Taille : L · Dépend de : US-210
 
@@ -651,11 +659,13 @@ Réf : §6.5, §6.16 · Taille : L · Dépend de : US-212
 
 #### US-214 — Géométrie du curseur
 *En tant que* développeur, *je veux* convertir positions et coordonnées *afin de* placer le curseur et dessiner la sélection.
-- [ ] Position → rectangle du curseur ; point → position la plus proche (y compris dans les ligatures, via les clusters).
-- [ ] Rectangles de sélection sur plusieurs lignes et pages.
-- [ ] Déplacement vertical conservant la colonne visuelle d'origine.
+- [x] Position → rectangle du curseur ; point → position la plus proche (y compris dans les ligatures, via les clusters).
+- [x] Rectangles de sélection sur plusieurs lignes et pages.
+- [x] Déplacement vertical conservant la colonne visuelle d'origine.
 
-Tranche TXT validée le 2026-10-11 : colonne visuelle conservée entre lignes courtes ; voir [navigation](docs/us-221-keyboard-editing.md). Les clusters riches restent à couvrir.
+API riche validée : [géométrie du curseur](docs/us-214-caret-geometry.md), clusters, sélections multipages et navigation verticale avec affinité. Interpolation uniforme documentée dans les ligatures sans données GDEF. Le raccordement à l’interface riche reste séparé. La tranche TXT était déjà validée le 2026-10-11.
+
+Preuve du lot : 707 tests workspace, 57 tests text-layout release et 20 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-page-geometry-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-page-geometry-matrix.json).
 
 Réf : §6.5 · Taille : M · Dépend de : US-210
 

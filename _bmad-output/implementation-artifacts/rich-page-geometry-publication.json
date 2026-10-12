@@ -1,0 +1,124 @@
+{
+  "validated_inventory": "rich-page-geometry-validation.json",
+  "validated_input_count": 832,
+  "all_validated_inputs_staged": true,
+  "source_semantics_unchanged": true,
+  "normalizations": [
+    {
+      "path": "crates/base/Cargo.toml",
+      "validated_working_sha256": "9c53a42e0512c787f823f13edebebc5e1e94194b3f7d822492f15f98f70617d3",
+      "published_sha256": "7e7896c717be08e674adaf0acd40a3a80008eb4a2b4015ed0881bc2fd8a0bfb6",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/calc/Cargo.toml",
+      "validated_working_sha256": "87a0d108a99a8e0c81df6b8f62ed8513fa5a8ad2bb5815bb6275a8014a3b7fc0",
+      "published_sha256": "cf2f36460554dbeb4378aceb40f790061aa098f0f2d72c0926790cd4e3fb1c06",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/cfb/Cargo.toml",
+      "validated_working_sha256": "da05c3cd3409999ca104cb4d374c455a5cce8ec75e8b61ebd58f7ff1e2b65599",
+      "published_sha256": "2d892d95c67f0836f4a87ef5f8e0f51e1f33d7bf554c055c020b1b46931d6a6d",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/compress/Cargo.toml",
+      "validated_working_sha256": "efd37c30a7282983f87c20322b86a2a8e3965eb057c69d9c0238b95e8b130fd1",
+      "published_sha256": "e58b8044e29ed2bfaa73d7dc16ec4aad15af6691d5658d378aafdacfbf5ba27e",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/crypto/Cargo.toml",
+      "validated_working_sha256": "bbdce1d9ff33815a4b24b20edb4429425ab1d27ae93d64dbd3a30997e6fe1239",
+      "published_sha256": "37b4ecaab60c2e6d9b39e3c25758420a15e35c58eb0e33bdc61119f8ad96483b",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/fmt-legacy/Cargo.toml",
+      "validated_working_sha256": "4dfd82e2eeaf201891dc6c93f3cab164a64f6d7a8c23399d793d4e25c087832c",
+      "published_sha256": "6b92806777c223d4c740e69c92d7c894610dc8dd24af0dfa0649a3b401f807a2",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/fmt-markdown/Cargo.toml",
+      "validated_working_sha256": "ee15bd9c0e75705dabc1eb2d377a8623421e50b8909f554162f8a0b01efbe0b6",
+      "published_sha256": "d2069271d37eefed7ae762f2f81462a99daf1259ec50951c3f20a590a1674beb",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/fmt-odf/Cargo.toml",
+      "validated_working_sha256": "1145efdfdaf7722b195690539b653bad0e475cbf3b521f8f004ca0b3bd277573",
+      "published_sha256": "c0e65ed741a49ba2880fffc20a309cec543e0a88fceb58b64f7cefd6c4c18b28",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/fmt-ooxml/Cargo.toml",
+      "validated_working_sha256": "9011ab1a1e50ec279333554e0090c818fa498cb67ee11c7f65bcbe888f14e129",
+      "published_sha256": "93a7fba0fc3908ca674c3cb6349322ac73cc598395b8cd96ecd1169742a9275b",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/fmt-pdf/Cargo.toml",
+      "validated_working_sha256": "66a0672f3a5fd606d5bd8b5ed894fbf51730f2288b87563e5dbd4a8a8d04b340",
+      "published_sha256": "e4e7b329450994f6194ccb93b37ecdf7f688ca04ec6b7dbbf196a9fc46c24bc1",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/geom/Cargo.toml",
+      "validated_working_sha256": "bb2489c147bbf89b5eda327248419150db61d4a38d8108f08d7147faf13ae751",
+      "published_sha256": "c5ea12496d35e8cfdfd8410911655eacbd9caa9389117f12b579644bd295cd60",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/lua/Cargo.toml",
+      "validated_working_sha256": "f6de231344cb1653f0858e16b59259df55c306664f89b676f6d9f100c5b8e1f3",
+      "published_sha256": "169822ee815a3942379fd2155ed7d9b70fe07b23c370fd8f27e7edb583733e7e",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/server/Cargo.toml",
+      "validated_working_sha256": "8b490eed33a4884448707e1dc237a057ccc44d9611d3b63dd63ee07145a3ff63",
+      "published_sha256": "f74de34f62e1979028442a39fe65e3c634cfe0362729a0f1de1696952fe061f9",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/sheet-model/Cargo.toml",
+      "validated_working_sha256": "e2381d506db93f7da331dc168914569aaa7f10da5f8df162da852b006b83750f",
+      "published_sha256": "b2d4590c3698203c65a11ef599d11cfad17eaf10f5bc28482241853b53feadfe",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/slide-model/Cargo.toml",
+      "validated_working_sha256": "b4a54406fc76031db4ef09992f2354b5700bec6699f795d093afe5acc4607d8a",
+      "published_sha256": "be9d044ba2d89e76dc2bc6b74e6418d5917a85c9850aa19fbd032262dac21901",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/text-layout/Cargo.toml",
+      "validated_working_sha256": "691f5aaf153b01c8514bc5443cc7109f2058593937d654046666cc66e242bee9",
+      "published_sha256": "90e1700c37984764c096e146a734ee7367473a263642f30ea1050e49906b0b6d",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "crates/text-model/Cargo.toml",
+      "validated_working_sha256": "e7503567d6cbeb59cd7cd8ba782f92cadfac0de4392d22e1dbc28be4ca701db2",
+      "published_sha256": "4df652c801c5ca0783795d34a9feb8f6507d12faf93f12b00cdbfd2f5b7123a0",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "tests/cfb-reference/expected.json",
+      "validated_working_sha256": "d21da2e5ddf6edf7b49abf84e441340c182c44f42365fa0fb950ac6b3c2897ee",
+      "published_sha256": "e76523d4e9e9e4addfc8b7fefa05aea5956489c5fb82c877c2f8d571fbe39eff",
+      "change": "Git CRLF-to-LF normalization only"
+    },
+    {
+      "path": "tools/check-license/Cargo.toml",
+      "validated_working_sha256": "4e65a7f5ff0eda5a1eac9777e0359efe92a3b3630ba7fea01d2cebef4d4109ad",
+      "published_sha256": "59a8a16537e7766a7b43583cda8f449315c93eb0e33679daa854818917b8c15a",
+      "change": "Git CRLF-to-LF normalization only"
+    }
+  ],
+  "published_inventory_sha256": "51249f19bbe32aafb9ef17d346dd985ab3964ae916bca08885101a518467b7d0",
+  "note": "Staged inputs equal the immutable tested inventory, except recorded Git EOL normalization."
+}
