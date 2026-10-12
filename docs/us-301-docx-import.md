@@ -72,3 +72,5 @@ riches et 5 tests d’intégration DOCX vers layout. Les [15 contrôles finaux](
 passent avec 540 tests workspace et sources/lock inchangés. La [revue](../_bmad-output/implementation-artifacts/docx-rich-layout-review.md)
 conserve chaque constat et son traitement. Cette livraison expose des API de
 bibliothèque; le raccordement au parcours d’ouverture de l’éditeur riche reste séparé.
+
+Les tableaux (`w:tbl`) sont importés en tableaux du modèle riche : voir [US-303](us-303-docx-tables.md).

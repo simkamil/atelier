@@ -23,6 +23,14 @@ use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+mod tables;
+pub use tables::{
+    Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
+    HeightRule, ImportedCell, ImportedRow, ImportedTable, ImportedTables, ResolvedCell, RowHeight,
+    RowProps, Shading, TableAlign, TableColor, TableLayout, TableLook, TableProps, TableStyleDef,
+    TableWidth, VMerge,
+};
+
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const W_STRICT_NS: &str = "http://purl.oclc.org/ooxml/wordprocessingml/main";
 const A_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -52,6 +60,14 @@ pub struct DocxLimits {
     pub max_styles: usize,
     pub max_fonts: usize,
     pub max_font_bytes: usize,
+    /// Deepest nesting of tables inside table cells (a body table is level 1).
+    pub max_table_depth: usize,
+    /// Rows of one table.
+    pub max_table_rows: usize,
+    /// Grid columns of one table; larger spans and grids are clamped.
+    pub max_table_columns: usize,
+    /// Cells of all tables of the document.
+    pub max_table_cells: usize,
 }
 impl Default for DocxLimits {
     fn default() -> Self {
@@ -64,6 +80,10 @@ impl Default for DocxLimits {
             max_styles: 100_000,
             max_fonts: 1024,
             max_font_bytes: 256 * 1024 * 1024,
+            max_table_depth: 32,
+            max_table_rows: 1_000_000,
+            max_table_columns: 1024,
+            max_table_cells: 2_000_000,
         }
     }
 }
@@ -199,6 +219,9 @@ pub struct ImportedDocx {
     pub settings: DocxSettings,
     pub latent_styles: Vec<LatentStyleInfo>,
     pub font_records: Vec<FontRecord>,
+    /// Table properties without a slot in the rich model, table styles and
+    /// the paragraph-to-cell index (US-303).
+    pub tables: ImportedTables,
     paragraph_order: Vec<NodeId>,
 }
 impl ImportedDocx {
@@ -214,10 +237,36 @@ impl ImportedDocx {
             .paragraph(paragraph_id)
             .map_err(model_error)?
             .clone();
-        let default = self
+        let mut default = self
             .styles
             .resolve(&self.document, paragraph_id, None, &CharAttrs::default())
             .map_err(|e| DocxError::Style(e.to_string()))?;
+        // Conditional table-style formatting sits between the table style and
+        // the paragraph style: it only fills what neither the paragraph style
+        // nor direct formatting defines.
+        let conditional = self
+            .tables
+            .paragraph_cell
+            .get(&paragraph_id)
+            .and_then(|cell| self.tables.resolve_cell(*cell, &self.theme))
+            .filter(|cell| !cell.paragraph.is_empty() || !cell.character.is_empty());
+        let (style_para, style_char) = tables::chain_formatting(
+            self.styles.catalog(),
+            source.props.style.as_deref(),
+            &self.theme,
+        );
+        if let Some(cell) = &conditional {
+            let mut para = cell.paragraph.clone();
+            let mut upper = style_para.clone();
+            let mut direct = source.props.clone();
+            direct.style = None;
+            upper.overlay(&direct);
+            para.clear(&upper);
+            default.paragraph.overlay(&para);
+            let mut ch = cell.character.clone();
+            ch.clear(&style_char);
+            default.character.overlay(&ch);
+        }
         let mut output = source.clone();
         let mut resolved_runs = Vec::new();
         let boundaries = grapheme_boundaries(&source.text);
@@ -239,10 +288,22 @@ impl ImportedDocx {
                 .get(style_cursor)
                 .filter(|run| run.start <= start && run.end >= end)
                 .and_then(|run| run.style_id.as_deref());
-            let effective = self
+            let mut effective = self
                 .styles
                 .resolve(&self.document, paragraph_id, style, &direct)
                 .map_err(|e| DocxError::Style(e.to_string()))?;
+            if let Some(cell) = &conditional {
+                let mut upper = style_char.clone();
+                if let Some(id) = style {
+                    let (_, c) =
+                        tables::chain_formatting(self.styles.catalog(), Some(id), &self.theme);
+                    upper.overlay(&c);
+                }
+                upper.overlay(&direct);
+                let mut ch = cell.character.clone();
+                ch.clear(&upper);
+                effective.character.overlay(&ch);
+            }
             if !effective.character.is_empty() {
                 if let Some(last) = resolved_runs.last_mut() {
                     let last: &mut atelier_text_model::rich::CharRun = last;
@@ -406,8 +467,8 @@ pub fn import_docx_with_limits(
         _paragraph_style_ids,
         default_paragraph_style,
         mut latent_styles,
-    ) = match styles_xml {
-        Some((_, xml)) => parse_styles(&xml, &limits)?,
+    ) = match &styles_xml {
+        Some((_, xml)) => parse_styles(xml, &limits)?,
         None => (
             StyleCatalog::new(DocumentStyleDefaults::default()),
             Vec::new(),
@@ -455,8 +516,6 @@ pub fn import_docx_with_limits(
     if paragraphs.len() > limits.max_paragraphs {
         return Err(DocxError::Limit("paragraph count"));
     }
-    let mut total_text = 0usize;
-    let mut run_count = 0usize;
     let mut document = RichDocument::new();
     let section = *document
         .section_ids()
@@ -465,10 +524,6 @@ pub fn import_docx_with_limits(
             part: main_uri.to_string(),
             detail: "rich document has no section",
         })?;
-    let mut ids = Vec::new();
-    let mut break_records = Vec::new();
-    let mut symbol_records = Vec::new();
-    let mut run_style_records = Vec::new();
     let initial = document
         .block_ids(Some(section))
         .map_err(model_error)?
@@ -478,93 +533,105 @@ pub fn import_docx_with_limits(
             part: main_uri.to_string(),
             detail: "rich section has no paragraph",
         })?;
-    for (index, xml_paragraph) in paragraphs.iter().enumerate() {
-        let (mut paragraph, run_meta, breaks, symbols) =
-            parse_paragraph(xml_paragraph, &limits, &mut run_count, &theme)?;
-        if paragraph.props.style.is_none() {
-            paragraph.props.style = default_paragraph_style.clone();
-        }
-        total_text = total_text
-            .checked_add(paragraph.text.len())
-            .ok_or(DocxError::Limit("text bytes"))?;
-        if total_text > limits.max_text_bytes {
-            return Err(DocxError::Limit("text bytes"));
-        }
-        let para_id = if index == 0 {
-            initial
-        } else {
-            let mut subtree = document.new_paragraph("").map_err(model_error)?;
-            let id = subtree.root;
-            if let Some(Node::Paragraph(p)) = subtree.nodes.get_mut(&id) {
-                *p = paragraph.clone();
-            }
-            let op = RichOp::InsertBlock {
-                parent: Some(section),
-                position: index,
-                subtree,
-            };
-            document
-                .apply(&Transaction::new(vec![op]).map_err(|e| DocxError::Model(e.to_string()))?)
-                .map_err(model_error)?;
-            id
-        };
-        // Set text and source formatting in a single transaction. All run
-        // boundaries are normalized to grapheme boundaries after concatenation.
-        if index == 0 {
-            let text = std::mem::take(&mut paragraph.text);
-            let mut ops = vec![RichOp::SetParaProps {
-                para: para_id,
-                set: paragraph.props.clone(),
-                clear: ParaProps::default(),
-            }];
-            if !text.is_empty() {
-                ops.push(RichOp::InsertText {
-                    para: para_id,
-                    offset: 0,
-                    text,
-                });
-            }
-            for r in paragraph.runs.drain(..) {
-                if r.start < r.end {
-                    ops.push(RichOp::SetCharAttrs {
-                        para: para_id,
-                        start: r.start,
-                        end: r.end,
-                        set: r.attrs,
-                        clear: CharAttrs::default(),
-                    });
+    let mut sink = ParagraphSink::new(&limits, &theme, default_paragraph_style.clone());
+    let mut table_builder =
+        tables::TableBuilder::new(&limits, style_engine.catalog(), &theme, main_uri.as_str());
+    if let Some((part, xml)) = &styles_xml {
+        table_builder.read_styles(xml, part.uri.as_str());
+    }
+    let mut blocks = Vec::new();
+    tables::collect_blocks(body, &mut blocks);
+    let mut position = 0usize;
+    let mut initial_used = false;
+    for block in &blocks {
+        match block {
+            tables::Block::Table(xml_table) => {
+                if let Some(subtree) =
+                    table_builder.build_table(&mut document, &mut sink, xml_table)?
+                {
+                    let op = RichOp::InsertBlock {
+                        parent: Some(section),
+                        position,
+                        subtree,
+                    };
+                    document
+                        .apply(
+                            &Transaction::new(vec![op])
+                                .map_err(|e| DocxError::Model(e.to_string()))?,
+                        )
+                        .map_err(model_error)?;
+                    position += 1;
                 }
             }
-            document
-                .apply(&Transaction::new(ops).map_err(|e| DocxError::Model(e.to_string()))?)
-                .map_err(model_error)?;
-        }
-        ids.push(para_id);
-        for (start, end, style_id) in run_meta {
-            run_style_records.push(ImportedRunStyle {
-                paragraph: para_id,
-                start,
-                end,
-                style_id,
-            });
-        }
-        for (offset, kind, break_type) in breaks {
-            break_records.push(ImportedBreak {
-                paragraph: para_id,
-                offset,
-                kind,
-                break_type,
-            });
-        }
-        for (offset, font, character_code) in symbols {
-            symbol_records.push(ImportedSymbol {
-                paragraph: para_id,
-                offset,
-                font,
-                character_code,
-            });
+            tables::Block::Paragraph(xml_paragraph) => {
+                let (mut paragraph, meta) = sink.read(xml_paragraph)?;
+                let para_id = if !initial_used {
+                    initial_used = true;
+                    initial
+                } else {
+                    let mut subtree = document.new_paragraph("").map_err(model_error)?;
+                    let id = subtree.root;
+                    if let Some(Node::Paragraph(p)) = subtree.nodes.get_mut(&id) {
+                        *p = paragraph.clone();
+                    }
+                    let op = RichOp::InsertBlock {
+                        parent: Some(section),
+                        position,
+                        subtree,
+                    };
+                    document
+                        .apply(
+                            &Transaction::new(vec![op])
+                                .map_err(|e| DocxError::Model(e.to_string()))?,
+                        )
+                        .map_err(model_error)?;
+                    id
+                };
+                // Set text and source formatting in a single transaction. All run
+                // boundaries are normalized to grapheme boundaries after concatenation.
+                if para_id == initial {
+                    let text = std::mem::take(&mut paragraph.text);
+                    let mut ops = vec![RichOp::SetParaProps {
+                        para: para_id,
+                        set: paragraph.props.clone(),
+                        clear: ParaProps::default(),
+                    }];
+                    if !text.is_empty() {
+                        ops.push(RichOp::InsertText {
+                            para: para_id,
+                            offset: 0,
+                            text,
+                        });
+                    }
+                    for r in paragraph.runs.drain(..) {
+                        if r.start < r.end {
+                            ops.push(RichOp::SetCharAttrs {
+                                para: para_id,
+                                start: r.start,
+                                end: r.end,
+                                set: r.attrs,
+                                clear: CharAttrs::default(),
+                            });
+                        }
+                    }
+                    document
+                        .apply(&Transaction::new(ops).map_err(|e| DocxError::Model(e.to_string()))?)
+                        .map_err(model_error)?;
+                }
+                sink.record(para_id, meta);
+                position += 1;
+            }
         }
     }
+    let (table_info, table_notices) = table_builder.finish();
+    notices.extend(table_notices);
+    let ParagraphSink {
+        breaks: break_records,
+        symbols: symbol_records,
+        run_styles: run_style_records,
+        mut ids,
+        ..
+    } = sink;
     if paragraphs.is_empty() {
         ids.extend(document.paragraph_ids());
     }
@@ -598,6 +665,7 @@ pub fn import_docx_with_limits(
         settings,
         latent_styles,
         font_records,
+        tables: table_info,
         paragraph_order: ids,
     })
 }
@@ -768,6 +836,7 @@ fn collect_unsupported(root: &XmlNode, part: &PartUri, notices: &mut Vec<ImportN
         if (node.name.namespace.as_deref() == Some(W_NS)
             || node.name.namespace.as_deref() == Some(W_STRICT_NS))
             && !HANDLED.contains(&node.name.local.as_str())
+            && !tables::is_handled_element(&node.name.local)
             && seen.insert((
                 node.name.namespace.clone().unwrap_or_default(),
                 node.name.local.clone(),
@@ -1037,6 +1106,90 @@ fn parse_paragraph(
         paragraph.runs = replacement;
     }
     Ok((paragraph, metadata, breaks, symbols))
+}
+/// Paragraph metadata collected while reading a `w:p`.
+struct ParagraphMeta {
+    runs: Vec<(usize, usize, Option<String>)>,
+    breaks: Vec<(usize, String, Option<String>)>,
+    symbols: Vec<(usize, String, String)>,
+}
+
+/// Shared accounting and records for every paragraph of the document, whether
+/// it sits in the body or in a table cell.
+struct ParagraphSink<'a> {
+    limits: &'a DocxLimits,
+    theme: &'a Theme,
+    default_style: Option<String>,
+    run_count: usize,
+    total_text: usize,
+    breaks: Vec<ImportedBreak>,
+    symbols: Vec<ImportedSymbol>,
+    run_styles: Vec<ImportedRunStyle>,
+    ids: Vec<NodeId>,
+}
+impl<'a> ParagraphSink<'a> {
+    fn new(limits: &'a DocxLimits, theme: &'a Theme, default_style: Option<String>) -> Self {
+        Self {
+            limits,
+            theme,
+            default_style,
+            run_count: 0,
+            total_text: 0,
+            breaks: Vec::new(),
+            symbols: Vec::new(),
+            run_styles: Vec::new(),
+            ids: Vec::new(),
+        }
+    }
+    fn read(&mut self, node: &XmlNode) -> Result<(Paragraph, ParagraphMeta), DocxError> {
+        let (mut paragraph, runs, breaks, symbols) =
+            parse_paragraph(node, self.limits, &mut self.run_count, self.theme)?;
+        if paragraph.props.style.is_none() {
+            paragraph.props.style = self.default_style.clone();
+        }
+        self.total_text = self
+            .total_text
+            .checked_add(paragraph.text.len())
+            .ok_or(DocxError::Limit("text bytes"))?;
+        if self.total_text > self.limits.max_text_bytes {
+            return Err(DocxError::Limit("text bytes"));
+        }
+        Ok((
+            paragraph,
+            ParagraphMeta {
+                runs,
+                breaks,
+                symbols,
+            },
+        ))
+    }
+    fn record(&mut self, para_id: NodeId, meta: ParagraphMeta) {
+        self.ids.push(para_id);
+        for (start, end, style_id) in meta.runs {
+            self.run_styles.push(ImportedRunStyle {
+                paragraph: para_id,
+                start,
+                end,
+                style_id,
+            });
+        }
+        for (offset, kind, break_type) in meta.breaks {
+            self.breaks.push(ImportedBreak {
+                paragraph: para_id,
+                offset,
+                kind,
+                break_type,
+            });
+        }
+        for (offset, font, character_code) in meta.symbols {
+            self.symbols.push(ImportedSymbol {
+                paragraph: para_id,
+                offset,
+                font,
+                character_code,
+            });
+        }
+    }
 }
 fn is_w(node: &XmlNode, local: &str) -> bool {
     node.name.local == local && matches!(node.name.namespace.as_deref(), Some(W_NS | W_STRICT_NS))
