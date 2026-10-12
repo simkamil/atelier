@@ -32,9 +32,12 @@ La [validation finale](../_bmad-output/implementation-artifacts/docx-rich-layout
 réussit **15 contrôles et 540 tests workspace** : builds Windows/WASM/musl,
 Clippy hôte/WASM, format, licences, garde, métadonnées et reproduction de fixture.
 Sources et lock sont inchangés pendant les contrôles; les 32 paquets et toutes
-leurs dépendances restent locaux. Les tests musl sont compilés localement;
-leur exécution appartient à la CI Linux du commit publié. Le moteur embarqué
-reste à 1 179 080 octets, avec le même plafond; sa provenance inclut le nouveau lock.
+leurs dépendances restent locaux. Les tests musl sont compilés localement.
+La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38227439851)
+n’a lancé aucun job : GitHub signale un échec de paiement ou un plafond de dépenses
+Actions à relever. Aucun build ni test distant n’a été exécuté; voir le [reçu CI](../_bmad-output/implementation-artifacts/docx-rich-layout-ci.json).
+Le moteur embarqué reste à 1 179 080 octets, avec le même plafond; sa provenance
+inclut le nouveau lock.
 
 La [revue](../_bmad-output/implementation-artifacts/docx-rich-layout-review.md)
 conserve 19 constats séparés, leurs réfutations ou corrections, et une relecture

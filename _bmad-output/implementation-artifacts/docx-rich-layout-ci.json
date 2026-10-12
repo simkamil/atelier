@@ -1,0 +1,124 @@
+{
+  "source_commit": "884adc8aa6b40b1c726bc39bf170c80b6d9b5f12",
+  "ci": [
+    {
+      "id": 38227439851,
+      "name": "CI",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38227439851",
+      "updated_at": "2026-10-12T09:03:37Z",
+      "jobs": [
+        {
+          "id": 114738304299,
+          "name": "Linux musl build and tests",
+          "status": "completed",
+          "conclusion": "failure",
+          "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38227439851/job/114738304299",
+          "steps": []
+        },
+        {
+          "id": 114738304497,
+          "name": "WASM compile, lint and native engine tests",
+          "status": "completed",
+          "conclusion": "failure",
+          "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38227439851/job/114738304497",
+          "steps": []
+        },
+        {
+          "id": 114738304551,
+          "name": "Windows MSVC, tests and quality",
+          "status": "completed",
+          "conclusion": "failure",
+          "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38227439851/job/114738304551",
+          "steps": []
+        }
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "job": "Linux musl build and tests",
+      "started_at": "2026-10-12T09:03:34Z",
+      "completed_at": "2026-10-12T09:03:36Z",
+      "runner_name": "",
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/simkamil/mon-bureau/check-runs/114738304299/annotations"
+      },
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/simkamil/mon-bureau/blob/884adc8aa6b40b1c726bc39bf170c80b6d9b5f12/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ]
+    },
+    {
+      "job": "WASM compile, lint and native engine tests",
+      "started_at": "2026-10-12T09:03:34Z",
+      "completed_at": "2026-10-12T09:03:36Z",
+      "runner_name": "",
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/simkamil/mon-bureau/check-runs/114738304497/annotations"
+      },
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/simkamil/mon-bureau/blob/884adc8aa6b40b1c726bc39bf170c80b6d9b5f12/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ]
+    },
+    {
+      "job": "Windows MSVC, tests and quality",
+      "started_at": "2026-10-12T09:03:34Z",
+      "completed_at": "2026-10-12T09:03:36Z",
+      "runner_name": "",
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/simkamil/mon-bureau/check-runs/114738304551/annotations"
+      },
+      "annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/simkamil/mon-bureau/blob/884adc8aa6b40b1c726bc39bf170c80b6d9b5f12/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+          "raw_details": ""
+        }
+      ]
+    }
+  ],
+  "interpretation": "All three jobs were refused before runner allocation by GitHub billing/spending policy; no remote build or tests executed.",
+  "local_validation": "docx-rich-layout-validation.json: 15 checks and 540 workspace tests passed."
+}

@@ -4,10 +4,10 @@
     "_bmad-output/implementation-artifacts/docx-rich-layout-review-snapshot.json (self-referential metadata)"
   ],
   "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
-  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-docx-rich-layout-review-9hk418_l\\complete.diff",
-  "complete_bytes": 14565747,
-  "complete_sha256": "f3462f944d609dd9109e7ee45792e99a20239a23b9b305b123afeb65345adce2",
-  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-docx-rich-layout-review-9hk418_l\\sources.diff",
-  "sources_bytes": 837594,
-  "sources_sha256": "a34ec3a657bffb3a57202361c1ff0c0a20f647c26c8db96b526871cfeb191113"
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-docx-rich-layout-review-qybpa7om\\complete.diff",
+  "complete_bytes": 14572512,
+  "complete_sha256": "f9dc2d20573a1d093d1e36df130ee33b386d3fd6381d2d5481098d959b89c5ce",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-docx-rich-layout-review-qybpa7om\\sources.diff",
+  "sources_bytes": 844359,
+  "sources_sha256": "b7d5013880b25960239f0967bc3044a6526adbc2ebb880189855df9a92e60860"
 }
