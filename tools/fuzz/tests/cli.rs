@@ -98,6 +98,37 @@ fn rejects_bad_usage_with_exit_code_one() {
 }
 
 #[test]
+fn rejects_numeric_options_that_overflow_or_panic() {
+    for args in [
+        &["run", "xml", "--duration", "1e300", "--iterations", "1"][..],
+        &[
+            "run",
+            "xml",
+            "--max-output-mib",
+            "18446744073709551615",
+            "--iterations",
+            "1",
+        ],
+    ] {
+        let out = fuzz(args);
+        assert_eq!(out.status.code(), Some(1), "{args:?}");
+        assert!(text(&out.stderr).contains("Usage:"), "{args:?}");
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        let out = fuzz(&[
+            "run",
+            "xml",
+            "--max-len",
+            "18446744073709551615",
+            "--iterations",
+            "1",
+        ]);
+        assert_eq!(out.status.code(), Some(1));
+    }
+}
+
+#[test]
 fn minimize_refuses_an_input_that_does_not_fail() {
     let dir = root("min");
     let file = dir.join("ok.bin");

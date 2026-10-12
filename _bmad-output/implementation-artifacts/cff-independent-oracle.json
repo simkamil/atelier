@@ -1,0 +1,167 @@
+{
+  "cff_table_sha256": "5402dfb8a15f1068c27e0c4b4cc1fed285081ba6b284f44109dd5c2a47deaf12",
+  "fixture": "synthetic OpenType/CFF1, 1000 unitsPerEm, no downloaded fonts",
+  "font_file": "cff-oracle.otf",
+  "font_sha256": "d22951b6a44a8fbcbddb6bee7a4179595af1b190887983d579673452efd98818",
+  "fonttools_version": "4.63.0",
+  "glyphs": {
+    "curve": [
+      {
+        "op": "moveTo",
+        "points": [
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "op": "curveTo",
+        "points": [
+          [
+            20.0,
+            80.0
+          ],
+          [
+            80.0,
+            80.0
+          ],
+          [
+            100.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "op": "closePath",
+        "points": []
+      }
+    ],
+    "nested_seac": [
+      {
+        "op": "moveTo",
+        "points": [
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "op": "lineTo",
+        "points": [
+          [
+            100.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "op": "lineTo",
+        "points": [
+          [
+            100.0,
+            200.0
+          ]
+        ]
+      },
+      {
+        "op": "closePath",
+        "points": []
+      },
+      {
+        "op": "moveTo",
+        "points": [
+          [
+            40.0,
+            50.0
+          ]
+        ]
+      },
+      {
+        "op": "lineTo",
+        "points": [
+          [
+            140.0,
+            50.0
+          ]
+        ]
+      },
+      {
+        "op": "lineTo",
+        "points": [
+          [
+            140.0,
+            250.0
+          ]
+        ]
+      },
+      {
+        "op": "closePath",
+        "points": []
+      },
+      {
+        "op": "moveTo",
+        "points": [
+          [
+            60.0,
+            370.0
+          ]
+        ]
+      },
+      {
+        "op": "lineTo",
+        "points": [
+          [
+            80.0,
+            410.0
+          ]
+        ]
+      },
+      {
+        "op": "closePath",
+        "points": []
+      }
+    ],
+    "triangle": [
+      {
+        "op": "moveTo",
+        "points": [
+          [
+            0.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "op": "lineTo",
+        "points": [
+          [
+            100.0,
+            0.0
+          ]
+        ]
+      },
+      {
+        "op": "lineTo",
+        "points": [
+          [
+            100.0,
+            200.0
+          ]
+        ]
+      },
+      {
+        "op": "closePath",
+        "points": []
+      }
+    ]
+  },
+  "oracle": "fontTools RecordingPen over TTFont.getGlyphSet()",
+  "schema_version": 1,
+  "timestamp": {
+    "head_created": 3600000000,
+    "head_modified": 3600000000,
+    "recalc": false
+  }
+}

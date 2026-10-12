@@ -55,5 +55,7 @@ inherits = "release"
 opt-level = "z"
 lto = true
 codegen-units = 1
-strip = "debuginfo"
+# Drop debug/name sections from the production WASM; regular release keeps its
+# usual symbol behavior. This preserves the existing artifact size budget.
+strip = "symbols"
 panic = "abort"

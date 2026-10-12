@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "generator": "tools/generate-cfb-reference.py",
+  "provenance": "Microsoft Structured Storage (ole32 StgCreateStorageEx/IStorage/IStream)",
+  "verification": "fixtures reopened by StgOpenStorageEx and stream bytes/hash checked",
+  "files": {
+    "native-v3.cfb": {
+      "major_version": 3,
+      "sector_size": 512,
+      "file_sha256": "ecbcbb584f42a534b2e435015c1989f4efb75bc17c5bbc4f99c0142b3702bbb2",
+      "streams": {
+        "empty": {
+          "size": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "mini": {
+          "size": 300,
+          "sha256": "d2c76a9979f11084e37471b0da3e5efe6e6807a45920e486742684b987b28bda"
+        },
+        "boundary4095": {
+          "size": 4095,
+          "sha256": "2303a91738279c555f5b35c2ac1836eb3799313135a7662feec59f82f0bb3d44"
+        },
+        "boundary4096": {
+          "size": 4096,
+          "sha256": "14d527f067e72332cfca71ac2fd4f6514a16843f01f0a3c4096136978ce27079"
+        },
+        "multi8193": {
+          "size": 8193,
+          "sha256": "ec396062cabddc64e14127ded8737ac0c2886a7eb346f3bb6e4a168ea4fe6a4a"
+        },
+        "Unicode/Δοκιμή/東京": {
+          "size": 73,
+          "sha256": "918f5c0e92b271c117c1e820185901a1d25424c753468150862b759d1fc438ab"
+        }
+      }
+    },
+    "native-v4.cfb": {
+      "major_version": 4,
+      "sector_size": 4096,
+      "file_sha256": "4431397576d3c6dad4f39f2b479271e792e00d4a8f646f482fecdc61c80aba96",
+      "streams": {
+        "empty": {
+          "size": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "mini": {
+          "size": 300,
+          "sha256": "d2c76a9979f11084e37471b0da3e5efe6e6807a45920e486742684b987b28bda"
+        },
+        "boundary4095": {
+          "size": 4095,
+          "sha256": "2303a91738279c555f5b35c2ac1836eb3799313135a7662feec59f82f0bb3d44"
+        },
+        "boundary4096": {
+          "size": 4096,
+          "sha256": "14d527f067e72332cfca71ac2fd4f6514a16843f01f0a3c4096136978ce27079"
+        },
+        "multi8193": {
+          "size": 8193,
+          "sha256": "ec396062cabddc64e14127ded8737ac0c2886a7eb346f3bb6e4a168ea4fe6a4a"
+        },
+        "Unicode/Δοκιμή/東京": {
+          "size": 73,
+          "sha256": "918f5c0e92b271c117c1e820185901a1d25424c753468150862b759d1fc438ab"
+        }
+      }
+    }
+  }
+}

@@ -7,8 +7,9 @@
 //! [`registry`]. `core-wasm` and `desktop-win` are deliberately absent.
 
 use crate::target::{FnTarget, FuzzTarget, Outcome};
+use atelier_cfb::{Compound as CfbCompound, Limits as CfbLimits};
 use atelier_compress::{Format, InflateState, Level, Status, compress_with_format};
-use atelier_fmt_ooxml::{Package, PartUri, TargetMode};
+use atelier_fmt_ooxml::{Package, PartUri, TargetMode, import_docx};
 use atelier_font::cff::CffFont;
 use atelier_font::{FontFace, GlyphCluster, OutlineLimits};
 use atelier_geom::{Point, Rect};
@@ -92,6 +93,16 @@ pub fn registry() -> Vec<Arc<dyn FuzzTarget>> {
             FnTarget::new("opc", opc)
                 .dictionary(OPC_TOKENS)
                 .seeds(opc_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("docx-import", docx_import_target)
+                .dictionary(DOCX_TOKENS)
+                .seeds(docx_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("cfb", cfb)
+                .dictionary(CFB_TOKENS)
+                .seeds(cfb_seeds),
         ),
         Arc::new(
             FnTarget::new("encodings", encodings)
@@ -729,6 +740,56 @@ fn opc(input: &[u8]) -> Outcome {
     }
 }
 
+fn docx_import_target(input: &[u8]) -> Outcome {
+    match import_docx(input) {
+        Err(error) => Outcome::rejected(&error),
+        Ok(imported) => {
+            let bytes: u64 = imported
+                .package
+                .parts()
+                .values()
+                .map(|part| part.bytes.len() as u64)
+                .sum();
+            Outcome::accepted(bytes + imported.paragraph_ids().len() as u64)
+        }
+    }
+}
+
+const DOCX_TOKENS: &[&[u8]] = &[
+    b"PK\x03\x04",
+    b"[Content_Types].xml",
+    b"_rels/.rels",
+    b"word/document.xml",
+    b"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+    b"<w:document",
+    b"<w:body",
+    b"<w:p",
+    b"<w:r",
+    b"<w:t",
+];
+
+/// A compact valid DOCX package with one paragraph of text.
+fn docx_seeds() -> Vec<Vec<u8>> {
+    let mut package = Package::new();
+    package
+        .insert_part(
+            PartUri::parse("/word/document.xml").expect("valid seed part name"),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+            b"<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:t>seed</w:t></w:r></w:p></w:body></w:document>".to_vec(),
+        )
+        .expect("valid seed part");
+    package
+        .add_relationship(
+            None,
+            "rId1",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
+            "word/document.xml",
+            TargetMode::Internal,
+        )
+        .expect("valid seed relationship");
+    vec![package.write().expect("valid DOCX seed")]
+}
+
 const OPC_TOKENS: &[&[u8]] = &[
     b"PK\x03\x04",
     b"PK\x01\x02",
@@ -781,6 +842,52 @@ fn opc_seeds() -> Vec<Vec<u8>> {
         .iter()
         .map(|p| p.write().expect("valid seed package"))
         .collect()
+}
+
+// ---------------------------------------------------------------------- cfb
+
+const CFB_TOKENS: &[&[u8]] = &[
+    b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1",
+    b"Root Entry",
+    b"\xFE\xFF",
+    &[0x09, 0x00],
+    &[0x0C, 0x00],
+    &[0xFC, 0xFF, 0xFF, 0xFF],
+    &[0xFD, 0xFF, 0xFF, 0xFF],
+    &[0xFE, 0xFF, 0xFF, 0xFF],
+];
+
+fn cfb(input: &[u8]) -> Outcome {
+    let limits = CfbLimits {
+        max_file_size: 1 << 20,
+        max_entries: 4096,
+        max_depth: 32,
+        max_stream_size: 1 << 20,
+        max_total_read: 4 << 20,
+    };
+    let compound = match CfbCompound::open(input, limits) {
+        Ok(compound) => compound,
+        Err(error) => return Outcome::rejected(&error),
+    };
+    let entries = compound.list();
+    let mut work = entries.len() as u64 + compound.anomalies().len() as u64;
+    for listed in entries {
+        work = work.saturating_add(listed.path.len() as u64);
+        if listed.entry.is_stream() {
+            match compound.read_entry(listed.entry) {
+                Ok(bytes) => work = work.saturating_add(bytes.len() as u64),
+                Err(error) => return Outcome::rejected_with(&error, work),
+            }
+        }
+    }
+    Outcome::accepted(work)
+}
+
+fn cfb_seeds() -> Vec<Vec<u8>> {
+    vec![
+        include_bytes!("../../../tests/cfb-reference/native-v3.cfb").to_vec(),
+        include_bytes!("../../../tests/cfb-reference/native-v4.cfb").to_vec(),
+    ]
 }
 
 // -------------------------------------------------------------- encodings

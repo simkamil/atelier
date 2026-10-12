@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+atelier-cfb = { path = "../../crates/cfb" }
 atelier-compress = { path = "../../crates/compress" }
 atelier-zip = { path = "../../crates/zip" }
 atelier-xml = { path = "../../crates/xml" }

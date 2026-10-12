@@ -62,12 +62,14 @@ Réf : §8 · Taille : M · Dépend de : US-041, US-082
 
 #### US-004 — Fuzzer maison
 *En tant que* développeur, *je veux* un fuzzer mutationnel *afin de* garantir que les analyseurs ne paniquent jamais.
-- [ ] Interface `FuzzTarget` ; mutations : inversion de bits, insertion, suppression, épissure entre entrées du corpus, dictionnaire de jetons.
+- [x] Interface `FuzzTarget` ; mutations : inversion de bits, insertion, suppression, épissure entre entrées du corpus, dictionnaire de jetons.
 - [ ] Corpus initial par cible, sauvegarde des entrées produisant une panique, un dépassement de temps ou de mémoire.
-- [ ] Minimisation simple d'une entrée fautive.
-- [ ] Lancement d'une cible pendant une durée donnée en ligne de commande.
+- [x] Minimisation simple d'une entrée fautive.
+- [x] Lancement d'une cible pendant une durée donnée en ligne de commande.
 
 Réf : §6.13 · Taille : M · Dépend de : US-001
+
+Validation US-004 (2026-10-12) : partielle (mémoire réelle non mesurée) ; [contrat](docs/us-004-fuzzer.md), [preuves du lot](_bmad-output/implementation-artifacts/foundation-integration-validation.json).
 
 #### US-005 — Bancs de performance
 *En tant que* développeur, *je veux* des mesures de performance reproductibles *afin de* suivre les objectifs du §6.16.
@@ -261,10 +263,12 @@ Réf : §6.4 · Taille : M · Dépend de : US-050, US-060
 
 #### US-052 — Contours CFF
 *En tant que* développeur, *je veux* convertir les contours CFF en chemins *afin de* prendre en charge les polices OpenType/CFF.
-- [ ] Analyse CFF (INDEX, DICT, charsets), Type 2 charstrings, sous-routines locales et globales, CID-keyed.
-- [ ] Pile et profondeur d'appel bornées.
+- [x] Analyse CFF (INDEX, DICT, charsets), Type 2 charstrings, sous-routines locales et globales, CID-keyed.
+- [x] Pile et profondeur d'appel bornées.
 
 Réf : §6.4 · Taille : L · Dépend de : US-050, US-060
+
+Validation US-052 (2026-10-12) : développée, revue et validée ; [contrat](docs/us-052-cff-outlines.md), [preuves du lot](_bmad-output/implementation-artifacts/foundation-integration-validation.json).
 
 #### US-053 — Crénage et ligatures
 *En tant que* développeur, *je veux* appliquer le crénage et les ligatures *afin d'obtenir* une typographie conforme à Word.
@@ -396,9 +400,11 @@ Réf : §6.6 · Taille : S · Dépend de : US-080
 
 #### US-082 — Backend raster
 *En tant que* développeur, *je veux* rasteriser une liste d'affichage *afin de* générer miniatures et images de test.
-- [ ] Rendu via US-061, résolution paramétrable.
+- [x] Rendu via US-061, résolution paramétrable.
 
 Réf : §6.6 · Taille : S · Dépend de : US-080, US-061
+
+Validation US-082 (2026-10-12) : développée, revue et validée ; [contrat](docs/us-082-raster-backend.md), [preuves du lot](_bmad-output/implementation-artifacts/foundation-integration-validation.json).
 
 ## E0.10 — Pont WASM ↔ JS
 
@@ -1134,9 +1140,11 @@ Réf : D2, §5.1 · Taille : L · Dépend de : US-022, US-030, US-200
 
 #### US-311 — Conteneur CFB
 *En tant que* développeur, *je veux* lire le format Compound File Binary *afin d'ouvrir* les documents Word anciens.
-- [ ] Versions 3 et 4, FAT, DIFAT, mini-FAT, répertoire, flux ; détection des cycles et des chaînes invalides.
+- [x] Versions 3 et 4, FAT, DIFAT, mini-FAT, répertoire, flux ; détection des cycles et des chaînes invalides.
 
 Réf : [MS-CFB] · Taille : M · Dépend de : US-001
+
+Validation US-311 (2026-10-12) : développée, revue et validée ; [contrat](docs/us-311-cfb-container.md), [preuves du lot](_bmad-output/implementation-artifacts/foundation-integration-validation.json).
 
 #### US-312 — Ouvrir un .doc : texte, mise en forme, styles
 *En tant qu'*utilisateur, *je veux* ouvrir mes anciens documents Word *afin de* les retrouver et les convertir.

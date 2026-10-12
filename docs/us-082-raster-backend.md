@@ -126,12 +126,16 @@ Approximations et refus documentés :
 - erreurs typées (ressources manquantes ou invalides, MIME, options, budgets, listes
   incohérentes, coordonnées hors plage) ;
 - trois images de référence PNG de 64 × 48 dans `crates/raster/tests/reference/`, avec la somme de
-  contrôle FNV-1a 64 de chaque fichier dans le test (régénération :
+  contrôle FNV-1a 64 de chaque fichier dans le test ; les octets PNG générés et
+  les pixels décodés sont comparés. Ces images ont été produites par le backend
+  et constituent des références de régression, sans oracle visuel indépendant
+  (régénération :
   `ATELIER_UPDATE_REFERENCE=1 cargo test -p atelier-raster --test display_list reference_images`) ;
 - campagne de 400 listes aléatoires ou mutées, à graine fixe (générateur xorshift maison) :
   aucune panique, rendus déterministes, erreurs typées variées.
 
-Mesure indicative (page Lettre 612 × 792, 48 lignes de texte Carlito 11 pt, 3 008 glyphes,
+Mesure indicative historique de la livraison extérieure, non rejouée lors de
+l'intégration (page Lettre 612 × 792, 48 lignes de texte Carlito 11 pt, 3 008 glyphes,
 `--release`, médiane de 5 rendus, machine de développement Windows) : 92 ms à 96 dpi
 (816 × 1 056), 238 ms à 300 dpi (2 550 × 3 300) ; avec encodage PNG, 172 ms et 810 ms.
 Commande : `cargo test -p atelier-raster --release --test display_list timing -- --ignored --nocapture`.
@@ -144,3 +148,5 @@ Commande : `cargo test -p atelier-raster --release --test display_list timing --
 - `atelier-raster` : masques de couverture bornés à la zone de l'opération (le rendu par tuiles
   contourne le coût en surface pleine page), contours anisotropes, clip par chemin.
 - `atelier-render` : opacité d'image dans `DrawImage`.
+
+Validation d’intégration du 2026-10-12 : [reçu complet](../_bmad-output/implementation-artifacts/foundation-integration-validation.json), [revue et limites](../_bmad-output/implementation-artifacts/foundation-integration-review.md).

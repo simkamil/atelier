@@ -157,7 +157,7 @@ impl Builder {
                 left: NOSTREAM,
                 right: NOSTREAM,
                 child: NOSTREAM,
-                start: ENDOFCHAIN,
+                start: if storage { 0 } else { ENDOFCHAIN },
                 size: 0,
                 path: path.clone(),
             });

@@ -121,6 +121,10 @@ fn mutate(rng: &mut Rng, b: &Built) -> Vec<u8> {
 }
 
 fn campaign(base: &Built, seed: u64, iterations: usize) -> Duration {
+    assert!(
+        exercise(&base.bytes),
+        "known-valid campaign baseline rejected"
+    );
     let mut opened = 0;
     let mut rng = Rng(seed);
     let start = Instant::now();
@@ -133,11 +137,10 @@ fn campaign(base: &Built, seed: u64, iterations: usize) -> Duration {
             "iteration {i} (seed {seed}) too slow"
         );
     }
-    // The campaign must reach both the accepting and the rejecting paths.
-    assert!(
-        opened > iterations / 10 && opened < iterations,
-        "{opened}/{iterations}"
-    );
+    // Mutations must exercise both parser paths. The original 10% threshold
+    // was arbitrary and rejects useful campaigns when stricter metadata
+    // validation correctly rejects malformed mutations.
+    assert!(opened > 0 && opened < iterations, "{opened}/{iterations}");
     start.elapsed()
 }
 

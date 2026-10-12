@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "verified_at_utc": "2026-10-12T10:03:38Z",
+  "platform": "Windows, native Microsoft Structured Storage (ole32)",
+  "generator": "tools/generate-cfb-reference.py",
+  "verification": {
+    "command": "py tools/generate-cfb-reference.py --check",
+    "result": "passed; regenerated temporary files with StgCreateStorageEx, reopened with StgOpenStorageEx, and compared every IStream read-back to the deterministic expected bytes and checked-in stream hashes"
+  },
+  "rust_validation": {
+    "command": "cargo test -p atelier-cfb",
+    "result": "passed; 44 container tests, 6 mutation tests, 2 Microsoft Structured Storage reference tests"
+  },
+  "fixtures": {
+    "manifest": "tests/cfb-reference/expected.json",
+    "files": [
+      {"path": "tests/cfb-reference/native-v3.cfb", "major_version": 3, "sector_size": 512},
+      {"path": "tests/cfb-reference/native-v4.cfb", "major_version": 4, "sector_size": 4096}
+    ],
+    "streams": ["empty", "mini (300 bytes)", "boundary4095", "boundary4096", "multi8193", "Unicode/Δοκιμή/東京 (73 bytes)"],
+    "comparison": "Rust tests compare stream bytes directly; expected.json records stream sizes and SHA-256. Whole-file hashes are informational because native metadata may vary."
+  },
+  "limits": "Two small locally generated native fixtures only; this does not represent a broad real-world CFB corpus."
+}

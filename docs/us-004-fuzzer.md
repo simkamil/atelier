@@ -29,8 +29,15 @@ Options de `run` : `--seed N` (décimal ou `0x…`, défaut 1), `--timeout-ms N`
 (échéance par entrée, défaut 5000), `--max-len OCTETS` (taille maximale d'une
 entrée mutée, défaut 65 536), `--max-output-mib N` (budget mémoire, défaut 256),
 `--minimize` (ajoute une copie minimisée de chaque nouvelle défaillance),
-`--inflight` (réécrit `crashes/inflight.bin` avant chaque exécution, voir les
-limites), `--root DIR` (défaut : le dossier `tools/fuzz`).
+`--inflight` (réécrit `crashes/inflight.bin` avant chaque exécution de campagne
+ou de minimisation, y compris `minimize` autonome ; la dernière entrée exécutée
+reste disponible après un timeout), `--root DIR` (défaut : `tools/fuzz`).
+
+Les valeurs numériques sont vérifiées avant usage : une durée hors de la plage
+de `Duration`, un budget de sortie dont la conversion en octets déborde ou une
+longueur d'entrée non représentable sur la plateforme est refusée. `minimize`
+crée son fichier de sortie exclusivement : un chemin égal à l'entrée ou un
+fichier déjà présent est conservé et provoque une erreur.
 
 Codes de sortie : 0 aucune défaillance ; 1 erreur d'usage ou d'entrée/sortie ;
 2 défaillance trouvée (panique ou budget de sortie dépassé) ; 3 blocage trouvé.
@@ -51,10 +58,12 @@ graine, le numéro d'itération et les mutations appliquées.
 ## Fonctionnement
 
 * **Corpus.** Au démarrage : graines intégrées de la cible, puis fichiers de
-  `corpus/<cible>/` triés par nom, sans doublon. Les graines sont de petites
+  `corpus/<cible>/` triés par nom, sans doublon. Le corpus initial et le corpus
+  de travail sont limités à 2 048 entrées ; les fichiers externes sont lus au
+  plus jusqu'à `max_len` octets. Les graines sont de petites
   copies versionnées (`seed` les régénère) de fixtures du dépôt
-  (`crates/*/tests`) ou d'entrées construites par les encodeurs des crates ;
-  le tout pèse environ 150 Kio. Rien n'est téléchargé.
+(`crates/*/tests` et `tests/cfb-reference`) ou d'entrées construites par
+  les encodeurs des crates ; le tout pèse environ 210 Kio. Rien n'est téléchargé.
 * **Mutations.** Inversion de 1 à 3 bits ; remplacement d'un champ de 1, 2, 4
   ou 8 octets par une valeur limite (0, 1, bornes signées et non signées, en
   petit et grand boutiste) ; insertion, suppression, duplication de blocs ;
@@ -69,9 +78,11 @@ graine, le numéro d'itération et les mutations appliquées.
   enregistre message et `fichier:ligne:colonne`. Les défaillances sont
   dédupliquées par type et emplacement de panique.
 * **Blocage.** Chaque entrée s'exécute sur un fil de travail ; l'outil attend
-  `--timeout-ms`. Au dépassement, l'entrée est sauvegardée et la campagne
-  s'arrête avec le code 3. Le fil bloqué ne peut pas être tué : il est
-  abandonné (le processus se termine juste après).
+  `--timeout-ms`. Au dépassement, l'entrée est sauvegardée et la campagne ou le
+  rejeu s'arrête avec le code 3. Le fil bloqué ne peut pas être tué : il est
+  abandonné. Un `Runner` ne traite plus d'entrée après une échéance, et les
+  entrées en timeout ne sont pas minimisées, afin de ne pas accumuler de fils
+  bloqués.
 * **Mémoire.** Il n'y a pas d'allocateur global (`unsafe` interdit) : la
   mémoire réellement consommée n'est **pas mesurée**. Le contrôle est la
   taille de sortie que la cible rapporte (pixels décodés, octets décompressés…)
@@ -84,7 +95,9 @@ graine, le numéro d'itération et les mutations appliquées.
 * **Minimisation.** Suppression de blocs de taille décroissante (moitié,
   quart… un octet), passes répétées tant que la **même** défaillance (type et
   emplacement de panique) se reproduit ; plafonds de 20 000 exécutions et de
-  60 s. Les entrées minimisées d'un vrai défaut sont à conserver dans
+  60 s. Si une candidate dépasse le délai, ses octets exacts sont sauvegardés
+  comme timeout et la campagne s'arrête immédiatement. La commande autonome
+  renvoie 3 sans écrire de sortie réduite. Les entrées minimisées d'un vrai défaut sont à conserver dans
   `regressions/<cible>/` avec une note.
 
 ## Cibles
@@ -101,14 +114,18 @@ Chaque cible applique les limites par défaut de son analyseur.
 | `truetype` | contours `glyf` de `FontFace` |
 | `cff` | `atelier-font::cff::CffFont` : charset, polices CID, contours |
 | `opc` | `atelier-fmt-ooxml::Package::read` puis `write` |
+| `docx-import` | `atelier-fmt-ooxml::import_docx` (graine DOCX compacte générée) |
+| `cfb` | `atelier-cfb::Compound::open`, parcours de l'arbre et lecture des flux avec budgets réduits |
 | `encodings` | `atelier-unicode` : détection, décodage et réencodage des sept encodages |
 | `display-list` | `atelier-render::DisplayList::decode`, revalidation et réencodage |
 | `recovery-journal` | `atelier-model::journal::replay` (entrée = longueur u16, instantané, journal) |
 
 Absentes volontairement : `core-wasm` et `desktop-win` (consigne du lot). Le
 décodeur du protocole binaire (US-091) vit dans `core-wasm/src/protocol.rs` :
-il n'est donc pas accessible depuis un crate non FFI et n'a pas de cible. Le
-conteneur CFB n'existe pas encore sur cette branche.
+il n'est donc pas accessible depuis un crate non FFI et n'a pas de cible.
+La cible CFB utilise les deux fixtures natives versionnées de 20 et 40 Kio ;
+le test de graines autorise jusqu'à 64 Kio pour cette cible seulement, car
+elles couvrent les versions 3 et 4 du format.
 
 ## Ajouter une cible
 
@@ -125,10 +142,9 @@ Arc::new(FnTarget::new("cfb", cfb).dictionary(CFB_TOKENS).seeds(cfb_seeds)),
 ```
 
 Une cible plus complexe peut implémenter directement le trait `FuzzTarget`
-(`name`, `run`, `dictionary`, `seeds`). Le conteneur CFB (autre branche) se
-branchera ainsi : fonction `cfb(input)` appelant l'ouverture du conteneur et la
-lecture de ses flux, graines issues de ses fixtures, puis la commande
-`seed cfb` pour matérialiser le corpus.
+(`name`, `run`, `dictionary`, `seeds`). La cible CFB intégrée suit ce modèle :
+ouverture du conteneur et lecture de ses flux, graines issues des fixtures
+natives versionnées, puis `seed cfb` pour matérialiser le corpus.
 
 ## Limites par rapport à un fuzzer guidé par la couverture
 
@@ -140,7 +156,8 @@ lecture de ses flux, graines issues de ses fixtures, puis la commande
 * Pas de récupération d'un processus tué : un dépassement de pile ou un échec
   d'allocation interrompt le processus sans passer par `catch_unwind`.
   `--inflight` réécrit l'entrée en cours dans `crashes/inflight.bin` avant
-  chaque exécution (coût d'une écriture de fichier) pour la retrouver ; le
+  chaque exécution de campagne et de minimisation (coût d'une écriture de
+  fichier) pour la retrouver ; le
   rejeu depuis (cible, graine, corpus) reproduit aussi le plantage.
   Les fils de travail ont 64 Mio de pile.
 * Mémoire non mesurée (voir plus haut) ; un blocage dans une section qui
@@ -157,6 +174,11 @@ lecture de ses flux, graines issues de ses fixtures, puis la commande
 
 Machine : Windows 11, build `--release`, une cible à la fois, graine
 20261012, 60 s par cible, `--minimize --inflight --timeout-ms 5000`.
+
+Cette attestation historique de la livraison extérieure n'a pas été reproduite
+lors de l'intégration. Elle porte sur les 15 cibles disponibles à cette date ;
+elle ne comprend pas `docx-import` ni `cfb`. La mémoire réelle n'a pas été
+mesurée : US-004 reste partielle sur la détection des dépassements mémoire.
 
 | Cible | Itérations | Entrées/s | Corpus final | Défaillances |
 |---|---:|---:|---:|---:|
@@ -187,3 +209,5 @@ tests (`finds_saves_deduplicates_and_minimizes_a_panic`,
 Les tests de l'outil exécutent en plus 400 itérations par cible
 (`short_campaign_over_every_target_finds_nothing`) ; une régression d'un
 analyseur y apparaîtrait comme un échec de test.
+
+Validation d’intégration du 2026-10-12 : [reçu complet](../_bmad-output/implementation-artifacts/foundation-integration-validation.json), [revue et limites](../_bmad-output/implementation-artifacts/foundation-integration-review.md).

@@ -303,6 +303,9 @@ fn effective_matrix(top: Option<[f64; 6]>, fd: Option<[f64; 6]>) -> Res<[f64; 6]
 /// 1200-unit em), so a linear entry within [`MATRIX_SNAP`] of an integer after
 /// scaling is taken to be that integer instead of distorting every outline.
 fn glyph_transform(m: &[f64; 6], units_per_em: u16) -> Res<Option<[f64; 6]>> {
+    if units_per_em == 0 {
+        return Err(OutlineError::InvalidData("zero unitsPerEm"));
+    }
     if *m == DEFAULT_MATRIX {
         return Ok(None);
     }
@@ -742,6 +745,7 @@ impl<'a> CffFont<'a> {
             max_depth: limits.max_depth.min(MAX_SUBR_DEPTH),
             tf,
             seac_depth: 0,
+            origin: (0.0, 0.0),
             stack: Vec::with_capacity(MAX_STACK),
             transient: [0.0; TRANSIENT_SLOTS],
             x: 0.0,
@@ -864,6 +868,9 @@ struct Interp<'a, 'f> {
     max_depth: usize,
     tf: Option<[f64; 6]>,
     seac_depth: usize,
+    /// Origin of the glyph currently being executed, kept separately from the
+    /// advancing charstring pen so nested `seac` offsets remain glyph-relative.
+    origin: (f64, f64),
     stack: Vec<f64>,
     transient: [f64; TRANSIENT_SLOTS],
     x: f64,
@@ -966,22 +973,29 @@ impl<'a> Interp<'a, '_> {
             self.local_bias,
             self.nominal,
         );
+        let parent_origin = self.origin;
         self.seac_depth += 1;
         self.local = &private.subrs;
         self.local_bias = bias(private.subrs.count);
         self.nominal = private.nominal_width;
         for (gid, ox, oy) in [(base, 0.0, 0.0), (accent, a[0], a[1])] {
+            let origin = (parent_origin.0 + ox, parent_origin.1 + oy);
+            if !origin.0.is_finite() || !origin.1.is_finite() {
+                return Err(OutlineError::Geometry);
+            }
             self.stack.clear();
             self.stems = 0;
             self.width = None;
             self.width_done = false;
-            self.x = ox;
-            self.y = oy;
+            self.origin = origin;
+            self.x = origin.0;
+            self.y = origin.1;
             self.pending = None;
             let code = font.charstrings.get(usize::from(gid))?;
             self.exec(code)?;
         }
         self.seac_depth -= 1;
+        self.origin = parent_origin;
         (
             self.stems,
             self.width,

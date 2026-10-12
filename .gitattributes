@@ -3,6 +3,8 @@
 *.out binary
 *.zip binary
 *.docx binary
+*.cfb binary
+*.otf binary
 *.font binary
 *.ttc binary
 *.ttf binary

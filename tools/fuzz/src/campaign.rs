@@ -5,9 +5,9 @@ use crate::mutate::{self, Context, Mutation};
 use crate::rng::{Rng, fnv1a};
 use crate::runner::{Failure, FailureKind, Runner};
 use crate::target::FuzzTarget;
-use std::collections::HashSet;
+use std::collections::{BinaryHeap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -84,6 +84,14 @@ pub struct Summary {
     pub hung: bool,
 }
 
+/// Result of shrinking an input, including a candidate that exhausted the
+/// runner's deadline. A timed-out candidate is evidence and must not be lost.
+#[derive(Clone, Debug)]
+pub struct MinimizeResult {
+    pub reduced: Vec<u8>,
+    pub timeout: Option<(Vec<u8>, Failure)>,
+}
+
 impl Summary {
     pub fn per_second(&self) -> f64 {
         self.iterations as f64 / self.elapsed.as_secs_f64().max(1e-9)
@@ -99,21 +107,40 @@ pub fn load_corpus(
     max_len: usize,
 ) -> io::Result<Vec<Vec<u8>>> {
     let mut entries = target.seeds();
+    entries.truncate(MAX_CORPUS_ENTRIES);
     if let Some(dir) = dir
         && dir.is_dir()
+        && entries.len() < MAX_CORPUS_ENTRIES
     {
-        let mut paths: Vec<PathBuf> = fs::read_dir(dir)?
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| {
-                p.is_file()
-                    && p.file_name()
-                        .is_some_and(|n| !n.to_string_lossy().starts_with('.'))
-            })
-            .collect();
+        let remaining = MAX_CORPUS_ENTRIES - entries.len();
+        // Keep the lexicographically first paths without retaining an
+        // unbounded directory listing in memory.
+        let mut paths = BinaryHeap::with_capacity(remaining);
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !entry.file_type()?.is_file()
+                || path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+            {
+                continue;
+            }
+            if paths.len() < remaining {
+                paths.push(path);
+            } else if paths.peek().is_some_and(|last| path < *last) {
+                paths.pop();
+                paths.push(path);
+            }
+        }
+        let mut paths = paths.into_vec();
         paths.sort();
         for path in paths {
-            entries.push(fs::read(path)?);
+            let mut file = fs::File::open(path)?;
+            let limit = u64::try_from(max_len).unwrap_or(u64::MAX);
+            let mut entry = Vec::new();
+            file.by_ref().take(limit).read_to_end(&mut entry)?;
+            entries.push(entry);
         }
     }
     let mut seen = HashSet::new();
@@ -182,7 +209,10 @@ pub fn fuzz(target: Arc<dyn FuzzTarget>, config: &Config) -> io::Result<Summary>
         summary.iterations += 1;
         match runner.run(&data) {
             Ok(outcome) => {
-                if seen.insert(outcome.signal()) && corpus.len() < MAX_CORPUS_ENTRIES {
+                if seen.len() < MAX_CORPUS_ENTRIES
+                    && seen.insert(outcome.signal())
+                    && corpus.len() < MAX_CORPUS_ENTRIES
+                {
                     corpus.push(data);
                 }
             }
@@ -205,13 +235,43 @@ pub fn fuzz(target: Arc<dyn FuzzTarget>, config: &Config) -> io::Result<Summary>
                             &applied,
                         )?);
                     }
-                    if config.minimize {
-                        let reduced = minimize(
+                    if config.minimize && !hang {
+                        let minimized = minimize_with(
                             &mut runner,
                             &found.input,
                             &found.failure,
                             DEFAULT_MINIMIZE_RUNS,
+                            |candidate| {
+                                if let Some(path) = &config.inflight {
+                                    fs::write(path, candidate)?;
+                                }
+                                Ok(())
+                            },
                         );
+                        let minimized = minimized?;
+                        if let Some((input, failure)) = minimized.timeout {
+                            let mut timed_out = Found {
+                                failure,
+                                input,
+                                iteration: summary.iterations,
+                                saved: None,
+                                minimized: None,
+                            };
+                            if let Some(dir) = &config.crashes_dir {
+                                timed_out.saved = Some(save_failure(
+                                    dir,
+                                    target.name(),
+                                    config.seed,
+                                    &timed_out,
+                                    &[],
+                                )?);
+                            }
+                            summary.failures.push(found);
+                            summary.failures.push(timed_out);
+                            summary.hung = true;
+                            break;
+                        }
+                        let reduced = minimized.reduced;
                         if let Some(saved) = &found.saved {
                             save_minimized(saved, &reduced)?;
                         }
@@ -263,6 +323,30 @@ fn save_failure(
     Ok(path)
 }
 
+/// Save a timeout discovered while shrinking a failure.
+pub fn save_minimization_timeout(
+    dir: &Path,
+    target: &str,
+    seed: u64,
+    iteration: u64,
+    input: Vec<u8>,
+    failure: Failure,
+) -> io::Result<PathBuf> {
+    save_failure(
+        dir,
+        target,
+        seed,
+        &Found {
+            failure,
+            input,
+            iteration,
+            saved: None,
+            minimized: None,
+        },
+        &[],
+    )
+}
+
 /// Store the minimized input next to the saved failure (`<stem>.min.bin`) and
 /// record its size in the note.
 fn save_minimized(saved: &Path, reduced: &[u8]) -> io::Result<()> {
@@ -276,21 +360,51 @@ fn save_minimized(saved: &Path, reduced: &[u8]) -> io::Result<()> {
 /// Shrink `input` while the same failure (same kind and panic location)
 /// keeps reproducing. Removes blocks of decreasing size (half the input, then
 /// a quarter, ... down to single bytes) and repeats until a full pass changes
-/// nothing, `max_runs` executions were spent, or [`MINIMIZE_MAX_TIME`] passed
-/// (a timeout failure costs one full deadline per execution).
+/// nothing, `max_runs` executions were spent, or [`MINIMIZE_MAX_TIME`] passed.
+/// Timeouts are returned unchanged because their worker thread cannot be
+/// stopped safely.
 pub fn minimize(
     runner: &mut Runner,
     input: &[u8],
     reference: &Failure,
     max_runs: usize,
 ) -> Vec<u8> {
+    minimize_with(runner, input, reference, max_runs, |_| Ok(()))
+        .expect("no-op minimization callback cannot fail")
+        .reduced
+}
+
+/// Variant of [`minimize`] that reports the exact timed-out candidate and
+/// lets callers persist it before the runner executes it.
+pub fn minimize_with(
+    runner: &mut Runner,
+    input: &[u8],
+    reference: &Failure,
+    max_runs: usize,
+    mut before_run: impl FnMut(&[u8]) -> io::Result<()>,
+) -> io::Result<MinimizeResult> {
+    if reference.kind == FailureKind::Timeout {
+        return Ok(MinimizeResult {
+            reduced: input.to_vec(),
+            timeout: Some((input.to_vec(), reference.clone())),
+        });
+    }
     let key = reference.key();
     let mut current = input.to_vec();
     let mut runs = 0usize;
     let started = Instant::now();
-    let mut reproduces = |candidate: &[u8], runs: &mut usize| {
+    let mut timed_out = None;
+    let mut reproduces = |candidate: &[u8], runs: &mut usize| -> io::Result<Result<bool, ()>> {
+        before_run(candidate)?;
         *runs += 1;
-        matches!(runner.run(candidate), Err(f) if f.key() == key)
+        match runner.run(candidate) {
+            Err(failure) if failure.kind == FailureKind::Timeout => {
+                timed_out = Some((candidate.to_vec(), failure));
+                Ok(Err(()))
+            }
+            Err(failure) => Ok(Ok(failure.key() == key)),
+            Ok(_) => Ok(Ok(false)),
+        }
     };
     loop {
         let before = current.len();
@@ -299,16 +413,24 @@ pub fn minimize(
             let mut at = 0usize;
             while at < current.len() {
                 if runs >= max_runs || started.elapsed() >= MINIMIZE_MAX_TIME {
-                    return current;
+                    return Ok(MinimizeResult {
+                        reduced: current,
+                        timeout: timed_out,
+                    });
                 }
                 let end = (at + block).min(current.len());
                 let mut candidate = Vec::with_capacity(current.len() - (end - at));
                 candidate.extend_from_slice(&current[..at]);
                 candidate.extend_from_slice(&current[end..]);
-                if reproduces(&candidate, &mut runs) {
-                    current = candidate;
-                } else {
-                    at += block;
+                match reproduces(&candidate, &mut runs)? {
+                    Ok(true) => current = candidate,
+                    Ok(false) => at += block,
+                    Err(()) => {
+                        return Ok(MinimizeResult {
+                            reduced: current,
+                            timeout: timed_out,
+                        });
+                    }
                 }
             }
             if block == 1 {
@@ -317,7 +439,10 @@ pub fn minimize(
             block = (block / 2).max(1);
         }
         if current.len() == before {
-            return current;
+            return Ok(MinimizeResult {
+                reduced: current,
+                timeout: timed_out,
+            });
         }
     }
 }

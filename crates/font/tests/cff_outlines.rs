@@ -1253,6 +1253,34 @@ fn font_matrix_reaches_faces_through_units_per_em() {
 }
 
 #[test]
+fn zero_units_per_em_is_rejected_for_both_font_matrix_kinds() {
+    let default_bytes = build(&matrix_spec(None));
+    let default = CffFont::parse(&default_bytes).unwrap();
+    let nondefault_bytes = build(&matrix_spec(Some(matrix([
+        "0.002", "0", "0", "0.002", "0", "0",
+    ]))));
+    let nondefault = CffFont::parse(&nondefault_bytes).unwrap();
+    for font in [&default, &nondefault] {
+        assert!(matches!(
+            font.outline_with_units(1, OutlineLimits::default(), 0),
+            Err(OutlineError::InvalidData("zero unitsPerEm"))
+        ));
+        assert!(matches!(
+            font.glyph_with_units(1, OutlineLimits::default(), 0),
+            Err(OutlineError::InvalidData("zero unitsPerEm"))
+        ));
+    }
+    // Preserve the documented default-matrix behavior for any nonzero em size.
+    let reference = default.outline(1, OutlineLimits::default()).unwrap();
+    assert_eq!(
+        default
+            .outline_with_units(1, OutlineLimits::default(), 2048)
+            .unwrap(),
+        reference
+    );
+}
+
+#[test]
 fn invalid_font_matrices_are_typed_errors() {
     let bad_value = |m: Vec<u8>| {
         let bytes = build(&matrix_spec(Some(m)));
@@ -1926,6 +1954,70 @@ fn seac_nesting_and_budgets_are_bounded() {
         at(5, 1),
         Err(OutlineError::LimitExceeded("contours"))
     ));
+}
+
+#[test]
+fn nested_seac_used_as_accent_keeps_the_parent_origin() {
+    // B is itself A + acute at (10, 20). C composes A + B at (40, 50).
+    // Every contour in B must inherit the outer accent's origin.
+    let spec = seac_spec(vec![
+        seac_cs(None, 10, 20, 65, 194),
+        seac_cs(None, 40, 50, 65, 66),
+    ]);
+    let bytes = build(&spec);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(
+        font.outline(4, OutlineLimits::default()).unwrap(),
+        Pb::new()
+            .m(0., 0.)
+            .l(100., 0.)
+            .l(100., 200.)
+            .z()
+            .m(40., 50.)
+            .l(140., 50.)
+            .l(140., 250.)
+            .z()
+            .m(60., 370.)
+            .l(80., 410.)
+            .z()
+            .done()
+    );
+}
+
+#[test]
+fn synthetic_fonttools_oracle_matches_rust_decoder() {
+    let face = FontFace::parse(include_bytes!(
+        "../../../tests/font-cff-reference/cff-oracle.otf"
+    ))
+    .unwrap();
+    assert_eq!(
+        face.outline(1).unwrap(),
+        Pb::new().m(0., 0.).l(100., 0.).l(100., 200.).z().done()
+    );
+    assert_eq!(
+        face.outline(2).unwrap(),
+        Pb::new()
+            .m(0., 0.)
+            .c((20., 80.), (80., 80.), (100., 0.))
+            .z()
+            .done()
+    );
+    assert_eq!(
+        face.outline(6).unwrap(),
+        Pb::new()
+            .m(0., 0.)
+            .l(100., 0.)
+            .l(100., 200.)
+            .z()
+            .m(40., 50.)
+            .l(140., 50.)
+            .l(140., 250.)
+            .z()
+            .m(60., 370.)
+            .l(80., 410.)
+            .z()
+            .done()
+    );
 }
 
 fn cid_spec(fd_select: Vec<u8>) -> Spec {

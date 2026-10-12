@@ -17,6 +17,9 @@ version = "0.1.0"
 [[package]]
 name = "atelier-cfb"
 version = "0.1.0"
+dependencies = [
+ "atelier-unicode",
+]
 
 [[package]]
 name = "atelier-check-license"
@@ -90,6 +93,7 @@ dependencies = [
 name = "atelier-fuzz"
 version = "0.1.0"
 dependencies = [
+ "atelier-cfb",
  "atelier-compress",
  "atelier-fmt-ooxml",
  "atelier-font",

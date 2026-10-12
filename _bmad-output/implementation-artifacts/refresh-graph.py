@@ -46,6 +46,7 @@ prototype_docs.extend(['docs/us-221-keyboard-editing.md','docs/us-222-mouse-sele
 prototype_docs.extend(['docs/us-013-case-normalization.md','docs/us-041-png-encoder.md','docs/us-052-cff-outlines.md','docs/us-200-rich-text-model.md'])
 prototype_docs.extend(['docs/us-042-jpeg.md','docs/us-061-software-rasterizer.md','docs/us-201-style-engine.md','docs/us-300-opc-package.md','crates/image/tests/fixtures/jpeg/README.md'])
 prototype_docs.extend(['docs/us-301-docx-import.md','docs/us-210-rich-line-layout.md','tests/docx-reference/README.md','tests/text-layout-reference/README.md'])
+prototype_docs.extend(['docs/us-004-fuzzer.md','docs/us-082-raster-backend.md','docs/us-311-cfb-container.md','tests/cfb-reference/README.md','tests/font-cff-reference/README.md'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.
@@ -115,6 +116,7 @@ code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if
 code += [root/'tools/package-engine.py']
 code += [root/'crates/image/tests/fixtures/jpeg/generate.py']
 code += [root/'tools/generate-docx-reference.py', root/'tools/word-line-reference.ps1', root/'tests/docx-reference/expected.json']
+code += [root/'tools/generate-cfb-reference.py', root/'tools/generate-cff-reference.py', root/'tests/cfb-reference/expected.json', root/'tests/font-cff-reference/manifest.json']
 code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
 # Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.

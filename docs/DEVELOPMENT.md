@@ -2,15 +2,60 @@
 
 Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus. Les polices embarquées et les corpus de référence sont versionnés ; le client web dispose du chargeur ABI WASM, et le premier éditeur de texte brut relie Canvas, Worker/WASM et pont fichiers natif.
 
-Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages, la casse et la normalisation Unicode, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions, historique, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent les conteneurs ZIP et le XML en flux avec capture opaque. `atelier-font` expose vingt polices embarquées, les contours TrueType, une prise en charge CFF partielle et le façonnage latin.
+Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages, la casse et la normalisation Unicode, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions, historique, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent les conteneurs ZIP et le XML en flux avec capture opaque. `atelier-font` expose vingt polices embarquées, les contours TrueType, les [contours CFF1](us-052-cff-outlines.md) et le façonnage latin.
 
-`atelier-image` décode PNG, GIF, BMP et [JPEG](us-042-jpeg.md) en RGBA8 et [encode PNG](us-041-png-encoder.md), avec limites explicites. `atelier-text-model::rich` fournit le [modèle riche](us-200-rich-text-model.md) et le [moteur de styles](us-201-style-engine.md). `atelier-raster` expose les [primitives logicielles](us-061-software-rasterizer.md), et `atelier-fmt-ooxml` lit et écrit le [paquet OPC](us-300-opc-package.md). L’[import DOCX](us-301-docx-import.md) et les [lignes riches](us-210-rich-line-layout.md) sont disponibles en API; US-210 attend la comparaison Word. Le raccordement à l’éditeur riche reste à développer. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+`atelier-image` décode PNG, GIF, BMP et [JPEG](us-042-jpeg.md) en RGBA8 et [encode PNG](us-041-png-encoder.md), avec limites explicites. `atelier-text-model::rich` fournit le [modèle riche](us-200-rich-text-model.md) et le [moteur de styles](us-201-style-engine.md). `atelier-raster` expose les [primitives logicielles](us-061-software-rasterizer.md) et le [backend de listes d’affichage](us-082-raster-backend.md), et `atelier-fmt-ooxml` lit et écrit le [paquet OPC](us-300-opc-package.md). L’[import DOCX](us-301-docx-import.md) et les [lignes riches](us-210-rich-line-layout.md) sont disponibles en API; US-210 attend la comparaison Word. Le raccordement à l’éditeur riche reste à développer. `atelier-cfb` fournit le [conteneur CFB](us-311-cfb-container.md). Le garde `atelier-check-workspace`, le vérificateur de licence, `atelier-bench`, le générateur Unicode et le [fuzzer](us-004-fuzzer.md) sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Les liaisons WASM, Win32 et WebView2 isolent leurs blocs `unsafe` et documentent les contrats ABI selon la spécification.
 
 ## Validation
+
+## CFF, CFB, backend raster et fuzz — 2026-10-12
+
+Les quatre branches livrées en parallèle ont été fusionnées en conservant leurs
+historiques et les ajouts DOCX/layout. Trois agents GPT-6 Luna moyen ont corrigé
+les modules, puis trois agents indépendants ont conduit la revue. **US-052,
+US-082 et US-311 sont validées** : **46 US terminées sur 158**. **US-004 reste
+partielle** : mutations, minimisation, durée et sauvegarde panic/timeout sont
+testées, mais les allocations mémoire réelles ne sont pas mesurées.
+
+- [CFF](us-052-cff-outlines.md) : charsets prédéfinis, chaînes standard,
+  FontMatrix, `random`, `seac` et limites. Un accent `seac` imbriqué conserve
+  maintenant le décalage parent ; UPEM nul est refusé. L'[oracle FontTools](../tests/font-cff-reference/README.md)
+  compare trois contours synthétiques versionnés ; il ne couvre ni CID réel
+  ni FontMatrix indépendamment.
+- [CFB](us-311-cfb-container.md) : V3/V4, FAT/DIFAT/MiniFAT, répertoire,
+  lectures partielles, cycles et métadonnées invalides. Appartenance des
+  entrées et casse simple Unicode vérifiées ; [deux références natives Windows](../tests/cfb-reference/README.md)
+  sont relues par Structured Storage puis par Rust.
+- [Backend raster](us-082-raster-backend.md) : replay de listes d'affichage
+  via US-061, résolution, tuiles, clips, texte, images et PNG. Les trois PNG
+  versionnés sont des références de régression produites par le backend.
+- [Fuzzer](us-004-fuzzer.md) : 17 cibles, dont DOCX et CFB. Un timeout pendant
+  la minimisation sauvegarde la candidate exacte et arrête le runner ;
+  `--inflight` précède aussi ces appels.
+
+La [validation finale](../_bmad-output/implementation-artifacts/foundation-integration-validation.json)
+réussit **25 contrôles, 671 tests workspace et 55 tests natifs release** :
+builds Windows/WASM/musl, compilation des tests musl, Clippy hôte/WASM,
+format, SPDX, garde, 33 paquets locaux, reproduction des références et
+**17 000 exécutions fuzz sans défaillance détectée** (pas une preuve d'absence
+de défaut). ABI éditeur, transferts du vrai Worker et navigateur passent.
+Sources et lock restent inchangés pendant tous ces contrôles.
+
+Le moteur embarqué mesure **1 041 817 octets**, sous le plafond inchangé de
+1 180 429. `wasm-release` retire les sections de symboles ; sa provenance et
+ses octets sont vérifiés. La [revue triée](../_bmad-output/implementation-artifacts/foundation-integration-review.md)
+conserve chaque constat et sa décision ; la [carte Graphify](../_bmad-output/implementation-artifacts/foundation-integration-graph.json)
+contrôle les dépendances et les 158 statuts.
+
+US-210 attend toujours la comparaison Word. Le parcours utilisateur actuel
+reste l'éditeur TXT ; ces API ne raccordent pas encore les documents riches
+à l'interface. Les tests musl sont compilés ici, sans exécution Linux locale.
+La CI distante reste à distinguer des contrôles locaux ; le précédent run
+était refusé avant démarrage pour facturation/plafond Actions.
 
 ## Import DOCX et lignes riches — 2026-10-12
 
@@ -59,8 +104,8 @@ contrôle les dépendances et les statuts du lot.
 Le lot développé en parallèle avec GPT-6 Luna, raisonnement moyen, termine
 **US-201, US-300, US-042 et US-061**. La même passe valide l’intégration des
 livraisons précédentes **US-013, US-041 et US-200** : le backlog atteint
-**42 US terminées sur 158**. US-052 reste partielle (charsets Expert, `seac`,
-`random` et `FontMatrix` non pris en charge).
+**42 US terminées sur 158**. À la date de ce lot, US-052 restait partielle (charsets Expert, `seac`,
+`random` et `FontMatrix` non pris en charge) ; elle est complétée par le lot ci-dessus.
 
 - [Styles](us-201-style-engine.md) : cascade, styles liés explicites, bascules Word,
   thèmes et cache invalidé par opération ; 12 tests dédiés.
@@ -91,7 +136,7 @@ La dernière passe reprend tous les contrôles sur les sources corrigées.
 
 À la date de ce lot, l’import WordprocessingML restait à développer; il est
 maintenant livré par US-301 ci-dessus. Le backend raster de liste d’affichage
-(US-082) et le raccordement à l’éditeur riche restent séparés. Les diagnostics WebView2 debug/release sont
+(US-082) est maintenant livré par le lot ci-dessus ; le raccordement à l’éditeur riche reste séparé. Les diagnostics WebView2 debug/release sont
 fonctionnels, mais US-111 reste ouverte : le test strict des handles échoue
 encore. Les essais AZERTY/IME physiques et les dialogues manuels restent ouverts.
 Les tests musl sont seulement compilés localement ; leur exécution appartient

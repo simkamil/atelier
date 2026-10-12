@@ -144,13 +144,15 @@ fn spawn_worker(target: Arc<dyn FuzzTarget>) -> Worker {
 ///
 /// A target that does not return before the deadline is reported as a
 /// timeout. Its thread cannot be stopped; it is abandoned (it exits if the
-/// target ever returns) and a fresh worker serves the next input.
+/// target ever returns) and this runner refuses further inputs so repeated
+/// calls cannot leave an unbounded number of workers behind.
 pub struct Runner {
     target: Arc<dyn FuzzTarget>,
     timeout: Duration,
     max_output: u64,
     worker: Option<Worker>,
     abandoned: usize,
+    timed_out: bool,
 }
 
 impl Runner {
@@ -162,6 +164,7 @@ impl Runner {
             max_output,
             worker: None,
             abandoned: 0,
+            timed_out: false,
         }
     }
 
@@ -171,6 +174,13 @@ impl Runner {
     }
 
     pub fn run(&mut self, input: &[u8]) -> Reply {
+        if self.timed_out {
+            return Err(Failure {
+                kind: FailureKind::Timeout,
+                message: "runner disabled after a timed-out input".to_string(),
+                location: String::new(),
+            });
+        }
         let worker = self
             .worker
             .get_or_insert_with(|| spawn_worker(self.target.clone()));
@@ -201,6 +211,7 @@ impl Runner {
             Err(RecvTimeoutError::Timeout) => {
                 self.worker = None;
                 self.abandoned += 1;
+                self.timed_out = true;
                 Err(Failure {
                     kind: FailureKind::Timeout,
                     message: format!("no result after {} ms", self.timeout.as_millis()),

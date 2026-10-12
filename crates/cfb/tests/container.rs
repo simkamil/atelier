@@ -122,6 +122,23 @@ fn existence_kinds_and_clsid() {
 }
 
 #[test]
+fn entries_cannot_be_used_with_another_compound() {
+    let first = Builder::new(3, vec![storage("Folder", vec![stream("Same", b"first")])]).build();
+    let second = Builder::new(3, vec![storage("Folder", vec![stream("Same", b"second")])]).build();
+    let a = Compound::open(&first.bytes, Limits::default()).unwrap();
+    let b = Compound::open(&second.bytes, Limits::default()).unwrap();
+    let foreign_stream = a.find("Folder/Same").unwrap();
+    let foreign_storage = a.find("Folder").unwrap();
+    assert_eq!(foreign_stream.id(), b.find("Folder/Same").unwrap().id());
+    assert_eq!(b.read("Folder/Same").unwrap(), b"second");
+    assert_eq!(
+        b.read_entry_range(foreign_stream, 0, 5),
+        Err(CfbError::ForeignEntry)
+    );
+    assert_eq!(b.children(foreign_storage).count(), 0);
+}
+
+#[test]
 fn fat_and_mini_fat_selection_at_the_cutoff() {
     for v in [3, 4] {
         let b = sample(v);
@@ -385,6 +402,83 @@ fn fat_count_corruptions() {
     let mut x = b.clone_bytes();
     put_u32(&mut x, 72, 3);
     assert!(matches!(open_err(&x), CfbError::InvalidDifat(_)));
+}
+
+#[test]
+fn unused_header_difat_slots_must_be_free() {
+    let mut b = sample(3);
+    let nfat = get_u32(&b.bytes, 44) as usize;
+    assert!(nfat < 109);
+    put_u32(&mut b.bytes, 76 + 4 * nfat, ENDOFCHAIN);
+    assert!(matches!(
+        open_err(&b.bytes),
+        CfbError::InvalidDifat("unused header DIFAT entry")
+    ));
+}
+
+#[test]
+fn unused_extended_difat_slots_must_be_free() {
+    let mut bd = Builder::new(3, nodes());
+    bd.min_fat_sectors = 300;
+    let mut b = bd.build();
+    let remaining = (b.fat_sectors.len() - 109) % 127;
+    assert_ne!(remaining, 0);
+    let final_difat = *b.difat_sectors.last().unwrap();
+    let unused_slot = b.sector_off(final_difat) + 4 * remaining;
+    put_u32(&mut b.bytes, unused_slot, ENDOFCHAIN);
+    assert!(matches!(
+        open_err(&b.bytes),
+        CfbError::InvalidDifat("unused DIFAT entry")
+    ));
+}
+
+#[test]
+fn fat_padding_past_physical_eof_must_be_free() {
+    let mut b = sample(3);
+    let first_padding = b.sector_count as usize;
+    assert!(first_padding < b.fat_sectors.len() * (b.ss / 4));
+    b.set_fat(first_padding as u32, ENDOFCHAIN);
+    assert!(matches!(
+        open_err(&b.bytes),
+        CfbError::InvalidFat("non-free FAT entry past end of file")
+    ));
+}
+
+#[test]
+fn allocation_sector_markers_are_validated() {
+    let mut b = sample(3);
+    let sector = b.fat_sectors[0];
+    b.set_fat(sector, ENDOFCHAIN);
+    assert_eq!(
+        open_err(&b.bytes),
+        CfbError::InvalidFatSectorMarker {
+            sector,
+            marker: ENDOFCHAIN,
+        }
+    );
+
+    let mut bd = Builder::new(3, nodes());
+    bd.min_fat_sectors = 300;
+    let mut b = bd.build();
+    let sector = b.difat_sectors[0];
+    b.set_fat(sector, ENDOFCHAIN);
+    assert_eq!(
+        open_err(&b.bytes),
+        CfbError::InvalidDifatSectorMarker {
+            sector,
+            marker: ENDOFCHAIN,
+        }
+    );
+}
+
+#[test]
+fn too_short_fat_cannot_mark_a_listed_fat_sector() {
+    let mut b = Builder::new(3, vec![stream("Large", &pattern(9, 80_000))]).build();
+    let sector = b.fat_sectors[0];
+    assert!(sector >= 128);
+    put_u32(&mut b.bytes, 44, 1);
+    put_u32(&mut b.bytes, 76 + 4, FREESECT);
+    assert_eq!(open_err(&b.bytes), CfbError::FatTooShort { sector });
 }
 
 #[test]
@@ -885,6 +979,54 @@ fn duplicate_names_keep_the_first() {
     assert!(find_anomaly(&c, |a| matches!(a, Anomaly::DuplicateName(_))));
     assert_eq!(c.list().len(), 2);
     assert_eq!(c.read("z").unwrap(), b"3");
+}
+
+#[test]
+fn simple_uppercase_mapping_detects_greek_names() {
+    let b = Builder::new(
+        3,
+        vec![stream("\u{1f80}", b"lower"), stream("\u{1f88}", b"upper")],
+    )
+    .build();
+    let c = open(&b);
+    assert!(find_anomaly(&c, |a| matches!(a, Anomaly::DuplicateName(_))));
+    assert_eq!(c.list().len(), 1);
+    assert_eq!(c.read("\u{1f80}").unwrap(), b"lower");
+    assert_eq!(c.read("\u{1f88}").unwrap(), b"lower");
+}
+
+#[test]
+fn stream_child_and_ignored_metadata_are_nonfatal() {
+    let mut b = sample(3);
+    let stream_id = b.id_of("Small");
+    b.set_entry_u32("Small", 76, b.id_of("Empty"));
+    let entry = b.entry_off(stream_id);
+    b.bytes[entry + 80] = 1; // CLSID is unused for streams.
+    b.set_u64(entry + 100, 1); // timestamps are unused for streams.
+    let storage_id = b.id_of("Dir");
+    let storage = b.entry_off(storage_id);
+    b.set_u32(storage + 116, 123);
+    b.set_u64(storage + 120, 456);
+    let root = b.entry_off(0);
+    b.set_u64(root + 100, 1);
+
+    let c = open(&b);
+    assert!(
+        c.anomalies()
+            .contains(&Anomaly::StreamHasChildren(stream_id))
+    );
+    assert!(
+        c.anomalies()
+            .contains(&Anomaly::IgnoredStreamMetadata(stream_id))
+    );
+    assert!(
+        c.anomalies()
+            .contains(&Anomaly::StorageHasStreamFields(storage_id))
+    );
+    assert!(c.anomalies().contains(&Anomaly::RootHasCreationTime(0)));
+    assert_eq!(c.read("Small").unwrap(), pattern(1, 100));
+    assert_eq!(c.read("Empty").unwrap(), b"");
+    assert_eq!(c.read("Dir/Inner").unwrap(), pattern(5, 700));
 }
 
 // ---------------------------------------------------------------- limits

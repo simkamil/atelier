@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+use atelier_fuzz::campaign::{MAX_CORPUS_ENTRIES, load_corpus};
 use atelier_fuzz::mutate::{self, Context, INTERESTING, Mutation};
 use atelier_fuzz::rng::Rng;
 use atelier_fuzz::{
@@ -236,6 +237,48 @@ impl FuzzTarget for Hang {
     }
 }
 
+struct FaultThenHang(Arc<AtomicBool>);
+
+impl FuzzTarget for FaultThenHang {
+    fn name(&self) -> &str {
+        "fault-then-hang"
+    }
+    fn run(&self, input: &[u8]) -> Outcome {
+        if input.is_empty() {
+            while !self.0.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        panic!("reproducible fault")
+    }
+}
+
+struct PanicThenSpecificHang {
+    release: Arc<AtomicBool>,
+    executed: Mutex<Vec<Vec<u8>>>,
+}
+
+impl FuzzTarget for PanicThenSpecificHang {
+    fn name(&self) -> &str {
+        "panic-then-specific-hang"
+    }
+    fn run(&self, input: &[u8]) -> Outcome {
+        self.executed.lock().unwrap().push(input.to_vec());
+        if input == b"AB" {
+            panic!("seed panic");
+        }
+        if input == b"B" {
+            while !self.release.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        Outcome::accepted(0)
+    }
+    fn seeds(&self) -> Vec<Vec<u8>> {
+        vec![b"AB".to_vec()]
+    }
+}
+
 struct Greedy;
 
 impl FuzzTarget for Greedy {
@@ -267,6 +310,35 @@ impl FuzzTarget for Recorder {
     fn seeds(&self) -> Vec<Vec<u8>> {
         vec![b"alpha".to_vec(), b"beta beta".to_vec()]
     }
+}
+
+struct ManySeeds;
+
+impl FuzzTarget for ManySeeds {
+    fn name(&self) -> &str {
+        "many-seeds"
+    }
+    fn run(&self, _: &[u8]) -> Outcome {
+        Outcome::accepted(0)
+    }
+    fn seeds(&self) -> Vec<Vec<u8>> {
+        (0..MAX_CORPUS_ENTRIES + 50)
+            .map(|i| (i as u64).to_le_bytes().to_vec())
+            .collect()
+    }
+}
+
+#[test]
+fn initial_corpus_is_capped_and_external_files_are_truncated() {
+    let seeds = load_corpus(&ManySeeds, None, 16).unwrap();
+    assert_eq!(seeds.len(), MAX_CORPUS_ENTRIES);
+
+    let dir = temp_dir("corpus-bound");
+    fs::write(dir.join("large.bin"), vec![0xA5; 1024]).unwrap();
+    let entries = load_corpus(&Recorder::default(), Some(&dir), 16).unwrap();
+    assert!(entries.iter().any(|entry| entry.len() == 16));
+    assert!(entries.iter().all(|entry| entry.len() <= 16));
+    let _ = fs::remove_dir_all(dir);
 }
 
 fn config(seed: u64, iterations: u64) -> Config {
@@ -370,12 +442,14 @@ fn detects_a_hang_without_blocking_and_stops_the_run() {
     let mut cfg = config(1, 1000);
     cfg.timeout = Duration::from_millis(150);
     cfg.crashes_dir = Some(dir.clone());
+    cfg.minimize = true;
     let summary = fuzz(Arc::new(Hang(release.clone())), &cfg).unwrap();
     release.store(true, Ordering::Relaxed);
 
     assert!(summary.hung);
     assert_eq!(summary.failures.len(), 1);
     assert_eq!(summary.failures[0].failure.kind, FailureKind::Timeout);
+    assert!(summary.failures[0].minimized.is_none());
     assert_eq!(summary.failures[0].failure.key(), "timeout");
     assert!(summary.iterations < 1000, "the run stops at the hang");
     let saved = summary.failures[0].saved.as_ref().unwrap();
@@ -391,7 +465,7 @@ fn detects_a_hang_without_blocking_and_stops_the_run() {
 }
 
 #[test]
-fn runner_recovers_after_a_timeout() {
+fn runner_stops_reusing_workers_after_a_timeout() {
     let release = Arc::new(AtomicBool::new(false));
     let mut runner = Runner::new(
         Arc::new(Hang(release.clone())),
@@ -400,7 +474,85 @@ fn runner_recovers_after_a_timeout() {
     );
     assert_eq!(runner.run(b"Hang").unwrap_err().kind, FailureKind::Timeout);
     assert_eq!(runner.abandoned_workers(), 1);
-    assert!(runner.run(b"fine").is_ok());
+    assert_eq!(runner.run(b"fine").unwrap_err().kind, FailureKind::Timeout);
+    assert_eq!(
+        runner.abandoned_workers(),
+        1,
+        "no extra workers are spawned"
+    );
+    release.store(true, Ordering::Relaxed);
+}
+
+#[test]
+fn minimizing_a_timeout_returns_without_retrying_the_hung_worker() {
+    let release = Arc::new(AtomicBool::new(false));
+    let mut runner = Runner::new(
+        Arc::new(Hang(release.clone())),
+        Duration::from_millis(80),
+        u64::MAX,
+    );
+    let input = b"Hang";
+    let failure = runner.run(input).unwrap_err();
+    let reduced = minimize(&mut runner, input, &failure, 20_000);
+    assert_eq!(reduced, input);
+    assert_eq!(runner.abandoned_workers(), 1);
+    release.store(true, Ordering::Relaxed);
+}
+
+#[test]
+fn campaign_saves_the_minimization_candidate_that_times_out_and_stops() {
+    let release = Arc::new(AtomicBool::new(false));
+    let target = Arc::new(PanicThenSpecificHang {
+        release: release.clone(),
+        executed: Mutex::new(Vec::new()),
+    });
+    let dir = temp_dir("minimize-timeout-candidate");
+    let inflight = dir.join("inflight.bin");
+    let mut cfg = config(1, 3);
+    cfg.timeout = Duration::from_millis(50);
+    cfg.crashes_dir = Some(dir.clone());
+    cfg.minimize = true;
+    cfg.inflight = Some(inflight.clone());
+
+    let summary = fuzz(target.clone(), &cfg).unwrap();
+    release.store(true, Ordering::Relaxed);
+
+    assert!(summary.hung);
+    assert_eq!(
+        summary.iterations, 1,
+        "minimization is not a campaign iteration"
+    );
+    assert_eq!(
+        target.executed.lock().unwrap().as_slice(),
+        &[b"AB".to_vec(), b"B".to_vec()],
+        "the campaign must stop after the actual timeout candidate"
+    );
+    assert_eq!(summary.failures.len(), 2);
+    assert_eq!(summary.failures[0].failure.kind, FailureKind::Panic);
+    assert!(summary.failures[0].minimized.is_none());
+    assert_eq!(summary.failures[1].failure.kind, FailureKind::Timeout);
+    assert_eq!(summary.failures[1].input, b"B");
+    let timeout_path = summary.failures[1].saved.as_ref().unwrap();
+    assert_eq!(fs::read(timeout_path).unwrap(), b"B");
+    let panic_path = summary.failures[0].saved.as_ref().unwrap();
+    assert!(!panic_path.with_extension("min.bin").exists());
+    assert_eq!(fs::read(inflight).unwrap(), b"B");
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn minimization_stops_after_a_candidate_times_out() {
+    let release = Arc::new(AtomicBool::new(false));
+    let mut runner = Runner::new(
+        Arc::new(FaultThenHang(release.clone())),
+        Duration::from_millis(80),
+        u64::MAX,
+    );
+    let input = b"x";
+    let failure = runner.run(input).unwrap_err();
+    let reduced = minimize(&mut runner, input, &failure, 20_000);
+    assert_eq!(reduced, input);
+    assert_eq!(runner.abandoned_workers(), 1);
     release.store(true, Ordering::Relaxed);
 }
 
@@ -433,6 +585,8 @@ fn registry_lists_the_analyzers_once_each() {
         "truetype",
         "cff",
         "opc",
+        "docx-import",
+        "cfb",
         "encodings",
         "display-list",
         "recovery-journal",
@@ -454,8 +608,13 @@ fn builtin_seeds_run_cleanly_and_degenerate_inputs_do_not_panic() {
         let seeds = target.seeds();
         assert!(!seeds.is_empty(), "{} has no seed", target.name());
         for seed in &seeds {
+            let max_seed_size = if target.name() == "cfb" {
+                64 * 1024
+            } else {
+                8192
+            };
             assert!(
-                seed.len() <= 8192,
+                seed.len() <= max_seed_size,
                 "{}: seed too large for the repository",
                 target.name()
             );
@@ -473,9 +632,14 @@ fn builtin_seeds_run_cleanly_and_degenerate_inputs_do_not_panic() {
 
 #[test]
 fn well_formed_seeds_are_accepted_by_their_analyzer() {
-    for name in ["png", "gif", "bmp", "display-list"] {
+    for name in ["png", "gif", "bmp", "display-list", "docx-import", "cfb"] {
         let target = find(name).unwrap();
         for (i, seed) in target.seeds().iter().enumerate() {
+            if name == "docx-import"
+                && let Err(error) = atelier_fmt_ooxml::import_docx(seed)
+            {
+                panic!("DOCX seed import error: {error:?}");
+            }
             assert_eq!(target.run(seed).class, 0, "{name} seed {i} was rejected");
         }
     }

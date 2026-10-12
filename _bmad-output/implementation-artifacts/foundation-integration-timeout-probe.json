@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-12",
+  "trigger": "seed AB panics at a fixed location; minimized candidate B waits until an AtomicBool is released; iterations=3, minimize=true, timeout=50ms",
+  "before": {
+    "executed_bytes": [[65, 66], [66]],
+    "campaign_iterations": 2,
+    "hung": true,
+    "saved_panic": [65, 66],
+    "saved_timeout": [65, 67],
+    "timeout_message": "runner disabled after a timed-out input",
+    "wrong_unexecuted_input_saved": true
+  },
+  "after": {
+    "executed_bytes": [[65, 66], [66]],
+    "campaign_iterations": 1,
+    "hung": true,
+    "saved_panic": [65, 66],
+    "saved_timeout": [66],
+    "timeout_message": "no result after 50 ms",
+    "wrong_unexecuted_input_saved": false
+  },
+  "reproducible_regression": "tools/fuzz/tests/fuzzer.rs::campaign_saves_the_minimization_candidate_that_times_out_and_stops",
+  "additional_assertions_in_regression": ["inflight bytes equal B", "Found.minimized is None", "no .min.bin after timeout"],
+  "exploration": "A first recheck linked the stale explicit-target rlib while agent tests had built the default target. Rebuilt the explicit Windows target before obtaining the after result. This was a probe build-selection error, not a failed source correction.",
+  "limitations": "The initial ad hoc probe is under ignored target/. The versioned regression is the portable evidence; its waits are released after the assertions, so it does not leave an abandoned permanent thread."
+}

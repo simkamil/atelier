@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #![forbid(unsafe_code)]
 
-use atelier_fuzz::campaign::{DEFAULT_MINIMIZE_RUNS, fingerprint};
-use atelier_fuzz::{Config, FuzzTarget, Runner, find, fuzz, minimize, registry};
+use atelier_fuzz::campaign::{
+    DEFAULT_MINIMIZE_RUNS, fingerprint, minimize_with, save_minimization_timeout,
+};
+use atelier_fuzz::{Config, FuzzTarget, Runner, find, fuzz, registry};
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -26,7 +29,7 @@ Options for run:\n\
   --max-len BYTES   largest mutated input (default 65536)\n\
   --max-output-mib N  memory budget checked against the output size the target reports (default 256)\n\
   --minimize        also store a minimized copy of each new failure\n\
-  --inflight        rewrite crashes/inflight.bin before every execution (survives aborts)\n\
+  --inflight        rewrite crashes/inflight.bin before every campaign/minimize execution\n\
 Common options: --root DIR (default: the tools/fuzz directory), --timeout-ms for replay and minimize.\n\
 Exit codes: 0 no failure, 1 usage or I/O error, 2 failure found, 3 hang found.";
 
@@ -103,9 +106,17 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
             "--timeout-ms" => {
                 options.timeout = Duration::from_millis(parse_number(&value("--timeout-ms")?)?)
             }
-            "--max-len" => options.max_len = parse_number(&value("--max-len")?)? as usize,
+            "--max-len" => {
+                let value = parse_number(&value("--max-len")?)?;
+                options.max_len = usize::try_from(value)
+                    .map_err(|_| "--max-len does not fit this platform".to_string())?;
+            }
             "--max-output-mib" => {
-                options.max_output_mib = parse_number(&value("--max-output-mib")?)?
+                options.max_output_mib = parse_number(&value("--max-output-mib")?)?;
+                options
+                    .max_output_mib
+                    .checked_mul(1024 * 1024)
+                    .ok_or_else(|| "--max-output-mib is too large".to_string())?;
             }
             "--duration" => {
                 let text = value("--duration")?;
@@ -115,7 +126,10 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
                 if !seconds.is_finite() || seconds < 0.0 {
                     return Err(format!("'{text}' is not a valid duration"));
                 }
-                options.duration = Some(Duration::from_secs_f64(seconds));
+                options.duration = Some(
+                    Duration::try_from_secs_f64(seconds)
+                        .map_err(|_| format!("'{text}' is too large for a duration"))?,
+                );
             }
             "--output" => options.output = Some(value("--output")?),
             "--root" => options.root = PathBuf::from(value("--root")?),
@@ -265,6 +279,7 @@ fn replay(options: &Options) -> Result<u8, String> {
                 exit = exit.max(2);
                 if failure.kind == atelier_fuzz::FailureKind::Timeout {
                     exit = 3;
+                    break;
                 }
             }
         }
@@ -277,20 +292,61 @@ fn minimize_file(options: &Options) -> Result<u8, String> {
         return Err("minimize needs a TARGET and one FILE".to_string());
     };
     let input = read_input(file)?;
+    let crashes = options.root.join("crashes");
+    fs::create_dir_all(&crashes)
+        .map_err(|e| format!("cannot create {}: {e}", crashes.display()))?;
+    let inflight = options.inflight.then(|| crashes.join("inflight.bin"));
+    if let Some(path) = &inflight {
+        fs::write(path, &input).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    }
+    let target = target_named(name)?;
     let mut runner = Runner::new(
-        target_named(name)?,
+        target.clone(),
         options.timeout,
         options.max_output_mib * 1024 * 1024,
     );
     let Err(failure) = runner.run(&input) else {
         return Err(format!("'{file}' does not make '{name}' fail"));
     };
-    let reduced = minimize(&mut runner, &input, &failure, DEFAULT_MINIMIZE_RUNS);
+    if failure.kind == atelier_fuzz::FailureKind::Timeout {
+        let saved =
+            save_minimization_timeout(&crashes, target.name(), options.seed, 1, input, failure)
+                .map_err(|e| format!("cannot save timeout: {e}"))?;
+        eprintln!(
+            "minimize timed out: the worker thread cannot be stopped; saved {}",
+            saved.display()
+        );
+        return Ok(3);
+    }
+    let minimized = minimize_with(
+        &mut runner,
+        &input,
+        &failure,
+        DEFAULT_MINIMIZE_RUNS,
+        |candidate| {
+            if let Some(path) = &inflight {
+                fs::write(path, candidate)?;
+            }
+            Ok(())
+        },
+    )
+    .map_err(|e| format!("cannot minimize input: {e}"))?;
+    if let Some((candidate, timeout)) = minimized.timeout {
+        let saved =
+            save_minimization_timeout(&crashes, target.name(), options.seed, 1, candidate, timeout)
+                .map_err(|e| format!("cannot save timeout candidate: {e}"))?;
+        eprintln!(
+            "minimization candidate timed out; stopping without a reduced output (saved {})",
+            saved.display()
+        );
+        return Ok(3);
+    }
+    let reduced = minimized.reduced;
     let output = options
         .output
         .clone()
         .unwrap_or_else(|| format!("{file}.min"));
-    fs::write(&output, &reduced).map_err(|e| format!("cannot write '{output}': {e}"))?;
+    write_new_output(file, &output, &reduced)?;
     println!(
         "{}: {} -> {} bytes ({}), written to {output} (fingerprint {})",
         failure.describe(),
@@ -300,6 +356,27 @@ fn minimize_file(options: &Options) -> Result<u8, String> {
         fingerprint(&reduced),
     );
     Ok(0)
+}
+
+fn write_new_output(input: &str, output: &str, bytes: &[u8]) -> Result<(), String> {
+    let input_path =
+        fs::canonicalize(input).map_err(|e| format!("cannot resolve input '{input}': {e}"))?;
+    if let Ok(output_path) = fs::canonicalize(output)
+        && output_path == input_path
+    {
+        return Err("minimized output must not be the input file".to_string());
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)
+        .map_err(|e| format!("cannot create new output '{output}': {e}"))?;
+    if let Err(error) = file.write_all(bytes) {
+        drop(file);
+        let _ = fs::remove_file(output);
+        return Err(format!("cannot write '{output}': {error}"));
+    }
+    Ok(())
 }
 
 fn write_seeds(options: &Options) -> Result<u8, String> {
@@ -319,4 +396,36 @@ fn write_seeds(options: &Options) -> Result<u8, String> {
         println!("{}: {} seeds", target.name(), seeds.len());
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_new_output;
+    use std::fs;
+    use std::process;
+
+    #[test]
+    fn minimized_output_never_overwrites_the_input_or_existing_files() {
+        let dir = std::env::temp_dir().join(format!("atelier-fuzz-output-{}", process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("input.bin");
+        let existing = dir.join("existing.bin");
+        let new = dir.join("new.bin");
+        fs::write(&input, b"original").unwrap();
+        fs::write(&existing, b"keep").unwrap();
+
+        assert!(
+            write_new_output(input.to_str().unwrap(), input.to_str().unwrap(), b"lost").is_err()
+        );
+        assert!(
+            write_new_output(input.to_str().unwrap(), existing.to_str().unwrap(), b"lost").is_err()
+        );
+        assert_eq!(fs::read(&input).unwrap(), b"original");
+        assert_eq!(fs::read(&existing).unwrap(), b"keep");
+
+        write_new_output(input.to_str().unwrap(), new.to_str().unwrap(), b"reduced").unwrap();
+        assert_eq!(fs::read(&new).unwrap(), b"reduced");
+        let _ = fs::remove_dir_all(dir);
+    }
 }

@@ -28,6 +28,8 @@ jobs:
         run: .\target\check-workspace.exe .
       - name: Verify independent DOCX reference fixture
         run: python tools/generate-docx-reference.py --check
+      - name: Verify CFB references with native Structured Storage
+        run: python tools/generate-cfb-reference.py --check
       - name: Build Windows MSVC workspace
         run: cargo build --workspace --target x86_64-pc-windows-msvc --locked --offline
       - name: Check font and image resource integrity
@@ -45,6 +47,9 @@ jobs:
         run: cargo run -p atelier-ucd-gen --locked --offline -- --ucd data/ucd/17.0.0 --output crates/unicode/src/generated.rs --check
       - name: Test Windows MSVC workspace
         run: cargo test --workspace --target x86_64-pc-windows-msvc --locked --offline
+      - name: Run bounded deterministic parser fuzz campaign
+        timeout-minutes: 5
+        run: cargo run --release -p atelier-fuzz --locked --offline -- run --all --iterations 400 --seed 20261012 --timeout-ms 2000 --root target/fuzz-ci
       - name: Exercise native window without displaying it
         run: .\target\x86_64-pc-windows-msvc\debug\atelier.exe --self-check target\shell-check\window-state.txt
       - name: Exercise real WebView2; report open US-111 handle acceptance
@@ -92,11 +97,11 @@ jobs:
       - name: Check workspace lock
         run: .\target\check-workspace.exe .
       - name: Compile WASM target
-        run: cargo build -p atelier-core-wasm -p atelier-text-model -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape -p atelier-raster -p atelier-fmt-ooxml -p atelier-text-layout --target wasm32-unknown-unknown --locked --offline
+        run: cargo build -p atelier-core-wasm -p atelier-text-model -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape -p atelier-raster -p atelier-fmt-ooxml -p atelier-text-layout -p atelier-cfb --target wasm32-unknown-unknown --locked --offline
       - name: Lint WASM target
-        run: cargo clippy -p atelier-core-wasm -p atelier-text-model -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape -p atelier-raster -p atelier-fmt-ooxml -p atelier-text-layout --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
+        run: cargo clippy -p atelier-core-wasm -p atelier-text-model -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape -p atelier-raster -p atelier-fmt-ooxml -p atelier-text-layout -p atelier-cfb --all-targets --target wasm32-unknown-unknown --locked --offline -- -D warnings
       - name: Test engine on native host
-        run: cargo test -p atelier-core-wasm -p atelier-text-model -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape -p atelier-raster -p atelier-fmt-ooxml -p atelier-text-layout --locked --offline
+        run: cargo test -p atelier-core-wasm -p atelier-text-model -p atelier-unicode -p atelier-geom -p atelier-model -p atelier-compress -p atelier-render -p atelier-zip -p atelier-xml -p atelier-font -p atelier-image -p atelier-shape -p atelier-raster -p atelier-fmt-ooxml -p atelier-text-layout -p atelier-cfb --locked --offline
       - name: Build optimized WASM ABI
         run: cargo build -p atelier-core-wasm --profile wasm-release --target wasm32-unknown-unknown --locked --offline
       - name: Build isolated panic test hooks

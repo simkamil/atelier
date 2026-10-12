@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "39c928983092644f029f2054d96e1b55976ac8b4",
+  "snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/foundation-integration-review-snapshot.json (self-referential metadata)"
+  ],
+  "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-foundation-integration-review-l4e4uq0_\\complete.diff",
+  "complete_bytes": 11733627,
+  "complete_sha256": "77217085b71ac2d576279ebc3e49cece003301d3d441e1269cd7c8567a9bab4a",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-foundation-integration-review-l4e4uq0_\\sources.diff",
+  "sources_bytes": 640366,
+  "sources_sha256": "39b4793d9ed183a38353e72251596c6f53a80c8ddcc0ea608313fa4671ed2b9f"
+}

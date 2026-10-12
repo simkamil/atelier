@@ -75,6 +75,21 @@ pub enum CfbError {
     Truncated,
     InvalidFat(&'static str),
     InvalidDifat(&'static str),
+    /// The FAT does not contain an entry for a listed allocation sector.
+    FatTooShort {
+        sector: u32,
+    },
+    /// A sector listed as a FAT sector is not marked FATSECT in the FAT.
+    InvalidFatSectorMarker {
+        sector: u32,
+        marker: u32,
+    },
+    /// A sector listed as a DIFAT sector is not marked DIFSECT in the FAT.
+    InvalidDifatSectorMarker {
+        sector: u32,
+        marker: u32,
+    },
+    ForeignEntry,
     /// A chain refers to a sector outside the file or a special value.
     InvalidSector(u32),
     ChainCycle,
@@ -100,7 +115,19 @@ impl core::fmt::Display for CfbError {
             Self::Truncated => f.write_str("truncated CFB file"),
             Self::InvalidFat(s) => write!(f, "invalid CFB FAT: {s}"),
             Self::InvalidDifat(s) => write!(f, "invalid CFB DIFAT: {s}"),
+            Self::FatTooShort { sector } => {
+                write!(f, "CFB FAT has no entry for sector {sector}")
+            }
+            Self::InvalidFatSectorMarker { sector, marker } => write!(
+                f,
+                "CFB FAT sector {sector} has marker {marker:#x}, expected FATSECT"
+            ),
+            Self::InvalidDifatSectorMarker { sector, marker } => write!(
+                f,
+                "CFB DIFAT sector {sector} has marker {marker:#x}, expected DIFSECT"
+            ),
             Self::InvalidSector(s) => write!(f, "invalid CFB sector reference {s:#x}"),
+            Self::ForeignEntry => f.write_str("CFB entry belongs to another container"),
             Self::ChainCycle => f.write_str("cycle in CFB sector chain"),
             Self::ChainTooShort => f.write_str("CFB chain shorter than declared size"),
             Self::ChainTooLong => f.write_str("CFB chain longer than declared size"),
@@ -132,6 +159,14 @@ pub enum Anomaly {
     /// Unknown, unallocated or misplaced (second root) entry type.
     InvalidEntryType(u32),
     InvalidColor(u32),
+    /// Stream entry's child link is not NOSTREAM.
+    StreamHasChildren(u32),
+    /// Metadata that CFB readers ignore on stream entries is nonzero.
+    IgnoredStreamMetadata(u32),
+    /// A storage entry has nonzero stream-only start sector or size fields.
+    StorageHasStreamFields(u32),
+    /// Root storage creation time is nonzero.
+    RootHasCreationTime(u32),
     /// Same name (case-insensitive) as an earlier sibling; the entry is ignored.
     DuplicateName(u32),
     /// The children of this storage were not indexed: nesting too deep.
@@ -257,15 +292,12 @@ fn div_ceil(a: u64, b: u64) -> u64 {
 
 /// Simple per-code-unit uppercase mapping used for name comparison.
 fn fold_unit(u: u16) -> u16 {
-    match char::from_u32(u32::from(u)) {
-        Some(c) => {
-            let mut it = c.to_uppercase();
-            match (it.next(), it.next()) {
-                (Some(m), None) if u32::from(m) <= 0xffff => m as u16,
-                _ => u,
-            }
-        }
-        None => u,
+    let Some(c) = char::from_u32(u32::from(u)) else {
+        return u;
+    };
+    match atelier_unicode::properties::simple_uppercase(c) {
+        Some([mapped]) if *mapped <= 0xffff => *mapped as u16,
+        _ => u,
     }
 }
 
@@ -276,6 +308,10 @@ fn fold_key(units: &[u16]) -> Vec<u16> {
 fn reserve<T>(v: &mut Vec<T>, n: usize) -> Result<(), CfbError> {
     v.try_reserve_exact(n)
         .map_err(|_| CfbError::AllocationFailed)
+}
+
+fn reserve_growth<T>(v: &mut Vec<T>, n: usize) -> Result<(), CfbError> {
+    v.try_reserve(n).map_err(|_| CfbError::AllocationFailed)
 }
 
 /// Follows a chain in `table`, calling `f` for each sector. `bound` is the
@@ -414,8 +450,11 @@ impl<'a> Compound<'a> {
         if u64::from(ndifat) != expected {
             return Err(CfbError::InvalidDifat("DIFAT sector count"));
         }
-        let mut seen = vec![false; self.sector_count as usize];
+        let mut seen = Vec::new();
+        reserve(&mut seen, self.sector_count as usize)?;
+        seen.resize(self.sector_count as usize, false);
         let mut fat_sectors: Vec<u32> = Vec::new();
+        let mut difat_sectors: Vec<u32> = Vec::new();
         reserve(&mut fat_sectors, nfat as usize)?;
         let count = self.sector_count;
         let add = |s: u32, seen: &mut [bool], fat_sectors: &mut Vec<u32>| {
@@ -429,10 +468,12 @@ impl<'a> Compound<'a> {
             Ok(())
         };
         for i in 0..HEADER_DIFAT {
-            if fat_sectors.len() == nfat as usize {
-                break;
+            let sector = u32le(self.data, 76 + 4 * i);
+            if fat_sectors.len() < nfat as usize {
+                add(sector, &mut seen, &mut fat_sectors)?;
+            } else if sector != FREESECT {
+                return Err(CfbError::InvalidDifat("unused header DIFAT entry"));
             }
-            add(u32le(self.data, 76 + 4 * i), &mut seen, &mut fat_sectors)?;
         }
         let mut next = first_difat;
         for _ in 0..ndifat {
@@ -440,11 +481,14 @@ impl<'a> Compound<'a> {
             if std::mem::replace(&mut seen[next as usize], true) {
                 return Err(CfbError::ChainCycle);
             }
+            difat_sectors.push(next);
             for i in 0..epf - 1 {
-                if fat_sectors.len() == nfat as usize {
-                    break;
+                let sector = u32le(sec, 4 * i);
+                if fat_sectors.len() < nfat as usize {
+                    add(sector, &mut seen, &mut fat_sectors)?;
+                } else if sector != FREESECT {
+                    return Err(CfbError::InvalidDifat("unused DIFAT entry"));
                 }
-                add(u32le(sec, 4 * i), &mut seen, &mut fat_sectors)?;
             }
             next = u32le(sec, 4 * (epf - 1));
         }
@@ -453,9 +497,32 @@ impl<'a> Compound<'a> {
         }
         let mut fat = Vec::new();
         reserve(&mut fat, nfat as usize * epf)?;
-        for s in fat_sectors {
+        for s in fat_sectors.iter().copied() {
             let sec = self.sector(s)?;
             fat.extend(sec.chunks_exact(4).map(|c| u32le(c, 0)));
+        }
+        for sector in fat_sectors.iter().copied() {
+            let marker = *fat
+                .get(sector as usize)
+                .ok_or(CfbError::FatTooShort { sector })?;
+            if marker != FATSECT {
+                return Err(CfbError::InvalidFatSectorMarker { sector, marker });
+            }
+        }
+        for sector in difat_sectors {
+            let marker = *fat
+                .get(sector as usize)
+                .ok_or(CfbError::FatTooShort { sector })?;
+            if marker != DIFSECT {
+                return Err(CfbError::InvalidDifatSectorMarker { sector, marker });
+            }
+        }
+        if fat
+            .iter()
+            .skip(self.sector_count as usize)
+            .any(|&entry| entry != FREESECT)
+        {
+            return Err(CfbError::InvalidFat("non-free FAT entry past end of file"));
         }
         self.fat = fat;
         Ok(())
@@ -544,14 +611,21 @@ impl<'a> Compound<'a> {
         if root.name != "Root Entry" {
             self.anomalies.push(Anomaly::HeaderField("root name"));
         }
+        if root.created != 0 {
+            self.anomalies.push(Anomaly::RootHasCreationTime(0));
+        }
         let mut entries: Vec<Option<Entry>> = Vec::new();
         reserve(&mut entries, n)?;
         entries.resize_with(n, || None);
-        let mut visited = vec![false; n];
+        let mut visited = Vec::new();
+        reserve(&mut visited, n)?;
+        visited.resize(n, false);
         visited[0] = true;
         entries[0] = Some(root);
         let mut anomalies = std::mem::take(&mut self.anomalies);
-        let mut work: Vec<(u32, usize)> = vec![(0, 0)];
+        let mut work: Vec<(u32, usize)> = Vec::new();
+        reserve(&mut work, 1)?;
+        work.push((0, 0));
         while let Some((sid, depth)) = work.pop() {
             let child = entries[sid as usize].as_ref().map_or(NOSTREAM, |e| e.child);
             if child == NOSTREAM {
@@ -561,7 +635,9 @@ impl<'a> Compound<'a> {
                 anomalies.push(Anomaly::DepthExceeded(sid));
                 continue;
             }
-            let mut stack = vec![child];
+            let mut stack = Vec::new();
+            reserve(&mut stack, 1)?;
+            stack.push(child);
             let mut found: Vec<Entry> = Vec::new();
             while let Some(id) = stack.pop() {
                 if id as usize >= n {
@@ -575,34 +651,58 @@ impl<'a> Compound<'a> {
                 let o = id as usize * DIR_ENTRY_SIZE;
                 for link in [u32le(dir, o + 68), u32le(dir, o + 72)] {
                     if link != NOSTREAM {
+                        reserve_growth(&mut stack, 1)?;
                         stack.push(link);
                     }
                 }
                 match self.parse_entry(dir, id) {
                     Ok(e) => {
+                        match e.kind {
+                            EntryKind::Stream => {
+                                if e.child != NOSTREAM {
+                                    anomalies.push(Anomaly::StreamHasChildren(id));
+                                }
+                                if e.clsid != [0; 16] || e.created != 0 || e.modified != 0 {
+                                    anomalies.push(Anomaly::IgnoredStreamMetadata(id));
+                                }
+                            }
+                            EntryKind::Storage if e.start_sector != 0 || e.size != 0 => {
+                                anomalies.push(Anomaly::StorageHasStreamFields(id));
+                            }
+                            _ => {}
+                        }
                         if e.kind == EntryKind::Stream && self.major == 3 && e.size > 0x8000_0000 {
                             anomalies.push(Anomaly::OversizedV3Stream(id));
                         }
+                        reserve_growth(&mut found, 1)?;
                         found.push(e);
                     }
                     Err(a) => anomalies.push(a),
                 }
             }
-            found.sort_by(|a, b| (a.key.len(), &a.key, a.id).cmp(&(b.key.len(), &b.key, b.id)));
-            let mut ids: Vec<u32> = Vec::with_capacity(found.len());
-            let mut prev: Option<Vec<u16>> = None;
+            found.sort_unstable_by(|a, b| {
+                (a.key.len(), &a.key, a.id).cmp(&(b.key.len(), &b.key, b.id))
+            });
+            let mut ids: Vec<u32> = Vec::new();
+            let mut prev_id: Option<u32> = None;
             for e in found {
-                if prev.as_ref() == Some(&e.key) {
+                if prev_id.is_some_and(|prev| {
+                    entries[prev as usize]
+                        .as_ref()
+                        .is_some_and(|previous| previous.key == e.key)
+                }) {
                     anomalies.push(Anomaly::DuplicateName(e.id));
                     continue;
                 }
-                prev = Some(e.key.clone());
+                reserve_growth(&mut ids, 1)?;
                 ids.push(e.id);
                 if e.kind == EntryKind::Storage {
+                    reserve_growth(&mut work, 1)?;
                     work.push((e.id, depth + 1));
                 }
                 let id = e.id as usize;
                 entries[id] = Some(e);
+                prev_id = Some(id as u32);
             }
             if let Some(Some(p)) = entries.get_mut(sid as usize) {
                 p.children = ids;
@@ -677,7 +777,12 @@ impl<'a> Compound<'a> {
     }
     /// Children of a storage, in CFB name order.
     pub fn children<'s>(&'s self, e: &'s Entry) -> impl Iterator<Item = &'s Entry> + 's {
-        e.children.iter().filter_map(|&i| self.entry(i))
+        let owned = self
+            .entry(e.id)
+            .is_some_and(|candidate| core::ptr::eq(candidate, e));
+        e.children
+            .iter()
+            .filter_map(move |&i| owned.then(|| self.entry(i)).flatten())
     }
 
     /// Whole tree in depth-first order (excluding the root), children sorted.
@@ -746,6 +851,12 @@ impl<'a> Compound<'a> {
         offset: u64,
         len: usize,
     ) -> Result<Vec<u8>, CfbError> {
+        if !self
+            .entry(e.id)
+            .is_some_and(|candidate| core::ptr::eq(candidate, e))
+        {
+            return Err(CfbError::ForeignEntry);
+        }
         if !e.is_stream() {
             return Err(CfbError::NotAStream);
         }

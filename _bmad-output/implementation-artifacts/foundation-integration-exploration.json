@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-12",
+  "checks": [
+    {
+      "name": "wasm_size_before_symbol_stripping",
+      "bytes": 1186031,
+      "limit_bytes": 1180429,
+      "exit_code": 1,
+      "resolution": "Strip production WASM symbol/name sections with profile.wasm-release.strip=symbols. Preserve the existing size ceiling and all CFF functionality. Final artifact is rebuilt and exercised by the validation driver."
+    },
+    {
+      "name": "first_windows_guard_invocation",
+      "exit_code": 1,
+      "reason": "cmd.exe parsed forward-slash executable path target/check-workspace.exe as target command.",
+      "resolution": "Native path target\\check-workspace.exe passed. Validation driver invokes an absolute native path."
+    }
+  ],
+  "audit_correction": "Two audit agents compared old branch tips directly to current main and reported main's later DOCX/layout additions as deletions. The merge-base diffs contained only the four deliveries. Normal merges preserved DOCX/layout, confirmed by subsequent workspace tests."
+}

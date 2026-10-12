@@ -1,8 +1,8 @@
 # Préparation du démonstrateur — 2026-10-12
 
-Le backlog compte désormais **43 US terminées sur 158**. Le dernier lot livre
-l’import DOCX US-301 et le code de mise en page US-210, développé en parallèle
-avec GPT-6 Luna, raisonnement moyen. US-210 reste partielle pour la preuve Word.
+Le backlog compte désormais **46 US terminées sur 158**. Le dernier lot intègre
+CFF, CFB et le backend raster avec des agents GPT-6 Luna en raisonnement moyen.
+US-004 reste partielle pour la mémoire réelle ; US-210 pour la preuve Word.
 
 - [Unicode](us-010-ucd-tables.md) : 71 fichiers officiels Unicode 17.0.0,
   licence et SHA-256, générateur local et build reproductible. L’[oracle](../_bmad-output/implementation-artifacts/prototype-ucd-oracle.json)
@@ -35,6 +35,51 @@ critères de cache et de fluidité matériels ; US-103 conserve les essais de cl
 US-113 conserve SharedBuffer, polices/URL et les essais de dialogues. US-111
 conserve son échec strict de handles. US-092 reste ouverte pour l’annulation
 métier : le dispatch WASM synchrone n’est pas préemptible. US-114 est validée.
+
+## CFF, CFB, backend raster et fuzz — 2026-10-12
+
+Les quatre branches livrées en parallèle ont été fusionnées en conservant leurs
+historiques et les ajouts DOCX/layout. Trois agents GPT-6 Luna moyen ont corrigé
+les modules, puis trois agents indépendants ont conduit la revue. **US-052,
+US-082 et US-311 sont validées** : **46 US terminées sur 158**. **US-004 reste
+partielle** : mutations, minimisation, durée et sauvegarde panic/timeout sont
+testées, mais les allocations mémoire réelles ne sont pas mesurées.
+
+- [CFF](us-052-cff-outlines.md) : charsets prédéfinis, chaînes standard,
+  FontMatrix, `random`, `seac` et limites. Un accent `seac` imbriqué conserve
+  maintenant le décalage parent ; UPEM nul est refusé. L'[oracle FontTools](../tests/font-cff-reference/README.md)
+  compare trois contours synthétiques versionnés ; il ne couvre ni CID réel
+  ni FontMatrix indépendamment.
+- [CFB](us-311-cfb-container.md) : V3/V4, FAT/DIFAT/MiniFAT, répertoire,
+  lectures partielles, cycles et métadonnées invalides. Appartenance des
+  entrées et casse simple Unicode vérifiées ; [deux références natives Windows](../tests/cfb-reference/README.md)
+  sont relues par Structured Storage puis par Rust.
+- [Backend raster](us-082-raster-backend.md) : replay de listes d'affichage
+  via US-061, résolution, tuiles, clips, texte, images et PNG. Les trois PNG
+  versionnés sont des références de régression produites par le backend.
+- [Fuzzer](us-004-fuzzer.md) : 17 cibles, dont DOCX et CFB. Un timeout pendant
+  la minimisation sauvegarde la candidate exacte et arrête le runner ;
+  `--inflight` précède aussi ces appels.
+
+La [validation finale](../_bmad-output/implementation-artifacts/foundation-integration-validation.json)
+réussit **25 contrôles, 671 tests workspace et 55 tests natifs release** :
+builds Windows/WASM/musl, compilation des tests musl, Clippy hôte/WASM,
+format, SPDX, garde, 33 paquets locaux, reproduction des références et
+**17 000 exécutions fuzz sans défaillance détectée** (pas une preuve d'absence
+de défaut). ABI éditeur, transferts du vrai Worker et navigateur passent.
+Sources et lock restent inchangés pendant tous ces contrôles.
+
+Le moteur embarqué mesure **1 041 817 octets**, sous le plafond inchangé de
+1 180 429. `wasm-release` retire les sections de symboles ; sa provenance et
+ses octets sont vérifiés. La [revue triée](../_bmad-output/implementation-artifacts/foundation-integration-review.md)
+conserve chaque constat et sa décision ; la [carte Graphify](../_bmad-output/implementation-artifacts/foundation-integration-graph.json)
+contrôle les dépendances et les 158 statuts.
+
+US-210 attend toujours la comparaison Word. Le parcours utilisateur actuel
+reste l'éditeur TXT ; ces API ne raccordent pas encore les documents riches
+à l'interface. Les tests musl sont compilés ici, sans exécution Linux locale.
+La CI distante reste à distinguer des contrôles locaux ; le précédent run
+était refusé avant démarrage pour facturation/plafond Actions.
 
 ## Import DOCX et lignes riches — 2026-10-12
 
@@ -83,8 +128,8 @@ contrôle les dépendances et les statuts du lot.
 Le lot développé en parallèle avec GPT-6 Luna, raisonnement moyen, termine
 **US-201, US-300, US-042 et US-061**. La même passe valide l’intégration des
 livraisons précédentes **US-013, US-041 et US-200** : le backlog atteint
-**42 US terminées sur 158**. US-052 reste partielle (charsets Expert, `seac`,
-`random` et `FontMatrix` non pris en charge).
+**42 US terminées sur 158**. À la date de ce lot, US-052 restait partielle (charsets Expert, `seac`,
+`random` et `FontMatrix` non pris en charge) ; elle est complétée par le lot ci-dessus.
 
 - [Styles](us-201-style-engine.md) : cascade, styles liés explicites, bascules Word,
   thèmes et cache invalidé par opération ; 12 tests dédiés.
@@ -115,7 +160,7 @@ La dernière passe reprend tous les contrôles sur les sources corrigées.
 
 À la date de ce lot, l’import WordprocessingML restait à développer; il est
 maintenant livré par US-301 ci-dessus. Le backend raster de liste d’affichage
-(US-082) et le raccordement à l’éditeur riche restent séparés. Les diagnostics WebView2 debug/release sont
+(US-082) est maintenant livré par le lot ci-dessus ; le raccordement à l’éditeur riche reste séparé. Les diagnostics WebView2 debug/release sont
 fonctionnels, mais US-111 reste ouverte : le test strict des handles échoue
 encore. Les essais AZERTY/IME physiques et les dialogues manuels restent ouverts.
 Les tests musl sont seulement compilés localement ; leur exécution appartient
