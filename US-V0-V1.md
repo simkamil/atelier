@@ -609,6 +609,11 @@ Validation US-201 (2026-10-12) : [contrat et preuves](docs/us-201-style-engine.m
 - [ ] A4 portrait, marges 2,5 cm, Calibri (Carlito) 11 pt, interligne 1,08, 8 pt après, langue fr-FR.
 - [ ] Styles par défaut : Normal, Titre, Sous-titre, Titre 1 à 9, Citation, Citation intense, Accentuation, Élevé, Légende, En-tête, Pied de page, Lien hypertexte, Paragraphe de liste, Sans interligne, Grille du tableau.
 
+
+Fabrique Rust validée : [profil par défaut](docs/us-202-default-document.md), 25 styles, métadonnées A4/marges/langue et interligne exact 108/100. Auto259/240 est l’arrondi du modèle. **US partielle** : géométrie dans DefaultPresentation, bouton Nouveau riche non raccordé; critères utilisateur conservés ouverts.
+
+Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-incremental-borders-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-incremental-borders-matrix.json).
+
 Réf : F-TXT-021 · Taille : S · Dépend de : US-201
 
 ## E1.2 — Mise en page
@@ -651,9 +656,14 @@ Réf : F-TXT-012, §6.5 · Taille : L · Dépend de : US-210
 
 #### US-213 — Mise en page incrémentale
 *En tant qu'*utilisateur, *je veux* que la frappe reste instantanée même dans un long document *afin de* travailler sans gêne.
-- [ ] Seuls les paragraphes modifiés sont remis en page ; la pagination reprend à la première page touchée et s'arrête dès qu'elle se stabilise.
+- [x] Seuls les paragraphes modifiés sont remis en page ; la pagination reprend à la première page touchée et s'arrête dès qu'elle se stabilise.
 - [ ] Latence de frappe < 16 ms au milieu d'un document de 300 pages.
-- [ ] Le résultat incrémental est identique à une mise en page complète (vérifié par test).
+- [x] Le résultat incrémental est identique à une mise en page complète (vérifié par test).
+
+
+API validée : [mise en page incrémentale](docs/us-213-incremental-layout.md), cache sémantique et reprise/arrêt réels; résultats égaux au calcul complet, y compris après mutations de polices et changements structurels. **US partielle** : benchmark CPU 300 pages, édition locale 268.214 ms sur i9-13900KF/64 Gio, 3 pages recalculées/297 réutilisées; cible de frappe <16 ms non atteinte ni certifiée, UI riche non raccordée.
+
+Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-incremental-borders-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-incremental-borders-matrix.json).
 
 Réf : §6.5, §6.16 · Taille : L · Dépend de : US-212
 
@@ -673,6 +683,11 @@ Réf : §6.5 · Taille : M · Dépend de : US-210
 *En tant qu'*utilisateur, *je veux* voir les bordures et trames de paragraphe *afin de* conserver la présentation de mes documents.
 - [ ] Bordures haut, bas, gauche, droite et entre paragraphes ; styles, épaisseurs, couleurs, espacement.
 - [ ] Paragraphes consécutifs de même bordure regroupés dans un seul cadre, comme dans Word.
+
+
+Géométrie et commandes validées : [bordures et trames](docs/us-215-paragraph-borders.md), cadres partagés/multipages, entre paragraphes, styles et sortie DisplayList/SVG. **US partielle** : politiques fournies par l’appelant, persistance/import OOXML/UI riche et comparaison Word encore ouverts; critères utilisateur conservés ouverts.
+
+Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-incremental-borders-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-incremental-borders-matrix.json).
 
 Réf : F-TXT-012 · Taille : S · Dépend de : US-212
 

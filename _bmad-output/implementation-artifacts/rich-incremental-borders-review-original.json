@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "2ae5aecf73f7ff9b7849bebde7facbc54330d5b2",
+  "snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/rich-incremental-borders-review-snapshot.json (self-referential metadata)"
+  ],
+  "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-incremental-borders-review-q7_12gfc\\complete.diff",
+  "complete_bytes": 11299283,
+  "complete_sha256": "e531fd486c5cd1cbaf9c10a1b07caade6f2166f705b5afa78f25fb9881a0e7f4",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-incremental-borders-review-q7_12gfc\\sources.diff",
+  "sources_bytes": 286828,
+  "sources_sha256": "da6e482ad1a0345b988a1d169f517b76e1e9f7dbc7bed17fc3af2d1c34dd8ced"
+}

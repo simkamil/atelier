@@ -11,6 +11,7 @@
 use atelier_geom::{GeometryError, MAX_COORDINATE, Path as GeomPath, Point, Rect};
 use core::fmt;
 
+pub mod paragraph_borders;
 mod svg;
 pub use svg::{SvgError, SvgImage, SvgLimits, SvgResourceProvider, render_svg};
 

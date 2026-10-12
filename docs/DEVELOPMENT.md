@@ -12,6 +12,50 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 
 ## Validation
 
+## Document initial, pagination incrémentale et bordures — 2026-10-12
+
+Trois agents GPT-6 Luna moyen ont développé les API des US-202, US-213 et
+US-215 en parallèle; trois agents indépendants ont relu le lot et deux agents
+ont renforcé les régressions après triage. **47 US terminées sur 158** : ces
+trois US restent partielles pour leurs critères utilisateur.
+
+- [Document initial](us-202-default-document.md) : profil A4, marges 25 mm,
+  Carlito 11 pt, langue française et catalogue de 25 styles. Géométrie et
+  ratio exact 1,08 fournis dans les métadonnées; Auto259/240 dans le modèle.
+  Fabrique Rust validée, bouton Nouveau riche encore à raccorder.
+- [Mise en page incrémentale](us-213-incremental-layout.md) : cache sémantique,
+  invalidation par révision de police et reprise réelle du flux de pagination.
+  Une édition au milieu de 300 pages recalcule 3 pages et en réutilise 297;
+  l’égalité avec un calcul complet couvre aussi les séquences d’éditions.
+- [Bordures et trames](us-215-paragraph-borders.md) : cadres partagés et
+  multipages, coins fermés, traits entre paragraphes, doubles/tirets/points,
+  trames indépendantes et commandes DisplayList/SVG. Politiques externes,
+  sans persistance ni import OOXML ni raccordement à l’éditeur riche.
+
+La [validation immuable](../_bmad-output/implementation-artifacts/rich-incremental-borders-validation.json)
+passe **21 contrôles, 739 tests workspace Windows et 78 tests
+text-layout release**, avec Clippy hôte/WASM, format, SPDX, moteurs WASM réel,
+ABI/Worker/navigateur, compilation Windows/WASM/musl et tests musl compilés
+seulement. 844 entrées et Cargo.lock restent inchangés.
+Les 33 paquets restent locaux, sans dépendance de registre ni cycle Cargo.
+Le WASM embarqué mesure 1 041 521 octets (plafond inchangé : 1 180 429).
+La [revue](../_bmad-output/implementation-artifacts/rich-incremental-borders-review.md),
+l’[audit des matrices](../_bmad-output/implementation-artifacts/rich-incremental-borders-matrix.json)
+et le [reçu Graphify](../_bmad-output/implementation-artifacts/rich-incremental-borders-graph.json)
+conservent les preuves.
+
+Le benchmark CPU release mesure **1912.351 ms au premier calcul et
+268.214 ms pour l’édition locale**, sur i9-13900KF/64 Gio. Il compte 16 500
+unités de prévalidation globale et 217 unités de flux local. **La cible de
+frappe à moins de 16 ms n’est pas atteinte ni certifiée.** Prévalidation et
+copies de géométrie restent à optimiser. Les [mesures](../_bmad-output/implementation-artifacts/rich-incremental-borders-benchmark.json)
+et la [machine](../_bmad-output/implementation-artifacts/rich-incremental-borders-host.json)
+sont enregistrées. L’interface testable reste TXT; aucune fidélité Word
+supplémentaire n’est établie.
+
+La CI du nouveau commit sera consultée après le push; la dernière exécution
+connue était bloquée avant démarrage par la facturation/plafond Actions.
+
 ## Tabulations, pagination et curseur riche — 2026-10-12
 
 Trois agents GPT-6 Luna, raisonnement moyen, ont développé US-211, US-212 et

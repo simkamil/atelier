@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-12",
+  "os": "Windows-11-10.0.26300-SP0",
+  "cpu": "13th Gen Intel(R) Core(TM) i9-13900KF",
+  "logical_processors": 32,
+  "physical_memory_bytes": 68523401216,
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "scope": "Local CPU benchmark host. Not certified as SPEC.md §6.16 PC2020/8Go; no UI latency claim."
+}

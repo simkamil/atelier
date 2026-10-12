@@ -7,8 +7,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod borders;
 pub mod caret;
 pub mod flow;
+pub mod incremental;
 pub mod pagination;
 
 use atelier_font::FontFace;

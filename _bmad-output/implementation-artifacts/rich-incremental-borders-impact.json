@@ -1,0 +1,424 @@
+{
+  "expanded_terms": [
+    "default",
+    "document",
+    "style",
+    "paragraph",
+    "layout",
+    "pagination",
+    "incremental",
+    "font"
+  ],
+  "focus": [
+    {
+      "id": "crates_text_model_src_rich_styles_styleengine",
+      "label": "StyleEngine",
+      "source_file": "crates/text-model/src/rich/styles.rs",
+      "neighbors": [
+        {
+          "label": "ImportedDocx",
+          "source_file": "crates/fmt-ooxml/src/docx.rs"
+        },
+        {
+          "label": "DefaultRichDocument",
+          "source_file": "crates/text-model/src/rich/defaults.rs"
+        },
+        {
+          "label": "StyleCatalog",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": "Theme",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": "BTreeMap",
+          "source_file": ""
+        },
+        {
+          "label": "VecDeque",
+          "source_file": ""
+        },
+        {
+          "label": "CacheEntry",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": "CacheKey",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": "rich/styles.rs",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".new()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".catalog()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".linked_style_id()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".cache_len()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".cache_hits()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".cache_misses()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".set_style()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".remove_style()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".set_defaults()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".set_theme()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".clear_cache()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".resolve()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".apply()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".resolve_base()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".chain()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".apply_char()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".insert_cache()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".invalidate_style()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".invalidate_paragraphs()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        },
+        {
+          "label": ".remove_keys()",
+          "source_file": "crates/text-model/src/rich/styles.rs"
+        }
+      ]
+    },
+    {
+      "id": "crates_text_layout_src_lib_paragraphlayout",
+      "label": "ParagraphLayout",
+      "source_file": "crates/text-layout/src/lib.rs",
+      "neighbors": [
+        {
+          "label": "Vec",
+          "source_file": ""
+        },
+        {
+          "label": "TabLayout",
+          "source_file": "crates/text-layout/src/tabs.rs"
+        },
+        {
+          "label": "layout_paragraph()",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "LayoutLine",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "src/flow.rs",
+          "source_file": "crates/text-layout/src/flow.rs"
+        },
+        {
+          "label": "src/pagination.rs",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "plan_paragraph_borders()",
+          "source_file": "crates/text-layout/src/borders.rs"
+        },
+        {
+          "label": "validate_placement()",
+          "source_file": "crates/text-layout/src/borders.rs"
+        },
+        {
+          "label": "caret_from_pagination()",
+          "source_file": "crates/text-layout/src/flow.rs"
+        },
+        {
+          "label": "paginate()",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "paginate_recording()",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "layout()",
+          "source_file": "crates/text-layout/tests/borders.rs"
+        },
+        {
+          "label": "laid_out()",
+          "source_file": "crates/text-layout/tests/flow.rs"
+        },
+        {
+          "label": "layout()",
+          "source_file": "crates/text-layout/tests/layout.rs"
+        },
+        {
+          "label": "layout()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "text-layout/src/lib.rs",
+          "source_file": "crates/text-layout/src/lib.rs"
+        }
+      ]
+    },
+    {
+      "id": "crates_text_layout_src_pagination_paginate",
+      "label": "paginate()",
+      "source_file": "crates/text-layout/src/pagination.rs",
+      "neighbors": [
+        {
+          "label": "paginate_recording()",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "Pagination",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "PaginationError",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "ParagraphLayout",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "PaginationOptions",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "ParagraphRules",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "Result",
+          "source_file": ""
+        },
+        {
+          "label": "src/pagination.rs",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "label": "adapter_rejects_forged_page_ranges_and_source_indices()",
+          "source_file": "crates/text-layout/tests/flow.rs"
+        },
+        {
+          "label": "included_paragraph_spacing_is_counted_once_across_the_pipeline()",
+          "source_file": "crates/text-layout/tests/flow.rs"
+        },
+        {
+          "label": "real_tabbed_layout_paginates_and_maps_carets_between_pages()",
+          "source_file": "crates/text-layout/tests/flow.rs"
+        },
+        {
+          "label": "assert_matches_fresh()",
+          "source_file": "crates/text-layout/tests/incremental.rs"
+        },
+        {
+          "label": "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination()",
+          "source_file": "crates/text-layout/tests/incremental.rs"
+        },
+        {
+          "label": "local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary()",
+          "source_file": "crates/text-layout/tests/incremental.rs"
+        },
+        {
+          "label": "local_edit_with_global_pagination_change_uses_a_full_declared_fallback()",
+          "source_file": "crates/text-layout/tests/incremental.rs"
+        },
+        {
+          "label": "automatic_page_top_drops_spacing_but_explicit_break_preserves_it()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "break_after_survives_empty_paragraphs_without_creating_a_trailing_page()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "explicit_breaks_take_precedence_over_keep_with_next()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "five_short_lines_split_three_and_two_without_relaxation()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "keep_together_moves_intact_and_baseline_uses_each_lines_input_offset()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "keep_with_next_moves_a_fitting_chain_and_reports_an_impossible_one()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "manual_line_break_splits_exactly_once_and_page_ranges_are_contiguous()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "many_single_line_pages_conserve_sources_under_a_linear_work_budget()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "normal_and_contextual_spacing_use_resolved_maximum()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "overheight_line_and_unavoidable_widow_are_reported_without_losing_lines()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "widow_backtracking_never_crosses_an_explicit_manual_break()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        },
+        {
+          "label": "widow_rule_moves_a_line_when_the_previous_page_can_keep_its_minimum()",
+          "source_file": "crates/text-layout/tests/pagination.rs"
+        }
+      ]
+    },
+    {
+      "id": "crates_font_src_manager_fontmanager",
+      "label": "FontManager",
+      "source_file": "crates/font/src/manager.rs",
+      "neighbors": [
+        {
+          "label": "Vec",
+          "source_file": ""
+        },
+        {
+          "label": "FontManagerLimits",
+          "source_file": "crates/font/src/manager.rs"
+        },
+        {
+          "label": "Entry",
+          "source_file": "crates/font/src/manager.rs"
+        },
+        {
+          "label": "src/incremental.rs",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "label": "src/tabs.rs",
+          "source_file": "crates/text-layout/src/tabs.rs"
+        },
+        {
+          "label": "text-layout/tests/layout.rs",
+          "source_file": "crates/text-layout/tests/layout.rs"
+        },
+        {
+          "label": "tests/tabs.rs",
+          "source_file": "crates/text-layout/tests/tabs.rs"
+        },
+        {
+          "label": ".register_fonts()",
+          "source_file": "crates/fmt-ooxml/src/docx.rs"
+        },
+        {
+          "label": ".update()",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "label": "build_shapers()",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "build_spans()",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "default_extents()",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "layout_paragraph()",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "layout_paragraph_impl()",
+          "source_file": "crates/text-layout/src/lib.rs"
+        },
+        {
+          "label": "layout_paragraph_with_tabs()",
+          "source_file": "crates/text-layout/src/tabs.rs"
+        },
+        {
+          "label": "glyph()",
+          "source_file": "crates/text-layout/tests/caret.rs"
+        },
+        {
+          "label": "assert_matches_fresh()",
+          "source_file": "crates/text-layout/tests/incremental.rs"
+        },
+        {
+          "label": "fonts()",
+          "source_file": "crates/text-layout/tests/layout.rs"
+        },
+        {
+          "label": "fonts()",
+          "source_file": "crates/text-layout/tests/tabs.rs"
+        },
+        {
+          "label": "src/manager.rs",
+          "source_file": "crates/font/src/manager.rs"
+        },
+        {
+          "label": "Default",
+          "source_file": ""
+        },
+        {
+          "label": ".default()",
+          "source_file": "crates/font/src/manager.rs"
+        }
+      ]
+    }
+  ],
+  "cargo_packages": 33,
+  "cargo_edges": 45,
+  "cargo_cycles": [],
+  "render_to_layout": true,
+  "layout_to_render": false,
+  "fresh_llm_tokens": 0
+}

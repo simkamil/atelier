@@ -143,7 +143,10 @@ dependencies = [
 name = "atelier-render"
 version = "0.1.0"
 dependencies = [
+ "atelier-font",
  "atelier-geom",
+ "atelier-text-layout",
+ "atelier-text-model",
  "atelier-xml",
 ]
 

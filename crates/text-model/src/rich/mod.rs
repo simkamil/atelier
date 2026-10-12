@@ -11,6 +11,7 @@
 //! editor. Style resolution is provided by [`styles`] (US-201).
 
 mod attrs;
+mod defaults;
 mod document;
 mod error;
 mod node;
@@ -27,6 +28,7 @@ pub use attrs::{
     Alignment, CharAttrs, Color, LineRule, LineSpacing, ListRef, MAX_LIST_LEVEL, OpaqueAttr,
     ParaProps, Underline, VerticalAlign,
 };
+pub use defaults::{DefaultPresentation, DefaultRichDocument, default_rich_document};
 pub use document::RichDocument;
 pub use error::RichError;
 pub use node::{

@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-12",
+  "host": "Windows-11-10.0.26300-SP0",
+  "passed": false,
+  "source_bytes_unchanged": true,
+  "lock_bytes_unchanged": true,
+  "failed_output": "    Checking atelier-font v0.1.0 (C:\\mon-bureau\\crates\\font)\n    Checking atelier-desktop-win v0.1.0 (C:\\mon-bureau\\crates\\desktop-win)\n    Checking atelier-shape v0.1.0 (C:\\mon-bureau\\crates\\shape)\n    Checking atelier-fmt-ooxml v0.1.0 (C:\\mon-bureau\\crates\\fmt-ooxml)\n    Checking atelier-text-layout v0.1.0 (C:\\mon-bureau\\crates\\text-layout)\nerror: this `if` has identical blocks\n   --> crates\\text-layout\\src\\borders.rs:903:67\n    |\n903 |                   .checked_mul(if line.style == BorderStyle::Dotted {\n    |  ___________________________________________________________________^\n904 | |                     2\n905 | |                 } else {\n    | |_________________^\n    |\nnote: same as this\n   --> crates\\text-layout\\src\\borders.rs:905:24\n    |\n905 |                   } else {\n    |  ________________________^\n906 | |                     2\n907 | |                 })\n    | |_________________^\n    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#if_same_then_else\n    = note: `-D clippy::if-same-then-else` implied by `-D warnings`\n    = help: to override `-D warnings` add `#[allow(clippy::if_same_then_else)]`\n\nerror: could not compile `atelier-text-layout` (lib) due to 1 previous error\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `atelier-text-layout` (lib test) due to 1 previous error\n",
+  "completed_checks": [
+    {
+      "name": "bootstrap",
+      "exit_code": 0
+    },
+    {
+      "name": "guard",
+      "exit_code": 0
+    },
+    {
+      "name": "docx_reference_reproducible",
+      "exit_code": 0
+    },
+    {
+      "name": "windows_build",
+      "exit_code": 0
+    },
+    {
+      "name": "incremental_benchmark",
+      "exit_code": 0
+    },
+    {
+      "name": "layout_release_tests",
+      "exit_code": 0,
+      "passed": 75
+    },
+    {
+      "name": "windows_tests",
+      "exit_code": 0,
+      "passed": 736
+    },
+    {
+      "name": "wasm_build",
+      "exit_code": 0
+    },
+    {
+      "name": "clippy_workspace",
+      "exit_code": 101
+    }
+  ],
+  "outcome": "Clippy rejected identical branches in dotted-border gap multiplier; fixed before the final immutable run."
+}

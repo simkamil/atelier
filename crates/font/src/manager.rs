@@ -6,6 +6,27 @@ use crate::{FontError, FontFace};
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+
+// Tokens are local to one process/WASM instance; a cache must not persist them.
+// Relaxed ordering suffices: uniqueness, rather than publication, is required.
+static NEXT_CACHE_REVISION: AtomicU64 = AtomicU64::new(1);
+
+fn next_cache_revision() -> Result<u64, ManagerError> {
+    let mut current = NEXT_CACHE_REVISION.load(AtomicOrdering::Relaxed);
+    loop {
+        let next = current.checked_add(1).ok_or(ManagerError::IdExhausted)?;
+        match NEXT_CACHE_REVISION.compare_exchange_weak(
+            current,
+            next,
+            AtomicOrdering::Relaxed,
+            AtomicOrdering::Relaxed,
+        ) {
+            Ok(_) => return Ok(current),
+            Err(observed) => current = observed,
+        }
+    }
+}
 
 /// Stable identifier for one registration. IDs are never reused by a manager.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -159,9 +180,14 @@ pub struct FontManager<'a> {
     limits: FontManagerLimits,
     total_bytes: usize,
     next_id: u64,
+    cache_revision: u64,
 }
 impl<'a> FontManager<'a> {
     /// Construct a registry containing all twenty built-in OFL faces.
+    ///
+    /// # Panics
+    /// Panics if the process-wide cache revision space is exhausted or a built-in
+    /// font violates the parser/default limits.
     pub fn new() -> Self {
         let mut manager = Self::with_limits(FontManagerLimits::default());
         for embedded in EMBEDDED_FONTS {
@@ -172,16 +198,24 @@ impl<'a> FontManager<'a> {
         manager
     }
     /// Construct an empty registry with the default public limits.
+    ///
+    /// # Panics
+    /// Panics if the process-wide cache revision space is exhausted.
     pub fn empty() -> Self {
         Self::with_limits(FontManagerLimits::default())
     }
     /// Construct an empty registry with caller-provided limits.
+    ///
+    /// # Panics
+    /// Panics if the process-wide cache revision space is exhausted. Construction
+    /// is infallible; subsequent mutations return `ManagerError::IdExhausted`.
     pub fn with_limits(limits: FontManagerLimits) -> Self {
         Self {
             entries: Vec::new(),
             limits,
             total_bytes: 0,
             next_id: 0,
+            cache_revision: next_cache_revision().expect("font cache revision space exhausted"),
         }
     }
     /// Current number of registered faces.
@@ -197,6 +231,15 @@ impl<'a> FontManager<'a> {
     }
     pub fn limits(&self) -> FontManagerLimits {
         self.limits
+    }
+
+    /// In-process geometry cache token. Distinct between managers and renewed
+    /// after every successful registration/removal, including fallback changes.
+    /// Failed mutations and moves preserve it. Do not persist across processes
+    /// or WASM instances; exhaustion rejects mutations instead of reusing tokens.
+    /// Infallible constructors panic on exhaustion, as documented on each one.
+    pub fn cache_revision(&self) -> u64 {
+        self.cache_revision
     }
 
     /// Parse and register a single sfnt/TTC face, borrowing `bytes` without copying it.
@@ -228,6 +271,7 @@ impl<'a> FontManager<'a> {
             return Err(ManagerError::InvalidFontWeight(weight));
         }
         let style = face_style(&face)?;
+        let revision = next_cache_revision()?;
         let id = FontId(id_value);
         self.entries.push(Entry {
             id,
@@ -242,6 +286,7 @@ impl<'a> FontManager<'a> {
         });
         self.total_bytes = new_total;
         self.next_id = id_value;
+        self.cache_revision = revision;
         Ok(id)
     }
 
@@ -252,8 +297,10 @@ impl<'a> FontManager<'a> {
             .iter()
             .position(|entry| entry.id == id)
             .ok_or(ManagerError::UnknownFontId(id))?;
+        let revision = next_cache_revision()?;
         let entry = self.entries.remove(index);
         self.total_bytes -= entry.face.source().len();
+        self.cache_revision = revision;
         Ok(())
     }
 

@@ -100,6 +100,34 @@ pub struct Pagination {
     pub diagnostics: Vec<PaginationDiagnostic>,
 }
 
+/// Pagination machine state captured before a paragraph. It is crate-private:
+/// incremental layout uses it to resume the same flow without exposing a
+/// second pagination API to callers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PaginationCheckpoint {
+    pub(crate) source_index: usize,
+    pub(crate) page_count: usize,
+    pub(crate) placement_count: usize,
+    pub(crate) diagnostic_count: usize,
+    pub(crate) page_start: usize,
+    pub(crate) page_y: i64,
+    pub(crate) previous_paragraph: Option<usize>,
+    pub(crate) break_after_pending: bool,
+    pub(crate) open_page_placements: usize,
+    pub(crate) keep_chain_height: i64,
+    pub(crate) has_following_nonempty: bool,
+}
+
+pub(crate) struct PaginationRun {
+    pub(crate) pagination: Pagination,
+    pub(crate) checkpoints: Vec<PaginationCheckpoint>,
+    pub(crate) preflight_work: usize,
+    pub(crate) stream_work: usize,
+    pub(crate) stopped_at: Option<PaginationCheckpoint>,
+}
+
+type PaginationStopPredicate<'a> = dyn Fn(&PaginationCheckpoint, &Pagination) -> bool + 'a;
+
 /// Malformed inputs, resource limits, or checked-arithmetic failures.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PaginationError {
@@ -138,6 +166,21 @@ pub fn paginate(
     rules: &[ParagraphRules],
     options: PaginationOptions,
 ) -> Result<Pagination, PaginationError> {
+    Ok(paginate_recording(layouts, rules, options, false, None, None)?.pagination)
+}
+
+/// Run the canonical pagination stream, optionally seeded from a previous
+/// paragraph boundary and stopped by a caller once that exact machine state
+/// becomes reusable. The preflight remains whole-document and is reported
+/// separately from the actually executed stream.
+pub(crate) fn paginate_recording(
+    layouts: &[ParagraphLayout],
+    rules: &[ParagraphRules],
+    options: PaginationOptions,
+    record_checkpoints: bool,
+    seed: Option<(&PaginationCheckpoint, &Pagination)>,
+    stop_at: Option<&PaginationStopPredicate<'_>>,
+) -> Result<PaginationRun, PaginationError> {
     if options.page_height <= 0 {
         return Err(PaginationError::InvalidOptions(
             "page height must be positive",
@@ -244,16 +287,57 @@ pub fn paginate(
             };
     }
 
-    let mut result = Pagination {
-        pages: Vec::new(),
-        placements: Vec::new(),
-        diagnostics: Vec::new(),
+    let preflight_work = work;
+    let (
+        mut result,
+        mut page_start,
+        mut page_y,
+        mut previous_paragraph,
+        mut page_paragraph_lines,
+        mut break_after_pending,
+        source_start,
+    ) = if let Some((checkpoint, previous)) = seed {
+        if checkpoint.source_index > layouts.len()
+            || checkpoint.page_count > previous.pages.len()
+            || checkpoint.placement_count > previous.placements.len()
+            || checkpoint.diagnostic_count > previous.diagnostics.len()
+            || checkpoint.page_start > checkpoint.placement_count
+        {
+            return Err(PaginationError::InvalidInput(
+                "invalid pagination checkpoint",
+            ));
+        }
+        (
+            Pagination {
+                pages: previous.pages[..checkpoint.page_count].to_vec(),
+                placements: previous.placements[..checkpoint.placement_count].to_vec(),
+                diagnostics: previous.diagnostics[..checkpoint.diagnostic_count].to_vec(),
+            },
+            checkpoint.page_start,
+            checkpoint.page_y,
+            checkpoint.previous_paragraph,
+            Vec::new(),
+            checkpoint.break_after_pending,
+            checkpoint.source_index,
+        )
+    } else {
+        (
+            Pagination {
+                pages: Vec::new(),
+                placements: Vec::new(),
+                diagnostics: Vec::new(),
+            },
+            0,
+            0,
+            None,
+            Vec::new(),
+            false,
+            0,
+        )
     };
-    let mut page_start = 0usize;
-    let mut page_y = 0i64;
-    let mut previous_paragraph: Option<usize> = None;
-    let mut page_paragraph_lines: Vec<(usize, usize)> = Vec::new();
-    let mut break_after_pending = false;
+    let mut checkpoints = Vec::new();
+    let mut stopped_at = None;
+    let stream_start_work = work;
 
     let new_page = |result: &mut Pagination,
                     page_start: &mut usize,
@@ -270,10 +354,36 @@ pub fn paginate(
         Ok(())
     };
 
-    for (paragraph_index, ((layout, rule), &line_count)) in
-        layouts.iter().zip(rules).zip(&counts).enumerate()
+    for (paragraph_index, ((layout, rule), &line_count)) in layouts
+        .iter()
+        .zip(rules)
+        .zip(&counts)
+        .enumerate()
+        .skip(source_start)
     {
         work = add_work(work, 1, options.max_work)?;
+        if record_checkpoints || stop_at.is_some() {
+            let checkpoint = PaginationCheckpoint {
+                source_index: paragraph_index,
+                page_count: result.pages.len(),
+                placement_count: result.placements.len(),
+                diagnostic_count: result.diagnostics.len(),
+                page_start,
+                page_y,
+                previous_paragraph,
+                break_after_pending,
+                open_page_placements: result.placements.len().saturating_sub(page_start),
+                keep_chain_height: keep_chain_heights[paragraph_index],
+                has_following_nonempty: has_following_nonempty[paragraph_index],
+            };
+            if record_checkpoints {
+                checkpoints.push(checkpoint.clone());
+            }
+            if stop_at.is_some_and(|should_stop| should_stop(&checkpoint, &result)) {
+                stopped_at = Some(checkpoint);
+                break;
+            }
+        }
         if line_count == 0 {
             break_after_pending |= rule.break_after;
             continue;
@@ -585,7 +695,7 @@ pub fn paginate(
         break_after_pending |= rule.break_after && has_following_nonempty[paragraph_index];
         previous_paragraph = Some(paragraph_index);
     }
-    if result.placements.len() > page_start {
+    if stopped_at.is_none() && result.placements.len() > page_start {
         finish_page(
             &mut result,
             &mut page_start,
@@ -593,10 +703,16 @@ pub fn paginate(
             &mut page_paragraph_lines,
         );
     }
-    if result.pages.len() > options.max_pages {
+    if stopped_at.is_none() && result.pages.len() > options.max_pages {
         return Err(PaginationError::LimitExceeded("pages"));
     }
-    Ok(result)
+    Ok(PaginationRun {
+        pagination: result,
+        checkpoints,
+        preflight_work,
+        stream_work: work.saturating_sub(stream_start_work),
+        stopped_at,
+    })
 }
 
 fn paragraph_gap(previous: &ParagraphRules, next: &ParagraphRules) -> i64 {

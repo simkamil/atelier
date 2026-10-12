@@ -1,0 +1,9 @@
+{
+  "baseline_commit": "2ae5aecf73f7ff9b7849bebde7facbc54330d5b2",
+  "baseline_nodes": 6014,
+  "current_nodes": 6213,
+  "missing_baseline_nodes": [],
+  "all_baseline_nodes_preserved": true,
+  "prototype_and_development_nodes_preserved": 16,
+  "note": "Canonical refresh restores curated documentation concepts omitted by code-only CLI; source AST and Cargo dependencies are regenerated."
+}

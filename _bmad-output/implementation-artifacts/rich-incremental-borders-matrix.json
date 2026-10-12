@@ -1,0 +1,514 @@
+{
+  "date": "2026-10-12",
+  "matrix_rows": 28,
+  "all_rows_traced": true,
+  "runtime_tests_actually_executed": true,
+  "validation_sha256": "084d2d1378af878bef8f70bf224bdaa5c907493bd998a24f3979849ad139424d",
+  "word_fidelity_established": false,
+  "ui_latency_certified": false,
+  "rows": [
+    {
+      "spec": "spec-us202-default-document.md",
+      "scenario": "Fabrique",
+      "executed_windows_tests": [
+        "factory_builds_resolvable_default_document_and_exact_metadata"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "factory_builds_resolvable_default_document_and_exact_metadata": [
+          "crates/text-model/tests/default_document.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us202-default-document.md",
+      "scenario": "Géométrie",
+      "executed_windows_tests": [
+        "factory_builds_resolvable_default_document_and_exact_metadata"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "factory_builds_resolvable_default_document_and_exact_metadata": [
+          "crates/text-model/tests/default_document.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us202-default-document.md",
+      "scenario": "Résolution",
+      "executed_windows_tests": [
+        "factory_builds_resolvable_default_document_and_exact_metadata"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "factory_builds_resolvable_default_document_and_exact_metadata": [
+          "crates/text-model/tests/default_document.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us202-default-document.md",
+      "scenario": "Catalogue",
+      "executed_windows_tests": [
+        "catalog_has_all_required_french_names_kinds_and_valid_next_targets"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "catalog_has_all_required_french_names_kinds_and_valid_next_targets": [
+          "crates/text-model/tests/default_document.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us202-default-document.md",
+      "scenario": "Suite",
+      "executed_windows_tests": [
+        "catalog_has_all_required_french_names_kinds_and_valid_next_targets"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "catalog_has_all_required_french_names_kinds_and_valid_next_targets": [
+          "crates/text-model/tests/default_document.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us202-default-document.md",
+      "scenario": "Sans interligne",
+      "executed_windows_tests": [
+        "no_spacing_is_independent_and_factory_instances_do_not_share_mutations"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "no_spacing_is_independent_and_factory_instances_do_not_share_mutations": [
+          "crates/text-model/tests/default_document.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us202-default-document.md",
+      "scenario": "Isolation",
+      "executed_windows_tests": [
+        "no_spacing_is_independent_and_factory_instances_do_not_share_mutations"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "no_spacing_is_independent_and_factory_instances_do_not_share_mutations": [
+          "crates/text-model/tests/default_document.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Initial / identique",
+      "executed_windows_tests": [
+        "identical_update_reuses_layouts_and_pagination_without_stream_work"
+      ],
+      "executed_release_tests": [
+        "identical_update_reuses_layouts_and_pagination_without_stream_work"
+      ],
+      "test_sources": {
+        "identical_update_reuses_layouts_and_pagination_without_stream_work": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Frappe locale",
+      "executed_windows_tests": [
+        "local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary"
+      ],
+      "executed_release_tests": [
+        "local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary"
+      ],
+      "test_sources": {
+        "local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Propagation",
+      "executed_windows_tests": [
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination",
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination"
+      ],
+      "executed_release_tests": [
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination",
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination"
+      ],
+      "test_sources": {
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination": [
+          "crates/text-layout/tests/incremental_sequences.rs"
+        ],
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Contraintes",
+      "executed_windows_tests": [
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination"
+      ],
+      "executed_release_tests": [
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination"
+      ],
+      "test_sources": {
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination": [
+          "crates/text-layout/tests/incremental_sequences.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Cache",
+      "executed_windows_tests": [
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry",
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination",
+        "local_edit_with_global_pagination_change_uses_a_full_declared_fallback",
+        "same_manager_font_mutations_invalidate_only_after_success",
+        "resolved_property_edit_reshapes_only_its_paragraph_and_matches_fresh"
+      ],
+      "executed_release_tests": [
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry",
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination",
+        "local_edit_with_global_pagination_change_uses_a_full_declared_fallback",
+        "same_manager_font_mutations_invalidate_only_after_success",
+        "resolved_property_edit_reshapes_only_its_paragraph_and_matches_fresh"
+      ],
+      "test_sources": {
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "local_edit_with_global_pagination_change_uses_a_full_declared_fallback": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "same_manager_font_mutations_invalidate_only_after_success": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "resolved_property_edit_reshapes_only_its_paragraph_and_matches_fresh": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Structure",
+      "executed_windows_tests": [
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry",
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable",
+        "insert_and_delete_keep_stable_id_layouts_and_match_fresh_results"
+      ],
+      "executed_release_tests": [
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry",
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable",
+        "insert_and_delete_keep_stable_id_layouts_and_match_fresh_results"
+      ],
+      "test_sources": {
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "insert_and_delete_keep_stable_id_layouts_and_match_fresh_results": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Erreur",
+      "executed_windows_tests": [
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable",
+        "layout_and_pagination_failures_preserve_published_state_and_cache"
+      ],
+      "executed_release_tests": [
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable",
+        "layout_and_pagination_failures_preserve_published_state_and_cache"
+      ],
+      "test_sources": {
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "layout_and_pagination_failures_preserve_published_state_and_cache": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us213-incremental-layout.md",
+      "scenario": "Mesure",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "status": "process_verified",
+      "evidence": [
+        "rich-incremental-borders-benchmark.json",
+        "rich-incremental-borders-host.json",
+        "rich-incremental-borders-validation.json"
+      ],
+      "scope": "CPU workload only; UI typing latency/reference PC not certified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Cadre isolé",
+      "executed_windows_tests": [
+        "isolated_frame_uses_explicit_column_bounds_and_border_spacing",
+        "frame_horizontal_edges_reach_side_centerlines_with_different_spacings"
+      ],
+      "executed_release_tests": [
+        "isolated_frame_uses_explicit_column_bounds_and_border_spacing",
+        "frame_horizontal_edges_reach_side_centerlines_with_different_spacings"
+      ],
+      "test_sources": {
+        "isolated_frame_uses_explicit_column_bounds_and_border_spacing": [
+          "crates/text-layout/tests/borders.rs"
+        ],
+        "frame_horizontal_edges_reach_side_centerlines_with_different_spacings": [
+          "crates/text-layout/tests/borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Cadre partagé",
+      "executed_windows_tests": [
+        "adjacent_equal_borders_share_frame_but_keep_independent_shading",
+        "between_edge_checks_exact_and_insufficient_spacing_envelopes"
+      ],
+      "executed_release_tests": [
+        "adjacent_equal_borders_share_frame_but_keep_independent_shading",
+        "between_edge_checks_exact_and_insufficient_spacing_envelopes"
+      ],
+      "test_sources": {
+        "adjacent_equal_borders_share_frame_but_keep_independent_shading": [
+          "crates/text-layout/tests/borders.rs"
+        ],
+        "between_edge_checks_exact_and_insufficient_spacing_envelopes": [
+          "crates/text-layout/tests/borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Trames distinctes",
+      "executed_windows_tests": [
+        "adjacent_equal_borders_share_frame_but_keep_independent_shading"
+      ],
+      "executed_release_tests": [
+        "adjacent_equal_borders_share_frame_but_keep_independent_shading"
+      ],
+      "test_sources": {
+        "adjacent_equal_borders_share_frame_but_keep_independent_shading": [
+          "crates/text-layout/tests/borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Ruptures",
+      "executed_windows_tests": [
+        "no_border_zero_line_or_changed_column_interrupts_a_group",
+        "changed_border_color_or_spacing_separates_adjacent_frames"
+      ],
+      "executed_release_tests": [
+        "no_border_zero_line_or_changed_column_interrupts_a_group",
+        "changed_border_color_or_spacing_separates_adjacent_frames"
+      ],
+      "test_sources": {
+        "no_border_zero_line_or_changed_column_interrupts_a_group": [
+          "crates/text-layout/tests/borders.rs"
+        ],
+        "changed_border_color_or_spacing_separates_adjacent_frames": [
+          "crates/text-layout/tests/borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Multipage",
+      "executed_windows_tests": [
+        "a_group_split_across_pages_gets_closed_local_frames_and_no_intra_paragraph_between"
+      ],
+      "executed_release_tests": [
+        "a_group_split_across_pages_gets_closed_local_frames_and_no_intra_paragraph_between"
+      ],
+      "test_sources": {
+        "a_group_split_across_pages_gets_closed_local_frames_and_no_intra_paragraph_between": [
+          "crates/text-layout/tests/borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Styles",
+      "executed_windows_tests": [
+        "solid_double_dashed_and_dotted_styles_have_bounded_deterministic_geometry",
+        "circle_diameter_does_not_truncate_i64_and_geometry_errors_are_typed"
+      ],
+      "executed_release_tests": [
+        "solid_double_dashed_and_dotted_styles_have_bounded_deterministic_geometry"
+      ],
+      "test_sources": {
+        "solid_double_dashed_and_dotted_styles_have_bounded_deterministic_geometry": [
+          "crates/text-layout/tests/borders.rs"
+        ],
+        "circle_diameter_does_not_truncate_i64_and_geometry_errors_are_typed": [
+          "crates/render/tests/paragraph_borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Rendu",
+      "executed_windows_tests": [
+        "adapted_commands_round_trip_and_render_as_svg_in_paint_order",
+        "fill_paths_use_nonzero_closed_rectangles"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "adapted_commands_round_trip_and_render_as_svg_in_paint_order": [
+          "crates/render/tests/paragraph_borders.rs"
+        ],
+        "fill_paths_use_nonzero_closed_rectangles": [
+          "crates/render/tests/paragraph_borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Malformé",
+      "executed_windows_tests": [
+        "malformed_placements_source_order_and_dash_budgets_return_errors",
+        "malformed_inputs_and_resource_ceilings_return_typed_errors",
+        "absent_page_and_malformed_primitives_fail_without_returning_commands"
+      ],
+      "executed_release_tests": [
+        "malformed_placements_source_order_and_dash_budgets_return_errors",
+        "malformed_inputs_and_resource_ceilings_return_typed_errors"
+      ],
+      "test_sources": {
+        "malformed_placements_source_order_and_dash_budgets_return_errors": [
+          "crates/text-layout/tests/borders.rs"
+        ],
+        "malformed_inputs_and_resource_ceilings_return_typed_errors": [
+          "crates/text-layout/tests/borders.rs"
+        ],
+        "absent_page_and_malformed_primitives_fail_without_returning_commands": [
+          "crates/render/tests/paragraph_borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-us215-paragraph-borders.md",
+      "scenario": "Limites",
+      "executed_windows_tests": [
+        "malformed_placements_source_order_and_dash_budgets_return_errors",
+        "malformed_inputs_and_resource_ceilings_return_typed_errors"
+      ],
+      "executed_release_tests": [
+        "malformed_placements_source_order_and_dash_budgets_return_errors",
+        "malformed_inputs_and_resource_ceilings_return_typed_errors"
+      ],
+      "test_sources": {
+        "malformed_placements_source_order_and_dash_budgets_return_errors": [
+          "crates/text-layout/tests/borders.rs"
+        ],
+        "malformed_inputs_and_resource_ceilings_return_typed_errors": [
+          "crates/text-layout/tests/borders.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-rich-incremental-borders.md",
+      "scenario": "Révisions",
+      "executed_windows_tests": [
+        "cache_tokens_distinguish_managers_and_survive_moves",
+        "successful_mutations_renew_tokens_and_failures_preserve_them",
+        "concurrent_manager_creation_does_not_alias_tokens"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "cache_tokens_distinguish_managers_and_survive_moves": [
+          "crates/font/tests/cache_revision.rs"
+        ],
+        "successful_mutations_renew_tokens_and_failures_preserve_them": [
+          "crates/font/tests/cache_revision.rs"
+        ],
+        "concurrent_manager_creation_does_not_alias_tokens": [
+          "crates/font/tests/cache_revision.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-rich-incremental-borders.md",
+      "scenario": "Pipeline",
+      "executed_windows_tests": [
+        "default_profile_incremental_pages_and_border_display_list_share_geometry"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "default_profile_incremental_pages_and_border_display_list_share_geometry": [
+          "crates/render/tests/rich_pipeline.rs"
+        ]
+      },
+      "status": "functional_verified"
+    },
+    {
+      "spec": "spec-rich-incremental-borders.md",
+      "scenario": "Architecture",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "status": "process_verified",
+      "evidence": [
+        "rich-incremental-borders-graph.json",
+        "rich-incremental-borders-impact.json"
+      ]
+    },
+    {
+      "spec": "spec-rich-incremental-borders.md",
+      "scenario": "Livraison",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "status": "process_verified",
+      "evidence": [
+        "rich-incremental-borders-validation.json",
+        "rich-incremental-borders-review.md"
+      ]
+    }
+  ]
+}

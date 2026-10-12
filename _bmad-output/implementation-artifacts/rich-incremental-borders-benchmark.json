@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-12",
+  "workload": {
+    "pages": 300,
+    "paragraphs": 300,
+    "lines_per_paragraph": 52,
+    "width_layout_units": 30000,
+    "usable_height_rounded_to_lines": true
+  },
+  "initial_ms": 1912.351,
+  "local_edit_ms": 268.214,
+  "paragraphs_reshaped": 1,
+  "paragraphs_reused": 299,
+  "pages_recalculated": 3,
+  "pages_reused": 297,
+  "restart_paragraph": 149,
+  "fallback": null,
+  "pagination_preflight_work": 16500,
+  "pagination_stream_work": 217,
+  "host_evidence": "rich-incremental-borders-host.json",
+  "log_evidence": "rich-incremental-borders-validation.log",
+  "measures_update_only": true,
+  "external_result_clone_in_timing": false,
+  "ui_latency_certified": false,
+  "reference_pc_certified": false,
+  "target_16_ms_met": false,
+  "process_output": [
+    "Workload: 300 pages with A4 usable height, 52 lines per paragraph, 300 paragraphs, 30,000-unit width",
+    "Full initial: 1912.351 ms; 300 pages, 300 reshaped, 32398 pagination stream work",
+    "Local edit:   268.214 ms; 300 pages, 1 reshaped / 299 reused, 3 pages recalculated / 297 reused, restart Some(149), fallback None, preflight 16500, stream 217",
+    "Timings are workload-specific and do not establish an interactive UI latency target."
+  ]
+}

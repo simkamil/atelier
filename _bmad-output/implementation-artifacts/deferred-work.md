@@ -26,3 +26,31 @@ Les trois reports précédents (copy/cut, Ctrl+flèches par mot, colonne visuell
 - source_spec: `_bmad-output/implementation-artifacts/spec-us301-docx-text-styles.md`
   summary: Représenter la réinitialisation explicite de couleur et surlignage dans le modèle riche et sa cascade.
   evidence: R6 de docx-rich-layout-review.md; direct highlight none conserve actuellement le surlignage hérité, avec marqueur opaque et notice UnsupportedProperty. Un changement coordonné du modèle/cascade/codec et un test d’intégration de rendu sont nécessaires.
+
+- source_spec: `spec-rich-incremental-borders.md`
+  summary: Prévalidation globale et copies du cache limitent la latence incrémentale.
+  evidence: Benchmark CPU 300 pages; prévalidation O(n) et cible de frappe de 16 ms encore ouverte.
+
+- source_spec: `spec-rich-incremental-borders.md`
+  summary: Raccorder la fabrique de document riche au flux Nouveau.
+  evidence: Le chemin UI actuel crée un document TXT; US-202 reste partielle.
+
+- source_spec: `spec-rich-incremental-borders.md`
+  summary: Raccorder les commandes de bordures au rendu de l’éditeur riche.
+  evidence: L’adaptateur Rust est livré; aucun consommateur UI riche actuel, US-215 reste partielle.
+
+- source_spec: `spec-rich-incremental-borders.md`
+  summary: Définir la persistance et l’import des politiques de bordure par paragraphe.
+  evidence: Politiques fournies séparément à ParagraphBorderInput; le modèle ParaProps ne les conserve pas.
+
+- source_spec: `spec-rich-incremental-borders.md`
+  summary: Vérifier les bordures et regroupements sur un corpus OOXML et Word authentique.
+  evidence: Les fixtures numériques et SVG actuelles ne constituent pas un oracle Word.
+
+- source_spec: `spec-rich-incremental-borders.md`
+  summary: Appliquer DefaultPresentation à une géométrie de section typée dans le flux riche.
+  evidence: Section ne contient pas de géométrie; valeurs exactes disponibles dans le profil externe.
+
+- source_spec: `spec-rich-incremental-borders.md`
+  summary: Mesurer la frappe complète sur 300 pages sur le PC de référence.
+  evidence: Benchmark update CPU sur i9-13900KF/64 Gio; aucun événement clavier ni frame UI, seuil 16 ms non certifié.

@@ -7,9 +7,12 @@ license.workspace = true
 
 [dependencies]
 atelier-geom = { path = "../geom" }
+atelier-text-layout = { path = "../text-layout" }
+atelier-text-model = { path = "../text-model" }
 
 [dev-dependencies]
 atelier-xml = { path = "../xml" }
+atelier-font = { path = "../font" }
 
 [lints]
 workspace = true

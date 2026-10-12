@@ -47,6 +47,7 @@ prototype_docs.extend(['docs/us-013-case-normalization.md','docs/us-041-png-enco
 prototype_docs.extend(['docs/us-042-jpeg.md','docs/us-061-software-rasterizer.md','docs/us-201-style-engine.md','docs/us-300-opc-package.md','crates/image/tests/fixtures/jpeg/README.md'])
 prototype_docs.extend(['docs/us-301-docx-import.md','docs/us-210-rich-line-layout.md','tests/docx-reference/README.md','tests/text-layout-reference/README.md'])
 prototype_docs.extend(['docs/us-211-tabs.md','docs/us-212-pagination.md','docs/us-214-caret-geometry.md'])
+prototype_docs.extend(['docs/us-202-default-document.md','docs/us-213-incremental-layout.md','docs/us-215-paragraph-borders.md'])
 prototype_docs.extend(['docs/us-004-fuzzer.md','docs/us-082-raster-backend.md','docs/us-311-cfb-container.md','tests/cfb-reference/README.md','tests/font-cff-reference/README.md'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
