@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-12",
+  "repository": "simkamil/mon-bureau",
+  "source_commit": "9b1bcd249fc12702b5e92220e60af03809b6afc3",
+  "runs": [
+    {
+      "id": 38267149521,
+      "name": "CI",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/simkamil/mon-bureau/actions/runs/38267149521",
+      "updated_at": "2026-10-12T15:01:15Z",
+      "jobs": [
+        {
+          "id": 114872045657,
+          "name": "Windows MSVC, tests and quality",
+          "status": "completed",
+          "conclusion": "failure",
+          "runner_name": "",
+          "steps": [],
+          "annotations": [
+            {
+              "path": ".github",
+              "blob_href": "https://github.com/simkamil/mon-bureau/blob/9b1bcd249fc12702b5e92220e60af03809b6afc3/.github",
+              "start_line": 1,
+              "start_column": null,
+              "end_line": 1,
+              "end_column": null,
+              "annotation_level": "failure",
+              "title": "",
+              "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+              "raw_details": ""
+            }
+          ]
+        },
+        {
+          "id": 114872045936,
+          "name": "Linux musl build and tests",
+          "status": "completed",
+          "conclusion": "failure",
+          "runner_name": "",
+          "steps": [],
+          "annotations": [
+            {
+              "path": ".github",
+              "blob_href": "https://github.com/simkamil/mon-bureau/blob/9b1bcd249fc12702b5e92220e60af03809b6afc3/.github",
+              "start_line": 1,
+              "start_column": null,
+              "end_line": 1,
+              "end_column": null,
+              "annotation_level": "failure",
+              "title": "",
+              "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+              "raw_details": ""
+            }
+          ]
+        },
+        {
+          "id": 114872046027,
+          "name": "WASM compile, lint and native engine tests",
+          "status": "completed",
+          "conclusion": "failure",
+          "runner_name": "",
+          "steps": [],
+          "annotations": [
+            {
+              "path": ".github",
+              "blob_href": "https://github.com/simkamil/mon-bureau/blob/9b1bcd249fc12702b5e92220e60af03809b6afc3/.github",
+              "start_line": 1,
+              "start_column": null,
+              "end_line": 1,
+              "end_column": null,
+              "annotation_level": "failure",
+              "title": "",
+              "message": "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings",
+              "raw_details": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "local_validation": "rich-page-geometry-validation.json",
+  "interpretation": "Local tests do not establish remote success. No billing settings changed."
+}

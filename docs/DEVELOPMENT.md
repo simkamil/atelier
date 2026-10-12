@@ -45,8 +45,8 @@ conservent les preuves et limites.
 US-210/212 attendent la mesure de fidélité Word; US-211 le dépassement de marge
 observé dans Word. L'interface testable reste TXT; ces API ne raccordent pas
 encore DOCX ou le layout riche à l'éditeur. Les tests musl sont compilés ici,
-sans exécution Linux locale. Le dernier diagnostic distant connu reste le
-blocage Actions pour paiement/plafond, documenté dans le lot précédent.
+sans exécution Linux locale. La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38267149521)
+refuse les trois jobs avant démarrage pour paiement/plafond Actions; voir le [reçu CI](../_bmad-output/implementation-artifacts/rich-page-geometry-ci.json).
 
 ## CFF, CFB, backend raster et fuzz — 2026-10-12
 

@@ -2,7 +2,7 @@
 title: 'Intégration des tabulations, pages et curseurs riches'
 type: 'feature'
 created: '2026-10-12'
-status: 'ready-for-publication'
+status: 'done'
 route: 'dispatch'
 review_loop_iteration: 1
 baseline_commit: '13c605b19926bd08b439fc711d132d5a638f8e5e'
@@ -51,7 +51,7 @@ context: []
 - [x] Artefacts de revue — trois lectures indépendantes Luna moyen, chaque constat trié, correctifs vérifiés.
 - [x] Validation immuable — workspace natif, WASM, lints, SPDX, guard, musl compilé et régression UI/ABI existante.
 - [x] Docs/backlog/Graphify — critères exacts et preuve de dépendances sans cycle Cargo.
-- [ ] Git main — commit et push, conserver les limitations CI distantes observées.
+- [x] Git main — commit et push, conserver les limitations CI distantes observées.
 
 Given les trois modules, when le test de chaîne s’exécute, then les avances de tabs, placements de pages et positions du curseur sont cohérents.
 Given la source gelée, when la validation se termine, then le reçu enregistre les hashes inchangés et tous les contrôles exécutés.
@@ -73,3 +73,5 @@ Voir [revue triée](rich-page-geometry-review.md) : 12 constats indépendants, c
 - `py -m graphify . --code-only`, puis refresh canonique et contrôle d’intégrité — nouveaux modules référencés, aucun cycle Cargo.
 
 Validation finale : 707 tests workspace, 57 tests text-layout release, 20 contrôles passés sur source immuable; [reçu](rich-page-geometry-validation.json) et [audit des matrices](rich-page-geometry-matrix.json). La clôture de cette spec fonctionnelle ne clôture pas les critères Word ouverts du backlog.
+
+Publication : code et docs poussés sur `origin/main`, commit `9b1bcd249fc12702b5e92220e60af03809b6afc3`. La [CI de ce commit](https://github.com/simkamil/mon-bureau/actions/runs/38267149521) refuse les trois jobs avant affectation de runner pour paiement/plafond Actions; aucun contrôle distant exécuté. [Reçu](rich-page-geometry-ci.json). Les validations locales restent établies; aucun réglage de facturation modifié.
