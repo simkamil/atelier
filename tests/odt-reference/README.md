@@ -5,6 +5,7 @@ Ces fichiers sont de **vrais documents LibreOffice** : `tools/generate-odt-refer
 | Fichier | Ce qu'il couvre |
 | --- | --- |
 | `text-accents.odt` | texte accentué et non latin, espaces répétées, tabulation, saut de ligne, métadonnées (titre, auteur, mots-clés, sujet) |
+| `trailing-spaces.odt` | espaces de fin de paragraphe : LibreOffice en conserve une seule (`ef `), écrit les suivantes en `text:s`, et réduit `mn <span>  </span>x` à `mn x` |
 | `char-format.odt` | gras, italique, soulignement, barré, exposant/indice, couleur, surlignage, police et taille, petites capitales, interlettrage |
 | `para-format.odt` | alignement (dont `end`), retraits, espacements, interligne 150 %, tabulations, enchaînements, saut de page |
 | `headings-styles.odt` | titre, sous-titre, titres de niveau 1 à 3, style personnalisé hérité de « Corps de texte », style de caractère |

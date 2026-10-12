@@ -136,6 +136,12 @@ pub enum ImportNotice {
         part: String,
         name: String,
     },
+    /// An attribute value that cannot be read (a default was used).
+    InvalidAttribute {
+        element: String,
+        attribute: String,
+        value: String,
+    },
     /// A property was read but the model has no slot for it; it is kept as an
     /// opaque attribute (namespace of the ODF property).
     UnsupportedProperty {

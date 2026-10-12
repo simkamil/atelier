@@ -113,6 +113,13 @@ def sources() -> dict[str, tuple[str, str]]:
         ),
         "accented text, repeated spaces, tab, line break, metadata",
     )
+    docs["trailing-spaces"] = (
+        fodt(
+            "<text:p>ef </text:p><text:p>gh   </text:p><text:p>ij<text:s/></text:p>"
+            '<text:p>kl<text:s text:c="3"/></text:p><text:p>mn <text:span>  </text:span>x</text:p>'
+        ),
+        "trailing spaces: LibreOffice keeps one plain trailing space and writes text:s for the rest",
+    )
     docs["char-format"] = (
         fodt(
             '<text:p>Normal <text:span text:style-name="B">gras</text:span> <text:span text:style-name="I">italique</text:span> '

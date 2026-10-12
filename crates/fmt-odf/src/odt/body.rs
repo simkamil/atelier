@@ -169,6 +169,8 @@ struct ParaInfo {
 }
 
 struct TextInfo {
+    /// Size (half-points) defined by the common parent style chain, if any.
+    base: Option<u32>,
     style: Option<String>,
     direct: CharAttrs,
     size: Option<Size>,
@@ -582,13 +584,30 @@ impl<'a> Importer<'a> {
             self.unsupported(&label, &c.unsupported);
         }
         let style = common.and_then(|c| self.text_ids.get(&c.name).cloned());
+        let base = common.and_then(|c| styles.defined_size(Scope::Styles, Family::Text, &c.name));
         let info = Rc::new(TextInfo {
             style,
             direct,
             size,
+            base,
         });
         self.text_cache.insert(key, info.clone());
         info
+    }
+
+    /// Character properties defined by a style or its ancestors.
+    fn style_char_mask(&self, id: &str) -> CharAttrs {
+        let mut mask = CharAttrs::default();
+        let mut cur = Some(id.to_owned());
+        for _ in 0..64 {
+            let Some(c) = cur.take() else { break };
+            let Some(style) = self.engine.catalog().style(&c) else {
+                break;
+            };
+            mask.overlay(&style.character.values);
+            cur = style.based_on.clone();
+        }
+        mask
     }
 
     fn apply_text_style(&mut self, ctx: &Ctx, name: Option<&str>, st: &InlineState) -> InlineState {
@@ -598,8 +617,11 @@ impl<'a> Importer<'a> {
         let info = self.text_info(ctx.scope, name);
         let mut next = st.clone();
         next.direct.overlay(&info.direct);
+        if let Some(b) = info.base {
+            next.size = b;
+        }
         if let Some(sz) = info.size {
-            next.size = resolve_size(sz, st.size);
+            next.size = resolve_size(sz, next.size);
             next.direct.size_half_points = Some(next.size);
         }
         if info.style.is_some() {
@@ -840,6 +862,10 @@ impl<'a> Importer<'a> {
             }
             floor = end;
             let mut attrs = info.base_char.clone();
+            if let Some(style) = &seg.style {
+                // Paragraph text properties rank below a named character style.
+                attrs.clear(&self.style_char_mask(style));
+            }
             attrs.overlay(&seg.attrs);
             if !attrs.is_empty() {
                 match runs.last_mut() {
@@ -1014,10 +1040,17 @@ impl<'a> Importer<'a> {
                 self.inline_children(e, pb, &next, ctx, depth + 1)
             }
             (NS_TEXT, "s") => {
-                let count = e
-                    .attr(NS_TEXT, "c")
-                    .and_then(|v| v.trim().parse::<usize>().ok())
-                    .unwrap_or(1);
+                let count = match e.attr(NS_TEXT, "c") {
+                    None => 1,
+                    Some(v) => parse_count(v).unwrap_or_else(|| {
+                        self.notices.add(ImportNotice::InvalidAttribute {
+                            element: "text:s".into(),
+                            attribute: "text:c".into(),
+                            value: v.chars().take(40).collect(),
+                        });
+                        1
+                    }),
+                };
                 if count > pb.budget.saturating_sub(pb.text.len()) {
                     return Err(OdtError::Limit("text bytes"));
                 }
@@ -1485,6 +1518,7 @@ impl<'a> Importer<'a> {
         let mut specs: Vec<RowSpec> = Vec::new();
         let mut header_rows = 0usize;
         let mut total = 0usize;
+        let mut all_header = true;
         let mut failed = false;
         collect_rows(n, false, &mut |row, header| {
             if failed {
@@ -1520,18 +1554,17 @@ impl<'a> Importer<'a> {
             }
             for _ in 0..repeat {
                 specs.push(RowSpec {
-                    header,
                     cells: cells.clone(),
                 });
             }
-            if header && specs.iter().all(|r| r.header) {
+            all_header &= header;
+            if all_header {
                 header_rows = specs.len();
             }
         });
         if failed || self.cells.saturating_add(total) > self.limits.max_table_cells {
             return Err(OdtError::Limit("table cells"));
         }
-        self.cells += total;
         if specs.is_empty() {
             self.notices.add(ImportNotice::UnsupportedElement {
                 part: "content.xml".into(),
@@ -1544,6 +1577,14 @@ impl<'a> Importer<'a> {
             .max(specs.iter().map(|r| r.cells.len()).max().unwrap_or(0))
             .max(1);
         let rows = specs.len();
+        // The grid itself is allocated below: bound columns x rows first.
+        let grid = columns.saturating_mul(rows);
+        if grid > self.limits.max_table_cells
+            || self.cells.saturating_add(grid) > self.limits.max_table_cells
+        {
+            return Err(OdtError::Limit("table cells"));
+        }
+        self.cells += grid;
         // Place cells.
         let mut owner: Vec<Vec<Option<usize>>> = vec![vec![None; columns]; rows];
         let mut placed: Vec<Placed<'_>> = Vec::new();
@@ -1552,23 +1593,16 @@ impl<'a> Importer<'a> {
                 if cell.covered || c >= columns || owner[r][c].is_some() {
                     continue;
                 }
-                let mut cs = cell.cs.min(columns - c);
-                let mut rs = cell.rs.min(rows - r);
-                // Shrink the span until it only covers free slots.
-                'shrink: loop {
-                    for line in &owner[r..r + rs] {
-                        if line[c..c + cs].iter().any(Option::is_some) {
-                            if cs > 1 {
-                                cs -= 1;
-                            } else if rs > 1 {
-                                rs -= 1;
-                            } else {
-                                break 'shrink;
-                            }
-                            continue 'shrink;
-                        }
-                    }
-                    break;
+                // Free run on this row, then as many rows as stay free.
+                let mut cs = 1;
+                while cs < cell.cs.min(columns - c) && owner[r][c + cs].is_none() {
+                    cs += 1;
+                }
+                let mut rs = 1;
+                while rs < cell.rs.min(rows - r)
+                    && owner[r + rs][c..c + cs].iter().all(Option::is_none)
+                {
+                    rs += 1;
                 }
                 let index = placed.len();
                 for line in &mut owner[r..r + rs] {
@@ -1963,7 +1997,6 @@ struct CellSpec<'x> {
 }
 
 struct RowSpec<'x> {
-    header: bool,
     cells: Vec<CellSpec<'x>>,
 }
 
@@ -1975,16 +2008,26 @@ struct Placed<'x> {
     node: Option<&'x XNode>,
 }
 
+/// Parse a non-negative count; an all-digit value too large for `usize`
+/// saturates so that the usual limits reject it. Anything else is `None`.
+fn parse_count(v: &str) -> Option<usize> {
+    let v = v.trim();
+    if v.is_empty() || !v.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some(v.parse::<usize>().unwrap_or(usize::MAX))
+}
+
 fn repeat_of(n: &XNode, attr: &str) -> usize {
     n.attr(NS_TABLE, attr)
-        .and_then(|v| v.trim().parse::<usize>().ok())
+        .and_then(parse_count)
         .unwrap_or(1)
         .max(1)
 }
 
 fn span_of(n: &XNode, attr: &str) -> usize {
     n.attr(NS_TABLE, attr)
-        .and_then(|v| v.trim().parse::<usize>().ok())
+        .and_then(parse_count)
         .unwrap_or(1)
         .max(1)
 }

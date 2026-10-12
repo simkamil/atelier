@@ -40,7 +40,7 @@
     "mimetype": "application/vnd.oasis.opendocument.text",
     "pageCount": 1,
     "paragraphs": [
-      "Date: 12/10/2026, heure: 19:05:04.",
+      "Date: 12/10/2026, heure: 23:44:41.",
       "Texte avec note1 et suite.",
       "Auteur: ."
     ],
@@ -434,5 +434,33 @@
     "statisticsPageCount": 1,
     "tables": 0,
     "title": "Texte accentué"
+  },
+  "trailing-spaces.odt": {
+    "bookmarks": [],
+    "creator": null,
+    "description": "trailing spaces: LibreOffice keeps one plain trailing space and writes text:s for the rest",
+    "generator": "LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77",
+    "headings": [],
+    "images": 0,
+    "keywords": [],
+    "links": [],
+    "listItems": 0,
+    "masterPageChanges": [],
+    "masterPages": {
+      "Standard": []
+    },
+    "mimetype": "application/vnd.oasis.opendocument.text",
+    "pageCount": 1,
+    "paragraphs": [
+      "ef ",
+      "gh ",
+      "ij ",
+      "kl   ",
+      "mn x"
+    ],
+    "pictureParts": {},
+    "statisticsPageCount": 1,
+    "tables": 0,
+    "title": null
   }
 }

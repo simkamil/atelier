@@ -200,6 +200,21 @@ impl Styles {
         size
     }
 
+    /// Like `effective_size`, but `None` when no style of the chain defines a
+    /// font size.
+    pub fn defined_size(&self, scope: Scope, family: Family, name: &str) -> Option<u32> {
+        let mut cur = Some(name.to_owned());
+        for _ in 0..64 {
+            let c = cur.take()?;
+            let (s, _) = self.lookup(scope, family, &c)?;
+            if s.text.contains_key("fo:font-size") {
+                return Some(self.effective_size(scope, family, name));
+            }
+            cur = s.parent.clone();
+        }
+        None
+    }
+
     pub fn list(&self, scope: Scope, name: &str) -> Option<&ListStyle> {
         self.auto_lists[scope as usize]
             .get(name)

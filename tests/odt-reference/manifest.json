@@ -1,60 +1,64 @@
 {
   "files": {
     "char-format.odt": {
-      "bytes": 10616,
-      "sha256": "b49126f3752e95ad91f43ba1a2981a458ac5dd50e9242b84c211108eb1a4738d"
+      "bytes": 10618,
+      "sha256": "af38580b3aec6cad7cb1cb7e62058525f2ca6a93d0f9b1543345113a997545d4"
     },
     "fields-notes.odt": {
-      "bytes": 10224,
-      "sha256": "7c0eba7e788fd34480273f6c7c4753df3bf5a9add3e11013492bdbbd2cad9784"
+      "bytes": 10208,
+      "sha256": "70ca75da4b84344f2c6822bfabbd127a9e7ffcb08d02fc9fbf168b0aeeeb5901"
     },
     "header-footer.odt": {
-      "bytes": 42419,
-      "sha256": "2df0329a7e248ef26b20c3d8d208cb49e41d9e4ecd3a4c561c97153a1f7b26d8"
+      "bytes": 42421,
+      "sha256": "53afb013098dac33af7ae4a62b6c0ff5045ab72cacccab5520b636bb5e1666c4"
     },
     "headings-styles.odt": {
-      "bytes": 12474,
-      "sha256": "7b4240723b328e430c4660cb20f55edd21b21c09f694f0a39fed5dd72cd7b402"
+      "bytes": 12475,
+      "sha256": "39b084be9a205345c2f2f06bc184487ae86be8aaa26e7a9963d26baa97540bab"
     },
     "image.odt": {
       "bytes": 14635,
-      "sha256": "8c921c8768054b7996f2c96b4478ef1fa53087fc2075e9b2a797ff2fb401b77b"
+      "sha256": "50508a8734e5b5f155684e73ba0d5dd7790e350aebc16e754829aa1705376bc8"
     },
     "links-bookmarks.odt": {
-      "bytes": 9992,
-      "sha256": "d9326a04c0a96f46b225adfd2cd22a0a4b4552b557c60f2d3adc4a8465c351a3"
+      "bytes": 9993,
+      "sha256": "50680b183224bc2412fa6583cde4321df6d6aacd3cfef5bdb37c8948aca82b49"
     },
     "lists.odt": {
-      "bytes": 11260,
-      "sha256": "e34c258f59bcc7085bc06e8fbef6d0ac06035d8159db9d8559a357c3827335ea"
+      "bytes": 11261,
+      "sha256": "707775fa7eda813a2bc19962a928ab2004a811df3160b34f9c2550458147f5ce"
     },
     "multi-page.odt": {
       "bytes": 43803,
-      "sha256": "25e140c99fed8e323d5a30d957a6e5890eb9fee42c92cc9d7513133cf86de07a"
+      "sha256": "583145d2e235632e350ba04393269c2083060bbed73f9255b8c25306473d6c68"
     },
     "nested-table.odt": {
-      "bytes": 9604,
-      "sha256": "b726bc8801f91e86fc46149635fae63f820efd8499a70f853edcdbe5a2b9308c"
+      "bytes": 9606,
+      "sha256": "6e81f553661e73220d726baf9712b0a9f779e1604c6d5f9e45689eba0e07dccd"
     },
     "para-format.odt": {
-      "bytes": 19152,
-      "sha256": "66427bb659fe53a18bf4058b314ad1880ae385911472e280980989fc82783e3e"
+      "bytes": 19154,
+      "sha256": "7457ff01886a00eab823403d594dcf0c97708dfa7828af28b567d5ece091c37e"
     },
     "sections-pages.odt": {
-      "bytes": 8836,
-      "sha256": "42d7bb4f681ea4e21a7efde80969afa2ea04c0225f4b50cdf53d6924d7a2b5b8"
+      "bytes": 8835,
+      "sha256": "f1889ff7120db1401f123d65338dc493ed7b3e03306249afb6300569a1b67869"
     },
     "table-merge.fodt": {
-      "bytes": 31947,
-      "sha256": "3610d0dc138dc3452b050228c8fe5fa48d31f1205a83da735cf65c94981d2ce7"
+      "bytes": 31949,
+      "sha256": "a21b209937651263cfe85cd42f669a2e1a1d9efaf14ffbdca308fbc949f12207"
     },
     "table-merge.odt": {
-      "bytes": 10677,
-      "sha256": "47e94b8a2274093c59d09ba47be2863ed1478f94e07b03aac08717549d68336c"
+      "bytes": 10678,
+      "sha256": "be59c1ee7504cd676ae8f980dce0d487cbe5a9010fb7e2080eec794a90aebfdd"
     },
     "text-accents.odt": {
-      "bytes": 10937,
-      "sha256": "77d3714625fcbe4593bdd5532dedf95a25fc59b19667c7a6acb4bf484dbdad4a"
+      "bytes": 10939,
+      "sha256": "5d1202fde546351061bfbe839ba1b7c08fc7868ad6bf82efebaa46b9eae0c809"
+    },
+    "trailing-spaces.odt": {
+      "bytes": 8431,
+      "sha256": "99bbf7234dccfc54ee7f2be61da7947a21bfe938d4bf6b43ce72e3e613c53674"
     }
   },
   "generator": "tools/generate-odt-reference.py",

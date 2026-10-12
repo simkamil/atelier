@@ -1146,3 +1146,147 @@ fn paragraph_properties_misplaced_in_text_properties_are_honoured() {
             .any(|n| matches!(n, ImportNotice::UnsupportedProperty { .. }))
     );
 }
+
+// ------------------------------------------------- review regressions
+
+#[test]
+fn table_grid_is_bounded_before_allocation() {
+    // 100000 columns x 100000 rows from one cell: the grid, not the cell
+    // count, would be allocated.
+    let grid = r#"<table:table><table:table-column table:number-columns-repeated="100000"/><table:table-row table:number-rows-repeated="100000"><table:table-cell/></table:table-row></table:table>"#;
+    assert_eq!(
+        import_odt(&Pkg::new(grid).build()).err(),
+        Some(OdtError::Limit("table cells"))
+    );
+    // Each factor alone is fine, the product is not.
+    let wide = r#"<table:table><table:table-column table:number-columns-repeated="2000"/><table:table-row table:number-rows-repeated="2000"><table:table-cell/></table:table-row></table:table>"#;
+    assert_eq!(
+        import_odt(&Pkg::new(wide).build()).err(),
+        Some(OdtError::Limit("table cells"))
+    );
+    // Counts too large for usize saturate into the limit instead of being ignored.
+    let huge = r#"<table:table><table:table-row table:number-rows-repeated="99999999999999999999999"><table:table-cell/></table:table-row></table:table>"#;
+    assert_eq!(
+        import_odt(&Pkg::new(huge).build()).err(),
+        Some(OdtError::Limit("table cells"))
+    );
+    let span = r#"<table:table><table:table-row><table:table-cell table:number-columns-spanned="99999999999999999999999" table:number-rows-spanned="99999999999999999999999"><text:p>s</text:p></table:table-cell></table:table-row></table:table>"#;
+    let doc = import_odt(&Pkg::new(span).build()).unwrap();
+    assert_eq!(texts(&doc), vec!["s"]);
+    // A table that fits is still imported.
+    let ok = r#"<table:table><table:table-column table:number-columns-repeated="50"/><table:table-row table:number-rows-repeated="50"><table:table-cell/></table:table-row></table:table>"#;
+    let doc = import_odt(&Pkg::new(ok).build()).unwrap();
+    assert_eq!(table_of(&doc).1.rows.len(), 50);
+}
+
+#[test]
+fn repeated_cells_across_tables_share_one_budget() {
+    let t = r#"<table:table><table:table-row><table:table-cell table:number-columns-repeated="600"/></table:table-row></table:table>"#;
+    let mut limits = OdtLimits::default();
+    limits.max_table_cells = 1000;
+    assert_eq!(
+        import_odt_with_limits(&Pkg::new(&format!("{t}{t}")).build(), limits).err(),
+        Some(OdtError::Limit("table cells"))
+    );
+}
+
+#[test]
+fn paragraph_text_properties_rank_below_a_named_character_style() {
+    let p = Pkg::new(
+        r#"<text:p text:style-name="P1">base <text:span text:style-name="Red">red</text:span> <text:span text:style-name="T1">auto</text:span></text:p>"#,
+    )
+    .auto(
+        r#"<style:style style:name="P1" style:family="paragraph"><style:text-properties fo:color="&#35;0000ff" fo:font-weight="bold"/></style:style>
+           <style:style style:name="T1" style:family="text" style:parent-style-name="Red"><style:text-properties fo:color="&#35;00ff00"/></style:style>"#,
+    )
+    .styles(
+        r#"<style:style style:name="Red" style:family="text"><style:text-properties fo:color="&#35;ff0000"/></style:style>"#,
+        "",
+        "",
+    );
+    let mut doc = import(&p);
+    let id = doc.paragraph_ids()[0];
+    let (resolved, _) = doc.resolved_paragraph(id).unwrap();
+    let color_at = |off: usize| {
+        resolved
+            .runs
+            .iter()
+            .find(|r| r.start <= off && off < r.end)
+            .unwrap()
+            .attrs
+            .clone()
+    };
+    let blue = Color { r: 0, g: 0, b: 255 };
+    assert_eq!(color_at(0).color, Some(blue));
+    // Named character style beats the paragraph's automatic text properties...
+    assert_eq!(color_at(5).color, Some(Color { r: 255, g: 0, b: 0 }));
+    // ... which still contribute what the character style does not define.
+    assert_eq!(color_at(5).bold, Some(true));
+    // Direct (automatic) span formatting beats both.
+    assert_eq!(color_at(10).color, Some(Color { r: 0, g: 255, b: 0 }));
+}
+
+#[test]
+fn relative_size_of_an_automatic_style_follows_its_parent_style() {
+    let p = Pkg::new(
+        r#"<text:p>x <text:span text:style-name="T3">half</text:span> <text:span text:style-name="T4">plain</text:span></text:p>"#,
+    )
+    .auto(
+        r#"<style:style style:name="T3" style:family="text" style:parent-style-name="Big"><style:text-properties fo:font-size="50%"/></style:style>
+           <style:style style:name="T4" style:family="text"><style:text-properties fo:font-size="50%"/></style:style>"#,
+    )
+    .styles(
+        r#"<style:default-style style:family="paragraph"><style:text-properties fo:font-size="12pt"/></style:default-style>
+           <style:style style:name="Big" style:family="text"><style:text-properties fo:font-size="20pt"/></style:style>"#,
+        "",
+        "",
+    );
+    let doc = import(&p);
+    let para = doc.document.paragraph(doc.paragraph_ids()[0]).unwrap();
+    // 50 % of the 20 pt parent, not of the 12 pt paragraph: 10 pt = 20 half-points.
+    assert_eq!(para.runs[0].attrs.size_half_points, Some(20));
+    // Without a sized parent the paragraph size (12 pt) is the base.
+    assert_eq!(para.runs[1].attrs.size_half_points, Some(12));
+}
+
+#[test]
+fn content_automatic_styles_win_over_styles_xml_ones_which_serve_headers() {
+    let p = Pkg::new(r#"<text:p text:style-name="P1">body</text:p>"#)
+        .auto(r#"<style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="end"/></style:style>"#)
+        .styles(
+            "",
+            r#"<style:page-layout style:name="L"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout>
+               <style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>"#,
+            r#"<style:master-page style:name="Standard" style:page-layout-name="L"><style:header><text:p text:style-name="P1">head</text:p></style:header></style:master-page>"#,
+        );
+    let doc = import(&p);
+    let body = doc.document.paragraph(doc.paragraph_ids()[0]).unwrap();
+    assert_eq!(body.props.alignment, Some(Alignment::Right));
+    let Some(Node::Section(sec)) = doc.document.node(doc.document.section_ids()[0]) else {
+        panic!()
+    };
+    let Some(Node::HeaderFooter(h)) = doc.document.node(sec.headers[0].1) else {
+        panic!()
+    };
+    let head = doc.document.paragraph(h.blocks.get(0).unwrap()).unwrap();
+    assert_eq!(head.props.alignment, Some(Alignment::Center));
+}
+
+#[test]
+fn space_counts_and_trailing_spaces() {
+    // LibreOffice keeps one trailing space and writes text:s for the rest.
+    let doc = import(&Pkg::new(
+        r#"<text:p>ab </text:p><text:p>cd   </text:p><text:p>ef<text:s/></text:p><text:p>gh <text:s text:c="2"/></text:p>"#,
+    ));
+    assert_eq!(texts(&doc), vec!["ab ", "cd ", "ef ", "gh   "]);
+    let doc = import(&Pkg::new(r#"<text:p>a<text:s text:c="oops"/>b</text:p>"#));
+    assert_eq!(texts(&doc), vec!["a b"]);
+    assert!(doc.notices.iter().any(|n| matches!(n,
+        ImportNotice::InvalidAttribute { attribute, value, .. } if attribute == "text:c" && value == "oops")));
+    // Digits too large for usize hit the text limit rather than silently becoming 1.
+    let p = Pkg::new(r#"<text:p><text:s text:c="99999999999999999999999"/></text:p>"#);
+    assert_eq!(
+        import_odt(&p.build()).err(),
+        Some(OdtError::Limit("text bytes"))
+    );
+}

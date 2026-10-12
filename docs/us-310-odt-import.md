@@ -192,7 +192,7 @@ est elle-même limitée par `atelier-xml`).
   ci-dessus, avec résultat attendu précis (texte, plages d'attributs, propriétés
   calculées après cascade par `StyleEngine`).
 * Corpus de **fichiers réels produits par LibreOffice** (`tests/odt-reference/`,
-  [README](../tests/odt-reference/README.md)) : 13 fichiers `.odt` + un `.fodt`,
+  [README](../tests/odt-reference/README.md)) : 14 fichiers `.odt` + un `.fodt`,
   attendus relevés indépendamment par `tools/generate-odt-reference.py`, nombre de
   pages mesuré par LibreOffice sur chaque fichier. Test :
   `crates/fmt-odf/tests/odt_reference.rs`.
@@ -222,6 +222,6 @@ est elle-même limitée par `atelier-xml`).
    *non vérifiable à ce stade*. Cela suppose la mise en page complète (composition
    des lignes, pagination, en-têtes/pieds, tableaux, images flottantes) qui n'existe
    pas encore. Ce qui est prêt : un corpus réel avec le nombre de pages attendu
-   (`pageCount`, 13 fichiers) et l'import vérifié des textes et styles dont la mise
+   (`pageCount`, 14 fichiers) et l'import vérifié des textes et styles dont la mise
    en page aura besoin. Il manque : la mise en page, un corpus de 50 documents et
    l'harnais de comparaison.
