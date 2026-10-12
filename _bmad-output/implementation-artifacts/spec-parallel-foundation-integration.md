@@ -86,3 +86,5 @@ Les [33 constats séparés](foundation-integration-review.md) conservent origine
 ## Résultat final
 
 25 contrôles réussis, 671 tests workspace, 55 tests natifs release et 17 000 exécutions fuzz sans défaillance détectée. Références CFB/CFF reproduites ; sources et lock inchangés pendant la passe. Builds Windows/WASM/musl, tests musl seulement compilés ici. Moteur embarqué 1 041 817 octets ; plafond inchangé. US-052/082/311 closes, US-004 partielle, backlog 46/158. Graphify et publication sont tracés dans les reçus du lot.
+
+Publication du code : `4956ad211e0bc5d3ec71afa770738f2382b4467d` poussé sur main. La [CI distante](https://github.com/simkamil/mon-bureau/actions/runs/38238015736) refuse les trois jobs avant affectation d’un runner pour paiement/plafond Actions ; aucun résultat distant exécuté. Voir [reçu CI](foundation-integration-ci.json). Les quatre worktrees extérieurs restent propres et leurs branches préservées.

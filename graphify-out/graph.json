@@ -237367,7 +237367,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "docs/DEVELOPMENT.md",
-      "source_location": "378"
+      "source_location": "380"
     },
     {
       "source": "document_readme_md",
@@ -239669,5 +239669,5 @@
       "source_file": "tests/canvas-browser.html"
     }
   ],
-  "built_at_commit": "67ae3230d0876c9948bbc8f27c2b5f9b2a5c2bbe"
+  "built_at_commit": "4956ad211e0bc5d3ec71afa770738f2382b4467d"
 }

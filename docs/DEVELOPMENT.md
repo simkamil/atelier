@@ -54,8 +54,10 @@ contrôle les dépendances et les 158 statuts.
 US-210 attend toujours la comparaison Word. Le parcours utilisateur actuel
 reste l'éditeur TXT ; ces API ne raccordent pas encore les documents riches
 à l'interface. Les tests musl sont compilés ici, sans exécution Linux locale.
-La CI distante reste à distinguer des contrôles locaux ; le précédent run
-était refusé avant démarrage pour facturation/plafond Actions.
+La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38238015736)
+a refusé les trois jobs avant démarrage pour paiement/plafond Actions. Aucun
+build ni test distant exécuté ; le [reçu CI](../_bmad-output/implementation-artifacts/foundation-integration-ci.json)
+conserve le diagnostic. Aucun réglage de facturation modifié.
 
 ## Import DOCX et lignes riches — 2026-10-12
 

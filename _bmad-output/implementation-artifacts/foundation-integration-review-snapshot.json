@@ -4,10 +4,10 @@
     "_bmad-output/implementation-artifacts/foundation-integration-review-snapshot.json (self-referential metadata)"
   ],
   "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
-  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-foundation-integration-review-1wxldcil\\complete.diff",
-  "complete_bytes": 24111634,
-  "complete_sha256": "b9478a257f412578ff0ae3115abd4d9a50e6344a3baa315f4a8fdc79a422079e",
-  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-foundation-integration-review-1wxldcil\\sources.diff",
-  "sources_bytes": 1251460,
-  "sources_sha256": "5f6da3e28c979edf3ac968cb279f1e1b9827744e6c970c7021fab3b21a68c323"
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-foundation-integration-review-95rigm8v\\complete.diff",
+  "complete_bytes": 24117910,
+  "complete_sha256": "b2a1a20356c0f8165e106414118a19fdcb41b452d34cd059a1524438f9024f75",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-foundation-integration-review-95rigm8v\\sources.diff",
+  "sources_bytes": 1257736,
+  "sources_sha256": "70195498150e83faf727f42cdf8986a9b695ddb09e711d12e3990fd82b1e4d66"
 }
