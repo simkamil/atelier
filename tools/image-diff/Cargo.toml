@@ -1,0 +1,17 @@
+[package]
+name = "atelier-image-diff"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+atelier-image = { path = "../../crates/image" }
+
+[dev-dependencies]
+atelier-geom = { path = "../../crates/geom" }
+atelier-raster = { path = "../../crates/raster" }
+atelier-render = { path = "../../crates/render" }
+
+[lints]
+workspace = true
