@@ -1,0 +1,21 @@
+{
+  "source_commit": "4d225fcc155122a2552c62e7eb15253544c0cfbc",
+  "branch": "main",
+  "remote": "origin",
+  "source_pushed": true,
+  "validation": "rich-docx-preview-validation.json",
+  "local_validation_passed": true,
+  "ci": "rich-docx-preview-ci.json",
+  "remote_success_established": false,
+  "note": "GitHub refuses jobs before runner allocation due account billing/spending limit. Local results are independent; Linux tests were only cross-compiled here.",
+  "built_executables": {
+    "target/release/atelier.exe": {
+      "bytes": 5125632,
+      "sha256": "cf666d4dbdabdbd9deb92569dcbd93498562ae67bac420a4cfaca7c0c71db0ea"
+    },
+    "target/x86_64-pc-windows-msvc/debug/atelier.exe": {
+      "bytes": 5502976,
+      "sha256": "4cb356b9b86f256dee4538b1598a82a8483b0a45c84a7fa1291fc2e43dc95a6f"
+    }
+  }
+}

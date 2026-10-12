@@ -11,3 +11,5 @@ Le dialogue natif accorde une capacité de lecture temporaire, révoquée après
 Le lot est développé avec trois agents GPT-6 Luna moyen selon la [coordination documentée](SUBAGENT-WORKFLOW.md). Les preuves de validation et les limites restantes sont enregistrées dans `_bmad-output/implementation-artifacts/rich-docx-preview-*`. La comparaison à Word, les performances sur la machine de référence et les essais manuels avec lecteur d'écran restent ouverts.
 
 Validation finale : 24 contrôles, 760 tests Rust Windows et 111 assertions navigateur ; inventaire de 856 fichiers inchangé. Revue : 11 remarques triées, corrections fonctionnelles appliquées, aucun défaut bloquant restant. La CI distante est vérifiée séparément après publication.
+
+Publication : commit source `4d225fcc155122a2552c62e7eb15253544c0cfbc` poussé sur `origin/main`. La [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38312315623) ne peut pas valider les jobs refusés avant attribution d’un runner, à cause de la facturation ou du plafond du compte. Les résultats locaux restent ceux du reçu ; aucun résultat Linux exécuté à distance n’est revendiqué.
