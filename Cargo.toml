@@ -33,6 +33,7 @@ members = [
     "tools/check-workspace",
     "tools/bench",
     "tools/ucd-gen",
+    "tools/fuzz",
 ]
 
 [workspace.package]

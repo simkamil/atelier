@@ -83,6 +83,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "atelier-fuzz"
+version = "0.1.0"
+dependencies = [
+ "atelier-compress",
+ "atelier-fmt-ooxml",
+ "atelier-font",
+ "atelier-geom",
+ "atelier-image",
+ "atelier-model",
+ "atelier-render",
+ "atelier-unicode",
+ "atelier-xml",
+ "atelier-zip",
+]
+
+[[package]]
 name = "atelier-geom"
 version = "0.1.0"
 
