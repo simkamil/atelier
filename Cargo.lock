@@ -59,6 +59,12 @@ version = "0.1.0"
 [[package]]
 name = "atelier-fmt-legacy"
 version = "0.1.0"
+dependencies = [
+ "atelier-cfb",
+ "atelier-model",
+ "atelier-text-model",
+ "atelier-unicode",
+]
 
 [[package]]
 name = "atelier-fmt-markdown"
