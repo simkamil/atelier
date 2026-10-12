@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Bounded TrueType `loca`/`glyf` outline decoding.
+//! Bounded glyph outline decoding: TrueType `loca`/`glyf` here, CFF in [`crate::cff`].
 //!
 //! Coordinates are returned in font units with Y pointing up. Hinting programs
 //! are validated and skipped; they are never interpreted.
@@ -49,12 +49,12 @@ impl core::fmt::Display for OutlineError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::MissingTable(t) => write!(f, "required font table is missing: {t}"),
-            Self::Unsupported(s) => write!(f, "unsupported TrueType outline feature: {s}"),
-            Self::Truncated => f.write_str("truncated TrueType outline data"),
-            Self::InvalidData(s) => write!(f, "invalid TrueType outline data: {s}"),
+            Self::Unsupported(s) => write!(f, "unsupported glyph outline feature: {s}"),
+            Self::Truncated => f.write_str("truncated glyph outline data"),
+            Self::InvalidData(s) => write!(f, "invalid glyph outline data: {s}"),
             Self::InvalidGlyph => f.write_str("glyph index is outside maxp.numGlyphs"),
             Self::Cycle => f.write_str("cyclic composite glyph reference"),
-            Self::LimitExceeded(s) => write!(f, "TrueType outline limit exceeded: {s}"),
+            Self::LimitExceeded(s) => write!(f, "glyph outline limit exceeded: {s}"),
             Self::Geometry => f.write_str("outline coordinates exceed geometry limits"),
         }
     }
@@ -153,7 +153,11 @@ impl<'a> FontFace<'a> {
                 return Err(OutlineError::Unsupported("CFF2 variable outlines"));
             }
             if let Some(cff) = self.table(*b"CFF ") {
-                return crate::cff::CffFont::parse(cff)?.outline(glyph_id, limits);
+                return crate::cff::CffFont::parse(cff)?.outline_with_units(
+                    glyph_id,
+                    limits,
+                    self.metrics().units_per_em,
+                );
             }
         }
         let loca = self
