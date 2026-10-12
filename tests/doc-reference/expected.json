@@ -1,0 +1,362 @@
+{
+  "schema_version": 1,
+  "generator": "tools/generate-doc-reference.py",
+  "provenance": "LibreOffice, filter 'MS Word 97', from flat ODT sources described in the generator",
+  "verification": "each .doc was converted back to text by LibreOffice and decoded by the generator's own CFB/FIB/piece-table reader; both agree with the description",
+  "files": {
+    "text-accents.doc": {
+      "size": 9728,
+      "sha256": "dca50e3388393c2e62c71b77921c9f9ca056ac2cf1a26e769dae2e80c89feace",
+      "fib": {
+        "n_fib": 257,
+        "ccp_text": 93,
+        "pieces": 1,
+        "table": "1Table"
+      },
+      "properties": {
+        "title": "Référence US-312 : accents",
+        "subject": "Texte accentué",
+        "author": "Atelier",
+        "keywords": "doc; accents; Unicode",
+        "comments": "Fichier de référence généré par LibreOffice.",
+        "last_author": "Révision",
+        "created_unix": 1709626830,
+        "modified_unix": 1709716891
+      },
+      "libreoffice_text_lines": [
+        "Café crème – « guillemets » … 5 € ™",
+        "Œuvre ÿ œ Ç à ü ñ ß",
+        "日本語 et ελληνικά",
+        "Émoji 😀 fin",
+        "Un\tdeux"
+      ],
+      "paragraphs": [
+        {
+          "text": "Café crème – « guillemets » … 5 € ™"
+        },
+        {
+          "text": "Œuvre ÿ œ Ç à ü ñ ß"
+        },
+        {
+          "text": "日本語 et ελληνικά"
+        },
+        {
+          "text": "Émoji 😀 fin"
+        },
+        {
+          "text": "Un\tdeux"
+        }
+      ]
+    },
+    "char-formatting.doc": {
+      "size": 9728,
+      "sha256": "201e8f2f601ad4d8ce46ca339aefb375ed8a9d229df996982226736eaedd379f",
+      "fib": {
+        "n_fib": 257,
+        "ccp_text": 109,
+        "pieces": 1,
+        "table": "1Table"
+      },
+      "properties": {
+        "title": "Mise en forme de caractère",
+        "author": "Atelier"
+      },
+      "libreoffice_text_lines": [
+        "Normal gras italique souligné double barré",
+        "E=mc2 H2O",
+        "rouge bleu-gris surligné",
+        "grand petit Arial Courier tout"
+      ],
+      "paragraphs": [
+        {
+          "text": "Normal gras italique souligné double barré",
+          "runs": [
+            {
+              "text": "gras",
+              "bold": true
+            },
+            {
+              "text": "italique",
+              "italic": true
+            },
+            {
+              "text": "souligné",
+              "underline": "single"
+            },
+            {
+              "text": "double",
+              "underline": "double"
+            },
+            {
+              "text": "barré",
+              "strike": true
+            }
+          ]
+        },
+        {
+          "text": "E=mc2 H2O",
+          "runs": [
+            {
+              "text": "2",
+              "vertical_align": "superscript"
+            },
+            {
+              "text": "2",
+              "vertical_align": "subscript"
+            }
+          ]
+        },
+        {
+          "text": "rouge bleu-gris surligné",
+          "runs": [
+            {
+              "text": "rouge",
+              "color": "FF0000"
+            },
+            {
+              "text": "bleu-gris",
+              "color": "336699"
+            },
+            {
+              "text": "surligné",
+              "highlight": "FFFF00"
+            }
+          ]
+        },
+        {
+          "text": "grand petit Arial Courier tout",
+          "runs": [
+            {
+              "text": "grand",
+              "size_half_points": 36
+            },
+            {
+              "text": "petit",
+              "size_half_points": 16
+            },
+            {
+              "text": "Arial",
+              "font": "Arial"
+            },
+            {
+              "text": "Courier",
+              "font": "Courier New"
+            },
+            {
+              "text": "tout",
+              "bold": true,
+              "italic": true,
+              "color": "00AA00",
+              "font": "Arial",
+              "underline": "single",
+              "size_half_points": 28
+            }
+          ]
+        }
+      ]
+    },
+    "para-formatting.doc": {
+      "size": 9728,
+      "sha256": "5b10383c93fcd3cbd550cd4ac3f8d1e689699dc07d9f4c15e23d5e5c9dc4ad16",
+      "fib": {
+        "n_fib": 257,
+        "ccp_text": 136,
+        "pieces": 1,
+        "table": "1Table"
+      },
+      "properties": {
+        "title": "Mise en forme de paragraphe",
+        "author": "Atelier"
+      },
+      "libreoffice_text_lines": [
+        "Gauche",
+        "Centré",
+        "Droite",
+        "Justifié",
+        "Retraits",
+        "Première ligne",
+        "Espacements",
+        "Interligne 150 %",
+        "Interligne exact 14 pt",
+        "Interligne au moins 20 pt",
+        "Fin"
+      ],
+      "paragraphs": [
+        {
+          "text": "Gauche",
+          "props": {
+            "alignment": "left"
+          }
+        },
+        {
+          "text": "Centré",
+          "props": {
+            "alignment": "center"
+          }
+        },
+        {
+          "text": "Droite",
+          "props": {
+            "alignment": "right"
+          }
+        },
+        {
+          "text": "Justifié",
+          "props": {
+            "alignment": "justify"
+          }
+        },
+        {
+          "text": "Retraits",
+          "props": {
+            "indent_left": 720,
+            "indent_right": 360,
+            "indent_first_line": -360
+          }
+        },
+        {
+          "text": "Première ligne",
+          "props": {
+            "indent_left": 0,
+            "indent_first_line": 567
+          }
+        },
+        {
+          "text": "Espacements",
+          "props": {
+            "space_before": 240,
+            "space_after": 120
+          }
+        },
+        {
+          "text": "Interligne 150 %",
+          "props": {
+            "line_spacing": {
+              "rule": "auto",
+              "value": 360
+            }
+          }
+        },
+        {
+          "text": "Interligne exact 14 pt",
+          "props": {
+            "line_spacing": {
+              "rule": "exact",
+              "value": 280
+            }
+          }
+        },
+        {
+          "text": "Interligne au moins 20 pt",
+          "props": {
+            "line_spacing": {
+              "rule": "at_least",
+              "value": 400
+            }
+          }
+        },
+        {
+          "text": "Fin"
+        }
+      ]
+    },
+    "styles.doc": {
+      "size": 9728,
+      "sha256": "87aaebea2abbc38f6c97465b0d997542f538bc77950d6ea2508bf85bbd915e61",
+      "fib": {
+        "n_fib": 257,
+        "ccp_text": 122,
+        "pieces": 1,
+        "table": "1Table"
+      },
+      "properties": {
+        "title": "Styles",
+        "author": "Atelier"
+      },
+      "libreoffice_text_lines": [
+        "Titre de niveau 1",
+        "Texte courant",
+        "Titre de niveau 2",
+        "Style personnalisé hérité",
+        "Avec emphase forte au milieu",
+        "Élément de liste"
+      ],
+      "paragraphs": [
+        {
+          "text": "Titre de niveau 1",
+          "style": "Heading1",
+          "style_effective": {
+            "id": "Heading1",
+            "paragraph": {
+              "space_before": 240,
+              "space_after": 120
+            },
+            "character": {
+              "bold": true,
+              "size_half_points": 40
+            }
+          }
+        },
+        {
+          "text": "Texte courant"
+        },
+        {
+          "text": "Titre de niveau 2",
+          "style": "Heading2",
+          "style_effective": {
+            "id": "Heading2",
+            "paragraph": {
+              "space_before": 200,
+              "space_after": 80
+            },
+            "character": {
+              "bold": true,
+              "italic": true,
+              "size_half_points": 32
+            }
+          }
+        },
+        {
+          "text": "Style personnalisé hérité",
+          "style": "MonStyle",
+          "style_effective": {
+            "id": "MonStyle",
+            "paragraph": {
+              "alignment": "center"
+            },
+            "character": {
+              "italic": true,
+              "color": "336699"
+            }
+          }
+        },
+        {
+          "text": "Avec emphase forte au milieu",
+          "runs": [
+            {
+              "text": "emphase forte",
+              "char_style": "Emphaseforte",
+              "bold": true,
+              "color": "CC0000"
+            }
+          ]
+        },
+        {
+          "text": "Élément de liste",
+          "style": "List",
+          "style_effective": {
+            "id": "List",
+            "paragraph": {
+              "line_spacing": {
+                "rule": "auto",
+                "value": 276
+              },
+              "space_after": 140
+            },
+            "character": {}
+          }
+        }
+      ]
+    }
+  }
+}

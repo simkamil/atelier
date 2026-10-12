@@ -5,5 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dependencies]
+atelier-cfb = { path = "../cfb" }
+atelier-text-model = { path = "../text-model" }
+atelier-model = { path = "../model" }
+atelier-unicode = { path = "../unicode" }
+
 [lints]
 workspace = true
