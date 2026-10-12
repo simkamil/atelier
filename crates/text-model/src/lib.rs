@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod rich;
+pub mod statistics;
 
 use atelier_model::{EditKind, History, HistoryError, Operation, Transaction, TransactionalState};
 use atelier_unicode::segmentation::{OffsetError, grapheme_boundaries};
