@@ -669,3 +669,30 @@ fn hostile_charstrings_are_bounded() {
     };
     let _ = subset_cff(&build(&wild), &[1]);
 }
+
+#[test]
+fn deprecated_dotsection_is_accepted_like_the_outline_reader() {
+    let glyph = cs(&[
+        N(0),
+        N(10),
+        O(HSTEM),
+        E(0),
+        N(5),
+        N(5),
+        O(RMOVETO),
+        N(1),
+        N(1),
+        O(RLINETO),
+        O(ENDCHAR),
+    ]);
+    let bytes = build(&Spec {
+        glyphs: vec![cs(&[O(ENDCHAR)]), glyph],
+        fds: vec![simple_fd()],
+        ..Spec::default()
+    });
+    // The outline reader renders this glyph, so the subsetter must not refuse it.
+    let font = CffFont::parse(&bytes).unwrap();
+    font.glyph(1, OutlineLimits::default()).unwrap();
+    let sub = subset_cff(&bytes, &[1]).unwrap();
+    same_glyphs(&bytes, &sub);
+}

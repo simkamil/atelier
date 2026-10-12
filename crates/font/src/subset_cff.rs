@@ -472,7 +472,8 @@ impl Walker<'_, '_> {
 
     fn escape(&mut self, e: u8) -> R<()> {
         match e {
-            34..=37 => self.stack.clear(),
+            // dotsection (deprecated no-op) and the flex operators.
+            0 | 34..=37 => self.stack.clear(),
             3 | 4 | 15 => {
                 let (b, a) = (self.pop()?, self.pop()?);
                 let r = match e {
