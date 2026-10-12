@@ -106,6 +106,16 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../data/engine/atelier_core_wasm.wasm"),
     },
     Resource {
+        path: "/text-drag-drop.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/text-drag-drop.mjs"),
+    },
+    Resource {
+        path: "/french-spacing.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/french-spacing.mjs"),
+    },
+    Resource {
         path: "/fonts/Carlito-Regular.ttf",
         mime: "font/ttf",
         bytes: include_bytes!("../../../data/fonts/carlito/Carlito-Regular.ttf"),

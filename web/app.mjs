@@ -10,6 +10,7 @@ const nodes = {
   editorStatus: byId("editor-status"), documentState: byId("document-state"), canvas: byId("document-canvas"), textRepresentation: byId("document-text"),
   scrollport: byId("document-scroll"), spacer: byId("page-spacer"),
   new: byId("new-document"), open: byId("open-document"), save: byId("save-document"), undo: byId("undo"), redo: byId("redo"),
+  frenchSpacing: byId("french-spacing"),
 };
 const FALLBACK = new Map(Object.entries({
   "status-a11y-ok": "Écho confirmé", "status-a11y-failed": "Échec", "status-ok": "Le moteur a renvoyé l’écho Ping.",
@@ -29,6 +30,7 @@ const FALLBACK = new Map(Object.entries({
   "toolbar-label": "Actions du document", "document-text-label": "Texte du document",
   "workspace-label": "Éditeur de texte", "pages-label": "Pages du document", "canvas-label": "Pages du document texte brut",
   "state-clean": "Enregistré", "state-dirty": "Modifications non enregistrées",
+  "options-label": "Options", "option-french-spacing": "Espaces françaises automatiques",
 }));
 
 document.addEventListener("securitypolicyviolation", event => {
@@ -96,6 +98,7 @@ async function start() {
     const blocked = !initialized || busy;
     nodes.new.disabled = blocked; nodes.open.disabled = blocked; nodes.save.disabled = blocked;
     nodes.undo.disabled = blocked || !state?.canUndo; nodes.redo.disabled = blocked || !state?.canRedo;
+    nodes.frenchSpacing.disabled = blocked;
   };
   const onBusy = value => { busy = value; updateControls(editor?.state); };
   const onState = state => {
@@ -126,8 +129,11 @@ async function start() {
         close() {},
       };
     }
+    try { nodes.frenchSpacing.checked = localStorage.getItem("atelier.frenchSpacing") !== "false"; }
+    catch { /* The option works for this session even without preference storage. */ }
     editor = createEditor({
       client, host, canvas: nodes.canvas, scrollport: nodes.scrollport, spacer: nodes.spacer,
+      frenchSpacing: nodes.frenchSpacing.checked,
       confirmDiscard: messages.get("confirm-discard"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
     });
     const state = await editor.initialize();
@@ -160,6 +166,12 @@ async function start() {
     });
     nodes.undo.addEventListener("click", () => { void editor.undo().catch(onError); });
     nodes.redo.addEventListener("click", () => { void editor.redo().catch(onError); });
+    nodes.frenchSpacing.addEventListener("change", () => {
+      editor.setFrenchSpacing(nodes.frenchSpacing.checked);
+      try { localStorage.setItem("atelier.frenchSpacing", String(nodes.frenchSpacing.checked)); }
+      catch { /* Keep the chosen behavior in memory if storage is unavailable. */ }
+      editor.focus();
+    });
     document.addEventListener("keydown", event => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
       const action = event.key.toLowerCase();

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { attachTextInput } from "./text-input.mjs";
 import { attachMouseSelection } from "./mouse-selection.mjs";
+import { attachTextDragDrop } from "./text-drag-drop.mjs";
+import { frenchSpacingEdit } from "./french-spacing.mjs";
 import { decodeDisplayList } from "./display-list.mjs";
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
@@ -19,7 +21,7 @@ function pageTop(renderer, pageIndex) {
 }
 
 /** Connects the editor protocol, ATDL renderer, hidden native text input and file host. */
-export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {} } = {}) {
+export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {} } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.open !== "function"
       || typeof host.save !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
   if (!canvas?.getBoundingClientRect || !scrollport?.addEventListener || !spacer?.style) throw new TypeError("Canvas, scrollport and spacer are required.");
@@ -34,6 +36,13 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   compositionPreview.setAttribute("aria-hidden", "true");
   compositionPreview.hidden = true;
   document.body.append(compositionPreview);
+  const dropMarker = document.createElement("span");
+  dropMarker.className = "text-drop-marker";
+  dropMarker.setAttribute("aria-hidden", "true");
+  dropMarker.hidden = true;
+  document.body.append(dropMarker);
+  let dropCaret = null;
+  let spacingEnabled = Boolean(frenchSpacing);
   let state;
   let decodedPages = [];
   let queue = Promise.resolve();
@@ -50,6 +59,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   let pendingTasks = 0;
   let extensionMode = false;
   let mouseSelection;
+  let textDragDrop;
   const input = attachTextInput({
     container: document.body,
     getSelection: () => state ? { anchor: state.anchor, focus: state.focus } : { anchor: 0, focus: 0 },
@@ -72,7 +82,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     busy = value;
     try { onBusy(value); } catch { /* UI callbacks are isolated */ }
     input.element.disabled = value;
-    if (value) mouseSelection?.cancel();
+    if (value) { mouseSelection?.cancel(); textDragDrop?.cancel(); }
   }
 
   function viewportRect(rect, page) {
@@ -111,6 +121,14 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     const compositionRects = composition ? [{ ...composition.caret, width: composition.width, height: 1 }] : [];
     renderer.setEditorOverlay({ selectionRects, caret, compositionRects, caretVisible });
     input.updateCaret(caretScreen());
+    dropMarker.hidden = !dropCaret;
+    if (dropCaret) {
+      const rect = viewportRect({ ...dropCaret, width: 2 }, dropCaret.page);
+      const bounds = canvas.getBoundingClientRect();
+      dropMarker.style.left = `${bounds.left + rect.x}px`;
+      dropMarker.style.top = `${bounds.top + rect.y}px`;
+      dropMarker.style.height = `${rect.height}px`;
+    }
   }
 
   function updateViewport() {
@@ -181,9 +199,10 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       }
       const response = decodeEditorResponse(message.type, message.payload);
       if (response.kind === "failed") throw new EditorError(response.code);
-      if ([EditorOpcode.Load, EditorOpcode.InsertText, EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward,
+    if ([EditorOpcode.Load, EditorOpcode.InsertText, EditorOpcode.DropText, EditorOpcode.ReplaceRange, EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward,
         EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo].includes(opcode)) extensionMode = false;
-      if (opcode !== EditorOpcode.Export) publish(response);
+      if (opcode === EditorOpcode.ProbePoint && response.kind !== "point") throw new EditorError("EDITOR_INVALID_RESPONSE");
+      if (opcode !== EditorOpcode.Export && opcode !== EditorOpcode.ProbePoint) publish(response);
       return response;
   }
 
@@ -198,6 +217,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
 
   async function applyInput(command) {
     if (!state || busy) return;
+    textDragDrop?.cancel();
     if (command.type === "extensionMode") { extensionMode = command.enabled; return; }
     if (command.type === "selectAll") {
       extensionMode = false;
@@ -220,7 +240,11 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
             && committed.selection && Number.isInteger(committed.selection.anchor) && Number.isInteger(committed.selection.focus)) {
           await dispatch(EditorOpcode.SetSelection, committed.selection);
         }
-        return dispatch(EditorOpcode.InsertText, { text: command.text, nowMs: nowMs() });
+        const collapsed = state.anchor === state.focus;
+        const raw = await dispatch(EditorOpcode.InsertText, { text: command.text, nowMs: nowMs() });
+        const edit = collapsed ? frenchSpacingEdit(raw, command.text, command.inputType, spacingEnabled) : null;
+        if (!edit) return raw;
+        return dispatch(EditorOpcode.ReplaceRange, { ...edit, revision: raw.revision, nowMs: nowMs() });
       });
     }
     if (command.type === "delete") {
@@ -257,6 +281,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     if (preview.phase === "start") {
       compositionStart = { selection: preview.selection, revision: state?.revision };
       mouseSelection?.cancel();
+      textDragDrop?.cancel();
     }
     const caret = preview.caret;
     const bounds = canvas.getBoundingClientRect();
@@ -269,13 +294,46 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     repaintOverlay();
   }
 
+  const getGeometry = () => ({
+    pages: decodedPages.map(({ page }) => ({ minX: page.bounds.min.x, minY: page.bounds.min.y,
+      width: page.bounds.width, height: page.bounds.height })),
+    zoom: pageZoom, pageGap: renderer.pageGap,
+  });
+  textDragDrop = attachTextDragDrop({
+    canvas, scrollport, getGeometry,
+    getSelectionSnapshot: () => state ? { text: state.text, anchor: state.anchor,
+      focus: state.focus, revision: state.revision } : null,
+    isPointInSelection: (x, y) => {
+      if (!state) return false;
+      const bounds = canvas.getBoundingClientRect();
+      return state.selectionRects.some(rect => {
+        const r = viewportRect(rect, rect.page);
+        return x >= bounds.left + r.x && x <= bounds.left + r.x + r.width
+          && y >= bounds.top + r.y && y <= bounds.top + r.y + r.height;
+      });
+    },
+    isEnabled: () => Boolean(state && !busy && !compositionStart && !disposed),
+    probePoint: point => enqueueTask(() => {
+      if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
+      return dispatch(EditorOpcode.ProbePoint, point);
+    }),
+    onDrop: drop => enqueueTask(() => {
+      if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
+      return dispatch(EditorOpcode.DropText, { ...drop, text: drop.kind === "external" ? drop.text : "",
+        sourceAnchor: drop.kind === "external" ? 0 : drop.sourceAnchor,
+        sourceFocus: drop.kind === "external" ? 0 : drop.sourceFocus, nowMs: nowMs() });
+    }),
+    onClick: point => enqueueTask(() => {
+      if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
+      if (point.revision !== state.revision) throw new EditorError("EDITOR_STALE_EDIT");
+      return dispatch(EditorOpcode.SetSelection, { anchor: point.offset, focus: point.offset });
+    }),
+    onDragState: caret => { dropCaret = caret; repaintOverlay(); },
+    focus: () => input.focus(), onError: reportError,
+  });
   mouseSelection = attachMouseSelection({
     canvas, scrollport,
-    getGeometry: () => ({
-      pages: decodedPages.map(({ page }) => ({ minX: page.bounds.min.x, minY: page.bounds.min.y,
-        width: page.bounds.width, height: page.bounds.height })),
-      zoom: pageZoom, pageGap: renderer.pageGap,
-    }),
+    getGeometry,
     getSelection: () => ({ anchor: state?.anchor ?? 0, focus: state?.focus ?? 0 }),
     isEnabled: () => Boolean(state && !busy && !compositionStart && !disposed),
     selectPoint: values => enqueueTask(async () => {
@@ -295,6 +353,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     get busy() { return busy; },
     get element() { return input.element; },
     focus() { return input.focus(); },
+    setFrenchSpacing(enabled) { spacingEnabled = Boolean(enabled); },
     setZoom(zoom) { if (!Number.isFinite(zoom) || zoom < 0.5 || zoom > 2) throw new RangeError("zoom is outside the supported range"); pageZoom = zoom; if (state) publish(state); },
     async initialize() { return enqueue(EditorOpcode.State); },
     getState() { return state; },
@@ -348,9 +407,11 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       if (viewportFrame) cancelAnimationFrame(viewportFrame);
       scrollport.removeEventListener("scroll", updateViewport);
       mouseSelection.dispose();
+      textDragDrop.dispose();
       globalThis.removeEventListener?.("resize", scheduleViewport);
       input.dispose(); renderer.destroy();
       compositionPreview.remove();
+      dropMarker.remove();
     },
   });
 }

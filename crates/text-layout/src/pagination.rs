@@ -173,8 +173,24 @@ pub fn paginate(
 /// paragraph boundary and stopped by a caller once that exact machine state
 /// becomes reusable. The preflight remains whole-document and is reported
 /// separately from the actually executed stream.
-pub(crate) fn paginate_recording(
-    layouts: &[ParagraphLayout],
+pub(crate) trait ParagraphLayoutRef {
+    fn paragraph_layout(&self) -> &ParagraphLayout;
+}
+
+impl ParagraphLayoutRef for ParagraphLayout {
+    fn paragraph_layout(&self) -> &ParagraphLayout {
+        self
+    }
+}
+
+impl ParagraphLayoutRef for &ParagraphLayout {
+    fn paragraph_layout(&self) -> &ParagraphLayout {
+        self
+    }
+}
+
+pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
+    layouts: &[L],
     rules: &[ParagraphRules],
     options: PaginationOptions,
     record_checkpoints: bool,
@@ -200,6 +216,7 @@ pub(crate) fn paginate_recording(
     let mut counts = Vec::with_capacity(layouts.len());
     let mut prefixes: Vec<Vec<i64>> = Vec::with_capacity(layouts.len());
     for (paragraph_index, (layout, rule)) in layouts.iter().zip(rules).enumerate() {
+        let layout = layout.paragraph_layout();
         work = add_work(work, 1, options.max_work)?;
         if rule.space_before < 0 || rule.space_after < 0 {
             return Err(PaginationError::InvalidInput(
@@ -361,6 +378,7 @@ pub(crate) fn paginate_recording(
         .enumerate()
         .skip(source_start)
     {
+        let layout = layout.paragraph_layout();
         work = add_work(work, 1, options.max_work)?;
         if record_checkpoints || stop_at.is_some() {
             let checkpoint = PaginationCheckpoint {

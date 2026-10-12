@@ -67,3 +67,10 @@ d’interface inférieure à 16 ms. La validation de cette cible nécessite une
 mesure de frappe réelle sur la machine de référence §6.16.
 
 Mesure de ce lot : 1912.351 ms pour le premier calcul, 268.214 ms pour l’édition locale, un paragraphe reshaped, 299 réutilisés, 3 pages recalculées et 297 réutilisées. Le chronométrage porte sur `update` sans clone externe du résultat. Prévalidation : 16 500 unités; flux exécuté : 217. Voir les [valeurs et limites](../_bmad-output/implementation-artifacts/rich-incremental-borders-benchmark.json) et la [machine](../_bmad-output/implementation-artifacts/rich-incremental-borders-host.json). La cible de 16 ms reste non atteinte sur cet hôte. US-213 reste partielle pour la performance et le raccordement UI riche.
+# Optimisation du 2026-10-12
+
+La session évite maintenant la copie profonde du résultat lors d'une mise à jour identique, les doubles copies des layouts dans le cache et les vecteurs de géométrie copiés uniquement pour comparaison. La pagination interne accepte des layouts empruntés; l'API publique `paginate` est conservée. Les échecs restent transactionnels et les tests comparent toujours le résultat au recalcul intégral.
+
+Sur le même hôte i9-13900KF, les deux séries release de sept mesures donnent une médiane de **71,778 à 73,641 ms** pour une édition locale de 300 pages × 52 lignes, et **0,033 à 0,037 ms** pour une mise à jour identique. La référence avant optimisation sur le même harness donne 413,422 ms de médiane locale, avec dispersion (minimum 236,264 ms); l'ancien relevé unitaire était 268,214 ms. Les mesures détaillées sont dans [le reçu](../_bmad-output/implementation-artifacts/editor-incremental-perf-benchmark.json).
+
+Les compteurs restent 1 paragraphe remodelé/299 réutilisés, 3 pages recalculées/297 réutilisées, redémarrage 149, préflight entier 16 500 et flux réellement exécuté 217. Ces chiffres CPU ne valident pas les 16 ms de saisie UI sur le PC de référence; ce critère reste ouvert.

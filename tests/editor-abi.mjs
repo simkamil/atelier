@@ -35,6 +35,43 @@ function command(opcode, values) {
   assert.equal(message.requestId, requestId - 1n);
   return decodeEditorResponse(message.type, message.payload);
 }
+function expectFailure(payload, code, name) {
+  const result = invoke(encodeMessage({ type: MessageType.Editor, requestId: requestId++, payload }));
+  assert.equal(result.status, 0, name);
+  const message = decodeMessage(result.frame, "event");
+  const failure = decodeEditorResponse(message.type, message.payload);
+  assert.equal(failure.kind, "failed", name);
+  assert.equal(failure.code, code, name);
+}
+
+const probeCommand = encodeEditorCommand(EditorOpcode.ProbePoint, { page: 2, x: 12.5, y: 34.25 });
+assert.equal(probeCommand.length, 28, "ProbePoint uses a 20-byte body");
+assert.equal(new DataView(probeCommand.buffer).getUint16(6, true), 15);
+assert.equal(new DataView(probeCommand.buffer).getUint32(8, true), 2);
+assert.equal(new DataView(probeCommand.buffer).getFloat64(12, true), 12.5);
+assert.equal(new DataView(probeCommand.buffer).getFloat64(20, true), 34.25);
+
+const moveCommand = encodeEditorCommand(EditorOpcode.DropText, {
+  revision: 7n, nowMs: 8n, sourceAnchor: 9, sourceFocus: 10, target: 11, kind: "move", text: "",
+});
+assert.equal(moveCommand.length, 40, "DropText uses a 32-byte prefix");
+assert.equal(moveCommand[36], 0, "move kind");
+assert.deepEqual([...moveCommand.subarray(37)], [0, 0, 0], "reserved bytes are zero");
+const externalCommand = encodeEditorCommand(EditorOpcode.DropText, {
+  revision: 7n, nowMs: 8n, sourceAnchor: 0, sourceFocus: 0, target: 11, kind: "external", text: "é",
+});
+assert.equal(externalCommand.length, 42, "external text is UTF-8 encoded after the prefix");
+assert.equal(externalCommand[36], 2, "external kind");
+assert.deepEqual([...externalCommand.subarray(40)], [0xc3, 0xa9]);
+
+const replaceCommand = encodeEditorCommand(EditorOpcode.ReplaceRange, {
+  revision: 12n, nowMs: 13n, start: 14, end: 15, text: "\u00a0:",
+});
+assert.equal(replaceCommand.length, 35, "ReplaceRange uses a 24-byte prefix plus UTF-8 text");
+assert.equal(new DataView(replaceCommand.buffer).getBigUint64(8, true), 12n);
+assert.equal(new DataView(replaceCommand.buffer).getUint32(24, true), 14);
+assert.equal(new DataView(replaceCommand.buffer).getUint32(28, true), 15);
+assert.deepEqual([...replaceCommand.subarray(32)], [0xc2, 0xa0, 0x3a]);
 
 const original = new TextEncoder().encode("\ufeffseed\r\né");
 const loaded = command(EditorOpcode.Load, { bytes: original });
@@ -106,4 +143,116 @@ for (const [name, mutate, expected] of invalidPoints) {
   assert.deepEqual(command(EditorOpcode.State), stableState, `${name}: state unchanged`);
   assert.deepEqual(command(EditorOpcode.Export), stableExport, `${name}: bytes/revision unchanged`);
 }
-console.log(`Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, envelope and ${invalidPoints.length} atomic SelectPoint rejections passed.`);
+
+{
+  command(EditorOpcode.Load, { bytes: new TextEncoder().encode("abc") });
+  command(EditorOpcode.SetSelection, { anchor: 3, focus: 2 });
+  command(EditorOpcode.InsertText, { text: "!", nowMs: 1n });
+  command(EditorOpcode.SetSelection, { anchor: 2, focus: 1 });
+  const beforeProbe = command(EditorOpcode.State);
+  const probe = command(EditorOpcode.ProbePoint, { page: 0, x: 54, y: 65 });
+  assert.equal(probe.kind, "point");
+  assert.equal(probe.revision, beforeProbe.revision);
+  const afterProbe = command(EditorOpcode.State);
+  assert.deepEqual(afterProbe, beforeProbe, "ProbePoint preserves revision, selection, and history flags");
+  const undone = command(EditorOpcode.Undo);
+  assert.equal(undone.text, "abc", "Undo after ProbePoint still reaches the prior edit");
+  assert.equal(undone.anchor, 3);
+  assert.equal(undone.focus, 2);
+}
+
+{
+  const originalText = "\ufeffAé\r\nBC";
+  command(EditorOpcode.Load, { bytes: new TextEncoder().encode(originalText) });
+  command(EditorOpcode.SetSelection, { anchor: 6, focus: 5 });
+  const originalState = command(EditorOpcode.State);
+  const originalExport = command(EditorOpcode.Export);
+  const moved = command(EditorOpcode.DropText, {
+    revision: originalState.revision, nowMs: 2n, sourceAnchor: 6, sourceFocus: 5,
+    target: 0, kind: "move", text: "",
+  });
+  assert.equal(moved.text, "BAé\r\nC");
+  const exportAfterMove = command(EditorOpcode.Export);
+  assert.deepEqual(exportAfterMove.bytes, new TextEncoder().encode("\ufeffBAé\r\nC"));
+  const undoMove = command(EditorOpcode.Undo);
+  assert.equal(undoMove.text, "Aé\r\nBC");
+  assert.equal(undoMove.anchor, 6);
+  assert.equal(undoMove.focus, 5);
+  const redoMove = command(EditorOpcode.Redo);
+  assert.equal(redoMove.text, "BAé\r\nC");
+  assert.notDeepEqual(command(EditorOpcode.Export).bytes, originalExport.bytes);
+}
+
+{
+  command(EditorOpcode.Load, { bytes: new TextEncoder().encode("mot") });
+  command(EditorOpcode.SetSelection, { anchor: 3, focus: 3 });
+  const raw = command(EditorOpcode.InsertText, { text: ":", nowMs: 10n });
+  assert.equal(raw.text, "mot:");
+  const spaced = command(EditorOpcode.ReplaceRange, {
+    revision: raw.revision, nowMs: 11n, start: 3, end: 4, text: "\u00a0:",
+  });
+  assert.equal(spaced.text, "mot\u00a0:");
+  assert.equal(command(EditorOpcode.Undo).text, "mot:", "one Undo restores the raw punctuation");
+  assert.equal(command(EditorOpcode.Redo).text, "mot\u00a0:", "one Redo reapplies spacing");
+}
+
+{
+  command(EditorOpcode.Load, { bytes: new TextEncoder().encode("abc") });
+  command(EditorOpcode.SetSelection, { anchor: 1, focus: 2 });
+  const stableState = command(EditorOpcode.State);
+  const stableExport = command(EditorOpcode.Export);
+  const assertStillStable = name => {
+    assert.deepEqual(command(EditorOpcode.State), stableState, `${name}: revision/selection/history unchanged`);
+    assert.deepEqual(command(EditorOpcode.Export), stableExport, `${name}: exported bytes unchanged`);
+  };
+
+  expectFailure(encodeEditorCommand(EditorOpcode.ReplaceRange, {
+    revision: stableState.revision + 1n, nowMs: 1n, start: 0, end: 1, text: "x",
+  }), "EDITOR_STALE_EDIT", "stale replacement revision");
+  assertStillStable("stale replacement revision");
+
+  for (const [name, byte, value] of [["invalid drop kind", 36, 3], ["nonzero drop reserved byte", 37, 1]]) {
+    const payload = encodeEditorCommand(EditorOpcode.DropText, {
+      revision: stableState.revision, nowMs: 1n, sourceAnchor: 1, sourceFocus: 2,
+      target: 0, kind: "move", text: "",
+    });
+    payload[byte] = value;
+    expectFailure(payload, "EDITOR_INVALID_COMMAND", name);
+    assertStillStable(name);
+  }
+
+  const invalidUtf8 = encodeEditorCommand(EditorOpcode.ReplaceRange, {
+    revision: stableState.revision, nowMs: 1n, start: 0, end: 1, text: "x",
+  });
+  invalidUtf8[32] = 0xff;
+  expectFailure(invalidUtf8, "EDITOR_INVALID_UTF8", "invalid replacement UTF-8");
+  assertStillStable("invalid replacement UTF-8");
+
+  expectFailure(encodeEditorCommand(EditorOpcode.ReplaceRange, {
+    revision: stableState.revision, nowMs: 1n, start: 99, end: 100, text: "x",
+  }), "EDITOR_INVALID_SELECTION", "invalid replacement offset");
+  assertStillStable("invalid replacement offset");
+
+  const truncated = encodeEditorCommand(EditorOpcode.ReplaceRange, {
+    revision: stableState.revision, nowMs: 1n, start: 0, end: 0, text: "",
+  }).slice(0, -1);
+  expectFailure(truncated, "EDITOR_INVALID_COMMAND", "truncated replacement payload");
+  assertStillStable("truncated replacement payload");
+}
+
+{
+  const malformedAtpt = new Uint8Array(48);
+  malformedAtpt.set(new TextEncoder().encode("ATPT"));
+  const view = new DataView(malformedAtpt.buffer);
+  view.setUint16(4, 1, true);
+  view.setFloat64(24, -1, true);
+  view.setFloat64(32, 0, true);
+  view.setFloat64(40, 14, true);
+  assert.throws(
+    () => decodeEditorResponse(0x8020, malformedAtpt),
+    error => error.code === "INVALID_RESPONSE",
+    "malformed ATPT geometry is rejected",
+  );
+}
+
+console.log(`Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, ProbePoint/DropText/ReplaceRange and ${invalidPoints.length} atomic SelectPoint rejections passed.`);

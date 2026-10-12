@@ -29,6 +29,10 @@
           <button id="undo" type="button" data-i18n="action-undo" disabled>Annuler</button>
           <button id="redo" type="button" data-i18n="action-redo" disabled>Rétablir</button>
         </div>
+        <details class="editor-options">
+          <summary data-i18n="options-label">Options</summary>
+          <label><input id="french-spacing" type="checkbox" checked disabled><span data-i18n="option-french-spacing">Espaces françaises automatiques</span></label>
+        </details>
         <span id="editor-status" class="editor-status" role="status" aria-live="polite" data-i18n="status-loading">Initialisation du document…</span>
       </nav>
       <section class="workspace" aria-label="Éditeur de texte" data-i18n-aria-label="workspace-label">

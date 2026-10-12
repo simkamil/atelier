@@ -115,3 +115,8 @@ Le [collecteur de lignes Word](text-layout-reference/README.md) nécessite Word
 desktop. Sa collecte reste non exécutée ici; aucun golden Word ni taux ≥95 %
 n’est simulé. US-210 demeure partielle. Les tests numériques et les références
 HarfBuzz existantes ne remplacent pas cet oracle indépendant de mise en page.
+# Glisser-déposer et espaces françaises — 2026-10-12
+
+`node --test tests/text-drag-drop.mjs tests/french-spacing.mjs` couvre les contrôleurs purs, positions UTF-8, événements périmés, lecture synchrone du DataTransfer, marqueurs, modificateurs et corrections typographiques. `cargo test --locked --offline -p atelier-text-model -p atelier-core-wasm` couvre les transactions atomiques et le protocole; les cas supplémentaires sont dans leurs fichiers `tests/drag_spacing.rs`.
+
+`node tests/run-editor-browser.mjs` vérifie déplacements/copies/dépôts, export exact, Annuler/Rétablir, guillemets, ponctuation et l'option réelle dans le navigateur avec Worker/WASM. Les événements de dépôt et pointeur sont synthétiques: l'essai natif interapplication Windows reste une validation manuelle distincte. `node tests/editor-abi.mjs` exerce directement les commandes sur le WASM optimisé et leurs refus sans mutation.

@@ -661,9 +661,11 @@ Réf : F-TXT-012, §6.5 · Taille : L · Dépend de : US-210
 - [x] Le résultat incrémental est identique à une mise en page complète (vérifié par test).
 
 
-API validée : [mise en page incrémentale](docs/us-213-incremental-layout.md), cache sémantique et reprise/arrêt réels; résultats égaux au calcul complet, y compris après mutations de polices et changements structurels. **US partielle** : benchmark CPU 300 pages, édition locale 268.214 ms sur i9-13900KF/64 Gio, 3 pages recalculées/297 réutilisées; cible de frappe <16 ms non atteinte ni certifiée, UI riche non raccordée.
+API validée : [mise en page incrémentale](docs/us-213-incremental-layout.md), cache sémantique et reprise/arrêt réels; résultats égaux au calcul complet, y compris après mutations de polices et changements structurels. **US partielle** : benchmark CPU 300 pages optimisé, médianes locales 71.778–73.641 ms sur deux séries de sept mesures i9-13900KF/64 Gio (ancien lot : 268.214 ms), 3 pages recalculées/297 réutilisées; cible de frappe <16 ms non atteinte ni certifiée, UI riche non raccordée.
 
 Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-incremental-borders-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-incremental-borders-matrix.json).
+
+Optimisation validée : clones de cache supprimés, mise à jour identique 0.033–0.037 ms et préflight global conservé. [Mesures](_bmad-output/implementation-artifacts/editor-incremental-perf-benchmark.json), [validation du lot](_bmad-output/implementation-artifacts/editor-drag-spacing-perf-validation.json).
 
 Réf : §6.5, §6.16 · Taille : L · Dépend de : US-212
 
@@ -734,9 +736,13 @@ Réf : F-TXT-002 · Taille : S · Dépend de : US-221
 
 #### US-224 — Glisser-déposer du texte
 *En tant qu'*utilisateur, *je veux* déplacer du texte en le faisant glisser *afin de* réorganiser mon document.
-- [ ] Glisser une sélection la déplace ; avec Ctrl, la copie ; indicateur d'insertion visible.
-- [ ] Une seule transaction annulable.
+- [x] Glisser une sélection la déplace ; avec Ctrl, la copie ; indicateur d'insertion visible.
+- [x] Une seule transaction annulable.
 - [ ] Déposer du texte provenant d'une autre application l'insère.
+
+Tranche TXT validée : déplacement/copie avec Ctrl, indicateur et transaction unique annulable; voir [contrat](docs/us-224-text-drag-drop.md). Dépôt externe `text/plain` testé sur le vrai WASM avec événements synthétiques; essai natif interapplication Windows encore requis, donc US partielle.
+
+Preuve du lot : 749 tests workspace Windows, 78 tests text-layout release, 82 assertions navigateur et 23 contrôles dans le [reçu](_bmad-output/implementation-artifacts/editor-drag-spacing-perf-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/editor-drag-spacing-perf-matrix.json).
 
 Réf : F-TXT-003 · Taille : M · Dépend de : US-222
 
@@ -769,8 +775,12 @@ Réf : F-TXT-004 · Taille : S · Dépend de : US-104, US-220
 
 #### US-228 — Espaces insécables automatiques
 *En tant qu'*utilisateur, *je veux* que les espaces insécables soient insérés automatiquement selon la typographie française *afin d'éviter* une ponctuation isolée en début de ligne.
-- [ ] Espace insécable avant `:` et dans les guillemets « » ; espace fine insécable avant `; ! ?`.
-- [ ] Désactivable dans les options ; Ctrl+Z juste après annule uniquement la substitution.
+- [x] Espace insécable avant `:` et dans les guillemets « » ; espace fine insécable avant `; ! ?`.
+- [x] Désactivable dans les options ; Ctrl+Z juste après annule uniquement la substitution.
+
+Validée dans le démonstrateur TXT : règles françaises, option activée par défaut, préférence locale et substitution annulable séparément; voir [contrat](docs/us-228-french-spacing.md). Collage/composition/remplacement restent exacts. Le raccordement à la saisie riche US-220 reste séparé.
+
+Preuve du lot : 749 tests workspace Windows, 78 tests text-layout release, 82 assertions navigateur et 23 contrôles dans le [reçu](_bmad-output/implementation-artifacts/editor-drag-spacing-perf-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/editor-drag-spacing-perf-matrix.json).
 
 Réf : F-TXT-004 · Taille : S · Dépend de : US-220
 

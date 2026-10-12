@@ -98,10 +98,6 @@ struct CachedParagraph {
     id: NodeId,
     paragraph: Paragraph,
     properties: ResolvedProperties,
-    layout_options: LayoutOptions,
-    tabs: TabSettings,
-    font_revision: u64,
-    layout: TabLayout,
     rules: ParagraphRules,
 }
 
@@ -142,9 +138,13 @@ impl IncrementalSession {
 
         let revision = fonts.cache_revision();
         let previous_options = self.options.as_ref();
-        let old_ids: Vec<_> = self.cache.iter().map(|entry| entry.id).collect();
-        let new_ids: Vec<_> = inputs.iter().map(|input| input.id).collect();
-        let structure_changed = self.result.is_some() && old_ids != new_ids;
+        let structure_changed = self.result.is_some()
+            && (self.cache.len() != inputs.len()
+                || self
+                    .cache
+                    .iter()
+                    .zip(inputs)
+                    .any(|(old, input)| old.id != input.id));
         let layout_options_changed =
             previous_options.is_some_and(|old| old.layout != options.layout);
         let tabs_changed = previous_options.is_some_and(|old| old.tabs != options.tabs);
@@ -152,7 +152,7 @@ impl IncrementalSession {
             previous_options.is_some_and(|old| old.pagination != options.pagination);
         let font_changed = self.font_revision.is_some_and(|old| old != revision);
 
-        if self.result.is_some()
+        let result_is_reusable = self.result.is_some()
             && !structure_changed
             && !layout_options_changed
             && !tabs_changed
@@ -163,19 +163,27 @@ impl IncrementalSession {
                     && old.paragraph == *input.paragraph
                     && old.properties == *input.properties
                     && old.rules == *input.rules
-            })
-        {
-            let mut result = self.result.as_ref().expect("result checked above").clone();
-            result.stats = IncrementalStats {
-                paragraphs_reused: inputs.len(),
-                pages_reused: result.pagination.pages.len(),
-                ..IncrementalStats::default()
+            });
+        if result_is_reusable {
+            if let Some(result) = self.result.as_mut() {
+                result.stats = IncrementalStats {
+                    paragraphs_reused: inputs.len(),
+                    pages_reused: result.pagination.pages.len(),
+                    ..IncrementalStats::default()
+                };
+            }
+            return match self.result.as_ref() {
+                Some(result) => Ok(result),
+                None => unreachable!("reusable result was checked above"),
             };
-            self.result = Some(result);
-            return Ok(self.result.as_ref().expect("result published"));
         }
 
-        let old_cache: BTreeMap<_, _> = self.cache.iter().map(|entry| (entry.id, entry)).collect();
+        let old_cache: BTreeMap<_, _> = self
+            .cache
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry.id, (index, entry)))
+            .collect();
         let mut layouts = Vec::with_capacity(inputs.len());
         let mut new_cache = Vec::with_capacity(inputs.len());
         let mut reshaped = 0usize;
@@ -185,17 +193,19 @@ impl IncrementalSession {
             let can_reuse = !layout_options_changed
                 && !tabs_changed
                 && !font_changed
-                && previous.is_some_and(|old| {
+                && previous.is_some_and(|(_, old)| {
                     old.id == input.id
                         && old.paragraph == *input.paragraph
                         && old.properties == *input.properties
-                        && old.layout_options == options.layout
-                        && old.tabs == options.tabs
-                        && old.font_revision == revision
                 });
             let layout = if can_reuse {
                 layout_reused += 1;
-                previous.expect("reusable entry exists").layout.clone()
+                let (old_index, _) = previous.expect("reusable entry exists");
+                self.result
+                    .as_ref()
+                    .expect("reusable cache belongs to a published result")
+                    .layouts[old_index]
+                    .clone()
             } else {
                 reshaped += 1;
                 layout_paragraph_with_tabs(
@@ -210,52 +220,36 @@ impl IncrementalSession {
                 id: input.id,
                 paragraph: input.paragraph.clone(),
                 properties: input.properties.clone(),
-                layout_options: options.layout,
-                tabs: options.tabs.clone(),
-                font_revision: revision,
-                layout: layout.clone(),
                 rules: input.rules.clone(),
             });
             layouts.push(layout);
         }
 
         let rules: Vec<_> = inputs.iter().map(|input| input.rules.clone()).collect();
-        let pagination_layouts: Vec<ParagraphLayout> =
-            layouts.iter().map(|layout| layout.layout.clone()).collect();
+        let pagination_layouts: Vec<&ParagraphLayout> =
+            layouts.iter().map(|layout| &layout.layout).collect();
         let old_result = self.result.as_ref();
-        let old_pagination_layouts: Vec<ParagraphLayout> = old_result
-            .map(|result| {
-                result
-                    .layouts
+        let (first_changed, last_changed) = match old_result {
+            Some(old_result) if !structure_changed => {
+                let first_changed = pagination_layouts
                     .iter()
-                    .map(|layout| layout.layout.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let old_rules: Vec<_> = self.cache.iter().map(|entry| entry.rules.clone()).collect();
-        let first_changed = if structure_changed || old_result.is_none() {
-            None
-        } else {
-            pagination_layouts
-                .iter()
-                .zip(&old_pagination_layouts)
-                .zip(&rules)
-                .zip(&old_rules)
-                .position(|(((new_layout, old_layout), new_rule), old_rule)| {
-                    new_layout != old_layout || new_rule != old_rule
-                })
-        };
-        let last_changed = if structure_changed || old_result.is_none() {
-            None
-        } else {
-            pagination_layouts
-                .iter()
-                .zip(&old_pagination_layouts)
-                .zip(&rules)
-                .zip(&old_rules)
-                .rposition(|(((new_layout, old_layout), new_rule), old_rule)| {
-                    new_layout != old_layout || new_rule != old_rule
-                })
+                    .zip(&old_result.layouts)
+                    .zip(&rules)
+                    .zip(&self.cache)
+                    .position(|(((new_layout, old_layout), new_rule), old_entry)| {
+                        *new_layout != &old_layout.layout || *new_rule != old_entry.rules
+                    });
+                let last_changed = pagination_layouts
+                    .iter()
+                    .zip(&old_result.layouts)
+                    .zip(&rules)
+                    .zip(&self.cache)
+                    .rposition(|(((new_layout, old_layout), new_rule), old_entry)| {
+                        *new_layout != &old_layout.layout || *new_rule != old_entry.rules
+                    });
+                (first_changed, last_changed)
+            }
+            _ => (None, None),
         };
 
         let fallback_reason = if old_result.is_none() {
@@ -296,8 +290,8 @@ impl IncrementalSession {
                     for index in (0..inputs.len()).rev() {
                         suffix_equal[index] = index + 1 < suffix_equal.len()
                             && suffix_equal[index + 1]
-                            && pagination_layouts[index] == old_pagination_layouts[index]
-                            && rules[index] == old_rules[index];
+                            && pagination_layouts[index] == &old_result.layouts[index].layout
+                            && rules[index] == self.cache[index].rules;
                     }
                     let should_stop = |candidate: &PaginationCheckpoint, current: &Pagination| {
                         candidate.source_index > last

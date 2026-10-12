@@ -119,6 +119,9 @@ fn identical_update_reuses_layouts_and_pagination_without_stream_work() {
     assert_eq!(second.stats.pages_recalculated, 0);
     assert_eq!(second.stats.pages_reused, first.pagination.pages.len());
     assert_eq!(second.stats.pagination_stream_work, 0);
+    assert_eq!(second.stats.pagination_preflight_work, 0);
+    assert_eq!(second.stats.restart_paragraph, None);
+    assert_eq!(second.stats.fallback_reason, None);
     assert_eq!(second.pagination, first.pagination);
 }
 

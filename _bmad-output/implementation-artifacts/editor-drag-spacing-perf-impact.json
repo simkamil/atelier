@@ -1,0 +1,523 @@
+{
+  "baseline": "76b1ab0771ea32c8edf72a39e0a2cbb26c3c8997",
+  "expanded_terms": [
+    "editor",
+    "selection",
+    "history",
+    "incremental",
+    "pagination",
+    "text"
+  ],
+  "matching_nodes": 268,
+  "focus": [
+    {
+      "id": "web_editor_createeditor",
+      "label": "createEditor()",
+      "source_file": "web/editor.mjs",
+      "neighbors": [
+        {
+          "id": "web_display_list_decodedisplaylist",
+          "label": "decodeDisplayList()",
+          "source_file": "web/display-list.mjs"
+        },
+        {
+          "id": "web_editor_protocol_encodeeditorcommand",
+          "label": "encodeEditorCommand()",
+          "source_file": "web/editor-protocol.mjs"
+        },
+        {
+          "id": "web_wasm_protocol_encodemessage",
+          "label": "encodeMessage()",
+          "source_file": "web/wasm-protocol.mjs"
+        },
+        {
+          "id": "web_wasm_protocol_decodemessage",
+          "label": "decodeMessage()",
+          "source_file": "web/wasm-protocol.mjs"
+        },
+        {
+          "id": "web_editor_protocol_decodeeditorresponse",
+          "label": "decodeEditorResponse()",
+          "source_file": "web/editor-protocol.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection",
+          "label": "attachMouseSelection()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_editor_editorerror",
+          "label": "EditorError",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_canvas_renderer_canvasrenderer",
+          "label": "CanvasRenderer",
+          "source_file": "web/canvas-renderer.mjs"
+        },
+        {
+          "id": "web_text_input_attachtextinput",
+          "label": "attachTextInput()",
+          "source_file": "web/text-input.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_repaintoverlay",
+          "label": "repaintOverlay()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_dispatch",
+          "label": "dispatch()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_enqueuetask",
+          "label": "enqueueTask()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_applyinput",
+          "label": "applyInput()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_handlecomposition",
+          "label": "handleComposition()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_caretscreen",
+          "label": "caretScreen()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "tests_editor_browser",
+          "label": "editor-browser.mjs",
+          "source_file": "tests/editor-browser.mjs"
+        },
+        {
+          "id": "web_editor",
+          "label": "editor.mjs",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_publish",
+          "label": "publish()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_enqueue",
+          "label": "enqueue()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_setbusy",
+          "label": "setBusy()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_viewportrect",
+          "label": "viewportRect()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_caretviewport",
+          "label": "caretViewport()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_updateviewport",
+          "label": "updateViewport()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_scheduleviewport",
+          "label": "scheduleViewport()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_editor_createeditor_reporterror",
+          "label": "reportError()",
+          "source_file": "web/editor.mjs"
+        }
+      ]
+    },
+    {
+      "id": "web_mouse_selection_attachmouseselection",
+      "label": "attachMouseSelection()",
+      "source_file": "web/mouse-selection.mjs",
+      "neighbors": [
+        {
+          "id": "tests_mouse_selection_fixture",
+          "label": "fixture()",
+          "source_file": "tests/mouse-selection.mjs"
+        },
+        {
+          "id": "web_editor_createeditor",
+          "label": "createEditor()",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "tests_mouse_selection",
+          "label": "tests/mouse-selection.mjs",
+          "source_file": "tests/mouse-selection.mjs"
+        },
+        {
+          "id": "web_editor",
+          "label": "editor.mjs",
+          "source_file": "web/editor.mjs"
+        },
+        {
+          "id": "web_mouse_selection",
+          "label": "web/mouse-selection.mjs",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_pump",
+          "label": "pump()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_finish",
+          "label": "finish()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_edgedirection",
+          "label": "edgeDirection()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_scheduleautoscroll",
+          "label": "scheduleAutoScroll()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_report",
+          "label": "report()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_enabled",
+          "label": "enabled()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_pointat",
+          "label": "pointAt()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_queuepoint",
+          "label": "queuePoint()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_pointerdown",
+          "label": "pointerDown()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_pointermove",
+          "label": "pointerMove()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_pointerup",
+          "label": "pointerUp()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_pointercancel",
+          "label": "pointerCancel()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_lostpointercapture",
+          "label": "lostPointerCapture()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_scroll",
+          "label": "scroll()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_blur",
+          "label": "blur()",
+          "source_file": "web/mouse-selection.mjs"
+        },
+        {
+          "id": "web_mouse_selection_attachmouseselection_cancelcurrent",
+          "label": "cancelCurrent()",
+          "source_file": "web/mouse-selection.mjs"
+        }
+      ]
+    },
+    {
+      "id": "crates_core_wasm_src_editor_editorsession",
+      "label": "EditorSession",
+      "source_file": "crates/core-wasm/src/editor.rs",
+      "neighbors": [
+        {
+          "id": "crates_core_wasm_src_editor_rs_vec",
+          "label": "Vec",
+          "source_file": ""
+        },
+        {
+          "id": "crates_core_wasm_src_editor_rs_option",
+          "label": "Option",
+          "source_file": ""
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument",
+          "label": "PlainTextDocument",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_layout_layout",
+          "label": "Layout",
+          "source_file": "crates/core-wasm/src/editor-layout.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_lib_editor_session",
+          "label": "editor_session()",
+          "source_file": "crates/core-wasm/src/lib.rs"
+        },
+        {
+          "id": "crates_core_wasm_tests_editor_engine",
+          "label": "editor_engine.rs",
+          "source_file": "crates/core-wasm/tests/editor_engine.rs"
+        },
+        {
+          "id": "crates_core_wasm_tests_editor_engine_state",
+          "label": "state()",
+          "source_file": "crates/core-wasm/tests/editor_engine.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor",
+          "label": "editor.rs",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession_prepare_message",
+          "label": ".prepare_message()",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession_bump_revision",
+          "label": ".bump_revision()",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession_ensure_document",
+          "label": ".ensure_document()",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession_current_layout",
+          "label": ".current_layout()",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession_state_response",
+          "label": ".state_response()",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession_transact",
+          "label": ".transact()",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        }
+      ]
+    },
+    {
+      "id": "crates_text_model_src_lib_plaintextdocument",
+      "label": "PlainTextDocument",
+      "source_file": "crates/text-model/src/lib.rs",
+      "neighbors": [
+        {
+          "id": "crates_text_model_src_lib_textstate",
+          "label": "TextState",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_model_src_history_history",
+          "label": "History",
+          "source_file": "crates/model/src/history.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextlimits",
+          "label": "PlainTextLimits",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession",
+          "label": "EditorSession",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_core_wasm_src_editor_editorsession_ensure_document",
+          "label": ".ensure_document()",
+          "source_file": "crates/core-wasm/src/editor.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_replacetext",
+          "label": "ReplaceText",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_selection",
+          "label": "Selection",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_tests_plain_text_doc",
+          "label": "doc()",
+          "source_file": "crates/text-model/tests/plain_text.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib",
+          "label": "text-model/src/lib.rs",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_from_utf8",
+          "label": ".from_utf8()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_text",
+          "label": ".text()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_selection",
+          "label": ".selection()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_limits",
+          "label": ".limits()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_export_utf8",
+          "label": ".export_utf8()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_set_selection",
+          "label": ".set_selection()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_insert_text",
+          "label": ".insert_text()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_delete_backward",
+          "label": ".delete_backward()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_delete_forward",
+          "label": ".delete_forward()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_undo",
+          "label": ".undo()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_redo",
+          "label": ".redo()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_can_undo",
+          "label": ".can_undo()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_can_redo",
+          "label": ".can_redo()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_replace_selection",
+          "label": ".replace_selection()",
+          "source_file": "crates/text-model/src/lib.rs"
+        },
+        {
+          "id": "crates_text_model_src_lib_plaintextdocument_apply_range",
+          "label": ".apply_range()",
+          "source_file": "crates/text-model/src/lib.rs"
+        }
+      ]
+    },
+    {
+      "id": "crates_text_layout_src_incremental_incrementalsession",
+      "label": "IncrementalSession",
+      "source_file": "crates/text-layout/src/incremental.rs",
+      "neighbors": [
+        {
+          "id": "crates_text_layout_src_incremental_rs_vec",
+          "label": "Vec",
+          "source_file": ""
+        },
+        {
+          "id": "crates_text_layout_src_incremental_rs_option",
+          "label": "Option",
+          "source_file": ""
+        },
+        {
+          "id": "crates_text_layout_src_incremental_cachedparagraph",
+          "label": "CachedParagraph",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "id": "crates_text_layout_src_incremental_incrementalresult",
+          "label": "IncrementalResult",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "id": "crates_text_layout_src_pagination_paginationcheckpoint",
+          "label": "PaginationCheckpoint",
+          "source_file": "crates/text-layout/src/pagination.rs"
+        },
+        {
+          "id": "crates_text_layout_src_incremental_incrementaloptions",
+          "label": "IncrementalOptions",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "id": "crates_text_layout_src_incremental",
+          "label": "src/incremental.rs",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "id": "crates_text_layout_src_incremental_incrementalsession_new",
+          "label": ".new()",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "id": "crates_text_layout_src_incremental_incrementalsession_result",
+          "label": ".result()",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        },
+        {
+          "id": "crates_text_layout_src_incremental_incrementalsession_update",
+          "label": ".update()",
+          "source_file": "crates/text-layout/src/incremental.rs"
+        }
+      ]
+    }
+  ],
+  "cargo_packages": 33,
+  "cargo_normal_build_edges": 45,
+  "cargo_cycles": [],
+  "fresh_llm_tokens": 0
+}

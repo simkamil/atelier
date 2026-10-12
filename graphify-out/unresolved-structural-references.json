@@ -192,7 +192,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor.rs",
-    "source_location": "L750",
+    "source_location": "L847",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -544,7 +544,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/resources.rs",
-    "source_location": "L242",
+    "source_location": "L252",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -2228,6 +2228,17 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/text-model/tests/default_document.rs",
     "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_drag_spacing",
+    "target": "atelier_text_model",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/drag_spacing.rs",
+    "source_location": "L3",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -4422,6 +4433,17 @@
     "_origin": "ast"
   },
   {
+    "source": "tests_french_spacing",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/french-spacing.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
     "source": "tests_mouse_selection",
     "target": "ref_node_assert_strict",
     "relation": "imports_from",
@@ -4660,6 +4682,17 @@
     "confidence": "EXTRACTED",
     "source_file": "tests/run-worker-browser.mjs",
     "source_location": "L9",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_text_drag_drop",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/text-drag-drop.mjs",
+    "source_location": "L2",
     "weight": 1.0,
     "_origin": "ast"
   },

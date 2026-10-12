@@ -70,6 +70,31 @@ impl EditorSession {
             out.bytes(&exported);
             return Ok((candidate, out.finish(MAX_RESPONSE)?));
         }
+        if opcode == 15 {
+            let mut r = Reader::new(body);
+            let page = r.u32()? as usize;
+            let x = r.f64()?;
+            let y = r.f64()?;
+            if !x.is_finite() || !y.is_finite() {
+                return Err(EditorError("EDITOR_INVALID_COMMAND"));
+            }
+            let layout = candidate.current_layout()?;
+            let offset = layout
+                .hit_test(page, x, y)
+                .ok_or(EditorError("EDITOR_INVALID_PAGE"))?;
+            let caret = layout.caret(offset);
+            let mut out = Writer::with_capacity(48)?;
+            out.bytes(b"ATPT");
+            out.u16(1);
+            out.u16(0);
+            out.u64(candidate.revision);
+            out.u32(u32_len(offset)?);
+            out.u32(u32_len(caret.page)?);
+            out.f64(caret.x);
+            out.f64(caret.y);
+            out.f64(14.0);
+            return Ok((candidate, out.finish(48)?));
+        }
         match opcode {
             0 => {
                 candidate.ensure_document()?;
@@ -320,6 +345,75 @@ impl EditorSession {
                     .unwrap()
                     .set_selection(selection)
                     .map_err(map_text_error)?;
+                candidate.layout = None;
+                candidate.preferred_x = None;
+            }
+            16 => {
+                let mut r = Reader::new(body);
+                let revision = r.u64()?;
+                let now = r.u64()?;
+                let anchor = r.u32()? as usize;
+                let focus = r.u32()? as usize;
+                let target = r.u32()? as usize;
+                let kind = r.u8()?;
+                if r.u8()? != 0 || r.u8()? != 0 || r.u8()? != 0 || kind > 2 {
+                    return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                }
+                if revision != candidate.revision {
+                    return Err(EditorError("EDITOR_STALE_EDIT"));
+                }
+                let text = r.rest();
+                let doc = candidate.ensure_document()?;
+                validate_grapheme(doc.text(), target)?;
+                let before = doc.text().to_owned();
+                if kind == 2 {
+                    if anchor != 0 || focus != 0 || text.len() > MAX_TEXT {
+                        return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                    }
+                    let inserted = core::str::from_utf8(text)
+                        .map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+                    doc.replace_range_isolated(target..target, inserted, now)
+                        .map_err(map_text_error)?;
+                } else {
+                    if !text.is_empty() {
+                        return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                    }
+                    if doc.selection() != (Selection { anchor, focus }) {
+                        return Err(EditorError("EDITOR_STALE_EDIT"));
+                    }
+                    validate_grapheme(doc.text(), anchor)?;
+                    validate_grapheme(doc.text(), focus)?;
+                    doc.drop_selection(target, kind == 1, now)
+                        .map_err(map_text_error)?;
+                }
+                if doc.text() != before {
+                    candidate.bump_revision()?;
+                }
+                candidate.layout = None;
+                candidate.preferred_x = None;
+            }
+            17 => {
+                let mut r = Reader::new(body);
+                let revision = r.u64()?;
+                let now = r.u64()?;
+                let start = r.u32()? as usize;
+                let end = r.u32()? as usize;
+                if revision != candidate.revision {
+                    return Err(EditorError("EDITOR_STALE_EDIT"));
+                }
+                let text = r.rest();
+                if text.len() > MAX_TEXT {
+                    return Err(EditorError("EDITOR_TEXT_LIMIT"));
+                }
+                let inserted =
+                    core::str::from_utf8(text).map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+                let doc = candidate.ensure_document()?;
+                let before = doc.text().to_owned();
+                doc.replace_range_isolated(start..end, inserted, now)
+                    .map_err(map_text_error)?;
+                if doc.text() != before {
+                    candidate.bump_revision()?;
+                }
                 candidate.layout = None;
                 candidate.preferred_x = None;
             }
@@ -629,6 +723,9 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         11 => Some(8),
         12 | 13 => Some(8),
         14 => Some(32),
+        15 => Some(20),
+        16 if (32..=32 + MAX_TEXT).contains(&body.len()) => None,
+        17 if (24..=24 + MAX_TEXT).contains(&body.len()) => None,
         _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),
     };
     if expected.is_some_and(|len| len != body.len()) {

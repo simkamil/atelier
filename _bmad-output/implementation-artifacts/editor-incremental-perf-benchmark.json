@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-12",
+  "workload": {
+    "pages": 300,
+    "paragraphs": 300,
+    "lines_per_paragraph": 52,
+    "width_layout_units": 30000,
+    "usable_height_rounded_to_lines": true,
+    "release": true,
+    "locked_offline": true,
+    "samples_per_scenario": 7,
+    "scenarios": [
+      "same inputs repeatedly after initial layout",
+      "edit paragraph 150 repeatedly; each edit changes its label while retaining the 300-page geometry"
+    ]
+  },
+  "host": {
+    "os": "Windows-11-10.0.26300-SP0",
+    "cpu": "13th Gen Intel(R) Core(TM) i9-13900KF",
+    "logical_processors": 32,
+    "physical_memory_bytes": 68523401216,
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "reference_pc_certified": false
+  },
+  "baseline_before_core_optimization": {
+    "harness_revision": "7-sample same/local harness, existing incremental implementation",
+    "full_initial_ms": 2038.94,
+    "same": {
+      "min_ms": 48.784,
+      "median_ms": 50.841,
+      "paragraphs_reshaped": 0,
+      "paragraphs_reused": 300,
+      "pages_recalculated": 0,
+      "pages_reused": 300,
+      "pagination_preflight_work": 0,
+      "pagination_stream_work": 0
+    },
+    "local": {
+      "min_ms": 236.264,
+      "median_ms": 413.422,
+      "paragraphs_reshaped": 1,
+      "paragraphs_reused": 299,
+      "pages_recalculated": 3,
+      "pages_reused": 297,
+      "restart_paragraph": 149,
+      "fallback_reason": null,
+      "pagination_preflight_work": 16500,
+      "pagination_stream_work": 217
+    },
+    "prior_same_fixture_single_sample_ms": 255.356,
+    "prior_reference_single_sample_ms": 268.214
+  },
+  "after_optimization": [
+    {
+      "full_initial_ms": 1961.193,
+      "same": {
+        "min_ms": 0.031,
+        "median_ms": 0.033,
+        "paragraphs_reshaped": 0,
+        "paragraphs_reused": 300,
+        "pages_recalculated": 0,
+        "pages_reused": 300,
+        "pagination_preflight_work": 0,
+        "pagination_stream_work": 0
+      },
+      "local": {
+        "min_ms": 72.962,
+        "median_ms": 73.641,
+        "paragraphs_reshaped": 1,
+        "paragraphs_reused": 299,
+        "pages_recalculated": 3,
+        "pages_reused": 297,
+        "restart_paragraph": 149,
+        "fallback_reason": null,
+        "pagination_preflight_work": 16500,
+        "pagination_stream_work": 217
+      }
+    },
+    {
+      "full_initial_ms": 1969.335,
+      "same": {
+        "min_ms": 0.036,
+        "median_ms": 0.037,
+        "paragraphs_reshaped": 0,
+        "paragraphs_reused": 300,
+        "pages_recalculated": 0,
+        "pages_reused": 300,
+        "pagination_preflight_work": 0,
+        "pagination_stream_work": 0
+      },
+      "local": {
+        "min_ms": 71.151,
+        "median_ms": 71.778,
+        "paragraphs_reshaped": 1,
+        "paragraphs_reused": 299,
+        "pages_recalculated": 3,
+        "pages_reused": 297,
+        "restart_paragraph": 149,
+        "fallback_reason": null,
+        "pagination_preflight_work": 16500,
+        "pagination_stream_work": 217
+      }
+    }
+  ],
+  "limits": [
+    "Timings are local CPU benchmark observations and do not certify the 16 ms interactive UI target.",
+    "The 16500 preflight work remains whole-document; only stream work stops at the stable boundary.",
+    "The seven-sample baseline local median was noisy; the prior same-fixture single sample and earlier recorded reference are retained for context."
+  ]
+}

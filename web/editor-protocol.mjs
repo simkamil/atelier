@@ -5,6 +5,7 @@ export const EditorOpcode = Object.freeze({
   State: 0, Load: 1, InsertText: 2, DeleteBackward: 3, DeleteForward: 4,
   Undo: 5, Redo: 6, SetSelection: 7, Move: 8, HitTest: 9, Export: 10, MarkSaved: 11,
   DeleteWordBackward: 12, DeleteWordForward: 13, SelectPoint: 14,
+  ProbePoint: 15, DropText: 16, ReplaceRange: 17,
 });
 
 export const EDITOR_LIMITS = Object.freeze({
@@ -65,7 +66,7 @@ function boolByte(value, name) {
 
 /** Encode an ATED v1 command payload as defined by the shared editor contract. */
 export function encodeEditorCommand(opcode, values = {}) {
-  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 14 || values === null || typeof values !== "object") {
+  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 17 || values === null || typeof values !== "object") {
     fail("INVALID_ARGUMENT", "Invalid editor opcode or arguments.");
   }
   let body;
@@ -91,6 +92,34 @@ export function encodeEditorCommand(opcode, values = {}) {
     const direction = typeof values.direction === "number" ? values.direction : DIRECTIONS.get(values.direction);
     if (!Number.isInteger(direction) || direction < 0 || direction > 13) fail("INVALID_ARGUMENT", "Invalid movement direction.");
     body = new Uint8Array([direction, boolByte(values.extend ?? false, "extend"), 0, 0]);
+  } else if (opcode === EditorOpcode.ProbePoint) {
+    body = new Uint8Array(20);
+    const view = new DataView(body.buffer);
+    view.setUint32(0, u32(values.page, "page"), true);
+    view.setFloat64(4, finite(values.x, "x"), true);
+    view.setFloat64(12, finite(values.y, "y"), true);
+  } else if (opcode === EditorOpcode.DropText || opcode === EditorOpcode.ReplaceRange) {
+    const prefix = opcode === EditorOpcode.DropText ? 32 : 24;
+    if (typeof values.text !== "string") fail("INVALID_ARGUMENT", "Edit text must be a string.");
+    const text = encoder.encode(values.text);
+    if (text.byteLength > EDITOR_LIMITS.maxTextBytes) fail("MESSAGE_TOO_LARGE", "Edit text exceeds the editor limit.");
+    body = new Uint8Array(prefix + text.byteLength);
+    const view = new DataView(body.buffer);
+    view.setBigUint64(0, u64(values.revision, "revision"), true);
+    view.setBigUint64(8, u64(values.nowMs, "nowMs"), true);
+    if (opcode === EditorOpcode.DropText) {
+      const kind = ["move", "copy", "external"].indexOf(values.kind);
+      if (kind < 0 || (kind !== 2 && text.byteLength !== 0)) fail("INVALID_ARGUMENT", "Invalid text drop.");
+      view.setUint32(16, u32(values.sourceAnchor, "sourceAnchor"), true);
+      view.setUint32(20, u32(values.sourceFocus, "sourceFocus"), true);
+      view.setUint32(24, u32(values.target, "target"), true);
+      view.setUint8(28, kind);
+    } else {
+      view.setUint32(16, u32(values.start, "start"), true);
+      view.setUint32(20, u32(values.end, "end"), true);
+      if (values.start > values.end) fail("INVALID_ARGUMENT", "Reversed replacement range.");
+    }
+    body.set(text, prefix);
   } else if (opcode === EditorOpcode.HitTest) {
     body = new Uint8Array(21);
     const view = new DataView(body.buffer);
@@ -143,6 +172,18 @@ export function decodeEditorResponse(type, payload) {
   if (type !== 0x8020) fail("INVALID_RESPONSE", "Unexpected editor response type.");
   if (payload.byteLength < 8) fail("TRUNCATED", "Truncated editor response.");
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATPT") {
+    if (payload.length !== 48 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) {
+      fail("INVALID_RESPONSE", "Invalid point probe response.");
+    }
+    const offset = view.getUint32(16, true), page = view.getUint32(20, true);
+    const x = view.getFloat64(24, true), y = view.getFloat64(32, true), height = view.getFloat64(40, true);
+    if (offset > EDITOR_LIMITS.maxTextBytes || page >= EDITOR_LIMITS.maxPages || ![x,y,height].every(Number.isFinite)
+        || x < 0 || y < 0 || height <= 0 || x > 595.296 || y + height > 841.91) {
+      fail("INVALID_RESPONSE", "Invalid point probe geometry.");
+    }
+    return { kind: "point", revision: view.getBigUint64(8, true), offset, caret: { page, x, y, height } };
+  }
   if (payload.byteLength >= 16 && EXPORT_MAGIC.every((byte, i) => view.getUint8(i) === byte)) {
     if (view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0 || payload.byteLength > 16 + EDITOR_LIMITS.maxFileBytes) {
       fail("INVALID_RESPONSE", "Invalid or oversized editor export.");

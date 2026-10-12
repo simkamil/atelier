@@ -237,6 +237,59 @@ impl PlainTextDocument {
             },
         )
     }
+    /// Replaces a byte range as an isolated undo entry, preserving the selection
+    /// that preceded the edit for undo. Used for automatic substitutions and drops.
+    pub fn replace_range_isolated(
+        &mut self,
+        range: core::ops::Range<usize>,
+        text: &str,
+        now_ms: u64,
+    ) -> Result<(), PlainTextError> {
+        validate_offset(self.text(), range.start)?;
+        validate_offset(self.text(), range.end)?;
+        if range.start > range.end {
+            return Err(PlainTextError::InvalidOffset {
+                offset: range.start,
+                len: range.end,
+            });
+        }
+        self.apply_range(range, text, now_ms, EditKind::Other)
+    }
+
+    /// Moves or copies the current selection in one isolated transaction.
+    /// A move onto either edge or inside the source is an exact no-op.
+    pub fn drop_selection(
+        &mut self,
+        target: usize,
+        copy: bool,
+        now_ms: u64,
+    ) -> Result<(), PlainTextError> {
+        validate_offset(self.text(), target)?;
+        let source = self.selection().range();
+        if source.is_empty() || (!copy && (source.start..=source.end).contains(&target)) {
+            return Ok(());
+        }
+        let selected = self.text()[source.clone()].to_owned();
+        if copy {
+            return self.replace_range_isolated(target..target, &selected, now_ms);
+        }
+        let (range, replacement, caret) = if target < source.start {
+            let mut replacement = selected;
+            replacement.push_str(&self.text()[target..source.start]);
+            (target..source.end, replacement, target + source.len())
+        } else {
+            let mut replacement = self.text()[source.end..target].to_owned();
+            replacement.push_str(&selected);
+            (source.start..target, replacement, target)
+        };
+        self.apply_range_after(
+            range,
+            &replacement,
+            now_ms,
+            EditKind::Other,
+            Selection::caret(caret),
+        )
+    }
     /// Removes the selected range or the previous extended grapheme cluster.
     /// CRLF is one grapheme and is deleted atomically.
     pub fn delete_backward(&mut self, now_ms: u64) -> Result<bool, PlainTextError> {
@@ -329,6 +382,20 @@ impl PlainTextDocument {
         now_ms: u64,
         kind: EditKind,
     ) -> Result<(), PlainTextError> {
+        let next = range
+            .start
+            .checked_add(inserted.len())
+            .ok_or(PlainTextError::AllocationFailed)?;
+        self.apply_range_after(range, inserted, now_ms, kind, Selection::caret(next))
+    }
+    fn apply_range_after(
+        &mut self,
+        range: core::ops::Range<usize>,
+        inserted: &str,
+        now_ms: u64,
+        kind: EditKind,
+        after: Selection,
+    ) -> Result<(), PlainTextError> {
         if range.is_empty() && inserted.is_empty() {
             return Ok(());
         }
@@ -373,11 +440,6 @@ impl PlainTextDocument {
             .try_reserve_exact(removed_len)
             .map_err(|_| PlainTextError::AllocationFailed)?;
         removed.push_str(removed_slice);
-        let next = range
-            .start
-            .checked_add(inserted.len())
-            .ok_or(PlainTextError::AllocationFailed)?;
-        let after = Selection::caret(next);
         let mut inserted_owned = String::new();
         inserted_owned
             .try_reserve_exact(inserted.len())

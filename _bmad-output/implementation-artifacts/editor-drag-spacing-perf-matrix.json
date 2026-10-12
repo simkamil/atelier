@@ -1,0 +1,515 @@
+{
+  "date": "2026-10-12",
+  "matrix_rows": 22,
+  "all_rows_traced": true,
+  "runtime_tests_actually_executed": true,
+  "validation_sha256": "c1408fbff9b39a727ce3019a7bf580fe9efdca1ff04b09f4e8245b67ae49c083",
+  "native_windows_drop_certified": false,
+  "ui_16ms_certified": false,
+  "limitations": [
+    "DOM drag/drop events are synthetic; native Windows interapplication drop remains untested.",
+    "Release CPU benchmark does not certify 16 ms UI typing latency."
+  ],
+  "rows": [
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "move",
+      "executed_windows_tests": [
+        "move_drop_before_and_after_selection_preserves_unicode_crlf_and_bom",
+        "drop_move_before_after_and_copy_inside_are_single_reversible_transactions"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "move_drop_before_and_after_selection_preserves_unicode_crlf_and_bom": [
+          "crates/text-model/tests/drag_spacing.rs"
+        ],
+        "drop_move_before_after_and_copy_inside_are_single_reversible_transactions": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "drop indicator is a visible two-pixel insertion line",
+        "one undo restores moved UTF-8 text and original directed selection"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "copy",
+      "executed_windows_tests": [
+        "move_inside_or_onto_source_is_an_exact_noop_but_copy_inside_inserts",
+        "drop_move_before_after_and_copy_inside_are_single_reversible_transactions"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "move_inside_or_onto_source_is_an_exact_noop_but_copy_inside_inserts": [
+          "crates/text-model/tests/drag_spacing.rs"
+        ],
+        "drop_move_before_after_and_copy_inside_are_single_reversible_transactions": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "Ctrl copy is a single undoable edit"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "inside",
+      "executed_windows_tests": [
+        "move_inside_or_onto_source_is_an_exact_noop_but_copy_inside_inserts"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "move_inside_or_onto_source_is_an_exact_noop_but_copy_inside_inserts": [
+          "crates/text-model/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "external",
+      "executed_windows_tests": [
+        "external_drop_uses_source_zero_and_inserts_at_target"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "external_drop_uses_source_zero_and_inserts_at_target": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "external drop exports exact Unicode CRLF and literal markup without typography correction",
+        "one undo restores the original document and selection after external insertion"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "marker",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "drag position probe preserves the selection revision and text",
+        "drop clears insertion marker",
+        "drop indicator is a visible two-pixel insertion line"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "selection",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/mouse-selection.mjs"
+        },
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "double-click selects a whole accented word through engine unit selection"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "lifecycle",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "Escape cancels the complete drag without mutation or residual marker"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "stale",
+      "executed_windows_tests": [
+        "stale_or_malformed_commands_fail_without_publishing_state"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "stale_or_malformed_commands_fail_without_publishing_state": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/text-drag-drop.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "drag position probe preserves the selection revision and text"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-drag-spec.md",
+      "scenario": "malformed",
+      "executed_windows_tests": [
+        "stale_or_malformed_commands_fail_without_publishing_state"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "stale_or_malformed_commands_fail_without_publishing_state": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "editor_real_abi",
+          "module": "tests/editor-abi.mjs"
+        }
+      ],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "punctuation",
+      "executed_windows_tests": [
+        "isolated_replacement_converts_ascii_space_and_restores_directed_selection",
+        "french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "isolated_replacement_converts_ascii_space_and_restores_directed_selection": [
+          "crates/text-model/tests/drag_spacing.rs"
+        ],
+        "french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/french-spacing.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "French correction keeps a UTF-8 caret after punctuation"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "quotes",
+      "executed_windows_tests": [
+        "french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/french-spacing.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "French quote interiors use nonbreaking spaces"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "unicode",
+      "executed_windows_tests": [
+        "isolated_replacement_converts_ascii_space_and_restores_directed_selection"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "isolated_replacement_converts_ascii_space_and_restores_directed_selection": [
+          "crates/text-model/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/french-spacing.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "French correction keeps a UTF-8 caret after punctuation"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "boundaries",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/french-spacing.mjs"
+        }
+      ],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "disabled",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/french-spacing.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "French spacing can be disabled for the current editor"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "exempt",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/french-spacing.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "composition punctuation stays exact with automatic spacing enabled",
+        "pasted punctuation and guillemets remain exact",
+        "replacing a selection does not add an automatic transaction"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "undo",
+      "executed_windows_tests": [
+        "isolated_replacement_undo_redo_keeps_typing_on_separate_groups",
+        "french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "isolated_replacement_undo_redo_keeps_typing_on_separate_groups": [
+          "crates/text-model/tests/drag_spacing.rs"
+        ],
+        "french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "frontend_helpers",
+          "module": "tests/french-spacing.mjs"
+        }
+      ],
+      "executed_browser_assertions": [
+        "immediate undo removes only automatic spacing and keeps raw punctuation",
+        "redo restores automatic spacing",
+        "subsequent typing stays outside substitution undo group"
+      ],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-spacing-spec.md",
+      "scenario": "failure",
+      "executed_windows_tests": [
+        "invalid_offsets_and_budget_or_text_limit_fail_without_state_changes",
+        "stale_or_malformed_commands_fail_without_publishing_state"
+      ],
+      "executed_release_tests": [],
+      "test_sources": {
+        "invalid_offsets_and_budget_or_text_limit_fail_without_state_changes": [
+          "crates/text-model/tests/drag_spacing.rs"
+        ],
+        "stale_or_malformed_commands_fail_without_publishing_state": [
+          "crates/core-wasm/tests/drag_spacing.rs"
+        ]
+      },
+      "executed_node_modules": [
+        {
+          "gate": "editor_real_abi",
+          "module": "tests/editor-abi.mjs"
+        }
+      ],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-incremental-perf-spec.md",
+      "scenario": "same",
+      "executed_windows_tests": [
+        "identical_update_reuses_layouts_and_pagination_without_stream_work"
+      ],
+      "executed_release_tests": [
+        "identical_update_reuses_layouts_and_pagination_without_stream_work"
+      ],
+      "test_sources": {
+        "identical_update_reuses_layouts_and_pagination_without_stream_work": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "executed_node_modules": [],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-incremental-perf-spec.md",
+      "scenario": "local",
+      "executed_windows_tests": [
+        "local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary",
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination"
+      ],
+      "executed_release_tests": [
+        "local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary",
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination"
+      ],
+      "test_sources": {
+        "local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination": [
+          "crates/text-layout/tests/incremental_sequences.rs"
+        ]
+      },
+      "executed_node_modules": [],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-incremental-perf-spec.md",
+      "scenario": "global",
+      "executed_windows_tests": [
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry",
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination",
+        "same_manager_font_mutations_invalidate_only_after_success"
+      ],
+      "executed_release_tests": [
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry",
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination",
+        "same_manager_font_mutations_invalidate_only_after_success"
+      ],
+      "test_sources": {
+        "global_invalidations_are_reported_and_structure_reuses_unchanged_geometry": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "same_manager_font_mutations_invalidate_only_after_success": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "executed_node_modules": [],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-incremental-perf-spec.md",
+      "scenario": "invalid",
+      "executed_windows_tests": [
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable",
+        "layout_and_pagination_failures_preserve_published_state_and_cache"
+      ],
+      "executed_release_tests": [
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable",
+        "layout_and_pagination_failures_preserve_published_state_and_cache"
+      ],
+      "test_sources": {
+        "failures_and_duplicate_ids_leave_the_last_published_result_usable": [
+          "crates/text-layout/tests/incremental.rs"
+        ],
+        "layout_and_pagination_failures_preserve_published_state_and_cache": [
+          "crates/text-layout/tests/incremental.rs"
+        ]
+      },
+      "executed_node_modules": [],
+      "executed_browser_assertions": [],
+      "status": "functional_verified"
+    },
+    {
+      "spec": "editor-incremental-perf-spec.md",
+      "scenario": "benchmark",
+      "executed_windows_tests": [],
+      "executed_release_tests": [],
+      "test_sources": {},
+      "executed_node_modules": [],
+      "executed_browser_assertions": [],
+      "status": "benchmark_verified",
+      "evidence": [
+        "editor-incremental-perf-benchmark.json",
+        "editor-drag-spacing-perf-validation.json"
+      ],
+      "benchmark_command": [
+        "cargo",
+        "run",
+        "-p",
+        "atelier-text-layout",
+        "--example",
+        "incremental_benchmark",
+        "--release",
+        "--locked",
+        "--offline"
+      ],
+      "benchmark_pages": 300,
+      "benchmark_lines_per_paragraph": 52,
+      "benchmark_data_sha256": "dc45044af6b1c860636f4c3473273695f5bfb2a67a2f69f6f2975cbb936ad94d",
+      "limitation": "CPU timings do not certify 16 ms interactive typing latency."
+    }
+  ]
+}

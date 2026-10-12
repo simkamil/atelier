@@ -38,3 +38,5 @@ canvas-label=Pages du document texte brut
 footer=Atelier · démonstrateur de texte brut
 page-format=Page A4 · Carlito 11 pt
 no-script=Atelier nécessite JavaScript pour ouvrir le document.
+options-label=Options
+option-french-spacing=Espaces françaises automatiques

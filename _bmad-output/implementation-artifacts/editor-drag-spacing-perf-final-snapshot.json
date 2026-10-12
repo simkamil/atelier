@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "76b1ab0771ea32c8edf72a39e0a2cbb26c3c8997",
+  "snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/editor-drag-spacing-perf-final-snapshot.json (self-referential metadata)"
+  ],
+  "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-editor-drag-spacing-perf-review-qyygj46r\\complete.diff",
+  "complete_bytes": 17735905,
+  "complete_sha256": "b3a009b65888ef5ffd7ccd0629c4f9485566c17f1a78e3026e54c63e442541f7",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-editor-drag-spacing-perf-review-qyygj46r\\sources.diff",
+  "sources_bytes": 517970,
+  "sources_sha256": "a6a0b169efd9b842afa1ee28f0736eedaf62b0b17c790f056d8224ee2375fa80"
+}

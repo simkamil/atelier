@@ -240,6 +240,109 @@ try {
   await waitFor(() => editor.state.anchor === 0 && editor.state.focus === 14 && capturedPointer === null, "drag final point");
   assert(selectedText() === "un café trois", "rapid down/move/up preserves the final drag range while WASM is asynchronous");
   assert(document.activeElement === editor.element, "completed mouse drag restores hidden input focus");
+  await openText("AéBxyz");
+  key(editor.element, "End");
+  await waitFor(() => editor.state.focus === 7, "drop target at line end");
+  const dropEnd = caretPoint();
+  key(editor.element, "Home");
+  key(editor.element, "ArrowRight", { shiftKey: true });
+  key(editor.element, "ArrowRight", { shiftKey: true });
+  await waitFor(() => editor.state.anchor === 0 && editor.state.focus === 3, "UTF-8 source selection for move");
+  const selectedRect = editor.state.selectionRects[0];
+  const canvasBounds = canvas.getBoundingClientRect();
+  const sourcePoint = { x: canvasBounds.left + selectedRect.x + 2,
+    y: canvasBounds.top + selectedRect.y + 7 - scrollport.scrollTop };
+  const dragRevision = editor.state.revision;
+  pointer("pointerdown", sourcePoint.x, sourcePoint.y);
+  pointer("pointermove", dropEnd.x, dropEnd.y);
+  await waitFor(() => !document.querySelector(".text-drop-marker").hidden, "visible drag insertion marker");
+  assert(editor.state.anchor === 0 && editor.state.focus === 3 && editor.state.revision === dragRevision,
+    "drag position probe preserves the selection revision and text");
+  assert(getComputedStyle(document.querySelector(".text-drop-marker")).width === "2px", "drop indicator is a visible two-pixel insertion line");
+  pointer("pointerup", dropEnd.x, dropEnd.y);
+  await waitFor(() => editor.state.text === "BxyzAé" && capturedPointer === null, "atomic selected text move");
+  assert(document.querySelector(".text-drop-marker").hidden, "drop clears insertion marker");
+  await editor.undo();
+  assert(editor.state.text === "AéBxyz" && editor.state.anchor === 0 && editor.state.focus === 3,
+    "one undo restores moved UTF-8 text and original directed selection");
+  await editor.redo();
+  assert(editor.state.text === "BxyzAé", "one redo reapplies the complete move");
+  await editor.undo();
+  pointer("pointerdown", sourcePoint.x, sourcePoint.y);
+  pointer("pointermove", dropEnd.x, dropEnd.y);
+  pointer("pointerup", dropEnd.x, dropEnd.y, 1, { ctrlKey: true });
+  await waitFor(() => editor.state.text === "AéBxyzAé", "Ctrl selected text copy");
+  await editor.undo();
+  assert(editor.state.text === "AéBxyz", "Ctrl copy is a single undoable edit");
+  pointer("pointerdown", sourcePoint.x, sourcePoint.y);
+  pointer("pointermove", dropEnd.x, dropEnd.y);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  pointer("pointerup", dropEnd.x, dropEnd.y);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert(editor.state.text === "AéBxyz" && capturedPointer === null && document.querySelector(".text-drop-marker").hidden,
+    "Escape cancels the complete drag without mutation or residual marker");
+  const externalText = new DataTransfer();
+  externalText.setData("text/plain", "🙂\r\n: <b>texte</b>");
+  const over = new DragEvent("dragover", { clientX: dropEnd.x, clientY: dropEnd.y, dataTransfer: externalText, bubbles: true, cancelable: true });
+  canvas.dispatchEvent(over);
+  await waitFor(() => !document.querySelector(".text-drop-marker").hidden, "external text drop marker");
+  const drop = new DragEvent("drop", { clientX: dropEnd.x, clientY: dropEnd.y, dataTransfer: externalText, bubbles: true, cancelable: true });
+  canvas.dispatchEvent(drop);
+  await waitFor(() => editor.state.text === "AéBxyz🙂\r\n: <b>texte</b>", "external plain text drop");
+  assert(over.defaultPrevented && drop.defaultPrevented, "text drop prevents browser default handling");
+  assert(new TextDecoder().decode((await editor.exportDocument()).bytes) === editor.state.text,
+    "external drop exports exact Unicode CRLF and literal markup without typography correction");
+  await editor.undo();
+  assert(editor.state.text === "AéBxyz" && editor.state.anchor === 0 && editor.state.focus === 3,
+    "one undo restores the original document and selection after external insertion");
+
+  await openText("café");
+  key(editor.element, "End");
+  await waitFor(() => editor.state.focus === 5, "French punctuation insertion point");
+  inputText(editor.element, ":");
+  await waitFor(() => editor.state.text === "café\u00a0:", "automatic NBSP before colon");
+  assert(editor.state.focus === 8, "French correction keeps a UTF-8 caret after punctuation");
+  await editor.undo();
+  assert(editor.state.text === "café:", "immediate undo removes only automatic spacing and keeps raw punctuation");
+  await editor.redo();
+  assert(editor.state.text === "café\u00a0:", "redo restores automatic spacing");
+  inputText(editor.element, "X");
+  await waitFor(() => editor.state.text === "café\u00a0:X", "typing after French correction");
+  await editor.undo();
+  assert(editor.state.text === "café\u00a0:", "subsequent typing stays outside substitution undo group");
+  editor.setFrenchSpacing(false);
+  await openText("mot");
+  key(editor.element, "End");
+  await waitFor(() => editor.state.focus === 3, "disabled spacing insertion point");
+  inputText(editor.element, "?");
+  await waitFor(() => editor.state.text === "mot?", "disabled spacing leaves raw text");
+  assert(editor.state.text === "mot?", "French spacing can be disabled for the current editor");
+  editor.setFrenchSpacing(true);
+  await openText("");
+  inputText(editor.element, "«");
+  await waitFor(() => editor.state.text === "«\u00a0", "opening guillemet auto space");
+  inputText(editor.element, "é");
+  inputText(editor.element, "»");
+  await waitFor(() => editor.state.text === "«\u00a0é\u00a0»", "closing guillemet auto space");
+  assert(editor.state.text === "«\u00a0é\u00a0»", "French quote interiors use nonbreaking spaces");
+  await openText("");
+  clipboard("paste", { text: "mot: «texte»!?" });
+  await waitFor(() => editor.state.text === "mot: «texte»!?", "paste bypasses French spacing");
+  assert(editor.state.text === "mot: «texte»!?", "pasted punctuation and guillemets remain exact");
+  await openText("mot");
+  key(editor.element, "End");
+  await waitFor(() => editor.state.focus === 3, "IME punctuation insertion point");
+  editor.element.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  editor.element.dispatchEvent(new CompositionEvent("compositionend", { data: ":", bubbles: true }));
+  await waitFor(() => editor.state.text === "mot:", "IME punctuation bypasses French spacing");
+  assert(editor.state.text === "mot:", "composition punctuation stays exact with automatic spacing enabled");
+  await openText("motX");
+  key(editor.element, "End");
+  key(editor.element, "ArrowLeft", { shiftKey: true });
+  await waitFor(() => editor.state.anchor === 4 && editor.state.focus === 3, "selection before punctuation replacement");
+  inputText(editor.element, ":");
+  await waitFor(() => editor.state.text === "mot:", "selection replacement bypasses French spacing");
+  assert(editor.state.text === "mot:", "replacing a selection does not add an automatic transaction");
   await openText("AB");
   inputText(editor.element, "!");
   await waitFor(() => editor.state.dirty && editor.state.text === "!AB", "dirty fixture before open cancellation");
@@ -352,9 +455,11 @@ try {
     removeEventListener(type, listener) { if (type === "message") webviewListeners.delete(listener); },
   };
   Object.defineProperty(window, "chrome", { configurable: true, value: { webview: fakeWebview } });
+  localStorage.setItem("atelier.frenchSpacing", "false");
   const { editorReady } = await import("/app.mjs");
   const app = await editorReady;
   assert(app.status === "ready", "real app entry initializes with fake native WebView");
+  assert(!document.querySelector("#french-spacing").checked, "app initialization restores a saved disabled French-spacing preference");
   assert(innerWidth >= 1200 && innerHeight >= 800, "product viewport is at least 1280×800 for layout verification");
   assert(document.documentElement.scrollHeight <= innerHeight && document.body.scrollHeight <= innerHeight,
     "product shell keeps the document scrollbar inside the normal viewport");
@@ -391,7 +496,30 @@ try {
   assert(!app.getState().dirty, "Ctrl+S marks the successfully saved revision clean");
   const saveMessage = nativeCalls.find(message => message.includes("|save|"));
   assert(atob(saveMessage.split("|")[4]) === "S", "Ctrl+S forwards the exact current document bytes");
+  const option = document.querySelector("#french-spacing");
+  assert(option && !option.disabled && option.labels.length === 1 && option.labels[0].textContent.trim().length > 0,
+    "French spacing option is an enabled native checkbox with visible label");
+  document.querySelector(".editor-options").open = true;
+  option.focus();
+  assert(document.activeElement === option, "French spacing option is keyboard focusable");
+  option.checked = false;
+  option.dispatchEvent(new Event("change", { bubbles: true }));
+  inputText(app.editor.element, ":");
+  await waitFor(() => app.getState().text === "S:", "real app option disables substitution");
+  assert(localStorage.getItem("atelier.frenchSpacing") === "false", "French spacing preference is saved locally");
+  option.checked = true;
+  option.dispatchEvent(new Event("change", { bubbles: true }));
+  inputText(app.editor.element, "X");
+  inputText(app.editor.element, "?");
+  await waitFor(() => app.getState().text === "S:X\u202f?", "real app option re-enables narrow NBSP");
+  assert(app.getState().text.endsWith("X\u202f?"), "enabled app option applies French spacing through real Worker WASM");
   app.editor.dispose();
+  localStorage.removeItem("atelier.frenchSpacing");
+  const { editorReady: defaultReady } = await import("/app.mjs?preference-default");
+  const defaultApp = await defaultReady;
+  assert(defaultApp.status === "ready" && document.querySelector("#french-spacing").checked,
+    "fresh app initialization enables French spacing when no preference exists");
+  defaultApp.editor.dispose();
 
   report = { status: "passed", userAgent: navigator.userAgent, checks };
 } catch (error) {

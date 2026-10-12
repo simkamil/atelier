@@ -1,0 +1,128 @@
+{
+  "baseline_commit": "76b1ab0771ea32c8edf72a39e0a2cbb26c3c8997",
+  "review_models": "gpt-6-luna, medium; user-requested override of skill reviewer model preference",
+  "review_snapshot": "editor-drag-spacing-perf-review-snapshot.json",
+  "layers": [
+    "blind-hunter",
+    "edge-case-hunter",
+    "verification-gap"
+  ],
+  "verification_gap_result": "No verification gaps found by reviewer; parent matrix audit added two further test gaps.",
+  "findings": [
+    {
+      "id": "blind-1",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "web/text-drag-drop.mjs",
+      "evidence": "HTML/file-only drop returns before preventDefault; browser fallback can navigate. Prevent every canvas drop default, insert only plain text, regression added by original implementer."
+    },
+    {
+      "id": "blind-2",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "web/french-spacing.mjs",
+      "evidence": "PUNCTUATION_RUN contains closing » and suppresses required spacing in «mot»:. Remove that exclusion for subsequent French punctuation and test it."
+    },
+    {
+      "id": "blind-3",
+      "verdict": "low",
+      "route": "rejected",
+      "location": "web/text-drag-drop.mjs",
+      "evidence": "validBoundary does allocate a UTF-8 buffer per coalesced probe. Input is bounded at 128 KiB; no user latency regression was demonstrated. Snapshot caching adds lifecycle state for a negligible bounded allocation and is not introduced in this change."
+    },
+    {
+      "id": "blind-4",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "web/text-drag-drop.mjs",
+      "evidence": "The external drop path awaits onDrop but never focus(), unlike internal completion. Restore the existing hidden input focus after successful external insertion and test callback invocation."
+    },
+    {
+      "id": "blind-5",
+      "verdict": "false",
+      "route": "rejected",
+      "location": "web/app.mjs",
+      "evidence": "Espace is feminine in French typography; « Espaces françaises automatiques » agrees with the noun and accurately labels the option. The alleged grammatical defect is absent."
+    },
+    {
+      "id": "blind-6",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "tests/editor-browser.mjs",
+      "evidence": "The actual app initialization reads localStorage but browser assertions only covered writing it. Seed a saved disabled setting before initialization, then initialize a fresh module without a saved setting and verify enabled default."
+    },
+    {
+      "id": "blind-7",
+      "verdict": "low",
+      "route": "patch",
+      "location": "tests/french-spacing.mjs",
+      "evidence": "No multiple-ASCII-space case was present. Preserve earlier spaces, replace only the adjacent one, and leave paragraph/tab-leading whitespace runs unchanged; regression documents this existing narrow substitution contract."
+    },
+    {
+      "id": "blind-8",
+      "verdict": "low",
+      "route": "patch",
+      "location": "crates/text-model/tests/drag_spacing.rs",
+      "evidence": "Controller Ctrl-copy already starts from reversed 5/1 selection, but direct model copy Undo/Redo only covered forward 1/4. Add reversed model copy restoration coverage."
+    },
+    {
+      "id": "blind-9",
+      "verdict": "false",
+      "route": "rejected",
+      "location": "editor-drag-spec.md",
+      "evidence": "The drag spec maps its own ProbePoint/DropText commands. The separate spacing spec and docs/us-228-french-spacing.md already map ReplaceRange=17. No protocol consumer loses that command; spec-only expansion is also excluded by review routing."
+    },
+    {
+      "id": "blind-10",
+      "verdict": "low",
+      "route": "rejected",
+      "location": "editor-drag-spec.md",
+      "evidence": "The « cop ié » typo is confined to the build spec acceptance text, not product/docs. The workflow explicitly rejects findings whose fix edits the build spec; runtime behavior and verification are unaffected."
+    },
+    {
+      "id": "edge-1",
+      "verdict": "false",
+      "route": "rejected",
+      "location": "crates/core-wasm/src/editor.rs",
+      "evidence": "ReplaceRange intentionally accepts UTF-8 character boundaries for an explicit range edit. Its helper replaces just-inserted punctuation/adjacent space and preserves every other scalar. Valid Unicode grapheme editing is not displayed-text corruption; no reachable user text-loss case was demonstrated. DropText separately enforces grapheme boundaries."
+    },
+    {
+      "id": "edge-2",
+      "verdict": "false",
+      "route": "rejected",
+      "location": "web/text-drag-drop.mjs",
+      "evidence": "Shift+click must retain existing selection extension; Alt/Meta gestures must reach the existing selector. The guard prevents interception and the targeted regression verifies propagation. User intent does not require Shift/Alt copy-drag; Ctrl alone performs copy. The nonfrozen handoff wording was imprecise, and implementation notes record modifier priority."
+    },
+    {
+      "id": "parent-1",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "tests/text-drag-drop.mjs",
+      "evidence": "The frozen marker matrix promised multipage/zoom/scroll/auto-scroll behavior but the new module tests initially used only one page at zoom=1. Add exact mapping and bounded RAF lifecycle tests."
+    },
+    {
+      "id": "parent-2",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "tests/editor-abi.mjs",
+      "evidence": "The added new-opcode ABI section asserted encoding but did not invoke the new commands directly. Browser exercises valid real WASM paths, and Rust tests reject malformed payloads; add direct actual-WASM malformed/new-command tests to support the stronger ABI claim."
+    },
+    {
+      "id": "parent-3",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "crates/text-model/tests/drag_spacing.rs",
+      "evidence": "Clippy rejects the deliberately reversed literal range. Represent the invalid input as an explicit Range struct, preserving rejection coverage without a lint suppression."
+    },
+    {
+      "id": "parent-4",
+      "verdict": "medium",
+      "route": "patch",
+      "location": "crates/text-layout/src/incremental.rs",
+      "evidence": "Clippy rejects is_none/expect comparisons. Use guarded matches and a short mutable stats scope, retaining exact results and avoiding deep copies. Targeted release regressions and -D warnings pass."
+    }
+  ],
+  "patches_validated": true,
+  "validation_receipt": "editor-drag-spacing-perf-validation.json",
+  "remaining_scope_questions": []
+}

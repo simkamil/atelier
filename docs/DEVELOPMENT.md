@@ -12,6 +12,42 @@ Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model
 
 ## Validation
 
+## Glisser-déposer, typographie française et performance — 2026-10-12
+
+Trois agents GPT-6 Luna moyen ont développé ce lot en parallèle, puis trois
+autres agents ont mené des revues indépendantes. **US-228 est validée dans
+l'éditeur TXT : 48 US terminées sur 158.**
+
+- [US-224](us-224-text-drag-drop.md) : déplacement, copie avec Ctrl, indicateur
+  d'insertion et transaction unique annulable. Le dépôt `text/plain` est raccordé
+  au vrai moteur; l'essai natif depuis une autre application Windows reste à
+  effectuer, donc l'US reste partielle.
+- [US-228](us-228-french-spacing.md) : espaces insécables françaises à la frappe,
+  option accessible activée par défaut et préférence locale. Ctrl+Z immédiat
+  annule seulement la substitution. Collage, dépôt et composition restent exacts.
+  La saisie riche US-220 reste ouverte.
+- [US-213](us-213-incremental-layout.md) : suppression de copies profondes du
+  cache. Deux séries de sept éditions locales sur 300 pages donnent des médianes
+  de **71,778 et 73,641 ms**, contre 268,214 ms lors du lot précédent. La mise à
+  jour identique mesure 0,033–0,037 ms; 3 pages sont recalculées et 297 réutilisées.
+  Le préflight global reste explicite et **la cible UI de 16 ms reste ouverte**.
+  La référence répétée avant optimisation était bruitée (médiane 413,422 ms).
+
+La [validation immuable](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-validation.json)
+passe **23 contrôles, 749 tests workspace Windows, 78 tests text-layout
+release et 82 assertions navigateur** : Clippy hôte/WASM, format, SPDX,
+ABI réelle, Worker, application, compilation Windows/WASM/musl et tests musl
+compilés seulement. Les 850 entrées et Cargo.lock restent inchangés pendant
+les contrôles. Les 33 paquets sont locaux. Le WASM embarqué mesure 1 046 099 octets
+(plafond inchangé : 1 180 429).
+
+La [revue triée](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-review.json),
+l'[audit des matrices](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-matrix.json),
+les [mesures répétées](../_bmad-output/implementation-artifacts/editor-incremental-perf-benchmark.json)
+et le [reçu Graphify](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-graph.json)
+conservent les preuves et les limites. La validation locale n'établit pas la
+réussite de la CI distante; son état sera enregistré après publication.
+
 ## Document initial, pagination incrémentale et bordures — 2026-10-12
 
 Trois agents GPT-6 Luna moyen ont développé les API des US-202, US-213 et
