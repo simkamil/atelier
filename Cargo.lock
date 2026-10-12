@@ -112,8 +112,11 @@ dependencies = [
 name = "atelier-raster"
 version = "0.1.0"
 dependencies = [
+ "atelier-font",
  "atelier-geom",
  "atelier-image",
+ "atelier-render",
+ "atelier-xml",
 ]
 
 [[package]]

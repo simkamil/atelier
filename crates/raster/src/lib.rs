@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod display_list;
 mod mask;
 mod stroke;
 
