@@ -67,6 +67,13 @@ version = "0.1.0"
 [[package]]
 name = "atelier-fmt-odf"
 version = "0.1.0"
+dependencies = [
+ "atelier-model",
+ "atelier-text-model",
+ "atelier-unicode",
+ "atelier-xml",
+ "atelier-zip",
+]
 
 [[package]]
 name = "atelier-fmt-ooxml"

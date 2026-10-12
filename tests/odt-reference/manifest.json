@@ -1,0 +1,67 @@
+{
+  "files": {
+    "char-format.odt": {
+      "bytes": 10618,
+      "sha256": "af38580b3aec6cad7cb1cb7e62058525f2ca6a93d0f9b1543345113a997545d4"
+    },
+    "fields-notes.odt": {
+      "bytes": 10208,
+      "sha256": "70ca75da4b84344f2c6822bfabbd127a9e7ffcb08d02fc9fbf168b0aeeeb5901"
+    },
+    "header-footer.odt": {
+      "bytes": 42421,
+      "sha256": "53afb013098dac33af7ae4a62b6c0ff5045ab72cacccab5520b636bb5e1666c4"
+    },
+    "headings-styles.odt": {
+      "bytes": 12475,
+      "sha256": "39b084be9a205345c2f2f06bc184487ae86be8aaa26e7a9963d26baa97540bab"
+    },
+    "image.odt": {
+      "bytes": 14635,
+      "sha256": "50508a8734e5b5f155684e73ba0d5dd7790e350aebc16e754829aa1705376bc8"
+    },
+    "links-bookmarks.odt": {
+      "bytes": 9993,
+      "sha256": "50680b183224bc2412fa6583cde4321df6d6aacd3cfef5bdb37c8948aca82b49"
+    },
+    "lists.odt": {
+      "bytes": 11261,
+      "sha256": "707775fa7eda813a2bc19962a928ab2004a811df3160b34f9c2550458147f5ce"
+    },
+    "multi-page.odt": {
+      "bytes": 43803,
+      "sha256": "583145d2e235632e350ba04393269c2083060bbed73f9255b8c25306473d6c68"
+    },
+    "nested-table.odt": {
+      "bytes": 9606,
+      "sha256": "6e81f553661e73220d726baf9712b0a9f779e1604c6d5f9e45689eba0e07dccd"
+    },
+    "para-format.odt": {
+      "bytes": 19154,
+      "sha256": "7457ff01886a00eab823403d594dcf0c97708dfa7828af28b567d5ece091c37e"
+    },
+    "sections-pages.odt": {
+      "bytes": 8835,
+      "sha256": "f1889ff7120db1401f123d65338dc493ed7b3e03306249afb6300569a1b67869"
+    },
+    "table-merge.fodt": {
+      "bytes": 31949,
+      "sha256": "a21b209937651263cfe85cd42f669a2e1a1d9efaf14ffbdca308fbc949f12207"
+    },
+    "table-merge.odt": {
+      "bytes": 10678,
+      "sha256": "be59c1ee7504cd676ae8f980dce0d487cbe5a9010fb7e2080eec794a90aebfdd"
+    },
+    "text-accents.odt": {
+      "bytes": 10939,
+      "sha256": "5d1202fde546351061bfbe839ba1b7c08fc7868ad6bf82efebaa46b9eae0c809"
+    },
+    "trailing-spaces.odt": {
+      "bytes": 8431,
+      "sha256": "99bbf7234dccfc54ee7f2be61da7947a21bfe938d4bf6b43ce72e3e613c53674"
+    }
+  },
+  "generator": "tools/generate-odt-reference.py",
+  "note": "Genuine LibreOffice output; bytes are not reproducible, the SHA-256 values pin the versioned files.",
+  "producer": ""
+}
