@@ -1,0 +1,63 @@
+{
+  "files": {
+    "char-format.odt": {
+      "bytes": 10616,
+      "sha256": "b49126f3752e95ad91f43ba1a2981a458ac5dd50e9242b84c211108eb1a4738d"
+    },
+    "fields-notes.odt": {
+      "bytes": 10224,
+      "sha256": "7c0eba7e788fd34480273f6c7c4753df3bf5a9add3e11013492bdbbd2cad9784"
+    },
+    "header-footer.odt": {
+      "bytes": 42419,
+      "sha256": "2df0329a7e248ef26b20c3d8d208cb49e41d9e4ecd3a4c561c97153a1f7b26d8"
+    },
+    "headings-styles.odt": {
+      "bytes": 12474,
+      "sha256": "7b4240723b328e430c4660cb20f55edd21b21c09f694f0a39fed5dd72cd7b402"
+    },
+    "image.odt": {
+      "bytes": 14635,
+      "sha256": "8c921c8768054b7996f2c96b4478ef1fa53087fc2075e9b2a797ff2fb401b77b"
+    },
+    "links-bookmarks.odt": {
+      "bytes": 9992,
+      "sha256": "d9326a04c0a96f46b225adfd2cd22a0a4b4552b557c60f2d3adc4a8465c351a3"
+    },
+    "lists.odt": {
+      "bytes": 11260,
+      "sha256": "e34c258f59bcc7085bc06e8fbef6d0ac06035d8159db9d8559a357c3827335ea"
+    },
+    "multi-page.odt": {
+      "bytes": 43803,
+      "sha256": "25e140c99fed8e323d5a30d957a6e5890eb9fee42c92cc9d7513133cf86de07a"
+    },
+    "nested-table.odt": {
+      "bytes": 9604,
+      "sha256": "b726bc8801f91e86fc46149635fae63f820efd8499a70f853edcdbe5a2b9308c"
+    },
+    "para-format.odt": {
+      "bytes": 19152,
+      "sha256": "66427bb659fe53a18bf4058b314ad1880ae385911472e280980989fc82783e3e"
+    },
+    "sections-pages.odt": {
+      "bytes": 8836,
+      "sha256": "42d7bb4f681ea4e21a7efde80969afa2ea04c0225f4b50cdf53d6924d7a2b5b8"
+    },
+    "table-merge.fodt": {
+      "bytes": 31947,
+      "sha256": "3610d0dc138dc3452b050228c8fe5fa48d31f1205a83da735cf65c94981d2ce7"
+    },
+    "table-merge.odt": {
+      "bytes": 10677,
+      "sha256": "47e94b8a2274093c59d09ba47be2863ed1478f94e07b03aac08717549d68336c"
+    },
+    "text-accents.odt": {
+      "bytes": 10937,
+      "sha256": "77d3714625fcbe4593bdd5532dedf95a25fc59b19667c7a6acb4bf484dbdad4a"
+    }
+  },
+  "generator": "tools/generate-odt-reference.py",
+  "note": "Genuine LibreOffice output; bytes are not reproducible, the SHA-256 values pin the versioned files.",
+  "producer": ""
+}
