@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod cff;
+mod cff_tables;
 pub mod embedded;
 pub mod layout;
 pub mod manager;

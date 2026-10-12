@@ -6,7 +6,15 @@
 //! operators are counted so that `hintmask`/`cntrmask` bytes can be skipped,
 //! but hinting is never applied. CFF2 and Type 1 charstrings are rejected with
 //! [`OutlineError::Unsupported`].
+//!
+//! Errors reuse [`OutlineError`], whose `Display` text is format neutral.
+//! Supported beyond the basic operators: `FontMatrix` (Top DICT and FD DICT),
+//! the standard strings and the predefined charsets, and the deprecated
+//! four-argument `endchar` (`seac`) accent composition.
 
+use crate::cff_tables::{
+    EXPERT_CHARSET, EXPERT_SUBSET_CHARSET, STANDARD_ENCODING, STANDARD_STRINGS,
+};
 use crate::outline::{OutlineError, OutlineLimits};
 use atelier_geom::{Path, Point};
 
@@ -21,7 +29,15 @@ const MAX_FONT_DICTS: usize = 256;
 const MAX_DICT_ENTRIES: usize = 512;
 const MAX_REAL_CHARS: usize = 64;
 const PUBLIC_DEPTH: usize = 64;
-const STANDARD_STRINGS: usize = 391;
+const STANDARD_COUNT: usize = 391;
+/// Maximum nesting of `seac` compositions: the glyph itself plus one component level.
+pub const MAX_SEAC_DEPTH: usize = 2;
+/// Value pushed by the Type 2 `random` operator (the specification asks for a number in ]0, 1]).
+pub const RANDOM_VALUE: f64 = 0.5;
+const DEFAULT_MATRIX: [f64; 6] = [0.001, 0.0, 0.0, 0.001, 0.0, 0.0];
+const DEFAULT_UNITS_PER_EM: u16 = 1000;
+/// Relative tolerance when matching a scaled FontMatrix entry to an integer.
+const MATRIX_SNAP: f64 = 1.0e-5;
 const TRANSIENT_SLOTS: usize = 32;
 
 type Res<T> = Result<T, OutlineError>;
@@ -240,23 +256,68 @@ fn parse_dict(b: &[u8]) -> Res<Dict> {
     Ok(Dict { entries })
 }
 
-fn validate_font_matrix(dict: &Dict) -> Res<()> {
-    if let Some(matrix) = dict.get(OP_FONT_MATRIX) {
-        if matrix.len() != 6 {
-            return Err(OutlineError::InvalidData("FontMatrix operand count"));
-        }
-        if matrix != [0.001, 0.0, 0.0, 0.001, 0.0, 0.0] {
-            return Err(OutlineError::Unsupported("non-default FontMatrix"));
-        }
+/// FontMatrix of a DICT, if present: six finite numbers forming an invertible matrix.
+fn font_matrix(dict: &Dict) -> Res<Option<[f64; 6]>> {
+    let Some(m) = dict.get(OP_FONT_MATRIX) else {
+        return Ok(None);
+    };
+    let m: [f64; 6] = m
+        .try_into()
+        .map_err(|_| OutlineError::InvalidData("FontMatrix operand count"))?;
+    check_matrix(&m)?;
+    Ok(Some(m))
+}
+
+fn check_matrix(m: &[f64; 6]) -> Res<()> {
+    let det = m[0] * m[3] - m[1] * m[2];
+    if m.iter().any(|v| !v.is_finite()) || !det.is_finite() || det == 0.0 {
+        return Err(OutlineError::InvalidData("degenerate FontMatrix"));
     }
     Ok(())
 }
 
-fn reject_fd_font_matrix(dict: &Dict) -> Res<()> {
-    if dict.get(OP_FONT_MATRIX).is_some() {
-        return Err(OutlineError::Unsupported("FD FontMatrix"));
+/// Matrix applying to a Font DICT: the Top DICT one, the FD DICT one, or the FD matrix
+/// concatenated with the Top DICT matrix (FD applied first) when both are present.
+fn effective_matrix(top: Option<[f64; 6]>, fd: Option<[f64; 6]>) -> Res<[f64; 6]> {
+    let m = match (top, fd) {
+        (None, None) => DEFAULT_MATRIX,
+        (Some(m), None) | (None, Some(m)) => m,
+        (Some(t), Some(f)) => [
+            t[0] * f[0] + t[2] * f[1],
+            t[1] * f[0] + t[3] * f[1],
+            t[0] * f[2] + t[2] * f[3],
+            t[1] * f[2] + t[3] * f[3],
+            t[0] * f[4] + t[2] * f[5] + t[4],
+            t[1] * f[4] + t[3] * f[5] + t[5],
+        ],
+    };
+    check_matrix(&m)?;
+    Ok(m)
+}
+
+/// Transform from charstring units to the caller's font units (`units_per_em`);
+/// `None` for the default matrix and for a matrix that already equals
+/// `1 / units_per_em`, which leave coordinates untouched.
+///
+/// FontMatrix reals are stored with a handful of digits (`0.000833333` for a
+/// 1200-unit em), so a linear entry within [`MATRIX_SNAP`] of an integer after
+/// scaling is taken to be that integer instead of distorting every outline.
+fn glyph_transform(m: &[f64; 6], units_per_em: u16) -> Res<Option<[f64; 6]>> {
+    if *m == DEFAULT_MATRIX {
+        return Ok(None);
     }
-    Ok(())
+    let u = f64::from(units_per_em);
+    let mut t = m.map(|v| v * u);
+    if t.iter().any(|v| !v.is_finite()) {
+        return Err(OutlineError::InvalidData("degenerate FontMatrix"));
+    }
+    for v in &mut t[..4] {
+        let r = v.round();
+        if (*v - r).abs() <= MATRIX_SNAP * r.abs().max(1.0) {
+            *v = r;
+        }
+    }
+    Ok((t != [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]).then_some(t))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -264,6 +325,8 @@ struct Private<'a> {
     default_width: f64,
     nominal_width: f64,
     subrs: Index<'a>,
+    /// Effective FontMatrix (Top DICT and FD DICT combined).
+    matrix: [f64; 6],
 }
 impl<'a> Private<'a> {
     fn none() -> Self {
@@ -271,6 +334,7 @@ impl<'a> Private<'a> {
             default_width: 0.0,
             nominal_width: 0.0,
             subrs: Index::empty(),
+            matrix: DEFAULT_MATRIX,
         }
     }
     fn parse(cff: &'a [u8], size: usize, offset: usize) -> Res<Self> {
@@ -294,6 +358,7 @@ impl<'a> Private<'a> {
             default_width: d.number(OP_DEFAULT_WIDTH)?.unwrap_or(0.0),
             nominal_width: d.number(OP_NOMINAL_WIDTH)?.unwrap_or(0.0),
             subrs,
+            matrix: DEFAULT_MATRIX,
         })
     }
     fn from_dict(cff: &'a [u8], d: &Dict) -> Res<Self> {
@@ -358,7 +423,7 @@ impl<'a> CffFont<'a> {
             return Err(OutlineError::InvalidData("empty Top DICT INDEX"));
         }
         let top = parse_dict(tops.get(0)?)?;
-        validate_font_matrix(&top)?;
+        let top_matrix = font_matrix(&top)?;
         if let Some(t) = top.number(OP_CHARSTRING_TYPE)?
             && t != 2.0
         {
@@ -397,8 +462,9 @@ impl<'a> CffFont<'a> {
             let mut fonts = Vec::with_capacity(fds.count);
             for i in 0..fds.count {
                 let d = parse_dict(fds.get(i)?)?;
-                reject_fd_font_matrix(&d)?;
-                fonts.push(Private::from_dict(data, &d)?);
+                let mut private = Private::from_dict(data, &d)?;
+                private.matrix = effective_matrix(top_matrix, font_matrix(&d)?)?;
+                fonts.push(private);
             }
             let fd_select =
                 parse_fd_select(data, to_index(fd_select)?, charstrings.count, fonts.len())?;
@@ -408,7 +474,9 @@ impl<'a> CffFont<'a> {
                 ordering: [ros[0], ros[1], ros[2]],
             }
         } else {
-            Kind::Simple(Private::from_dict(data, &top)?)
+            let mut private = Private::from_dict(data, &top)?;
+            private.matrix = effective_matrix(top_matrix, None)?;
+            Kind::Simple(private)
         };
         Ok(Self {
             data,
@@ -466,10 +534,47 @@ impl<'a> CffFont<'a> {
         }
     }
 
-    /// Custom string (SID >= 391) from the String INDEX. Standard strings are not tabulated.
+    /// Custom string (SID >= 391) from the String INDEX. Standard strings are
+    /// not returned here; [`CffFont::sid_name`] resolves both kinds.
     pub fn string(&self, sid: u16) -> Option<&'a [u8]> {
-        let i = usize::from(sid).checked_sub(STANDARD_STRINGS)?;
+        let i = usize::from(sid).checked_sub(STANDARD_COUNT)?;
         self.strings.get(i).ok()
+    }
+
+    /// Name for any SID: one of the 391 standard strings, or an entry of the String INDEX.
+    pub fn sid_name(&self, sid: u16) -> Option<&'a [u8]> {
+        match standard_string(sid) {
+            Some(name) => Some(name.as_bytes()),
+            None => self.string(sid),
+        }
+    }
+
+    /// Glyph name of a name-keyed font (`None` for CID-keyed fonts and unresolved SIDs).
+    pub fn glyph_name(&self, gid: u16) -> Res<Option<&'a [u8]>> {
+        if self.is_cid() {
+            if usize::from(gid) >= self.charstrings.count {
+                return Err(OutlineError::InvalidGlyph);
+            }
+            return Ok(None);
+        }
+        Ok(self.sid_name(self.glyph_id_in_charset(gid)?))
+    }
+
+    /// First glyph whose charset entry equals `sid` (name-keyed fonts; glyph 0 is `.notdef`).
+    pub fn glyph_for_sid(&self, sid: u16) -> Res<Option<u16>> {
+        if sid == 0 {
+            return Ok(Some(0));
+        }
+        let mut found = None;
+        self.charset_walk(|g, id| {
+            if id == sid {
+                found = Some(g as u16);
+                false
+            } else {
+                true
+            }
+        })?;
+        Ok(found)
     }
 
     /// Decode the whole charset: SID (or CID) for each glyph, glyph 0 being `.notdef`.
@@ -483,8 +588,8 @@ impl<'a> CffFont<'a> {
         Ok(out)
     }
 
-    /// SID (or CID) of one glyph. Predefined ISOAdobe maps glyph to SID directly;
-    /// predefined Expert charsets are not tabulated and return `Unsupported`.
+    /// SID (or CID) of one glyph. Predefined ISOAdobe, Expert and ExpertSubset
+    /// charsets are resolved from their tables.
     pub fn glyph_id_in_charset(&self, gid: u16) -> Res<u16> {
         let gid = usize::from(gid);
         if gid >= self.charstrings.count {
@@ -519,7 +624,24 @@ impl<'a> CffFont<'a> {
                 }
                 Ok(())
             }
-            1 | 2 => Err(OutlineError::Unsupported("predefined Expert charset")),
+            off @ (1 | 2) => {
+                let table: &[u16] = if off == 1 {
+                    &EXPERT_CHARSET
+                } else {
+                    &EXPERT_SUBSET_CHARSET
+                };
+                if n > table.len() {
+                    return Err(OutlineError::InvalidData(
+                        "predefined charset shorter than the glyph count",
+                    ));
+                }
+                for (g, &sid) in table.iter().enumerate().take(n).skip(1) {
+                    if !f(g, sid) {
+                        break;
+                    }
+                }
+                Ok(())
+            }
             off => {
                 let mut r = Rd::at(self.data, off);
                 let format = r.u8()?;
@@ -563,12 +685,39 @@ impl<'a> CffFont<'a> {
     ///
     /// `max_depth` is capped to [`MAX_SUBR_DEPTH`], `max_components` bounds the
     /// total number of subroutine calls, `max_points` and `max_contours` apply as for TrueType.
+    /// A non-default FontMatrix is applied for a 1000 units-per-em caller; use
+    /// [`CffFont::outline_with_units`] to target another em size.
     pub fn outline(&self, gid: u16, limits: OutlineLimits) -> Res<Path> {
         Ok(self.glyph(gid, limits)?.path)
     }
 
+    /// Like [`CffFont::outline`], with coordinates expressed in `units_per_em` units.
+    pub fn outline_with_units(
+        &self,
+        gid: u16,
+        limits: OutlineLimits,
+        units_per_em: u16,
+    ) -> Res<Path> {
+        Ok(self.glyph_with_units(gid, limits, units_per_em)?.path)
+    }
+
     /// Decode a glyph outline and its width.
     pub fn glyph(&self, gid: u16, limits: OutlineLimits) -> Res<CffGlyph> {
+        self.glyph_with_units(gid, limits, DEFAULT_UNITS_PER_EM)
+    }
+
+    /// Decode a glyph outline and its width in `units_per_em` units.
+    ///
+    /// The effective FontMatrix (Top DICT, FD DICT, or both concatenated) maps
+    /// charstring units to em fractions; coordinates and width are multiplied by
+    /// `matrix * units_per_em`. The default matrix leaves them untouched, whatever
+    /// `units_per_em` is. The width is scaled by the matrix horizontal factor.
+    pub fn glyph_with_units(
+        &self,
+        gid: u16,
+        limits: OutlineLimits,
+        units_per_em: u16,
+    ) -> Res<CffGlyph> {
         if limits.max_depth > PUBLIC_DEPTH {
             return Err(OutlineError::LimitExceeded("public depth cap"));
         }
@@ -581,7 +730,9 @@ impl<'a> CffFont<'a> {
             Kind::Simple(p) => p,
             Kind::Cid { fonts, .. } => &fonts[self.font_dict_index(gid)?],
         };
+        let tf = glyph_transform(&private.matrix, units_per_em)?;
         let mut it = Interp {
+            font: self,
             global: &self.glyph_subrs,
             local: &private.subrs,
             global_bias: bias(self.glyph_subrs.count),
@@ -589,6 +740,8 @@ impl<'a> CffFont<'a> {
             nominal: private.nominal_width,
             limits,
             max_depth: limits.max_depth.min(MAX_SUBR_DEPTH),
+            tf,
+            seac_depth: 0,
             stack: Vec::with_capacity(MAX_STACK),
             transient: [0.0; TRANSIENT_SLOTS],
             x: 0.0,
@@ -604,15 +757,24 @@ impl<'a> CffFont<'a> {
             points: 0,
             contours: 0,
         };
-        match it.run(code, 0)? {
-            Flow::End => {}
-            Flow::Return => return Err(OutlineError::InvalidData("charstring without endchar")),
+        it.exec(code)?;
+        let mut width = it.width.unwrap_or(private.default_width);
+        if let Some(t) = tf {
+            width *= t[0];
+            if !width.is_finite() {
+                return Err(OutlineError::Geometry);
+            }
         }
         Ok(CffGlyph {
             path: it.path,
-            width: it.width.unwrap_or(private.default_width),
+            width,
         })
     }
+}
+
+/// One of the 391 standard strings of Technical Note 5176, appendix A.
+pub fn standard_string(sid: u16) -> Option<&'static str> {
+    STANDARD_STRINGS.get(usize::from(sid)).copied()
 }
 
 fn parse_fd_select(data: &[u8], off: usize, glyphs: usize, fonts: usize) -> Res<&[u8]> {
@@ -692,6 +854,7 @@ enum Flow {
 }
 
 struct Interp<'a, 'f> {
+    font: &'f CffFont<'a>,
     global: &'f Index<'a>,
     local: &'f Index<'a>,
     global_bias: i64,
@@ -699,6 +862,8 @@ struct Interp<'a, 'f> {
     nominal: f64,
     limits: OutlineLimits,
     max_depth: usize,
+    tf: Option<[f64; 6]>,
+    seac_depth: usize,
     stack: Vec<f64>,
     transient: [f64; TRANSIENT_SLOTS],
     x: f64,
@@ -749,6 +914,83 @@ impl<'a> Interp<'a, '_> {
         }
         Ok(v.trunc() as i64)
     }
+    /// Map a point of the charstring space into the caller's font units.
+    fn out(&self, x: f64, y: f64) -> Res<Point> {
+        match self.tf {
+            None => pt(x, y),
+            Some(t) => pt(t[0] * x + t[2] * y + t[4], t[1] * x + t[3] * y + t[5]),
+        }
+    }
+    /// Run one top-level charstring (an empty one is an empty glyph).
+    fn exec(&mut self, code: &'a [u8]) -> Res<()> {
+        if code.is_empty() {
+            return Ok(());
+        }
+        match self.run(code, 0)? {
+            Flow::End => Ok(()),
+            Flow::Return => Err(OutlineError::InvalidData("charstring without endchar")),
+        }
+    }
+    /// Glyph index of a StandardEncoding code, through its name and the charset.
+    fn seac_component(&self, code: f64) -> Res<u16> {
+        if code.fract() != 0.0 || !(0.0..256.0).contains(&code) {
+            return Err(OutlineError::InvalidData("seac character code"));
+        }
+        let sid = STANDARD_ENCODING[code as usize];
+        if sid == 0 {
+            return Err(OutlineError::InvalidData(
+                "seac code outside StandardEncoding",
+            ));
+        }
+        self.font
+            .glyph_for_sid(sid)?
+            .ok_or(OutlineError::InvalidData(
+                "seac component missing from charset",
+            ))
+    }
+    /// Deprecated `endchar` form: draw the base glyph, then the accent shifted by (adx, ady).
+    fn seac(&mut self, a: [f64; 4]) -> Res<()> {
+        let font = self.font;
+        let Kind::Simple(private) = &font.kind else {
+            return Err(OutlineError::InvalidData("seac in a CID-keyed font"));
+        };
+        if self.seac_depth >= MAX_SEAC_DEPTH {
+            return Err(OutlineError::LimitExceeded("seac depth"));
+        }
+        let base = self.seac_component(a[2])?;
+        let accent = self.seac_component(a[3])?;
+        let saved = (
+            self.stems,
+            self.width,
+            self.width_done,
+            self.local_bias,
+            self.nominal,
+        );
+        self.seac_depth += 1;
+        self.local = &private.subrs;
+        self.local_bias = bias(private.subrs.count);
+        self.nominal = private.nominal_width;
+        for (gid, ox, oy) in [(base, 0.0, 0.0), (accent, a[0], a[1])] {
+            self.stack.clear();
+            self.stems = 0;
+            self.width = None;
+            self.width_done = false;
+            self.x = ox;
+            self.y = oy;
+            self.pending = None;
+            let code = font.charstrings.get(usize::from(gid))?;
+            self.exec(code)?;
+        }
+        self.seac_depth -= 1;
+        (
+            self.stems,
+            self.width,
+            self.width_done,
+            self.local_bias,
+            self.nominal,
+        ) = saved;
+        Ok(())
+    }
     fn add_points(&mut self, n: usize) -> Res<()> {
         self.points += n;
         if self.points > self.limits.max_points {
@@ -769,7 +1011,7 @@ impl<'a> Interp<'a, '_> {
         self.x += dx;
         self.y += dy;
         self.add_points(1)?;
-        self.pending = Some(pt(self.x, self.y)?);
+        self.pending = Some(self.out(self.x, self.y)?);
         Ok(())
     }
     fn begin_draw(&mut self) -> Res<()> {
@@ -793,17 +1035,18 @@ impl<'a> Interp<'a, '_> {
         self.x += dx;
         self.y += dy;
         self.path
-            .line_to(pt(self.x, self.y)?)
+            .line_to(self.out(self.x, self.y)?)
             .map_err(|_| OutlineError::Geometry)
     }
     fn curve(&mut self, d: [f64; 6]) -> Res<()> {
         self.begin_draw()?;
         self.add_points(3)?;
-        let c1 = pt(self.x + d[0], self.y + d[1])?;
-        let c2 = pt(c1.x() + d[2], c1.y() + d[3])?;
-        let end = pt(c2.x() + d[4], c2.y() + d[5])?;
-        self.x = end.x();
-        self.y = end.y();
+        let (x1, y1) = (self.x + d[0], self.y + d[1]);
+        let (x2, y2) = (x1 + d[2], y1 + d[3]);
+        let (x3, y3) = (x2 + d[4], y2 + d[5]);
+        let (c1, c2, end) = (self.out(x1, y1)?, self.out(x2, y2)?, self.out(x3, y3)?);
+        self.x = x3;
+        self.y = y3;
         self.path
             .cubic_to(c1, c2, end)
             .map_err(|_| OutlineError::Geometry)
@@ -874,14 +1117,14 @@ impl<'a> Interp<'a, '_> {
                 11 => return Ok(Flow::Return),
                 14 => {
                     match self.stack.len() {
-                        0 => self.take_width(false),
-                        1 if !self.width_done => self.take_width(true),
-                        4 | 5 => {
-                            return Err(OutlineError::Unsupported("endchar accent composition"));
-                        }
+                        0 | 4 => self.take_width(false),
+                        1 | 5 if !self.width_done => self.take_width(true),
                         _ => return Err(OutlineError::InvalidData("endchar arguments")),
                     }
                     self.close_contour()?;
+                    if let [adx, ady, bchar, achar] = self.stack[..] {
+                        self.seac([adx, ady, bchar, achar])?;
+                    }
                     return Ok(Flow::End);
                 }
                 12 => {
@@ -1140,7 +1383,7 @@ impl<'a> Interp<'a, '_> {
                     self.stack[len - n..].rotate_right(shift);
                 }
             }
-            23 => return Err(OutlineError::Unsupported("random operator")),
+            23 => self.push(RANDOM_VALUE)?,
             34 => {
                 let a = flex(self, 7)?;
                 let res = self

@@ -162,14 +162,34 @@ fn d29(v: i32) -> Vec<u8> {
     b
 }
 
-fn font_matrix_with_scale(scale: &[u8]) -> Vec<u8> {
-    let mut d = Vec::new();
-    d.extend_from_slice(scale);
-    d.extend(d29(0));
-    d.extend(d29(0));
-    d.extend_from_slice(scale);
-    d.extend(d29(0));
-    d.extend(d29(0));
+/// DICT real operand (operator 30) from decimal text such as `-0.5` or `1E-3`.
+fn real(text: &str) -> Vec<u8> {
+    let mut nibbles = Vec::new();
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        nibbles.push(match c {
+            '0'..='9' => c as u8 - b'0',
+            '.' => 0xa,
+            '-' => 0xe,
+            'E' if chars.peek() == Some(&'-') => {
+                chars.next();
+                0xc
+            }
+            'E' => 0xb,
+            _ => panic!("bad real text"),
+        });
+    }
+    nibbles.push(0xf);
+    if nibbles.len() % 2 == 1 {
+        nibbles.push(0xf);
+    }
+    let mut out = vec![30];
+    out.extend(nibbles.chunks(2).map(|n| (n[0] << 4) | n[1]));
+    out
+}
+/// FontMatrix DICT entry from six decimal texts.
+fn matrix(v: [&str; 6]) -> Vec<u8> {
+    let mut d: Vec<u8> = v.iter().flat_map(|t| real(t)).collect();
     d.extend([12, 7]);
     d
 }
@@ -191,6 +211,8 @@ struct Spec {
     fd_select: Option<Vec<u8>>,
     /// Raw charset bytes (None: format 0 with SIDs 1..n).
     charset: Option<Vec<u8>>,
+    /// Predefined charset number (0 ISOAdobe, 1 Expert, 2 ExpertSubset) instead of a table.
+    charset_pre: Option<i32>,
     strings: Vec<Vec<u8>>,
     charstring_type: Option<i32>,
     font_matrix: Option<Vec<u8>>,
@@ -223,6 +245,9 @@ fn build(spec: &Spec) -> Vec<u8> {
     let gsubr = index(&spec.gsubrs);
     let n = spec.glyphs.len();
     let charset = spec.charset.clone().unwrap_or_else(|| {
+        if spec.charset_pre.is_some() {
+            return Vec::new();
+        }
         let mut c = vec![0];
         for i in 1..n {
             c.extend((i as u16).to_be_bytes());
@@ -327,7 +352,7 @@ fn build(spec: &Spec) -> Vec<u8> {
         tail.extend(pd);
         tail.extend(subrs);
     }
-    top.extend(d29(charset_off as i32));
+    top.extend(d29(spec.charset_pre.unwrap_or(charset_off as i32)));
     top.push(15);
     top.extend(d29(cs_off as i32));
     top.push(17);
@@ -869,10 +894,8 @@ fn arithmetic_failures_are_typed() {
         outline_of(cs(&[N(1), N(5), N(1), E(30), O(ENDCHAR)])),
         Err(OutlineError::InvalidData(_))
     ));
-    assert!(matches!(
-        outline_of(cs(&[E(23), O(ENDCHAR)])),
-        Err(OutlineError::Unsupported(_))
-    ));
+    // `random` is deterministic: the fixed value 0.5, in ]0, 1].
+    assert_eq!(eval_x(&[E(23), N(2), E(24)]), 1.0);
     assert!(matches!(
         outline_of(cs(&[E(1), O(ENDCHAR)])),
         Err(OutlineError::InvalidData(_))
@@ -1099,44 +1122,249 @@ fn subroutine_errors_and_budgets() {
     assert_eq!(MAX_OPERATIONS, 1_000_000);
 }
 
-#[test]
-fn non_default_font_matrix_is_rejected() {
+fn pair(x: f64, y: f64) -> (f64, f64) {
+    (x, y)
+}
+
+/// Glyph 1 draws (10,20) -> (40,60); glyph width is the default width 250.
+fn matrix_spec(top: Option<Vec<u8>>) -> Spec {
     let mut spec = simple(vec![
         cs(&[O(ENDCHAR)]),
-        cs(&[N(0), N(0), O(RMOVETO), N(100), N(0), O(RLINETO), O(ENDCHAR)]),
+        cs(&[
+            N(10),
+            N(20),
+            O(RMOVETO),
+            N(30),
+            N(40),
+            O(RLINETO),
+            O(ENDCHAR),
+        ]),
     ]);
-    // This valid scale-2 matrix would change the 100-unit line to 200 units,
-    // while the outline API promises font-unit coordinates.
-    spec.font_matrix = Some(font_matrix_with_scale(&d29(2)));
-    let bytes = build(&spec);
+    spec.font_matrix = top;
+    spec
+}
+
+#[test]
+fn top_dict_font_matrix_is_applied_in_caller_units() {
+    let line = |a: (f64, f64), b: (f64, f64)| Pb::new().m(a.0, a.1).l(b.0, b.1).z().done();
+    // Absent, explicit default and reals: unchanged, whatever the caller's em size.
+    let default_matrix = matrix(["0.001", "0", "0", "0.001", "0", "0"]);
+    for top in [None, Some(default_matrix.clone())] {
+        let bytes = build(&matrix_spec(top));
+        let font = CffFont::parse(&bytes).unwrap();
+        for upem in [16u16, 1000, 2048, 16384] {
+            let g = font
+                .glyph_with_units(1, OutlineLimits::default(), upem)
+                .unwrap();
+            assert_eq!(g.path, line(pair(10., 20.), pair(40., 60.)));
+            assert_eq!(g.width, 250.0);
+        }
+    }
+    // Uniform 0.002: a 500-unit em drawn at 1000 units doubles everything.
+    let bytes = build(&matrix_spec(Some(matrix([
+        "0.002", "0", "0", "0.002", "0", "0",
+    ]))));
+    let font = CffFont::parse(&bytes).unwrap();
+    let g = font.glyph(1, OutlineLimits::default()).unwrap();
+    assert_eq!(g.path, line(pair(20., 40.), pair(80., 120.)));
+    assert_eq!(g.width, 500.0);
+    // Same font for a 2000 units-per-em caller: matrix * 2000 = 4.
+    let g = font
+        .glyph_with_units(1, OutlineLimits::default(), 2000)
+        .unwrap();
+    assert_eq!(g.path, line(pair(40., 80.), pair(160., 240.)));
+    assert_eq!(g.width, 1000.0);
+    // Skew and translation: x' = 2x + y + 5, y' = 2y - 1.
+    let bytes = build(&matrix_spec(Some(matrix([
+        "0.002", "0", "0.001", "0.002", "0.005", "-0.001",
+    ]))));
+    let g = CffFont::parse(&bytes)
+        .unwrap()
+        .glyph(1, OutlineLimits::default())
+        .unwrap();
+    assert_eq!(g.path, line(pair(45., 39.), pair(145., 119.)));
+    assert_eq!(g.width, 500.0);
+    // Curves go through the same transform: control points of an rrcurveto.
+    let mut curve = matrix_spec(Some(matrix(["0.002", "0", "0", "0.002", "0", "0"])));
+    curve.glyphs[1] = drawn(&[1, 2, 3, 4, 5, 6], O(RRCURVETO));
+    let bytes = build(&curve);
+    let path = CffFont::parse(&bytes)
+        .unwrap()
+        .outline(1, OutlineLimits::default())
+        .unwrap();
+    assert_eq!(
+        path,
+        Pb::new()
+            .m(0., 0.)
+            .c((2., 4.), (8., 12.), (18., 24.))
+            .z()
+            .done()
+    );
+}
+
+#[test]
+fn rounded_reciprocal_matrices_match_their_em_without_distortion() {
+    // Real fonts store 1/1200 as 0.000833333; for a 1200-unit em this is the identity.
+    let bytes = build(&matrix_spec(Some(matrix([
+        "0.000833333",
+        "0",
+        "0",
+        "0.000833333",
+        "0",
+        "0",
+    ]))));
+    let font = CffFont::parse(&bytes).unwrap();
+    let exact = Pb::new().m(10., 20.).l(40., 60.).z().done();
+    let g = font
+        .glyph_with_units(1, OutlineLimits::default(), 1200)
+        .unwrap();
+    assert_eq!(g.path, exact);
+    assert_eq!(g.width, 250.0);
+    // For another em the same matrix is a real scale (1000 / 1200).
+    let g = font.glyph(1, OutlineLimits::default()).unwrap();
+    assert_ne!(g.path, exact);
+    let (x, y) = first_point(&g.path);
+    assert!((x - 10.0 * 0.833333).abs() < 1e-9 && (y - 20.0 * 0.833333).abs() < 1e-9);
+}
+
+#[test]
+fn font_matrix_reaches_faces_through_units_per_em() {
+    let top = Some(matrix(["0.002", "0", "0", "0.002", "0", "0"]));
+    let cff = build(&matrix_spec(top));
+    for (upem, a, b) in [(1000u16, 20., 80.), (2000, 40., 160.)] {
+        let font = otto_with_upem(2, upem, vec![(*b"CFF ", cff.clone())]);
+        let face = FontFace::parse(&font).unwrap();
+        assert_eq!(
+            face.outline(1).unwrap(),
+            Pb::new().m(a, 2. * a).l(b, 1.5 * b).z().done(),
+            "upem {upem}"
+        );
+    }
+    // Default matrix: identical contours whatever the head.unitsPerEm.
+    let plain = build(&matrix_spec(None));
+    let direct = CffFont::parse(&plain)
+        .unwrap()
+        .outline(1, OutlineLimits::default())
+        .unwrap();
+    for upem in [1000u16, 2048] {
+        let font = otto_with_upem(2, upem, vec![(*b"CFF ", plain.clone())]);
+        assert_eq!(FontFace::parse(&font).unwrap().outline(1).unwrap(), direct);
+    }
+}
+
+#[test]
+fn invalid_font_matrices_are_typed_errors() {
+    let bad_value = |m: Vec<u8>| {
+        let bytes = build(&matrix_spec(Some(m)));
+        let r = CffFont::parse(&bytes);
+        matches!(r, Err(OutlineError::InvalidData("degenerate FontMatrix")))
+    };
+    assert!(bad_value(matrix(["0", "0", "0", "0", "0", "0"])));
+    assert!(bad_value(matrix(["0.001", "0", "0.002", "0", "0", "0"])));
+    assert!(bad_value(matrix([
+        "0.001", "0.001", "0.001", "0.001", "0", "0"
+    ])));
+    // Finite entries whose determinant overflows.
+    assert!(bad_value(matrix(["1E300", "0", "0", "1E300", "0", "0"])));
+    // Non-finite real in the DICT itself.
+    let bytes = build(&matrix_spec(Some(matrix([
+        "1E999", "0", "0", "0.001", "0", "0",
+    ]))));
+    let r = CffFont::parse(&bytes);
     assert!(matches!(
-        CffFont::parse(&bytes),
-        Err(OutlineError::Unsupported("non-default FontMatrix"))
+        r,
+        Err(OutlineError::InvalidData("DICT real number"))
+    ));
+    // Wrong operand counts: five and seven numbers.
+    for n in [5usize, 7] {
+        let mut d: Vec<u8> = (0..n).flat_map(|_| real("0.001")).collect();
+        d.extend([12, 7]);
+        assert!(matches!(
+            CffFont::parse(&build(&matrix_spec(Some(d)))),
+            Err(OutlineError::InvalidData("FontMatrix operand count"))
+        ));
+    }
+    // Scaling by a huge em can overflow the coordinates: typed, not a panic.
+    let big = build(&matrix_spec(Some(matrix([
+        "1E150", "0", "0", "1E150", "0", "0",
+    ]))));
+    let r = CffFont::parse(&big).map(|f| f.outline(1, OutlineLimits::default()));
+    assert!(matches!(r, Ok(Err(OutlineError::Geometry))), "{r:?}");
+    // Degenerate FD matrix in a CID font.
+    let mut cid = cid_spec(vec![0, 0, 0, 0, 0]);
+    cid.fds[1].font_matrix = Some(matrix(["0", "0", "0", "0", "0", "0"]));
+    assert!(matches!(
+        CffFont::parse(&build(&cid)),
+        Err(OutlineError::InvalidData("degenerate FontMatrix"))
+    ));
+    cid.fds[1].font_matrix = Some([d29(1), vec![12, 7]].concat());
+    assert!(matches!(
+        CffFont::parse(&build(&cid)),
+        Err(OutlineError::InvalidData("FontMatrix operand count"))
     ));
 }
 
 #[test]
-fn font_matrix_support_is_explicit_for_top_and_fd_dicts() {
-    let mut top_default = simple(vec![cs(&[O(ENDCHAR)])]);
-    let real_001 = [30, 0x0a, 0x00, 0x1f];
-    top_default.font_matrix = Some(font_matrix_with_scale(&real_001));
-    assert!(CffFont::parse(&build(&top_default)).is_ok());
-
-    let mut top_bad_arity = simple(vec![cs(&[O(ENDCHAR)])]);
-    top_bad_arity.font_matrix = Some([d29(1), vec![12, 7]].concat());
-    assert!(matches!(
-        CffFont::parse(&build(&top_bad_arity)),
-        Err(OutlineError::InvalidData("FontMatrix operand count"))
-    ));
-
-    for scale in [&real_001[..], &d29(2)[..]] {
-        let mut cid = cid_spec(vec![0, 0, 0, 0, 0]);
-        cid.fds[0].font_matrix = Some(font_matrix_with_scale(scale));
-        assert!(matches!(
-            CffFont::parse(&build(&cid)),
-            Err(OutlineError::Unsupported("FD FontMatrix"))
-        ));
-    }
+fn fd_font_matrices_are_composed_with_the_top_dict_matrix() {
+    // Glyphs 1..3 select FD 0 (line 1,0 from 0,0), FD 1 (line 0,2), FD 1.
+    let sel = vec![3, 0, 2, 0, 0, 0, 0, 2, 1, 0, 4];
+    let line = |a: (f64, f64), b: (f64, f64)| Pb::new().m(a.0, a.1).l(b.0, b.1).z().done();
+    // Top 0.002; FD 0: [0.25 0 0 0.5 500 0]; FD 1 has no matrix. FD 0 effective:
+    // [0.0005 0 0 0.001 1 0] -> x' = 0.5x + 1000, y' = y. FD 1: top alone, x2.
+    let mut cid = cid_spec(sel.clone());
+    cid.font_matrix = Some(matrix(["0.002", "0", "0", "0.002", "0", "0"]));
+    cid.fds[0].font_matrix = Some(matrix(["0.25", "0", "0", "0.5", "500", "0"]));
+    let bytes = build(&cid);
+    let font = CffFont::parse(&bytes).unwrap();
+    let g1 = font.glyph(1, OutlineLimits::default()).unwrap();
+    assert_eq!(g1.path, line(pair(1000., 0.), pair(1000.5, 0.)));
+    assert_eq!(g1.width, 111.0 * 0.5);
+    let g2 = font.glyph(2, OutlineLimits::default()).unwrap();
+    assert_eq!(g2.path, line(pair(0., 0.), pair(0., 4.)));
+    assert_eq!(g2.width, 444.0);
+    // FD matrix alone (no Top DICT matrix) is used as is: 0.004 -> x4.
+    let mut cid = cid_spec(sel.clone());
+    cid.fds[1].font_matrix = Some(matrix(["0.004", "0", "0", "0.004", "0", "0"]));
+    let font_bytes = build(&cid);
+    let font = CffFont::parse(&font_bytes).unwrap();
+    assert_eq!(
+        font.outline(2, OutlineLimits::default()).unwrap(),
+        line(pair(0., 0.), pair(0., 8.))
+    );
+    // FD 0 without matrix keeps the default: unchanged.
+    assert_eq!(
+        font.outline(1, OutlineLimits::default()).unwrap(),
+        line(pair(0., 0.), pair(1., 0.))
+    );
+    // Composition order: FD first, then Top. Top = 90 degree rotation x0.001,
+    // FD 0 = [0.5 0 0 1 0 0]: x' = -y, y' = 0.5x.
+    let mut cid = cid_spec(sel.clone());
+    cid.font_matrix = Some(matrix(["0", "0.001", "-0.001", "0", "0", "0"]));
+    cid.fds[0].font_matrix = Some(matrix(["0.5", "0", "0", "1", "0", "0"]));
+    cid.fds[1].font_matrix = Some(matrix(["1", "0", "0", "1", "0", "0"]));
+    let bytes = build(&cid);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(
+        font.outline(1, OutlineLimits::default()).unwrap(),
+        line(pair(0., 0.), pair(0., 0.5))
+    );
+    // FD 1 identity composed with the rotation: (0,2) -> (-2,0).
+    assert_eq!(
+        font.outline(2, OutlineLimits::default()).unwrap(),
+        line(pair(0., 0.), pair(-2., 0.))
+    );
+    // Top and FD both default-equivalent after composition: no change at all.
+    let mut cid = cid_spec(sel);
+    cid.font_matrix = Some(matrix(["0.002", "0", "0", "0.002", "0", "0"]));
+    cid.fds[0].font_matrix = Some(matrix(["0.5", "0", "0", "0.5", "0", "0"]));
+    let bytes = build(&cid);
+    assert_eq!(
+        CffFont::parse(&bytes)
+            .unwrap()
+            .outline(1, OutlineLimits::default())
+            .unwrap(),
+        line(pair(0., 0.), pair(1., 0.))
+    );
 }
 
 // ---------------------------------------------------------------- stack and budgets
@@ -1225,21 +1453,35 @@ fn structural_charstring_errors_are_typed() {
         ("reserved 15", vec![15], "invalid"),
         ("return at top", cs(&[O(RETURN)]), "invalid"),
         (
-            "seac 4",
+            "seac 4 unencoded code",
             cs(&[N(1), N(2), N(3), N(4), O(ENDCHAR)]),
-            "unsupported",
+            "invalid",
         ),
         (
-            "seac 5",
+            "seac 5 unencoded code",
             cs(&[N(0), N(1), N(2), N(3), N(4), O(ENDCHAR)]),
-            "unsupported",
+            "invalid",
+        ),
+        (
+            "endchar 5 args after the width",
+            cs(&[
+                N(1),
+                N(2),
+                O(HSTEM),
+                N(0),
+                N(1),
+                N(2),
+                N(65),
+                N(194),
+                O(ENDCHAR),
+            ]),
+            "invalid",
         ),
         ("endchar 2 args", cs(&[N(1), N(2), O(ENDCHAR)]), "invalid"),
         ("truncated shortint", vec![28, 0], "truncated"),
         ("truncated fixed", vec![255, 0, 0], "truncated"),
         ("truncated two-byte", vec![247], "truncated"),
         ("truncated escape", vec![12], "truncated"),
-        ("empty", vec![], "invalid"),
     ] {
         let r = outline_of(code);
         let ok = match kind {
@@ -1311,9 +1553,378 @@ fn charsets_and_strings() {
     let font = CffFont::parse(&iso).unwrap();
     assert_eq!(font.charset().unwrap(), vec![0, 1, 2]);
     iso[at + 1..at + 5].copy_from_slice(&1i32.to_be_bytes());
+    assert_eq!(
+        CffFont::parse(&iso).unwrap().charset().unwrap(),
+        vec![0, 1, 229]
+    );
+}
+
+fn empty_glyphs(n: usize) -> Vec<Vec<u8>> {
+    (0..n).map(|_| cs(&[O(ENDCHAR)])).collect()
+}
+
+#[test]
+fn predefined_charsets_are_resolved_from_their_tables() {
+    let with = |pre: i32, n: usize| {
+        let mut spec = simple(empty_glyphs(n));
+        spec.charset_pre = Some(pre);
+        build(&spec)
+    };
+    // ISOAdobe: identity on SIDs, full length 229.
+    let bytes = with(0, 229);
+    let font = CffFont::parse(&bytes).unwrap();
+    let cs = font.charset().unwrap();
+    assert!(cs.iter().enumerate().all(|(g, &sid)| usize::from(sid) == g));
+    assert_eq!(font.glyph_name(228).unwrap(), Some(&b"zcaron"[..]));
+    assert!(CffFont::parse(&with(0, 230)).unwrap().charset().is_err());
+    // Expert (offset 1): 166 glyphs; hand-checked head and tail of appendix C.
+    let bytes = with(1, 166);
+    let font = CffFont::parse(&bytes).unwrap();
+    let cs = font.charset().unwrap();
+    assert_eq!(cs.len(), 166);
+    assert_eq!(cs[..7], [0, 1, 229, 230, 231, 232, 233]);
+    assert_eq!(cs[165], 378);
+    assert_eq!(font.glyph_id_in_charset(2).unwrap(), 229);
+    assert_eq!(font.glyph_name(2).unwrap(), Some(&b"exclamsmall"[..]));
+    assert_eq!(font.glyph_name(165).unwrap(), Some(&b"Ydieresissmall"[..]));
+    assert_eq!(font.glyph_for_sid(231).unwrap(), Some(4));
+    assert_eq!(font.glyph_for_sid(34).unwrap(), None);
+    assert!(CffFont::parse(&with(1, 167)).unwrap().charset().is_err());
+    // A shorter Expert font uses the table prefix.
+    let bytes = with(1, 4);
+    assert_eq!(
+        CffFont::parse(&bytes).unwrap().charset().unwrap(),
+        vec![0, 1, 229, 230]
+    );
+    // ExpertSubset (offset 2): 87 glyphs.
+    let bytes = with(2, 87);
+    let font = CffFont::parse(&bytes).unwrap();
+    let cs = font.charset().unwrap();
+    assert_eq!(cs.len(), 87);
+    assert_eq!(cs[..8], [0, 1, 231, 232, 235, 236, 237, 238]);
+    assert_eq!(cs[86], 346);
+    assert_eq!(font.glyph_name(86).unwrap(), Some(&b"commainferior"[..]));
+    assert_eq!(font.glyph_name(2).unwrap(), Some(&b"dollaroldstyle"[..]));
+    assert!(CffFont::parse(&with(2, 88)).unwrap().charset().is_err());
+    // Glyph 0 is always .notdef; out-of-range glyphs stay typed.
+    assert_eq!(font.glyph_id_in_charset(0).unwrap(), 0);
     assert!(matches!(
-        CffFont::parse(&iso).unwrap().charset(),
-        Err(OutlineError::Unsupported(_))
+        font.glyph_id_in_charset(87),
+        Err(OutlineError::InvalidGlyph)
+    ));
+}
+
+#[test]
+fn standard_strings_and_glyph_names() {
+    use atelier_font::cff::standard_string;
+    assert_eq!(standard_string(0), Some(".notdef"));
+    for (sid, name) in [
+        (1, "space"),
+        (5, "dollar"),
+        (34, "A"),
+        (96, "exclamdown"),
+        (125, "acute"),
+        (228, "zcaron"),
+        (229, "exclamsmall"),
+        (378, "Ydieresissmall"),
+        (379, "001.000"),
+        (383, "Black"),
+        (390, "Semibold"),
+    ] {
+        assert_eq!(standard_string(sid), Some(name), "SID {sid}");
+    }
+    assert_eq!(standard_string(391), None);
+    assert_eq!(standard_string(u16::MAX), None);
+    let all: Vec<&str> = (0..391).map(|s| standard_string(s).unwrap()).collect();
+    assert!(all.iter().all(|n| !n.is_empty()));
+    let mut sorted = all.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), 391);
+    // Standard and custom SIDs resolved through a font: glyphs A, custom, custom, dollar.
+    let mut spec = simple(empty_glyphs(5));
+    spec.strings = vec![b"Alpha".to_vec(), b"Beta".to_vec()];
+    spec.charset = Some(vec![0, 0, 34, 1, 0x87, 1, 0x88, 0, 5]);
+    let bytes = build(&spec);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(font.sid_name(34), Some(&b"A"[..]));
+    assert_eq!(font.sid_name(391), Some(&b"Alpha"[..]));
+    assert_eq!(font.sid_name(392), Some(&b"Beta"[..]));
+    assert_eq!(font.sid_name(393), None);
+    assert_eq!(font.string(34), None);
+    assert_eq!(font.glyph_name(0).unwrap(), Some(&b".notdef"[..]));
+    assert_eq!(font.glyph_name(1).unwrap(), Some(&b"A"[..]));
+    assert_eq!(font.glyph_name(2).unwrap(), Some(&b"Alpha"[..]));
+    assert_eq!(font.glyph_name(3).unwrap(), Some(&b"Beta"[..]));
+    assert_eq!(font.glyph_name(4).unwrap(), Some(&b"dollar"[..]));
+    assert!(matches!(
+        font.glyph_name(5),
+        Err(OutlineError::InvalidGlyph)
+    ));
+    assert_eq!(font.glyph_for_sid(392).unwrap(), Some(3));
+    // SID beyond the String INDEX: no name, no error.
+    let mut spec = simple(empty_glyphs(2));
+    spec.charset = Some(vec![0, 0x03, 0x00]);
+    let bytes = build(&spec);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(font.glyph_name(1).unwrap(), None);
+    // CID-keyed fonts have CIDs, not names.
+    let cid = build(&cid_spec(vec![0, 0, 1, 1, 0]));
+    assert_eq!(CffFont::parse(&cid).unwrap().glyph_name(1).unwrap(), None);
+}
+
+#[test]
+fn empty_charstring_is_an_empty_glyph_with_the_default_width() {
+    let (path, width) = glyph_in(simple(vec![cs(&[O(ENDCHAR)]), vec![]]), 1);
+    assert_eq!(path, Path::new());
+    assert_eq!(width, 250.0);
+    // A non-empty charstring still needs its endchar.
+    assert!(matches!(
+        outline_of(cs(&[N(1), N(1), O(RMOVETO)])),
+        Err(OutlineError::InvalidData(_))
+    ));
+}
+
+// ---------------------------------------------------------------- seac
+
+/// Font with A (gid 1, SID 34), acute (gid 2, SID 125) and the glyphs in `extra`
+/// (gids 3.., SIDs 35 `B`, 36 `C`, 37 `D`, ...).
+fn seac_spec(extra: Vec<Vec<u8>>) -> Spec {
+    let a = cs(&[
+        N(0),
+        N(0),
+        O(RMOVETO),
+        N(100),
+        N(0),
+        N(0),
+        N(200),
+        O(RLINETO),
+        O(ENDCHAR),
+    ]);
+    let acute = cs(&[
+        N(10),
+        N(300),
+        O(RMOVETO),
+        N(20),
+        N(40),
+        O(RLINETO),
+        O(ENDCHAR),
+    ]);
+    let mut glyphs = vec![cs(&[O(ENDCHAR)]), a, acute];
+    let n = extra.len();
+    glyphs.extend(extra);
+    let mut spec = simple(glyphs);
+    let mut charset = vec![0, 0, 34, 0, 125];
+    for k in 0..n {
+        charset.extend((35 + k as u16).to_be_bytes());
+    }
+    spec.charset = Some(charset);
+    spec
+}
+fn seac_cs(width: Option<i32>, adx: i32, ady: i32, b: i32, a: i32) -> Vec<u8> {
+    let mut v = Vec::new();
+    if let Some(w) = width {
+        v.push(N(w));
+    }
+    v.extend([N(adx), N(ady), N(b), N(a), O(ENDCHAR)]);
+    cs(&v)
+}
+
+#[test]
+fn endchar_with_four_arguments_composes_base_and_shifted_accent() {
+    // 65 = A -> SID 34 -> gid 1; 194 = acute -> SID 125 -> gid 2.
+    let spec = seac_spec(vec![seac_cs(Some(7), 40, -10, 65, 194)]);
+    let base = Pb::new().m(0., 0.).l(100., 0.).l(100., 200.).z();
+    // Accent origin shifted by (40, -10): rmoveto (10,300) lands on (50,290).
+    let expected = base.m(50., 290.).l(70., 330.).z().done();
+    let (path, width) = glyph_in(spec.clone(), 3);
+    assert_eq!(path, expected);
+    // The width is the composite glyph's own: nominal 600 + 7.
+    assert_eq!(width, 607.0);
+    // Without a width argument: default width.
+    let mut no_width = spec.clone();
+    no_width.glyphs[3] = seac_cs(None, 40, -10, 65, 194);
+    let (path, width) = glyph_in(no_width, 3);
+    assert_eq!(path, expected);
+    assert_eq!(width, 250.0);
+    // A width already consumed by a hint operator is not taken twice.
+    let mut hinted = spec.clone();
+    hinted.glyphs[3] = cs(&[
+        N(7),
+        N(1),
+        N(2),
+        O(HSTEM),
+        N(40),
+        N(-10),
+        N(65),
+        N(194),
+        O(ENDCHAR),
+    ]);
+    let (path, width) = glyph_in(hinted, 3);
+    assert_eq!(path, expected);
+    assert_eq!(width, 607.0);
+    // Same glyph through a matrix: the whole composition is transformed once.
+    let mut scaled = spec.clone();
+    scaled.font_matrix = Some(matrix(["0.002", "0", "0", "0.002", "0", "0"]));
+    let (path, width) = glyph_in(scaled, 3);
+    assert_eq!(
+        path,
+        Pb::new()
+            .m(0., 0.)
+            .l(200., 0.)
+            .l(200., 400.)
+            .z()
+            .m(100., 580.)
+            .l(140., 660.)
+            .z()
+            .done()
+    );
+    assert_eq!(width, 1214.0);
+    // Components do not leak state: the composite still uses its own width and
+    // a second decode of a component is unchanged.
+    let bytes = build(&spec);
+    let font = CffFont::parse(&bytes).unwrap();
+    assert_eq!(
+        font.glyph(2, OutlineLimits::default()).unwrap().path,
+        Pb::new().m(10., 300.).l(30., 340.).z().done()
+    );
+}
+
+#[test]
+fn seac_components_use_their_own_subroutines_and_nominal_width() {
+    // The accent calls local subr 0 (a 20,40 line); it also carries a width.
+    let mut spec = seac_spec(vec![seac_cs(None, 5, 5, 65, 194)]);
+    spec.fds[0].lsubrs = vec![line_sub(20, 40)];
+    spec.glyphs[2] = cs(&[
+        N(99),
+        N(10),
+        N(300),
+        O(RMOVETO),
+        N(-107),
+        O(CALLSUBR),
+        O(ENDCHAR),
+    ]);
+    let (path, width) = glyph_in(spec, 3);
+    assert_eq!(
+        path,
+        Pb::new()
+            .m(0., 0.)
+            .l(100., 0.)
+            .l(100., 200.)
+            .z()
+            .m(15., 305.)
+            .l(35., 345.)
+            .z()
+            .done()
+    );
+    // The accent's own width (600 + 99) is ignored.
+    assert_eq!(width, 250.0);
+}
+
+#[test]
+fn seac_failures_are_typed() {
+    let code = |b, a| seac_cs(None, 0, 0, b, a);
+    for (name, bad) in [
+        ("code outside StandardEncoding", code(3, 194)),
+        ("accent unencoded", code(65, 0)),
+        ("code too large", code(65, 256)),
+        ("negative code", code(-1, 194)),
+        ("component absent from charset", code(67, 194)),
+        ("accent absent from charset", code(65, 195)),
+    ] {
+        let spec = seac_spec(vec![bad]);
+        let bytes = build(&spec);
+        let r = CffFont::parse(&bytes)
+            .unwrap()
+            .outline(3, OutlineLimits::default());
+        assert!(
+            matches!(r, Err(OutlineError::InvalidData(_))),
+            "{name}: {r:?}"
+        );
+    }
+    // Fractional code (16.16 operand).
+    let frac = cs(&[N(0), N(0), R(&[255, 0, 65, 0x80, 0]), N(194), O(ENDCHAR)]);
+    let bytes = build(&seac_spec(vec![frac]));
+    let r = CffFont::parse(&bytes)
+        .unwrap()
+        .outline(3, OutlineLimits::default());
+    assert!(matches!(
+        r,
+        Err(OutlineError::InvalidData("seac character code"))
+    ));
+    // Not allowed in a CID-keyed font.
+    let mut cid = cid_spec(vec![0, 0, 0, 0, 0]);
+    cid.glyphs[1] = seac_cs(None, 0, 0, 65, 194);
+    let bytes = build(&cid);
+    let r = CffFont::parse(&bytes)
+        .unwrap()
+        .outline(1, OutlineLimits::default());
+    assert!(matches!(
+        r,
+        Err(OutlineError::InvalidData("seac in a CID-keyed font"))
+    ));
+}
+
+#[test]
+fn seac_nesting_and_budgets_are_bounded() {
+    // gid 3 = B: A + acute. gid 4 = C: B + acute. gid 5 = D: C + acute.
+    // gid 6 = E: E + E (self reference).
+    let spec = seac_spec(vec![
+        seac_cs(None, 0, 0, 65, 194),
+        seac_cs(None, 0, 0, 66, 194),
+        seac_cs(None, 0, 0, 67, 194),
+        seac_cs(None, 0, 0, 69, 69),
+    ]);
+    let bytes = build(&spec);
+    let font = CffFont::parse(&bytes).unwrap();
+    let limits = OutlineLimits::default();
+    assert!(font.outline(3, limits).is_ok());
+    // One nested level is allowed.
+    let nested = font.outline(4, limits).unwrap();
+    assert_eq!(
+        nested,
+        Pb::new()
+            .m(0., 0.)
+            .l(100., 0.)
+            .l(100., 200.)
+            .z()
+            .m(10., 300.)
+            .l(30., 340.)
+            .z()
+            .m(10., 300.)
+            .l(30., 340.)
+            .z()
+            .done()
+    );
+    // Two levels exceed the explicit bound; cycles end the same way.
+    assert!(matches!(
+        font.outline(5, limits),
+        Err(OutlineError::LimitExceeded("seac depth"))
+    ));
+    assert!(matches!(
+        font.outline(6, limits),
+        Err(OutlineError::LimitExceeded("seac depth"))
+    ));
+    // Point and contour budgets are shared by the components: A has 3 points,
+    // the accent 2.
+    let at = |max_points, max_contours| {
+        font.outline(
+            3,
+            OutlineLimits {
+                max_points,
+                max_contours,
+                ..limits
+            },
+        )
+    };
+    assert!(at(5, 2).is_ok());
+    assert!(matches!(
+        at(4, 2),
+        Err(OutlineError::LimitExceeded("points"))
+    ));
+    assert!(matches!(
+        at(5, 1),
+        Err(OutlineError::LimitExceeded("contours"))
     ));
 }
 
@@ -1508,10 +2119,13 @@ fn put32(b: &mut [u8], p: usize, v: u32) {
 
 /// Wrap raw tables in an `OTTO` sfnt with the mandatory metric tables.
 fn otto(glyphs: u16, extra: Vec<([u8; 4], Vec<u8>)>) -> Vec<u8> {
+    otto_with_upem(glyphs, 1000, extra)
+}
+fn otto_with_upem(glyphs: u16, upem: u16, extra: Vec<([u8; 4], Vec<u8>)>) -> Vec<u8> {
     let mut head = vec![0; 54];
     put32(&mut head, 0, 0x0001_0000);
     put32(&mut head, 12, 0x5f0f_3cf5);
-    put16(&mut head, 18, 1000);
+    put16(&mut head, 18, upem);
     let mut hhea = vec![0; 36];
     put32(&mut hhea, 0, 0x0001_0000);
     put16(&mut hhea, 4, 800);
@@ -1676,10 +2290,14 @@ fn exercise(bytes: &[u8]) {
     let _ = font.charset();
     for gid in 0..font.glyph_count().min(64) as u16 {
         let _ = font.glyph(gid, OutlineLimits::default());
+        let _ = font.glyph_with_units(gid, OutlineLimits::default(), 2048);
+        let _ = font.glyph_name(gid);
         let _ = font.font_dict_index(gid);
         let _ = font.glyph_id_in_charset(gid);
     }
     let _ = font.string(391);
+    let _ = font.sid_name(34);
+    let _ = font.glyph_for_sid(125);
 }
 
 fn rich_simple() -> Spec {
@@ -1726,7 +2344,22 @@ fn rich_simple() -> Spec {
 
 #[test]
 fn seeded_mutation_and_truncation_campaign_never_panics() {
+    let mut seac = seac_spec(vec![
+        seac_cs(Some(3), 40, -10, 65, 194),
+        seac_cs(None, 0, 0, 66, 194),
+        seac_cs(None, 0, 0, 67, 66),
+        seac_cs(None, 1, 1, 69, 69),
+    ]);
+    seac.font_matrix = Some(matrix(["0.002", "0", "0.001", "0.002", "0.005", "0"]));
+    let mut cid_matrix = cid_spec(vec![3, 0, 2, 0, 0, 0, 0, 2, 1, 0, 4]);
+    cid_matrix.font_matrix = Some(matrix(["0", "0.001", "-0.001", "0", "0", "0"]));
+    cid_matrix.fds[0].font_matrix = Some(matrix(["0.5", "0", "0", "1", "0", "0"]));
+    let mut expert = simple(empty_glyphs(20));
+    expert.charset_pre = Some(1);
     let bases = [
+        build(&seac),
+        build(&cid_matrix),
+        build(&expert),
         build(&rich_simple()),
         build(&cid_spec(vec![3, 0, 2, 0, 0, 0, 0, 2, 1, 0, 4])),
         build(&cid_spec(vec![0, 0, 1, 1, 0])),
@@ -1772,6 +2405,36 @@ fn seeded_mutation_and_truncation_campaign_never_panics() {
     for n in 0..wrapped.len() {
         if let Ok(face) = FontFace::parse(&wrapped[..n]) {
             let _ = face.outline(1);
+        }
+    }
+}
+
+#[test]
+fn random_seac_arguments_never_loop_or_panic() {
+    // Composite glyphs with arbitrary operands over a font whose accents and
+    // composites reference each other; every outcome is a value or a typed error.
+    let mut rng = Rng(0x1234_5678_9abc_def1);
+    let mut spec = seac_spec(vec![
+        seac_cs(None, 0, 0, 65, 194),
+        seac_cs(None, 0, 0, 66, 194),
+        seac_cs(None, 0, 0, 67, 66),
+        seac_cs(None, 0, 0, 69, 69),
+        seac_cs(None, 0, 0, 65, 194),
+    ]);
+    spec.font_matrix = Some(matrix(["0.002", "0", "0", "0.002", "0", "0"]));
+    let codes = [0, 3, 65, 66, 67, 68, 69, 70, 194, 195, 255, 256, -1, 1000];
+    for _ in 0..5_000 {
+        let pick = |rng: &mut Rng| codes[rng.below(codes.len())];
+        let adx = rng.below(2000) as i32 - 1000;
+        let ady = rng.below(2000) as i32 - 1000;
+        let (b, a) = (pick(&mut rng), pick(&mut rng));
+        let width = (rng.below(2) == 0).then(|| rng.below(100) as i32);
+        spec.glyphs[7] = seac_cs(width, adx, ady, b, a);
+        let bytes = build(&spec);
+        let font = CffFont::parse(&bytes).unwrap();
+        for gid in 0..8 {
+            let _ =
+                font.glyph_with_units(gid, OutlineLimits::default(), 1 + rng.below(16384) as u16);
         }
     }
 }
