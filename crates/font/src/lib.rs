@@ -12,6 +12,8 @@ pub mod embedded;
 pub mod layout;
 pub mod manager;
 pub mod outline;
+pub mod subset;
+mod subset_cff;
 pub use layout::{FontLayout, GlyphAdjustment, GlyphCluster, LayoutError, LayoutLimits};
 pub use outline::{OutlineError, OutlineLimits};
 
