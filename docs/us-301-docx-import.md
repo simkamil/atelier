@@ -72,3 +72,7 @@ riches et 5 tests d’intégration DOCX vers layout. Les [15 contrôles finaux](
 passent avec 540 tests workspace et sources/lock inchangés. La [revue](../_bmad-output/implementation-artifacts/docx-rich-layout-review.md)
 conserve chaque constat et son traitement. Cette livraison expose des API de
 bibliothèque; le raccordement au parcours d’ouverture de l’éditeur riche reste séparé.
+
+## Intégration au MVP
+
+Un [aperçu DOCX en lecture seule](rich-docx-preview.md) utilise désormais cette API dans l’application Windows. Les limites du lot, les critères encore ouverts et les preuves intégrées sont consignés dans ce contrat. L’édition riche et la comparaison à Word restent séparées.

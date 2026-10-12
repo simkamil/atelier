@@ -2,8 +2,9 @@
 
 const MAX_U64 = (1n << 64n) - 1n;
 const MAX_FILE_BYTES = 131075;
+const MAX_DOCX_BYTES = 8 * 1024 * 1024;
 const MAX_QUEUE = 4;
-const MAX_QUEUED_BYTES = MAX_FILE_BYTES * MAX_QUEUE;
+const MAX_QUEUED_BYTES = MAX_DOCX_BYTES + MAX_FILE_BYTES * MAX_QUEUE;
 const PREFIX = "us120-file|1|";
 
 export class NativeHostError extends Error {
@@ -18,14 +19,15 @@ function toBase64(bytes) {
   return btoa(binary);
 }
 
-function fromBase64(value) {
+function fromBase64(value, maxBytes) {
+  if (typeof value === "string" && value.length > 4 * Math.ceil(maxBytes / 3)) throw new NativeHostError("HOST_FILE_TOO_LARGE");
   if (typeof value !== "string" || value.length % 4 !== 0
-      || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+      || /[^A-Za-z0-9+/=]/.test(value)) {
     throw new NativeHostError("HOST_INVALID_RESPONSE");
   }
   let binary;
   try { binary = atob(value); } catch { throw new NativeHostError("HOST_INVALID_RESPONSE"); }
-  if (binary.length > MAX_FILE_BYTES) throw new NativeHostError("HOST_FILE_TOO_LARGE");
+  if (binary.length > maxBytes) throw new NativeHostError("HOST_FILE_TOO_LARGE");
   const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
   if (toBase64(bytes) !== value) throw new NativeHostError("HOST_INVALID_RESPONSE");
   return bytes;
@@ -57,8 +59,8 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     const [, , , status, payload] = fields;
     if (status === "cancelled" && payload === "") settle(id, { kind: "cancelled" });
     else if (status === "error" && /^[A-Za-z][A-Za-z0-9_.]{0,63}$/.test(payload)) settle(id, { kind: "error", key: payload });
-    else if (status === "ok" && entry.operation === "open") {
-      try { settle(id, { kind: "ok", bytes: fromBase64(payload) }); }
+    else if (status === "ok" && ["open", "openDocx"].includes(entry.operation)) {
+      try { settle(id, { kind: "ok", bytes: fromBase64(payload, entry.operation === "openDocx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) }); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && payload === "") settle(id, { kind: "ok" });
     else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
@@ -75,10 +77,11 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
 
   function request(operation, payload = "", bytes = 0) {
     if (closed) return Promise.reject(new NativeHostError("HOST_CLOSED"));
+    if (operation === "open") bytes = MAX_FILE_BYTES;
+    if (operation === "openDocx") bytes = MAX_DOCX_BYTES;
     if (pending.size >= MAX_QUEUE || queuedBytes + bytes > MAX_QUEUED_BYTES) return Promise.reject(new NativeHostError("HOST_QUEUE_LIMIT"));
     if (nextId > MAX_U64) return Promise.reject(new NativeHostError("HOST_ID_EXHAUSTED"));
     const id = nextId++;
-    if (operation === "open") bytes = MAX_FILE_BYTES;
     return new Promise(resolve => {
       const timer = setTimeout(() => settle(id, { kind: "error", key: "HOST_TIMEOUT" }), timeoutMs);
       pending.set(id, { resolve, timer, operation, bytes });
@@ -101,6 +104,7 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
   webview.addEventListener("message", receive);
   return Object.freeze({
     open() { return request("open"); },
+    openDocx() { return request("openDocx"); },
     save(bytes) {
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_FILE_BYTES) return Promise.reject(new NativeHostError("HOST_FILE_TOO_LARGE"));
       return request("save", toBase64(bytes), bytes.byteLength);

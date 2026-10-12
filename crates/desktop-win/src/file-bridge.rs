@@ -6,6 +6,9 @@ use std::path::PathBuf;
 
 pub(crate) const MAX_FILE_BYTES: usize = 131_075;
 pub(crate) const MAX_TEXT_BYTES: usize = 131_072;
+pub(crate) const MAX_DOCX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
+// Base64 expansion plus the longest accepted request id and response envelope.
+pub(crate) const MAX_DOCX_REPLY_BYTES: usize = MAX_DOCX_PREVIEW_BYTES.div_ceil(3) * 4 + 64;
 const MAX_QUEUE: usize = 4;
 const MAX_REPLIES: usize = 4;
 const ORIGIN: &str = "https://app.atelier/";
@@ -13,6 +16,7 @@ const ORIGIN: &str = "https://app.atelier/";
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Request {
     Open { id: String },
+    OpenDocx { id: String },
     Save { id: String, bytes: Vec<u8> },
     Dirty { id: String, dirty: bool },
 }
@@ -20,7 +24,10 @@ pub(crate) enum Request {
 impl Request {
     pub(crate) fn id(&self) -> &str {
         match self {
-            Self::Open { id } | Self::Save { id, .. } | Self::Dirty { id, .. } => id,
+            Self::Open { id }
+            | Self::OpenDocx { id }
+            | Self::Save { id, .. }
+            | Self::Dirty { id, .. } => id,
         }
     }
 }
@@ -80,6 +87,7 @@ impl Queue {
         }
         let request = match operation {
             "open" if tail.is_empty() => Request::Open { id: id.to_owned() },
+            "openDocx" if tail.is_empty() => Request::OpenDocx { id: id.to_owned() },
             "dirty" if tail == "0" || tail == "1" => Request::Dirty {
                 id: id.to_owned(),
                 dirty: tail == "1",
@@ -271,6 +279,18 @@ pub(crate) fn process_selection(
                 }
             }
         },
+        Request::OpenDocx { .. } => match broker.grant_read(&path, MAX_DOCX_PREVIEW_BYTES as u64) {
+            Err(error) => Err(error.message_key),
+            Ok(ticket) => {
+                let result = broker.read(ticket);
+                broker.revoke_read(ticket);
+                match result {
+                    Ok(bytes) if bytes.len() <= MAX_DOCX_PREVIEW_BYTES => Ok(Some(bytes)),
+                    Ok(_) => Err("files.error.too_large"),
+                    Err(error) => Err(error.message_key),
+                }
+            }
+        },
         Request::Save { bytes, .. } => {
             if let Some(key) = text_error(&bytes) {
                 return format!("us120-file|1|{id}|error|{key}");
@@ -289,10 +309,15 @@ pub(crate) fn process_selection(
         }
         Request::Dirty { .. } => unreachable!("dirty messages do not select a file"),
     };
-    match result {
+    let reply = match result {
         Ok(Some(bytes)) => format!("us120-file|1|{id}|ok|{}", encode_base64(&bytes)),
         Ok(None) => format!("us120-file|1|{id}|ok|"),
         Err(key) => format!("us120-file|1|{id}|error|{key}"),
+    };
+    if reply.len() <= MAX_DOCX_REPLY_BYTES {
+        reply
+    } else {
+        format!("us120-file|1|{id}|error|files.error.too_large")
     }
 }
 
@@ -365,6 +390,19 @@ mod tests {
                 )
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn open_docx_has_a_distinct_bounded_operation() {
+        let mut queue = Queue::default();
+        assert!(queue.begin_page_navigation(false));
+        queue
+            .accept(ORIGIN, "us120-file|1|1|openDocx|")
+            .expect("openDocx carries no file bytes from JavaScript");
+        assert_eq!(queue.pop(), Some(Request::OpenDocx { id: "1".into() }));
+        assert_eq!(MAX_FILE_BYTES, 131_075, "TXT request limit remains frozen");
+        assert_eq!(MAX_TEXT_BYTES, 131_072, "TXT content limit remains frozen");
+        assert_eq!(MAX_DOCX_PREVIEW_BYTES, 8 * 1024 * 1024);
     }
 
     #[test]
@@ -460,6 +498,8 @@ mod tests {
         let broker = FileBroker::new();
         let cancelled = process_selection(Request::Open { id: "1".into() }, None, &broker);
         assert_eq!(cancelled, "us120-file|1|1|cancelled|");
+        let docx_cancelled = process_selection(Request::OpenDocx { id: "6".into() }, None, &broker);
+        assert_eq!(docx_cancelled, "us120-file|1|6|cancelled|");
         assert_eq!(
             process_selection(
                 Request::Save {
@@ -496,6 +536,30 @@ mod tests {
                 &broker
             ),
             "us120-file|1|5|error|files.error.too_large"
+        );
+
+        let docx_path = dir.join("preview.docx");
+        let docx_bytes = vec![0x5a; MAX_FILE_BYTES + 17];
+        fs::write(&docx_path, &docx_bytes).unwrap();
+        let docx_reply = process_selection(
+            Request::OpenDocx { id: "7".into() },
+            Some(docx_path),
+            &broker,
+        );
+        assert_eq!(
+            docx_reply,
+            format!("us120-file|1|7|ok|{}", encode_base64(&docx_bytes))
+        );
+
+        let oversized_docx_path = dir.join("oversized.docx");
+        fs::write(&oversized_docx_path, vec![0x5a; MAX_DOCX_PREVIEW_BYTES + 1]).unwrap();
+        assert_eq!(
+            process_selection(
+                Request::OpenDocx { id: "8".into() },
+                Some(oversized_docx_path),
+                &broker,
+            ),
+            "us120-file|1|8|error|files.error.too_large"
         );
         let ticket = broker.grant_read(&path, MAX_FILE_BYTES as u64).unwrap();
         assert!(broker.revoke_read(ticket));

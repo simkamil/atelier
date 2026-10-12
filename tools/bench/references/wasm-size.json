@@ -4,9 +4,9 @@
   "target": "wasm32-unknown-unknown",
   "profile": "wasm-release",
   "features": [],
-  "reference_bytes": 1073118,
+  "reference_bytes": 3883549,
   "allowed_growth_percent": 10,
-  "measured_on": "2026-10-11",
-  "previous_reference_bytes": 52323,
-  "rebaseline_reason": "US-120 adds real plain-text editing, Unicode segmentation, A4 layout, shaping and embedded Carlito Regular to the previous ABI echo; 10% regression gate retained."
+  "measured_on": "2026-10-12",
+  "previous_reference_bytes": 1073118,
+  "rebaseline_reason": "Read-only DOCX preview now links ZIP/XML/OOXML import, rich style resolution, line layout/pagination and the three additional Carlito bold/italic faces into the product WASM. Intentional feature growth measured after integration (previous shipped artifact 1046099 bytes); the 10% regression allowance remains unchanged."
 }

@@ -255,4 +255,13 @@ for (const [name, mutate, expected] of invalidPoints) {
   );
 }
 
-console.log(`Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, ProbePoint/DropText/ReplaceRange and ${invalidPoints.length} atomic SelectPoint rejections passed.`);
+const beforeDocx = command(EditorOpcode.State);
+const docx = new Uint8Array(await readFile("tests/docx-reference/basic.docx"));
+const preview = command(EditorOpcode.PreviewDocx, { bytes: docx });
+assert.equal(preview.kind, "preview");
+assert(preview.text.startsWith("Référence de titre"));
+assert.equal(preview.pages.length, 1);
+assert.deepEqual(command(EditorOpcode.State), beforeDocx, "real WASM preview leaves every TXT state field unchanged");
+expectFailure(encodeEditorCommand(EditorOpcode.PreviewDocx, { bytes: new Uint8Array([1,2,3]) }), "EDITOR_PREVIEW_FAILED", "malformed DOCX rejected");
+assert.deepEqual(command(EditorOpcode.State), beforeDocx, "failed preview preserves complete TXT state");
+console.log(`Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, ProbePoint/DropText/ReplaceRange, DOCX preview and ${invalidPoints.length} atomic SelectPoint rejections passed.`);

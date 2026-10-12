@@ -30,3 +30,7 @@ Les [tabulations US-211](us-211-tabs.md) participent désormais à la coupure et
 Les lignes prennent le maximum des métriques hhea ascender, descender et line-gap des faces et tailles présentes sur cette ligne. Alignement gauche/centré/droite et justification sont calculés dans la largeur restante après retraits. La justification répartit le reliquat sur les espaces U+0020 des lignes intermédiaires; les lignes finales et celles qui terminent sur une coupure obligatoire ne sont pas justifiées. L’interligne automatique applique `value / 240` aux métriques de la ligne; l’interligne exact remplace sa hauteur, et `AtLeast` prend le maximum entre la métrique et le minimum demandé.
 
 Les tests du crate couvrent la géométrie numérique, les quatre alignements, les retraits suspendus, les lignes LF/CRLF, NBSP/ZWSP, les mots trop longs, les graphèmes combinants, les clusters shaping, les tailles mixtes, les interlignes et les erreurs de budget. Le corpus de comparaison indépendant avec Word n’est pas disponible sur cet hôte. Le critère original d’au moins 95 % de coupures de lignes identiques à Word reste donc **ouvert**; aucune référence Word n’a été fabriquée et US-210 demeure partielle jusqu’à preuve authentique.
+
+## Intégration au MVP
+
+Un [aperçu DOCX en lecture seule](rich-docx-preview.md) utilise désormais cette API dans l’application Windows. Les limites du lot, les critères encore ouverts et les preuves intégrées sont consignés dans ce contrat. L’édition riche et la comparaison à Word restent séparées.

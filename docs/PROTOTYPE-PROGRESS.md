@@ -1,8 +1,8 @@
 # Préparation du démonstrateur — 2026-10-12
 
-Le backlog compte désormais **48 US terminées sur 158**. Le dernier lot ajoute
-le glisser-déposer TXT, les espaces françaises automatiques et optimise le cache
-incrémental avec des agents GPT-6 Luna moyen.
+Le backlog compte désormais **48 US terminées sur 158**. Le dernier lot raccorde
+l’ouverture DOCX à un aperçu A4 en lecture seule, avec des agents GPT-6 Luna moyen.
+Le glisser-déposer TXT, les espaces françaises et le cache incrémental restent disponibles.
 US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves Word.
 
 - [Unicode](us-010-ucd-tables.md) : 71 fichiers officiels Unicode 17.0.0,
@@ -36,6 +36,16 @@ critères de cache et de fluidité matériels ; US-103 conserve les essais de cl
 US-113 conserve SharedBuffer, polices/URL et les essais de dialogues. US-111
 conserve son échec strict de handles. US-092 reste ouverte pour l’annulation
 métier : le dispatch WASM synchrone n’est pas préemptible. US-114 est validée.
+
+## Aperçu DOCX intégré — 2026-10-12
+
+Le MVP ajoute **Ouvrir DOCX…**, un aperçu A4 en lecture seule et **Retour au texte** / Échap. Le document TXT, sa sélection, son historique et son état de sauvegarde sont préservés. Le rendu visible des styles, les erreurs/annulations, les réponses tardives, le défilement horizontal et le filtre natif DOCX sont vérifiés. Voir le [contrat et les limites](rich-docx-preview.md).
+
+Trois agents GPT-6 Luna moyen ont développé des fichiers distincts, puis trois autres ont effectué la revue indépendante selon les [pratiques OpenAI appliquées](SUBAGENT-WORKFLOW.md). Les correctifs sont intégrés. Le backlog reste à **48/158 US complètes** : US-301/210 gagnent une intégration visible mais l'édition/enregistrement DOCX et les comparaisons Word restent ouverts.
+
+Le [reçu](../_bmad-output/implementation-artifacts/rich-docx-preview-validation.json) passe **24 contrôles, 760 tests Rust Windows, 78 tests de layout release et 111 assertions navigateur**, sur 856 entrées immuables. Windows debug/release, WASM, Clippy, format, licences, package, ABI et Worker passent. Les tests musl sont compilés, sans prétendre avoir été exécutés sous Linux.
+
+WASM : **3 883 549 octets**, SHA-256 `9137af551246ea89b340ce5acc7f3e063b76522e5cc986caf6dca0ee63189e33`. La précédente version distribuée mesurait 1 046 099 octets ; l'import ZIP/XML/OOXML, le layout riche et les trois faces Carlito supplémentaires expliquent cette croissance fonctionnelle. La nouvelle référence mesurée conserve une marge de régression de 10 %. Le binaire à tester est `target/release/atelier.exe`.
 
 ## Glisser-déposer, typographie française et performance — 2026-10-12
 

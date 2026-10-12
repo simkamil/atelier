@@ -16,9 +16,11 @@ abi-test-hooks = []
 
 [dependencies]
 atelier-font = { path = "../font" }
+atelier-fmt-ooxml = { path = "../fmt-ooxml" }
 atelier-geom = { path = "../geom" }
 atelier-model = { path = "../model" }
 atelier-render = { path = "../render" }
 atelier-shape = { path = "../shape" }
 atelier-text-model = { path = "../text-model" }
+atelier-text-layout = { path = "../text-layout" }
 atelier-unicode = { path = "../unicode" }

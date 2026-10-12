@@ -37,11 +37,13 @@ version = "0.1.0"
 name = "atelier-core-wasm"
 version = "0.1.0"
 dependencies = [
+ "atelier-fmt-ooxml",
  "atelier-font",
  "atelier-geom",
  "atelier-model",
  "atelier-render",
  "atelier-shape",
+ "atelier-text-layout",
  "atelier-text-model",
  "atelier-unicode",
 ]

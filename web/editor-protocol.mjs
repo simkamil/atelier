@@ -5,7 +5,7 @@ export const EditorOpcode = Object.freeze({
   State: 0, Load: 1, InsertText: 2, DeleteBackward: 3, DeleteForward: 4,
   Undo: 5, Redo: 6, SetSelection: 7, Move: 8, HitTest: 9, Export: 10, MarkSaved: 11,
   DeleteWordBackward: 12, DeleteWordForward: 13, SelectPoint: 14,
-  ProbePoint: 15, DropText: 16, ReplaceRange: 17,
+  ProbePoint: 15, DropText: 16, ReplaceRange: 17, PreviewDocx: 18,
 });
 
 export const EDITOR_LIMITS = Object.freeze({
@@ -13,6 +13,9 @@ export const EDITOR_LIMITS = Object.freeze({
   maxTextBytes: 128 * 1024,
   maxStateBytes: 32 * 1024 * 1024,
   maxPages: 1024,
+  maxDocxBytes: 8 * 1024 * 1024,
+  maxPreviewPages: 256,
+  maxPreviewDisplayBytes: 26 * 1024 * 1024,
 });
 
 const MAX_U64 = (1n << 64n) - 1n;
@@ -66,11 +69,14 @@ function boolByte(value, name) {
 
 /** Encode an ATED v1 command payload as defined by the shared editor contract. */
 export function encodeEditorCommand(opcode, values = {}) {
-  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 17 || values === null || typeof values !== "object") {
+  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 18 || values === null || typeof values !== "object") {
     fail("INVALID_ARGUMENT", "Invalid editor opcode or arguments.");
   }
   let body;
-  if (opcode === EditorOpcode.Load) {
+  if (opcode === EditorOpcode.PreviewDocx) {
+    if (!isBytes(values.bytes) || values.bytes.byteLength > EDITOR_LIMITS.maxDocxBytes) fail("MESSAGE_TOO_LARGE", "DOCX bytes exceed the preview limit.");
+    body = Uint8Array.from(values.bytes);
+  } else if (opcode === EditorOpcode.Load) {
     if (!isBytes(values.bytes) || values.bytes.byteLength > EDITOR_LIMITS.maxFileBytes) fail("MESSAGE_TOO_LARGE", "Document bytes exceed the editor limit.");
     body = Uint8Array.from(values.bytes);
   } else if (opcode === EditorOpcode.InsertText) {
@@ -172,6 +178,26 @@ export function decodeEditorResponse(type, payload) {
   if (type !== 0x8020) fail("INVALID_RESPONSE", "Unexpected editor response type.");
   if (payload.byteLength < 8) fail("TRUNCATED", "Truncated editor response.");
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  if (ascii(payload.subarray(0, 4)) === "ATRP") {
+    if (payload.length < 20 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid preview header.");
+    const count = view.getUint32(8, true), textLength = view.getUint32(12, true), noticeCount = view.getUint32(16, true);
+    if (count < 1 || count > EDITOR_LIMITS.maxPreviewPages || textLength > EDITOR_LIMITS.maxTextBytes || 20 + textLength > payload.length) fail("INVALID_RESPONSE", "Preview limits exceeded.");
+    let text;
+    try { text = decoder.decode(payload.subarray(20, 20 + textLength)); } catch { fail("INVALID_RESPONSE", "Invalid preview UTF-8."); }
+    let offset = 20 + textLength, total = 0;
+    const pages = [];
+    for (let i = 0; i < count; i += 1) {
+      if (offset + 4 > payload.length) fail("TRUNCATED", "Truncated preview page.");
+      const length = view.getUint32(offset, true); offset += 4; total += length;
+      if (total > EDITOR_LIMITS.maxPreviewDisplayBytes || length === 0 || offset + length > payload.length) fail("INVALID_RESPONSE", "Invalid preview page length.");
+      const bytes = payload.slice(offset, offset + length);
+      const page = decodeDisplayList(bytes);
+      if (Math.abs(page.page.bounds.width - 595.276) > 0.02 || Math.abs(page.page.bounds.height - 841.89) > 0.02) fail("INVALID_RESPONSE", "Invalid preview page dimensions.");
+      pages.push(bytes); offset += length;
+    }
+    if (offset !== payload.length) fail("INVALID_RESPONSE", "Trailing preview data.");
+    return { kind: "preview", pages, text, noticeCount };
+  }
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATPT") {
     if (payload.length !== 48 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) {
       fail("INVALID_RESPONSE", "Invalid point probe response.");

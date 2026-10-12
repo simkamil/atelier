@@ -192,7 +192,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor.rs",
-    "source_location": "L847",
+    "source_location": "L873",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -203,7 +203,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/lib.rs",
-    "source_location": "L496",
+    "source_location": "L497",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -231,6 +231,50 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_core_wasm_src_rich_preview",
+    "target": "atelier_fmt_ooxml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_preview.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_preview",
+    "target": "manager",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_preview.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_preview",
+    "target": "underline",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_preview.rs",
+    "source_location": "L15",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_preview",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_preview.rs",
+    "source_location": "L16",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_core_wasm_tests_editor_engine",
     "target": "protocol",
     "relation": "imports_from",
@@ -248,6 +292,50 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/tests/protocol_boundaries.rs",
     "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_preview",
+    "target": "rich_preview",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_preview.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_preview",
+    "target": "atelier_fmt_ooxml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_preview.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_preview_session",
+    "target": "editorsession",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_preview_session.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_preview_session",
+    "target": "atelier_fmt_ooxml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_preview_session.rs",
+    "source_location": "L3",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -379,7 +467,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/file-bridge.rs",
-    "source_location": "L325",
+    "source_location": "L350",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -544,7 +632,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/resources.rs",
-    "source_location": "L252",
+    "source_location": "L257",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -683,6 +771,17 @@
   },
   {
     "source": "crates_desktop_win_src_win32",
+    "target": "files",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/win32.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_win32",
     "target": "io",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
@@ -731,7 +830,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2118",
+    "source_location": "L2146",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -742,7 +841,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2122",
+    "source_location": "L2151",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -753,7 +852,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2124",
+    "source_location": "L2154",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -4279,6 +4378,17 @@
     "_origin": "ast"
   },
   {
+    "source": "web_app",
+    "target": "ref_rich_preview_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
     "source": "tests_check_embedded_engine",
     "target": "ref_node_assert_strict",
     "relation": "imports_from",
@@ -4450,6 +4560,39 @@
     "context": "import",
     "confidence": "EXTRACTED",
     "source_file": "tests/mouse-selection.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_rich_preview_protocol",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/rich-preview-protocol.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_rich_preview_protocol",
+    "target": "ref_node_test",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/rich-preview-protocol.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_rich_preview",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/rich-preview.mjs",
     "source_location": "L2",
     "weight": 1.0,
     "_origin": "ast"

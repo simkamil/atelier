@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "3fc5d860e673fc683f2fb92bcc73f1d621556286",
+  "snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/rich-docx-preview-final-snapshot.json (self-referential metadata)"
+  ],
+  "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-docx-preview-review-5swe74il\\complete.diff",
+  "complete_bytes": 19922255,
+  "complete_sha256": "872037f08899525a1bc27540bd2219658f03990aa3257dbfae1e4d24e963e953",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-docx-preview-review-5swe74il\\sources.diff",
+  "sources_bytes": 351818,
+  "sources_sha256": "09d9d2545a946ee5f9fa5c968bb58c229f250541ab0457a8a12c8bfaea33e53a"
+}

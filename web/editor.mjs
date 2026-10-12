@@ -186,13 +186,14 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     return nextState;
   }
 
-  async function dispatch(opcode, values = {}) {
+  async function dispatch(opcode, values = {}, signal) {
       if (disposed) throw new EditorError("EDITOR_CLOSED");
       if (requestId > (1n << 64n) - 1n) throw new EditorError("EDITOR_REQUEST_IDS_EXHAUSTED");
       const id = requestId++;
       const payload = encodeEditorCommand(opcode, values);
       const frame = encodeMessage({ type: MessageType.Editor, requestId: id, payload });
-      const bytes = await client.request(frame);
+       const bytes = await client.request(frame, { signal });
+       if (disposed) throw new EditorError("EDITOR_CLOSED");
       const message = decodeMessage(bytes, "event");
       if (message.requestId !== id || (message.type !== MessageType.EditorResult && message.type !== MessageType.Failed)) {
         throw new EditorError("EDITOR_RESPONSE_MISMATCH");
@@ -202,7 +203,8 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     if ([EditorOpcode.Load, EditorOpcode.InsertText, EditorOpcode.DropText, EditorOpcode.ReplaceRange, EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward,
         EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo].includes(opcode)) extensionMode = false;
       if (opcode === EditorOpcode.ProbePoint && response.kind !== "point") throw new EditorError("EDITOR_INVALID_RESPONSE");
-      if (opcode !== EditorOpcode.Export && opcode !== EditorOpcode.ProbePoint) publish(response);
+       if (opcode === EditorOpcode.PreviewDocx && response.kind !== "preview") throw new EditorError("EDITOR_INVALID_RESPONSE");
+       if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx].includes(opcode)) publish(response);
       return response;
   }
 
@@ -354,6 +356,10 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     get element() { return input.element; },
     focus() { return input.focus(); },
     setFrenchSpacing(enabled) { spacingEnabled = Boolean(enabled); },
+    setSuspended(value) { if (disposed) throw new EditorError("EDITOR_CLOSED"); setBusy(Boolean(value)); },
+    previewDocx(bytes, { signal } = {}) {
+      return enqueueTask(() => dispatch(EditorOpcode.PreviewDocx, { bytes }, signal));
+    },
     setZoom(zoom) { if (!Number.isFinite(zoom) || zoom < 0.5 || zoom > 2) throw new RangeError("zoom is outside the supported range"); pageZoom = zoom; if (state) publish(state); },
     async initialize() { return enqueue(EditorOpcode.State); },
     getState() { return state; },

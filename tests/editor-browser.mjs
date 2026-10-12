@@ -440,16 +440,20 @@ try {
   const nativeCalls = [];
   const webviewListeners = new Set();
   let nextAppOpen = { status: "cancelled", payload: "" };
+  let nextDocxOpen = { status: "cancelled", payload: "" };
+  let holdDocxReply;
   const fakeWebview = {
     postMessage(message) {
       nativeCalls.push(message);
-      const match = /^us120-file\|1\|([1-9][0-9]*)\|(open|save|dirty)\|(.*)$/.exec(message);
+      const match = /^us120-file\|1\|([1-9][0-9]*)\|(open|openDocx|save|dirty)\|(.*)$/.exec(message);
       if (!match || match[2] === "dirty") return;
       const [, id, operation, payload] = match;
-      const response = operation === "open"
+      const response = operation === "openDocx" ? `us120-file|1|${id}|${nextDocxOpen.status}|${nextDocxOpen.payload}` : operation === "open"
         ? `us120-file|1|${id}|${nextAppOpen.status}|${nextAppOpen.payload}`
         : `us120-file|1|${id}|ok|`;
-      queueMicrotask(() => { for (const listener of webviewListeners) listener({ data: response }); });
+      const reply = () => { for (const listener of webviewListeners) listener({ data: response }); };
+      if (operation === "openDocx" && holdDocxReply) { holdDocxReply.resolve = reply; return; }
+      queueMicrotask(reply);
     },
     addEventListener(type, listener) { if (type === "message") webviewListeners.add(listener); },
     removeEventListener(type, listener) { if (type === "message") webviewListeners.delete(listener); },
@@ -513,13 +517,70 @@ try {
   inputText(app.editor.element, "?");
   await waitFor(() => app.getState().text === "S:X\u202f?", "real app option re-enables narrow NBSP");
   assert(app.getState().text.endsWith("X\u202f?"), "enabled app option applies French spacing through real Worker WASM");
-  app.editor.dispose();
+  const docxResponse = await fetch("/tests/docx-reference/basic.docx");
+  const docxBytes = new Uint8Array(await docxResponse.arrayBuffer());
+  let docxBinary = "";
+  for (let offset = 0; offset < docxBytes.length; offset += 0x8000) docxBinary += String.fromCharCode(...docxBytes.subarray(offset,offset+0x8000));
+  const docxBase64 = btoa(docxBinary);
+  assert(docxBytes.length > 131075 && docxBytes.length < 8*1024*1024, "independent DOCX fixture exercises a native response larger than the TXT limit");
+  const beforePreview = app.getState();
+  nextDocxOpen = {status:"ok",payload:docxBase64};
+  assert((await app.openDocx()).kind === "ok", "real app imports DOCX through native host and Worker/WASM");
+  assert(app.previewActive && document.querySelector("#text-workspace").hidden && !document.querySelector("#rich-workspace").hidden,
+    "read-only DOCX workspace replaces only the visible TXT workspace");
+  assert(document.querySelector("#rich-text").textContent.includes("Référence de titre") && document.querySelector("#rich-text").textContent.length > 100,
+    "accessible preview mirror contains actual imported text");
+  assert(document.querySelector("#rich-canvas").width > 0 && document.querySelector("#rich-canvas").height > 0,
+    "rich preview Canvas has a real visible viewport");
+  const pixels = document.querySelector("#rich-canvas").getContext("2d").getImageData(0,0,document.querySelector("#rich-canvas").width,document.querySelector("#rich-canvas").height).data;
+  let bluePixels = 0;
+  for (let i=0; i<pixels.length; i+=4) if (pixels[i+3] > 0 && pixels[i+2] > pixels[i] + 30 && pixels[i+2] > pixels[i+1]) bluePixels += 1;
+  assert(bluePixels > 20, "real DOCX preview paints the blue styled heading as visible Canvas pixels");
+  const richScroll = document.querySelector("#rich-scroll");
+  richScroll.style.width = "360px"; window.dispatchEvent(new Event("resize"));
+  await new Promise(resolve => requestAnimationFrame(resolve));
+  assert(richScroll.scrollWidth > richScroll.clientWidth, "narrow DOCX preview exposes horizontal scrolling for the complete A4 page");
+  richScroll.scrollLeft = 120; richScroll.dispatchEvent(new Event("scroll"));
+  assert(richScroll.scrollLeft === 120 && Math.abs(document.querySelector("#rich-canvas").getBoundingClientRect().left - richScroll.getBoundingClientRect().left) < 3,
+    "preview Canvas remains pinned to viewport during horizontal page scrolling");
+  richScroll.style.width = ""; richScroll.scrollLeft = 0; window.dispatchEvent(new Event("resize"));
+  assert(app.getState() === beforePreview && app.editor.busy && app.editor.element.disabled,
+    "preview leaves exact TXT state object untouched and freezes its input");
+  for (const id of ["new-document","open-document","open-docx","save-document","undo","redo","french-spacing"]) assert(document.getElementById(id).disabled, `preview disables ${id}`);
+  assert(document.querySelector("#editor-status").textContent.includes("lecture seule"), "preview announces read-only mode");
+  assert(document.querySelector("#page-title").textContent.includes("DOCX") && document.title.includes("DOCX") && document.querySelector("#document-state").textContent === "Lecture seule",
+    "preview primary identity and state badge describe DOCX rather than TXT save state");
+  assert(document.querySelector(".preview-caption").textContent.includes("sauts de page") && document.querySelector(".preview-caption").textContent.includes("pieds de page"),
+    "preview explicitly explains omitted content and Word page breaks");
+  const callsBeforeShortcut = nativeCalls.length;
+  const saveShortcut = new KeyboardEvent("keydown",{key:"s",ctrlKey:true,bubbles:true,cancelable:true});
+  richScroll.dispatchEvent(saveShortcut);
+  assert(nativeCalls.length === callsBeforeShortcut && saveShortcut.defaultPrevented, "Ctrl+S in preview suppresses native/browser saving");
+  key(document.querySelector("#rich-scroll"),"Escape");
+  assert(!app.previewActive && !app.editor.busy && app.getState() === beforePreview && document.activeElement === document.querySelector("#open-docx"),
+    "Escape returns to exact TXT state and restores trigger focus");
+  assert(document.querySelector("#page-title").textContent === "Document texte" && document.querySelector("#document-state").textContent.includes("non enregistrées"),
+    "closing preview restores TXT identity and dirty badge");
+  await app.editor.undo(); assert(app.getState().text !== beforePreview.text, "TXT undo history remains available after preview");
+  await app.editor.redo(); assert(app.getState().text === beforePreview.text && app.getState().dirty === beforePreview.dirty, "TXT redo restores exact content and dirty after preview");
+  const beforeFailure=app.getState();
+  nextDocxOpen={status:"cancelled",payload:""}; await app.openDocx();
+  assert(app.getState()===beforeFailure && !app.previewActive && !app.editor.busy, "cancelled native DOCX dialogue preserves TXT and releases controls");
+  nextDocxOpen={status:"error",payload:"files.error.io"}; await app.openDocx();
+  assert(app.getState()===beforeFailure && !app.previewActive, "native DOCX read failure preserves TXT");
+  nextDocxOpen={status:"ok",payload:btoa("invalid DOCX")}; await app.openDocx();
+  assert(app.getState()===beforeFailure && !app.previewActive && document.querySelector("#editor-status").classList.contains("error"), "invalid DOCX reports an error without partial preview or TXT mutation");
+  nextDocxOpen={status:"ok",payload:docxBase64}; holdDocxReply={};
+  const lateOpen=app.openDocx(); app.closePreview(); holdDocxReply.resolve(); holdDocxReply=null; await lateOpen;
+  assert(!app.previewActive && app.getState()===beforeFailure && !app.editor.busy, "late native response after close cannot reopen preview or mutate TXT");
+  holdDocxReply={}; const disposedOpen=app.openDocx(); app.dispose(); holdDocxReply.resolve(); holdDocxReply=null; await disposedOpen;
+  assert(webviewListeners.size === 0, "disposing app during DOCX dialogue removes native listener and ignores late response");
   localStorage.removeItem("atelier.frenchSpacing");
   const { editorReady: defaultReady } = await import("/app.mjs?preference-default");
   const defaultApp = await defaultReady;
   assert(defaultApp.status === "ready" && document.querySelector("#french-spacing").checked,
     "fresh app initialization enables French spacing when no preference exists");
-  defaultApp.editor.dispose();
+  defaultApp.dispose();
 
   report = { status: "passed", userAgent: navigator.userAgent, checks };
 } catch (error) {

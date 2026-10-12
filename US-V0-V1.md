@@ -627,7 +627,7 @@ Réf : F-TXT-021 · Taille : S · Dépend de : US-201
 - [x] Mélange de tailles et polices dans une ligne : hauteur de ligne et ligne de base correctes.
 - [ ] Sur le corpus de référence, ≥ 95 % des lignes coupées au même endroit que dans Word.
 
-Validation API : [US-210](docs/us-210-rich-line-layout.md), 540 tests workspace et 15 contrôles dans le [reçu](_bmad-output/implementation-artifacts/docx-rich-layout-validation.json). **US partielle** : Microsoft Word absent de cet hôte, aucun taux de comparaison établi. Le collecteur est préparatoire; raccordement à l’éditeur riche séparé.
+Validation API : [US-210](docs/us-210-rich-line-layout.md), 540 tests workspace et 15 contrôles dans le [reçu](_bmad-output/implementation-artifacts/docx-rich-layout-validation.json). **US partielle** : Microsoft Word absent de cet hôte, aucun taux de comparaison établi. Le collecteur est préparatoire. Un [aperçu DOCX A4 en lecture seule](docs/rich-docx-preview.md) raccorde désormais le layout au produit ; l’édition riche et la fidélité Word restent ouvertes.
 
 Réf : §6.5 · Taille : L · Dépend de : US-054, US-201
 
@@ -1101,7 +1101,7 @@ Validation US-300 (2026-10-12) : [contrat et preuves](docs/us-300-opc-package.md
 - [x] `styles.xml` (y compris styles latents), `theme1.xml` (couleurs et polices de thème), `settings.xml` (taquet par défaut, options de compatibilité utiles à la mise en page), `fontTable.xml`.
 - [x] Polices incorporées (obfuscation ODTTF) chargées.
 
-Validation API : [contrat et limites US-301](docs/us-301-docx-import.md), fixture indépendante Python, désobfuscation exacte de Carlito et import vers le moteur de lignes. Les parties inconnues restent conservées; les propriétés non représentées sont signalées. [Revue et correctifs](_bmad-output/implementation-artifacts/docx-rich-layout-review.md), [validation](_bmad-output/implementation-artifacts/docx-rich-layout-validation.json). Le raccordement à l’interface et l’export sémantique sont des travaux ultérieurs.
+Validation API : [contrat et limites US-301](docs/us-301-docx-import.md), fixture indépendante Python, désobfuscation exacte de Carlito et import vers le moteur de lignes. Les parties inconnues restent conservées; les propriétés non représentées sont signalées. [Revue et correctifs](_bmad-output/implementation-artifacts/docx-rich-layout-review.md), [validation](_bmad-output/implementation-artifacts/docx-rich-layout-validation.json). Le [raccordement à l’interface en lecture seule](docs/rich-docx-preview.md) est livré : ouvrir DOCX, consulter les pages A4, revenir au TXT intact. L’édition et l’export sémantique restent à développer.
 
 Réf : F-COM-002, §5 · Taille : L · Dépend de : US-300, US-201
 

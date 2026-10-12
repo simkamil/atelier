@@ -6,7 +6,7 @@ use super::{
 };
 use crate::file_bridge::{self, Request};
 use crate::file_dialog::{DialogOwner, FileFilter, StaFileDialogs};
-use crate::files::FileBroker;
+use crate::files::{FileBroker, FileError};
 use crate::webview::{self, WebView};
 use std::ffi::c_void;
 use std::io;
@@ -268,6 +268,7 @@ fn file_reply(id: &str, result: Result<Option<Vec<u8>>, &'static str>) -> String
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FileDialogKind {
     Open,
+    OpenDocx,
     Save,
 }
 
@@ -283,6 +284,12 @@ fn route_file_request(
             Ok(selected) => file_bridge::process_selection(Request::Open { id }, selected, broker),
             Err(key) => file_reply(&id, Err(key)),
         },
+        Request::OpenDocx { id } => match choose(FileDialogKind::OpenDocx) {
+            Ok(selected) => {
+                file_bridge::process_selection(Request::OpenDocx { id }, selected, broker)
+            }
+            Err(key) => file_reply(&id, Err(key)),
+        },
         Request::Save { id, bytes } => match choose(FileDialogKind::Save) {
             Ok(selected) => {
                 file_bridge::process_selection(Request::Save { id, bytes }, selected, broker)
@@ -293,33 +300,54 @@ fn route_file_request(
     }
 }
 
+/// Build and pass the exact dialog options used by the production dispatcher.
+/// Keeping option selection behind this seam lets tests inspect filters without
+/// showing an interactive native dialog.
+fn with_file_dialog_options(
+    kind: FileDialogKind,
+    show: impl FnOnce(&str, &[FileFilter], usize, Option<&str>) -> Result<Option<PathBuf>, FileError>,
+) -> Result<Option<PathBuf>, FileError> {
+    let (title, label, extensions, suggested_name) = match kind {
+        FileDialogKind::Open => ("Ouvrir un fichier texte", "Fichier texte", ["txt"], None),
+        FileDialogKind::OpenDocx => ("Ouvrir un document Word", "Document Word", ["docx"], None),
+        FileDialogKind::Save => (
+            "Enregistrer le fichier texte",
+            "Fichier texte",
+            ["txt"],
+            Some("Sans titre.txt"),
+        ),
+    };
+    let filter = FileFilter::new(label, extensions)?;
+    show(title, std::slice::from_ref(&filter), 0, suggested_name)
+}
+
 fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request) -> String {
     let id = request.id().to_owned();
     if let Request::Dirty { dirty, .. } = request {
         runtime.dirty = dirty;
         return format!("us120-file|1|{id}|ok|");
     }
-    let filters = match FileFilter::new("Fichier texte", ["txt"]) {
-        Ok(filter) => vec![filter],
-        Err(error) => return file_reply(&id, Err(error.message_key)),
-    };
     // SAFETY: this handler runs on the UI STA while hwnd is the live owner window.
     let owner = unsafe { DialogOwner::from_raw(hwnd) };
     let broker = &runtime.broker;
     let dialogs = &mut runtime.dialogs;
-    route_file_request(request, broker, |kind| match kind {
-        FileDialogKind::Open => dialogs
-            .open(owner.as_ref(), "Ouvrir un fichier texte", &filters, 0)
-            .map_err(|error| error.message_key),
-        FileDialogKind::Save => dialogs
-            .save(
-                owner.as_ref(),
-                "Enregistrer le fichier texte",
-                &filters,
-                0,
-                Some("Sans titre.txt"),
-            )
-            .map_err(|error| error.message_key),
+    route_file_request(request, broker, |kind| {
+        with_file_dialog_options(
+            kind,
+            |title, filters, selected_filter, suggested_name| match kind {
+                FileDialogKind::Open | FileDialogKind::OpenDocx => {
+                    dialogs.open(owner.as_ref(), title, filters, selected_filter)
+                }
+                FileDialogKind::Save => dialogs.save(
+                    owner.as_ref(),
+                    title,
+                    filters,
+                    selected_filter,
+                    suggested_name,
+                ),
+            },
+        )
+        .map_err(|error| error.message_key)
     })
 }
 
@@ -2118,8 +2146,10 @@ mod tests {
     use super::{
         FileDialogKind, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, WPF_RESTORETOMAXIMIZED,
         atomic_write_to_temp, placement_is_maximized, route_file_request, validate_self_check_path,
+        with_file_dialog_options,
     };
     use crate::file_bridge::{self, Request};
+    use crate::file_dialog::FileFilter;
     use crate::files::FileBroker;
     use std::io;
     use std::path::{Path, PathBuf};
@@ -2221,6 +2251,71 @@ mod tests {
             directory_error,
             "us120-file|1|6|error|files.error.destination_is_directory"
         );
+    }
+
+    #[test]
+    fn docx_route_selects_its_own_dialog_and_accepts_files_over_txt_limit() {
+        let directory = std::env::temp_dir().join(format!(
+            "atelier-docx-route-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).expect("create isolated fixture directory");
+        let docx_path = directory.join("preview.docx");
+        let bytes = vec![0x5a; file_bridge::MAX_FILE_BYTES + 1];
+        std::fs::write(&docx_path, &bytes).expect("write larger than TXT limit");
+        let txt_path = directory.join("note.txt");
+        std::fs::write(&txt_path, b"text").expect("write TXT fixture");
+        let broker = FileBroker::new();
+        let mut selected_kind = None;
+        let reply = route_file_request(Request::OpenDocx { id: "31".into() }, &broker, |kind| {
+            selected_kind = Some(kind);
+            with_file_dialog_options(kind, |title, filters, selected_filter, suggested_name| {
+                assert_eq!(title, "Ouvrir un document Word");
+                assert_eq!(
+                    filters,
+                    &[FileFilter::new("Document Word", ["docx"]).unwrap()]
+                );
+                assert_eq!(selected_filter, 0);
+                assert_eq!(suggested_name, None);
+                Ok(Some(docx_path.clone()))
+            })
+            .map_err(|error| error.message_key)
+        });
+        assert_eq!(selected_kind, Some(FileDialogKind::OpenDocx));
+        assert_eq!(
+            reply,
+            format!("us120-file|1|31|ok|{}", file_bridge::encode_base64(&bytes))
+        );
+
+        let txt_reply = route_file_request(Request::Open { id: "33".into() }, &broker, |kind| {
+            with_file_dialog_options(kind, |title, filters, selected_filter, suggested_name| {
+                assert_eq!(title, "Ouvrir un fichier texte");
+                assert_eq!(
+                    filters,
+                    &[FileFilter::new("Fichier texte", ["txt"]).unwrap()]
+                );
+                assert_eq!(selected_filter, 0);
+                assert_eq!(suggested_name, None);
+                Ok(Some(txt_path.clone()))
+            })
+            .map_err(|error| error.message_key)
+        });
+        assert_eq!(
+            txt_reply,
+            format!("us120-file|1|33|ok|{}", file_bridge::encode_base64(b"text"))
+        );
+
+        let cancelled =
+            route_file_request(Request::OpenDocx { id: "32".into() }, &broker, |kind| {
+                assert_eq!(kind, FileDialogKind::OpenDocx);
+                Ok(None)
+            });
+        assert_eq!(cancelled, "us120-file|1|32|cancelled|");
+        let _ = std::fs::remove_dir_all(directory);
     }
 
     #[test]

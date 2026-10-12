@@ -14,6 +14,7 @@ pub mod editor;
 mod editor_layout;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod protocol;
+pub mod rich_preview;
 
 pub const MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum number of bytes owned by the ABI at one time (128 MiB).

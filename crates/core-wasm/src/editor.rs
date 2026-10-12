@@ -53,6 +53,31 @@ impl EditorSession {
     pub fn transact(&self, payload: &[u8]) -> Result<(Self, Vec<u8>), EditorError> {
         let (opcode, body) = parse_command(payload)?;
         let mut candidate = self.clone();
+        if opcode == 18 {
+            let preview = crate::rich_preview::preview_docx(body)
+                .map_err(|_| EditorError("EDITOR_PREVIEW_FAILED"))?;
+            let size = preview
+                .pages
+                .iter()
+                .try_fold(20 + preview.text.len(), |size, page| {
+                    size.checked_add(4)?.checked_add(page.len())
+                })
+                .filter(|size| *size <= MAX_RESPONSE)
+                .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?;
+            let mut out = Writer::with_capacity(size)?;
+            out.bytes(b"ATRP");
+            out.u16(1);
+            out.u16(0);
+            out.u32(u32_len(preview.pages.len())?);
+            out.u32(u32_len(preview.text.len())?);
+            out.u32(preview.notice_count);
+            out.bytes(preview.text.as_bytes());
+            for page in preview.pages {
+                out.u32(u32_len(page.len())?);
+                out.bytes(&page);
+            }
+            return Ok((candidate, out.finish(MAX_RESPONSE)?));
+        }
         if opcode == 10 {
             let document = candidate.ensure_document()?;
             let exported = document
@@ -726,6 +751,7 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         15 => Some(20),
         16 if (32..=32 + MAX_TEXT).contains(&body.len()) => None,
         17 if (24..=24 + MAX_TEXT).contains(&body.len()) => None,
+        18 if body.len() <= 8 * 1024 * 1024 => None,
         _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),
     };
     if expected.is_some_and(|len| len != body.len()) {

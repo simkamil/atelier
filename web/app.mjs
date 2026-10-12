@@ -3,6 +3,7 @@ import { createEngineClient } from "/engine-client.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "/wasm-protocol.mjs";
 import { createEditor, EditorError } from "/editor.mjs";
 import { createNativeHost } from "/native-host.mjs";
+import { createRichPreview } from "/rich-preview.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -11,6 +12,8 @@ const nodes = {
   scrollport: byId("document-scroll"), spacer: byId("page-spacer"),
   new: byId("new-document"), open: byId("open-document"), save: byId("save-document"), undo: byId("undo"), redo: byId("redo"),
   frenchSpacing: byId("french-spacing"),
+  openDocx: byId("open-docx"), closePreview: byId("close-preview"),
+  textWorkspace: byId("text-workspace"), richWorkspace: byId("rich-workspace"),
 };
 const FALLBACK = new Map(Object.entries({
   "status-a11y-ok": "Écho confirmé", "status-a11y-failed": "Échec", "status-ok": "Le moteur a renvoyé l’écho Ping.",
@@ -31,6 +34,12 @@ const FALLBACK = new Map(Object.entries({
   "workspace-label": "Éditeur de texte", "pages-label": "Pages du document", "canvas-label": "Pages du document texte brut",
   "state-clean": "Enregistré", "state-dirty": "Modifications non enregistrées",
   "options-label": "Options", "option-french-spacing": "Espaces françaises automatiques",
+  "action-open-docx": "Ouvrir DOCX…", "action-close-preview": "Retour au texte",
+  "status-preview-loading": "Ouverture de l’aperçu DOCX…",
+  "status-preview-ready": "Aperçu DOCX en lecture seule. Mise en page simplifiée.",
+  "status-preview-notices": "Aperçu DOCX en lecture seule. Certains éléments ne sont pas affichés.",
+  "status-preview-error": "L’aperçu DOCX n’a pas pu être ouvert. Document invalide, non pris en charge ou trop volumineux (8 Mio maximum).",
+  "preview-title": "Aperçu DOCX", "preview-eyebrow": "DOCUMENT WORD · LECTURE SEULE", "preview-state": "Lecture seule", "preview-footer": "Atelier · aperçu DOCX",
 }));
 
 document.addEventListener("securitypolicyviolation", event => {
@@ -91,19 +100,42 @@ async function start() {
   let client;
   let host;
   let editor;
+  let preview;
+  let previewActive = false;
+  let previewGeneration = 0;
+  let previewAbort;
+  let disposed = false;
+  const listeners = new AbortController();
+  const identityNodes = [byId("page-title"), document.querySelector('[data-i18n="eyebrow"]'), document.querySelector('[data-i18n="footer"]')];
+  const textIdentity = identityNodes.map(node => node.textContent);
+  const textWindowTitle = document.title;
+  function setPreviewIdentity(active) {
+    ["preview-title", "preview-eyebrow", "preview-footer"].forEach((key,index) => { identityNodes[index].textContent = active ? messages.get(key) : textIdentity[index]; });
+    document.title = active ? `${messages.get("preview-title")} — Atelier` : textWindowTitle;
+    nodes.documentState.textContent = active ? messages.get("preview-state") : messages.get(editor?.state?.dirty ? "state-dirty" : "state-clean");
+    nodes.documentState.classList.toggle("dirty", !active && Boolean(editor?.state?.dirty));
+  }
+  function dispose() {
+    if (disposed) return;
+    disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
+    preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close();
+  }
   let initialized = false;
   let busy = false;
-  window.addEventListener("pagehide", () => { editor?.dispose(); host?.close?.(); client?.close(); }, { once: true });
+  window.addEventListener("pagehide", dispose, { once: true, signal: listeners.signal });
   const updateControls = state => {
     const blocked = !initialized || busy;
     nodes.new.disabled = blocked; nodes.open.disabled = blocked; nodes.save.disabled = blocked;
     nodes.undo.disabled = blocked || !state?.canUndo; nodes.redo.disabled = blocked || !state?.canRedo;
     nodes.frenchSpacing.disabled = blocked;
+    nodes.openDocx.disabled = blocked;
   };
   const onBusy = value => { busy = value; updateControls(editor?.state); };
   const onState = state => {
-    nodes.documentState.textContent = messages.get(state.dirty ? "state-dirty" : "state-clean");
-    nodes.documentState.classList.toggle("dirty", state.dirty);
+    if (!previewActive) {
+      nodes.documentState.textContent = messages.get(state.dirty ? "state-dirty" : "state-clean");
+      nodes.documentState.classList.toggle("dirty", state.dirty);
+    }
     updateControls(state);
   };
   const onError = error => {
@@ -124,6 +156,7 @@ async function start() {
     catch {
       host = {
         open: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
+        openDocx: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
         save: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
         notifyDirty: async () => ({ kind: "ok" }),
         close() {},
@@ -136,10 +169,53 @@ async function start() {
       frenchSpacing: nodes.frenchSpacing.checked,
       confirmDiscard: messages.get("confirm-discard"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
     });
+    function closePreview() {
+      if (!previewActive || disposed) return;
+      previewGeneration += 1; previewAbort?.abort(); previewAbort = null;
+      previewActive = false;
+      nodes.richWorkspace.hidden = true; nodes.textWorkspace.hidden = false; nodes.closePreview.hidden = true;
+      editor.setSuspended(false); preview.close(); nodes.openDocx.focus();
+      setPreviewIdentity(false);
+      showEditorMessage(messages.get("status-ready"));
+    }
+    preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
+      spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError });
+    async function openDocx() {
+      if (!initialized || busy || disposed) return { kind: "cancelled" };
+      const generation = ++previewGeneration;
+      previewAbort = new AbortController();
+      const signal = previewAbort.signal;
+      previewActive = true; editor.setSuspended(true); nodes.closePreview.hidden = false;
+      setPreviewIdentity(true);
+      showEditorMessage(messages.get("status-preview-loading"));
+      const current = () => !disposed && generation === previewGeneration;
+      try {
+        const result = await host.openDocx();
+        if (!current()) return { kind: "cancelled" };
+        if (result.kind !== "ok") {
+          closePreview();
+          showEditorMessage(messages.get(result.kind === "cancelled" ? "status-cancelled" : result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-preview-error"), result.kind !== "cancelled");
+          return result;
+        }
+        const document = await editor.previewDocx(result.bytes, { signal });
+        if (!current()) return { kind: "cancelled" };
+        preview.setDocument(document);
+        nodes.textWorkspace.hidden = true; nodes.richWorkspace.hidden = false;
+        preview.open({ returnFocusTo: nodes.openDocx });
+        showEditorMessage(messages.get(document.noticeCount ? "status-preview-notices" : "status-preview-ready"));
+        return { kind: "ok" };
+      } catch (error) {
+        if (!current()) return { kind: "cancelled" };
+        closePreview(); showEditorMessage(messages.get("status-preview-error"), true);
+        return { kind: "error", key: error.code ?? "EDITOR_PREVIEW_FAILED" };
+      }
+    }
     const state = await editor.initialize();
     initialized = true;
     onState(state);
     showEditorMessage(messages.get("status-ready"));
+    nodes.openDocx.addEventListener("click", () => { void openDocx(); }, { signal: listeners.signal });
+    nodes.closePreview.addEventListener("click", closePreview, { signal: listeners.signal });
 
     nodes.new.addEventListener("click", async () => {
       try {
@@ -147,7 +223,7 @@ async function start() {
         if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(messages.get("status-new"));
       } catch (error) { onError(error); }
-    });
+    }, { signal: listeners.signal });
     nodes.open.addEventListener("click", async () => {
       try {
         const result = await editor.openDocument();
@@ -155,7 +231,7 @@ async function start() {
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(messages.get(result.key) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
       } catch (error) { onError(error); }
-    });
+    }, { signal: listeners.signal });
     nodes.save.addEventListener("click", async () => {
       try {
         const result = await editor.saveAs();
@@ -163,23 +239,24 @@ async function start() {
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(messages.get(result.key) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
       } catch (error) { onError(error); }
-    });
-    nodes.undo.addEventListener("click", () => { void editor.undo().catch(onError); });
-    nodes.redo.addEventListener("click", () => { void editor.redo().catch(onError); });
+    }, { signal: listeners.signal });
+    nodes.undo.addEventListener("click", () => { void editor.undo().catch(onError); }, { signal: listeners.signal });
+    nodes.redo.addEventListener("click", () => { void editor.redo().catch(onError); }, { signal: listeners.signal });
     nodes.frenchSpacing.addEventListener("change", () => {
       editor.setFrenchSpacing(nodes.frenchSpacing.checked);
       try { localStorage.setItem("atelier.frenchSpacing", String(nodes.frenchSpacing.checked)); }
       catch { /* Keep the chosen behavior in memory if storage is unavailable. */ }
       editor.focus();
-    });
+    }, { signal: listeners.signal });
     document.addEventListener("keydown", event => {
+      if (previewActive && event.key === "Escape" && !event.isComposing) { event.preventDefault(); closePreview(); return; }
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
       const action = event.key.toLowerCase();
       const button = action === "n" ? nodes.new : action === "o" ? nodes.open : action === "s" ? nodes.save : null;
-      if (!button || button.disabled) return;
+      if (!button) return;
       event.preventDefault();
-      button.click();
-    });
+      if (!button.disabled) button.click();
+    }, { signal: listeners.signal });
     updateControls(editor.state);
     editor.focus();
     return Object.freeze({
@@ -187,11 +264,13 @@ async function start() {
       getState: () => editor.getState(),
       exportDocument: () => editor.exportDocument(),
       editor,
+      openDocx, closePreview, dispose,
+      get previewActive() { return previewActive; },
     });
   } catch (error) {
     showPing(false, messages);
     showEditorMessage(messages.get("status-editor-error"), true);
-    client?.close(); host?.close?.();
+    dispose();
     return Object.freeze({ status: "failed", code: error?.code ?? "EDITOR_INITIALIZATION_FAILED" });
   }
 

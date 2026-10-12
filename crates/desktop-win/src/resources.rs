@@ -81,6 +81,11 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/native-host.mjs"),
     },
     Resource {
+        path: "/rich-preview.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/rich-preview.mjs"),
+    },
+    Resource {
         path: "/display-list.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/display-list.mjs"),

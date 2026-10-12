@@ -4273,6 +4273,20 @@
       "source_location": "1"
     },
     {
+      "id": "document_docs_rich-docx-preview_md",
+      "label": "docs/rich-docx-preview.md",
+      "file_type": "document",
+      "source_file": "docs/rich-docx-preview.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_subagent-workflow_md",
+      "label": "docs/SUBAGENT-WORKFLOW.md",
+      "file_type": "document",
+      "source_file": "docs/SUBAGENT-WORKFLOW.md",
+      "source_location": "1"
+    },
+    {
       "id": "document_tests_image-reference_readme_md",
       "label": "tests/image-reference/README.md",
       "file_type": "document",
@@ -11046,6 +11060,54 @@
       "weight": 1.0
     },
     {
+      "source": "crates_core_wasm_src_rich_preview",
+      "target": "atelier_text_layout",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/core-wasm/src/rich_preview.rs",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_core_wasm_src_rich_preview",
+      "target": "atelier_geom",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/core-wasm/src/rich_preview.rs",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_core_wasm_src_rich_preview",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/core-wasm/src/rich_preview.rs",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_core_wasm_tests_rich_preview",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/core-wasm/tests/rich_preview.rs",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
       "source": "document_readme_md",
       "target": "spec_document",
       "relation": "references",
@@ -11061,7 +11123,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\docs\\DEVELOPMENT.md",
-      "source_location": "498"
+      "source_location": "499"
     }
   ],
   "hyperedges": [

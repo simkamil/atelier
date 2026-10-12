@@ -50,6 +50,7 @@ prototype_docs.extend(['docs/us-211-tabs.md','docs/us-212-pagination.md','docs/u
 prototype_docs.extend(['docs/us-202-default-document.md','docs/us-213-incremental-layout.md','docs/us-215-paragraph-borders.md'])
 prototype_docs.extend(['docs/us-004-fuzzer.md','docs/us-082-raster-backend.md','docs/us-311-cfb-container.md','tests/cfb-reference/README.md','tests/font-cff-reference/README.md'])
 prototype_docs.extend(['docs/us-224-text-drag-drop.md','docs/us-228-french-spacing.md'])
+prototype_docs.extend(['docs/rich-docx-preview.md','docs/SUBAGENT-WORKFLOW.md'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.
@@ -73,7 +74,7 @@ document_paths.update(p.relative_to(root).as_posix() for p in (root/'data/fonts/
 # Preserve source-grounded semantic documentation concepts from the frozen
 # pre-CLI graph. A code-only refresh may already have pruned them from the
 # current graph, so use the lot baseline as the recovery source.
-baseline_commit='76b1ab0771ea32c8edf72a39e0a2cbb26c3c8997'
+baseline_commit='3fc5d860e673fc683f2fb92bcc73f1d621556286'
 baseline_graph=json.loads(subprocess.run(
     ['git','show',f'{baseline_commit}:graphify-out/graph.json'],
     cwd=root,check=True,capture_output=True,text=True,encoding='utf-8'

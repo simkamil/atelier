@@ -79,7 +79,7 @@ manifest = {
     },
     'local_packages': sorted(packages[p]['name'] for p in closure),
     'inventory_policy': 'Conservative local normal/build dependency closure, Rust sources, static include inputs and pinned Unicode corpus; includes unused cfg/test resources.',
-    'scope': 'Real ABI/protocol and plain-text editor engine; legacy transport probes still echo.',
+    'scope': 'Real ABI/protocol, plain-text editor and bounded read-only DOCX preview; legacy transport probes still echo.',
 }
 destination = root / 'data/engine'
 destination.mkdir(parents=True, exist_ok=True)
