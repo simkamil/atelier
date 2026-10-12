@@ -1,0 +1,21 @@
+[package]
+name = "atelier-fuzz"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+atelier-compress = { path = "../../crates/compress" }
+atelier-zip = { path = "../../crates/zip" }
+atelier-xml = { path = "../../crates/xml" }
+atelier-image = { path = "../../crates/image" }
+atelier-font = { path = "../../crates/font" }
+atelier-fmt-ooxml = { path = "../../crates/fmt-ooxml" }
+atelier-model = { path = "../../crates/model" }
+atelier-unicode = { path = "../../crates/unicode" }
+atelier-render = { path = "../../crates/render" }
+atelier-geom = { path = "../../crates/geom" }
+
+[lints]
+workspace = true
