@@ -67,6 +67,10 @@ version = "0.1.0"
 name = "atelier-fmt-ooxml"
 version = "0.1.0"
 dependencies = [
+ "atelier-font",
+ "atelier-model",
+ "atelier-text-model",
+ "atelier-unicode",
  "atelier-xml",
  "atelier-zip",
 ]
@@ -143,6 +147,13 @@ version = "0.1.0"
 [[package]]
 name = "atelier-text-layout"
 version = "0.1.0"
+dependencies = [
+ "atelier-fmt-ooxml",
+ "atelier-font",
+ "atelier-shape",
+ "atelier-text-model",
+ "atelier-unicode",
+]
 
 [[package]]
 name = "atelier-text-model"

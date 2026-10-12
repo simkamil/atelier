@@ -2,6 +2,7 @@
 *.bin binary
 *.out binary
 *.zip binary
+*.docx binary
 *.font binary
 *.ttc binary
 *.ttf binary

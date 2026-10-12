@@ -8,6 +8,10 @@ license.workspace = true
 [dependencies]
 atelier-zip = { path = "../zip" }
 atelier-xml = { path = "../xml" }
+atelier-text-model = { path = "../text-model" }
+atelier-font = { path = "../font" }
+atelier-unicode = { path = "../unicode" }
+atelier-model = { path = "../model" }
 
 [lints]
 workspace = true

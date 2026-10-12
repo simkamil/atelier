@@ -6,6 +6,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod docx;
+pub use docx::{
+    DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, ImportNotice, ImportedBreak,
+    ImportedDocx, ImportedRunStyle, ImportedSymbol, LatentStyleInfo, import_docx,
+    import_docx_with_limits,
+};
+
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader, Writer as XmlWriter};
 use atelier_zip::{Archive, Limits as ZipLimits, Method, WriteOptions, Writer as ZipWriter};
 use std::cmp::Ordering;

@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-12",
+  "method": "ole32.CLSIDFromProgID via Python ctypes",
+  "prog_id": "Word.Application",
+  "hresult": "0x800401f3",
+  "com_registered": false,
+  "word_started": false,
+  "layout_results": null,
+  "word_95_percent_established": false
+}

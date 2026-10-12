@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "512e3651dad18f19a9eb133d8658e3d19461ccd6",
+  "snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/docx-rich-layout-review-snapshot.json (self-referential metadata)"
+  ],
+  "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-docx-rich-layout-review-9hk418_l\\complete.diff",
+  "complete_bytes": 14565747,
+  "complete_sha256": "f3462f944d609dd9109e7ee45792e99a20239a23b9b305b123afeb65345adce2",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-docx-rich-layout-review-9hk418_l\\sources.diff",
+  "sources_bytes": 837594,
+  "sources_sha256": "a34ec3a657bffb3a57202361c1ff0c0a20f647c26c8db96b526871cfeb191113"
+}

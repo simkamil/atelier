@@ -1,8 +1,8 @@
 # Préparation du démonstrateur — 2026-10-12
 
-Le backlog compte désormais **42 US terminées sur 158**. Le dernier lot ajoute
-les styles, OPC, JPEG et le rasteriseur logiciel, développés en parallèle avec
-GPT-6 Luna, raisonnement moyen, puis relus et validés.
+Le backlog compte désormais **43 US terminées sur 158**. Le dernier lot livre
+l’import DOCX US-301 et le code de mise en page US-210, développé en parallèle
+avec GPT-6 Luna, raisonnement moyen. US-210 reste partielle pour la preuve Word.
 
 - [Unicode](us-010-ucd-tables.md) : 71 fichiers officiels Unicode 17.0.0,
   licence et SHA-256, générateur local et build reproductible. L’[oracle](../_bmad-output/implementation-artifacts/prototype-ucd-oracle.json)
@@ -35,6 +35,45 @@ critères de cache et de fluidité matériels ; US-103 conserve les essais de cl
 US-113 conserve SharedBuffer, polices/URL et les essais de dialogues. US-111
 conserve son échec strict de handles. US-092 reste ouverte pour l’annulation
 métier : le dispatch WASM synchrone n’est pas préemptible. US-114 est validée.
+
+## Import DOCX et lignes riches — 2026-10-12
+
+Deux agents GPT-6 Luna, raisonnement moyen, ont développé les API en parallèle,
+puis trois agents indépendants ont conduit la revue. **US-301 est validée**;
+le backlog atteint **43 US terminées sur 158**. **US-210 reste partielle** :
+les cinq critères fonctionnels sont testés, mais le seuil de 95 % de coupures
+identiques à Word reste ouvert, Word étant absent de cet hôte.
+
+- [Import DOCX](us-301-docx-import.md) : texte, propriétés, styles/thème,
+  paramètres, styles latents, fontTable et polices ODTTF réellement utilisables.
+  Les valeurs non représentées par le modèle sont préservées et signalées.
+- [Lignes riches](us-210-rich-line-layout.md) : coupures UAX14, quatre alignements,
+  retraits, interlignes, tailles/polices mixtes, clusters et géométrie bornée.
+- [Fixture indépendante](../tests/docx-reference/README.md) : parties relocalisées,
+  vraie police Carlito, vecteur ODTTF et paquet opaque; import vers layout testé.
+
+La [validation finale](../_bmad-output/implementation-artifacts/docx-rich-layout-validation.json)
+réussit **15 contrôles et 540 tests workspace** : builds Windows/WASM/musl,
+Clippy hôte/WASM, format, licences, garde, métadonnées et reproduction de fixture.
+Sources et lock sont inchangés pendant les contrôles; les 32 paquets et toutes
+leurs dépendances restent locaux. Les tests musl sont compilés localement;
+leur exécution appartient à la CI Linux du commit publié. Le moteur embarqué
+reste à 1 179 080 octets, avec le même plafond; sa provenance inclut le nouveau lock.
+
+La [revue](../_bmad-output/implementation-artifacts/docx-rich-layout-review.md)
+conserve 19 constats séparés, leurs réfutations ou corrections, et une relecture
+ciblée des correctifs. La [première passe](../_bmad-output/implementation-artifacts/docx-rich-layout-first-attempt.json)
+conserve l’arrêt Clippy sur une assertion booléenne corrigée; les échecs de
+développement restent dans `docx-rich-layout-exploration.json`.
+Les resets de couleur/surlignage nécessitent encore une représentation dans
+le modèle partagé; ils produisent une notice explicite en attendant.
+
+Le [collecteur Word](../tests/text-layout-reference/README.md) est préparatoire,
+sans référence collectée ni résultat ≥95 % revendiqué. La [sonde COM](../_bmad-output/implementation-artifacts/us-210-word-com-check.json)
+confirme l’absence de Word; le démarrage PowerShell bloqué est tracé séparément.
+Ces API ne sont pas encore raccordées à l’éditeur riche : le parcours utilisateur
+actuel reste TXT. La [carte Graphify](../_bmad-output/implementation-artifacts/docx-rich-layout-graph.json)
+contrôle les dépendances et les statuts du lot.
 
 ## Styles, OPC, JPEG et raster logiciel — 2026-10-12
 
@@ -71,9 +110,9 @@ Les deux passes interrompues par Clippy puis rustfmt sont conservées dans
 `styles-formats-raster-exploration.json` et `styles-formats-raster-format-attempt.json`.
 La dernière passe reprend tous les contrôles sur les sources corrigées.
 
-Ces modules exposent des API de bibliothèque. L’import WordprocessingML
-(US-301), le backend raster de liste d’affichage (US-082) et leur raccordement
-à l’éditeur restent à développer. Les diagnostics WebView2 debug/release sont
+À la date de ce lot, l’import WordprocessingML restait à développer; il est
+maintenant livré par US-301 ci-dessus. Le backend raster de liste d’affichage
+(US-082) et le raccordement à l’éditeur riche restent séparés. Les diagnostics WebView2 debug/release sont
 fonctionnels, mais US-111 reste ouverte : le test strict des handles échoue
 encore. Les essais AZERTY/IME physiques et les dialogues manuels restent ouverts.
 Les tests musl sont seulement compilés localement ; leur exécution appartient

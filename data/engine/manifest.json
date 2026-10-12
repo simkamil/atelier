@@ -9,7 +9,7 @@
   "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
   "source_hash_encoding": "UTF-8 bytes with CRLF normalized to LF",
   "sources_sha256": {
-    "Cargo.lock": "b8e266819faecba78c0afcbf1eb7d0c730b4420a3974ce91ec7d32908492db75",
+    "Cargo.lock": "f4a3940b317c9bcda195986167f20338edae229034a966ea8f86f9f8a8223274",
     "Cargo.toml": "2426bcf285ae2398384bc2f02205190282f016d3315f1f8510660baeccb2e322",
     "crates/compress/Cargo.toml": "e58b8044e29ed2bfaa73d7dc16ec4aad15af6691d5658d378aafdacfbf5ba27e",
     "crates/compress/src/lib.rs": "177b5133e756afdb7786d2c0cb1c5378d4eac72c9d94ccb74c800fd307401cd2",

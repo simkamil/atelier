@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "story": "US-210",
+  "checkedAtLocalDate": "2026-10-12",
+  "machineCheck": {
+    "comProgId": "Word.Application",
+    "getTypeFromProgId": "unavailable",
+    "wordExecutableCommand": "not found",
+    "standardWordExecutablePaths": [
+      {
+        "path": "C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+        "result": "not found"
+      },
+      {
+        "path": "C:\\Program Files (x86)\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+        "result": "not found"
+      },
+      {
+        "path": "C:\\Program Files\\Microsoft Office\\Office16\\WINWORD.EXE",
+        "result": "not found"
+      }
+    ],
+    "registryKeys": [
+      {
+        "path": "HKLM:\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration",
+        "result": "not found"
+      },
+      {
+        "path": "HKLM:\\SOFTWARE\\Microsoft\\Office\\16.0\\Word\\InstallRoot",
+        "result": "not found"
+      },
+      {
+        "path": "HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Office\\16.0\\Word\\InstallRoot",
+        "result": "not found"
+      },
+      {
+        "path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\WINWORD.EXE",
+        "result": "not found"
+      },
+      {
+        "path": "HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\App Paths\\WINWORD.EXE",
+        "result": "not found"
+      },
+      {
+        "path": "HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\WINWORD.EXE",
+        "result": "not found"
+      }
+    ],
+    "officeDirectories": [
+      "C:\\Program Files\\LibreOffice"
+    ],
+    "conclusion": "Microsoft Word desktop is not discoverable through COM, command lookup, standard executable paths, or the checked Office registry paths."
+  },
+  "oracle": {
+    "wordInstanceStarted": false,
+    "syntheticDocxCreated": false,
+    "layoutResults": null,
+    "layoutResultsReason": "No Word oracle was available; no line layout was collected or simulated."
+  }
+}

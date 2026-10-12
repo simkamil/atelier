@@ -1,0 +1,106 @@
+{
+  "firstRunDirectProperties": {
+    "characterStyleId": "Strong",
+    "directBold": false
+  },
+  "fixture": "tests/docx-reference/basic.docx",
+  "fontHashesAndKnownVector": {
+    "deobfuscatedSha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595",
+    "faceName": "Carlito",
+    "fontKey": "{00112233-4455-6677-8899-AABBCCDDEEFF}",
+    "fontPart": "content/fonts/Carlito-Regular.odttf",
+    "obfuscatedFirst32Hex": "ffefddccbbbb9888776255547466544665c84473bba2b560776656c674725e53",
+    "obfuscatedSha256": "67547022a0dfe86bec86616ad9800d007a9f00bf0a6b76843ed8e8c254e163e4",
+    "originalFirst32Hex": "000100000011010000040010474445469a2699bf00082ce80000038247504f53",
+    "originalSha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595"
+  },
+  "generator": "tools/generate-docx-reference.py (Python standard library only)",
+  "paragraphStyleIds": [
+    "Heading1",
+    null
+  ],
+  "paragraphText": [
+    "Référence de titre — Français et English mix: cœurs, accents, ligatures.",
+    "This second English paragraph is deliberately long so a layout engine must wrap it across multiple visual lines. It includes punctuation, varied word lengths, and enough ordinary text to make the fixture useful without depending on any renderer or platform-specific font metrics."
+  ],
+  "reparse": {
+    "contentTypes": {
+      "fontExtensionFound": true,
+      "mainPartOverrideFound": true
+    },
+    "font": {
+      "deobfuscatedSha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595",
+      "faceName": "Carlito",
+      "fontKey": "{00112233-4455-6677-8899-AABBCCDDEEFF}",
+      "fontPart": "content/fonts/Carlito-Regular.odttf",
+      "obfuscatedFirst32Hex": "ffefddccbbbb9888776255547466544665c84473bba2b560776656c674725e53",
+      "obfuscatedSha256": "67547022a0dfe86bec86616ad9800d007a9f00bf0a6b76843ed8e8c254e163e4",
+      "originalFirst32Hex": "000100000011010000040010474445469a2699bf00082ce80000038247504f53",
+      "originalSha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595"
+    },
+    "opaquePart": {
+      "bytesHex": "55533330312d6f70617175652d6669787475726500ff1070726573657276652d6d650a",
+      "path": "vendor/preserved-opaque.bin",
+      "sha256": "932aefa4f0f72b2920e2b22b8e27b10fbe1fd974d30fd361fbed60cb28db6860"
+    },
+    "paragraphs": [
+      {
+        "paragraphStyleId": "Heading1",
+        "runs": [
+          {
+            "characterStyleId": "Strong",
+            "directBold": false,
+            "text": "Référence de titre — Français et English mix: cœurs, accents, ligatures."
+          }
+        ],
+        "text": "Référence de titre — Français et English mix: cœurs, accents, ligatures."
+      },
+      {
+        "paragraphStyleId": null,
+        "runs": [
+          {
+            "characterStyleId": null,
+            "directBold": null,
+            "text": "This second English paragraph is deliberately long so a layout engine must wrap it across multiple visual lines. It includes punctuation, varied word lengths, and enough ordinary text to make the fixture useful without depending on any renderer or platform-specific font metrics."
+          }
+        ],
+        "text": "This second English paragraph is deliberately long so a layout engine must wrap it across multiple visual lines. It includes punctuation, varied word lengths, and enough ordinary text to make the fixture useful without depending on any renderer or platform-specific font metrics."
+      }
+    ],
+    "relationshipDiscovery": {
+      "fontTablePart": "content/fontTable.xml",
+      "mainPart": "content/main.xml",
+      "settingsPart": "content/settings.xml",
+      "stylesPart": "content/styles.xml",
+      "themePart": "content/theme1.xml"
+    },
+    "settings": {
+      "compatFlagPresent": true,
+      "compatSetting": {
+        "name": "compatibilityMode",
+        "uri": "http://schemas.microsoft.com/office/word",
+        "value": "15"
+      },
+      "defaultTabStopTwips": 720,
+      "latentStyleCount": 276
+    },
+    "styles": {
+      "docDefaultsFontTheme": "minorHAnsi",
+      "docDefaultsSizeHalfPoints": 22,
+      "heading1BasedOn": "Normal",
+      "heading1Color": "accent1",
+      "heading1ColorFallback": "000000",
+      "heading1SizeHalfPoints": 32,
+      "ids": [
+        "Normal",
+        "Heading1",
+        "Strong"
+      ]
+    },
+    "theme": {
+      "majorLatin": "Liberation Serif",
+      "minorLatin": "Carlito"
+    }
+  },
+  "schemaVersion": 1
+}

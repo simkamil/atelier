@@ -4,13 +4,52 @@ Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Auc
 
 Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages, la casse et la normalisation Unicode, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions, historique, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent les conteneurs ZIP et le XML en flux avec capture opaque. `atelier-font` expose vingt polices embarquées, les contours TrueType, une prise en charge CFF partielle et le façonnage latin.
 
-`atelier-image` décode PNG, GIF, BMP et [JPEG](us-042-jpeg.md) en RGBA8 et [encode PNG](us-041-png-encoder.md), avec limites explicites. `atelier-text-model::rich` fournit le [modèle riche](us-200-rich-text-model.md) et le [moteur de styles](us-201-style-engine.md). `atelier-raster` expose les [primitives logicielles](us-061-software-rasterizer.md), et `atelier-fmt-ooxml` lit et écrit le [paquet OPC](us-300-opc-package.md). Le raccordement de ces API à l'éditeur riche et l'import sémantique DOCX restent à développer. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+`atelier-image` décode PNG, GIF, BMP et [JPEG](us-042-jpeg.md) en RGBA8 et [encode PNG](us-041-png-encoder.md), avec limites explicites. `atelier-text-model::rich` fournit le [modèle riche](us-200-rich-text-model.md) et le [moteur de styles](us-201-style-engine.md). `atelier-raster` expose les [primitives logicielles](us-061-software-rasterizer.md), et `atelier-fmt-ooxml` lit et écrit le [paquet OPC](us-300-opc-package.md). L’[import DOCX](us-301-docx-import.md) et les [lignes riches](us-210-rich-line-layout.md) sont disponibles en API; US-210 attend la comparaison Word. Le raccordement à l’éditeur riche reste à développer. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Les liaisons WASM, Win32 et WebView2 isolent leurs blocs `unsafe` et documentent les contrats ABI selon la spécification.
 
 ## Validation
+
+## Import DOCX et lignes riches — 2026-10-12
+
+Deux agents GPT-6 Luna, raisonnement moyen, ont développé les API en parallèle,
+puis trois agents indépendants ont conduit la revue. **US-301 est validée**;
+le backlog atteint **43 US terminées sur 158**. **US-210 reste partielle** :
+les cinq critères fonctionnels sont testés, mais le seuil de 95 % de coupures
+identiques à Word reste ouvert, Word étant absent de cet hôte.
+
+- [Import DOCX](us-301-docx-import.md) : texte, propriétés, styles/thème,
+  paramètres, styles latents, fontTable et polices ODTTF réellement utilisables.
+  Les valeurs non représentées par le modèle sont préservées et signalées.
+- [Lignes riches](us-210-rich-line-layout.md) : coupures UAX14, quatre alignements,
+  retraits, interlignes, tailles/polices mixtes, clusters et géométrie bornée.
+- [Fixture indépendante](../tests/docx-reference/README.md) : parties relocalisées,
+  vraie police Carlito, vecteur ODTTF et paquet opaque; import vers layout testé.
+
+La [validation finale](../_bmad-output/implementation-artifacts/docx-rich-layout-validation.json)
+réussit **15 contrôles et 540 tests workspace** : builds Windows/WASM/musl,
+Clippy hôte/WASM, format, licences, garde, métadonnées et reproduction de fixture.
+Sources et lock sont inchangés pendant les contrôles; les 32 paquets et toutes
+leurs dépendances restent locaux. Les tests musl sont compilés localement;
+leur exécution appartient à la CI Linux du commit publié. Le moteur embarqué
+reste à 1 179 080 octets, avec le même plafond; sa provenance inclut le nouveau lock.
+
+La [revue](../_bmad-output/implementation-artifacts/docx-rich-layout-review.md)
+conserve 19 constats séparés, leurs réfutations ou corrections, et une relecture
+ciblée des correctifs. La [première passe](../_bmad-output/implementation-artifacts/docx-rich-layout-first-attempt.json)
+conserve l’arrêt Clippy sur une assertion booléenne corrigée; les échecs de
+développement restent dans `docx-rich-layout-exploration.json`.
+Les resets de couleur/surlignage nécessitent encore une représentation dans
+le modèle partagé; ils produisent une notice explicite en attendant.
+
+Le [collecteur Word](../tests/text-layout-reference/README.md) est préparatoire,
+sans référence collectée ni résultat ≥95 % revendiqué. La [sonde COM](../_bmad-output/implementation-artifacts/us-210-word-com-check.json)
+confirme l’absence de Word; le démarrage PowerShell bloqué est tracé séparément.
+Ces API ne sont pas encore raccordées à l’éditeur riche : le parcours utilisateur
+actuel reste TXT. La [carte Graphify](../_bmad-output/implementation-artifacts/docx-rich-layout-graph.json)
+contrôle les dépendances et les statuts du lot.
 
 ## Styles, OPC, JPEG et raster logiciel — 2026-10-12
 
@@ -47,9 +86,9 @@ Les deux passes interrompues par Clippy puis rustfmt sont conservées dans
 `styles-formats-raster-exploration.json` et `styles-formats-raster-format-attempt.json`.
 La dernière passe reprend tous les contrôles sur les sources corrigées.
 
-Ces modules exposent des API de bibliothèque. L’import WordprocessingML
-(US-301), le backend raster de liste d’affichage (US-082) et leur raccordement
-à l’éditeur restent à développer. Les diagnostics WebView2 debug/release sont
+À la date de ce lot, l’import WordprocessingML restait à développer; il est
+maintenant livré par US-301 ci-dessus. Le backend raster de liste d’affichage
+(US-082) et le raccordement à l’éditeur riche restent séparés. Les diagnostics WebView2 debug/release sont
 fonctionnels, mais US-111 reste ouverte : le test strict des handles échoue
 encore. Les essais AZERTY/IME physiques et les dialogues manuels restent ouverts.
 Les tests musl sont seulement compilés localement ; leur exécution appartient

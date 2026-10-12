@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-12",
+  "scope": "Observed failures during development; final validation must be run separately on frozen sources.",
+  "attempts": [
+    {
+      "command": "cargo test -p atelier-text-layout --test docx_integration --locked --offline",
+      "passed": 3,
+      "failed": 2,
+      "failures": [
+        "malformed_indents_never_panic_or_silently_become_default_properties: negation overflow on hanging=-2147483648",
+        "main_document_requires_authentic_relationship_and_root_namespace: accepted missing or fake officeDocument relationship"
+      ]
+    },
+    {
+      "command": "cargo clippy -p atelier-text-layout -p atelier-fmt-ooxml --all-targets --locked --offline -- -D warnings",
+      "exit_code": 101,
+      "failures": [
+        "layout: needless_range_loop x2 and too_many_arguments x2",
+        "docx: type_complexity x2, collapsible_if and field_reassign_with_default"
+      ]
+    }
+  ],
+  "environment": "PowerShell startup stopped responding after resume; cmd.exe still works. No product code is implicated. Word absence is rechecked independently through ole32 rather than waiting indefinitely for PowerShell."
+}

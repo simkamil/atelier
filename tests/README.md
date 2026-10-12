@@ -101,3 +101,17 @@ pixels de glyphes et undo/redo dans le WebView2 réel ; il n’ouvre pas de dial
 `node tests/check-embedded-engine.mjs` vérifie provenance, empreintes, imports/exports et écho du moteur livré, sans compilation préalable. Après un build optimisé avec la même toolchain, `--compare-artifact` compare les octets à l’artefact Cargo. `pwsh -NoProfile -File tests/check-embedded-resources.ps1 -Executable target/release/atelier.exe -TargetDirectory target/embedded-resources` attend la fin du diagnostic réel caché, y compris avec le sous-système Windows release. WebView2 Evergreen exposant `ICoreWebView2_22` est requis.
 
 `cargo test -p atelier-text-model --locked --offline` couvre UTF-8, sélection, graphèmes et historique. `cargo test -p atelier-desktop-win --locked --offline` couvre le broker fichiers, les pannes de publication et les ressources ; aucun dialogue interactif n’est ouvert. Les erreurs simulées vérifient la préservation des fichiers avant publication, sans promettre de CAS atomique face à un processus extérieur.
+
+## DOCX et lignes riches
+
+Le [corpus DOCX indépendant](docx-reference/README.md) est généré et relu par
+Python ZIP/XML, avec un vrai Carlito ODTTF, des parties relocalisées et une partie
+opaque. `py tools/generate-docx-reference.py --check` contrôle ses octets exacts;
+les jobs Cargo consomment les fixtures versionnées sans dépendance Python.
+`cargo test -p atelier-fmt-ooxml -p atelier-text-layout --locked --offline`
+exerce import, contrôles malformés, styles, polices et géométrie riche intégrée.
+
+Le [collecteur de lignes Word](text-layout-reference/README.md) nécessite Word
+desktop. Sa collecte reste non exécutée ici; aucun golden Word ni taux ≥95 %
+n’est simulé. US-210 demeure partielle. Les tests numériques et les références
+HarfBuzz existantes ne remplacent pas cet oracle indépendant de mise en page.

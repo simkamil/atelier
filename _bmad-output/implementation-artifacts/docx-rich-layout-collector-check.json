@@ -1,0 +1,16 @@
+{
+  "script_sha256": "b06841c40f097c7f53ab221624c22319af94750f5fc0bc9df74a08d5304b27eb",
+  "word_capture_executed": false,
+  "checks": [
+    {
+      "name": "syntax",
+      "status": "unavailable",
+      "reason": "PowerShell startup exceeded 15 seconds; this child was terminated."
+    },
+    {
+      "name": "availability",
+      "status": "unavailable",
+      "reason": "PowerShell startup exceeded 15 seconds; this child was terminated."
+    }
+  ]
+}

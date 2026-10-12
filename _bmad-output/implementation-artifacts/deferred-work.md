@@ -22,3 +22,7 @@ Les trois reports précédents (copy/cut, Ctrl+flèches par mot, colonne visuell
 - source_spec: `_bmad-output/implementation-artifacts/spec-us201-style-engine.md`
   summary: Comparer dans Word le style calculé des paragraphes d’une table imbriquée sans style propre.
   evidence: R6 (medium non vérifié) : le moteur hérite du style de table ancêtre; les sources consultées ne prouvent pas une divergence. Une fixture DOCX et son rendu Word de référence trancheraient ce cas.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-us301-docx-text-styles.md`
+  summary: Représenter la réinitialisation explicite de couleur et surlignage dans le modèle riche et sa cascade.
+  evidence: R6 de docx-rich-layout-review.md; direct highlight none conserve actuellement le surlignage hérité, avec marqueur opaque et notice UnsupportedProperty. Un changement coordonné du modèle/cascade/codec et un test d’intégration de rendu sont nécessaires.

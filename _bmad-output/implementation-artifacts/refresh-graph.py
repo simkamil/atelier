@@ -45,7 +45,11 @@ prototype_docs.extend(['docs/us-112-embedded-resources.md','docs/us-113-file-acc
 prototype_docs.extend(['docs/us-221-keyboard-editing.md','docs/us-222-mouse-selection.md','docs/us-225-plain-clipboard.md'])
 prototype_docs.extend(['docs/us-013-case-normalization.md','docs/us-041-png-encoder.md','docs/us-052-cff-outlines.md','docs/us-200-rich-text-model.md'])
 prototype_docs.extend(['docs/us-042-jpeg.md','docs/us-061-software-rasterizer.md','docs/us-201-style-engine.md','docs/us-300-opc-package.md','crates/image/tests/fixtures/jpeg/README.md'])
+prototype_docs.extend(['docs/us-301-docx-import.md','docs/us-210-rich-line-layout.md','tests/docx-reference/README.md','tests/text-layout-reference/README.md'])
 document_paths.update(prototype_docs)
+# Retain already-extracted JPEG fixture concepts at their real source paths.
+# These versioned inputs are also exercised by the independent pixel tests.
+document_paths.update(p.relative_to(root).as_posix() for p in (root/'crates/image/tests/fixtures/jpeg').glob('*.jpg'))
 document_paths.update({'web/index.html','web/app.css','web/i18n/fr-FR.txt'})
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
 document_paths.update({'README.md','web/README.md','tests/README.md','US-V0-V1.md'})
@@ -110,6 +114,7 @@ for rel in prototype_docs+['tests/image-reference/README.md', 'data/fonts/README
 code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if 'target' not in p.parts]
 code += [root/'tools/package-engine.py']
 code += [root/'crates/image/tests/fixtures/jpeg/generate.py']
+code += [root/'tools/generate-docx-reference.py', root/'tools/word-line-reference.ps1', root/'tests/docx-reference/expected.json']
 code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
 # Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
@@ -234,6 +239,20 @@ for node in removed:
     # not visual LLM concepts. Only prune verified fixture paths; retain the
     # CLI backup and record every replacement in normalization diagnostics.
     source=node.get('source_file','').replace('\\','/')
+    # Query memories are generated context, excluded from the product map.
+    # Preserve their concepts through the corresponding located product nodes.
+    if source.startswith('graphify-out/memory/'):
+        query_equivalents = {
+            'rasterizer': ('crates_raster_src_lib_rasterizer', 'Rasterizer'),
+            'us_311': ('us_v0_v1_us_311', 'US-311'),
+            'us_052': ('us_v0_v1_us_052', 'US-052'),
+            'us_082': ('us_v0_v1_us_082', 'US-082'),
+        }
+        if node['id'] in query_equivalents:
+            candidate, prefix = query_equivalents[node['id']]
+            assert candidate in g and g.nodes[candidate]['label'].startswith(prefix)
+            assert g.nodes[candidate].get('source_file')
+            replacement = candidate
     if source.startswith('tests/image-reference/') and Path(source).suffix.lower() in ('.png','.gif','.bmp'):
         fixture_manifest=json.loads((root/'tests/image-reference/manifest.json').read_text(encoding='utf-8'))
         if source.removeprefix('tests/image-reference/') in {c['file'] for c in fixture_manifest['cases']}:

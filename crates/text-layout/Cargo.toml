@@ -5,5 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dependencies]
+atelier-text-model = { path = "../text-model" }
+atelier-font = { path = "../font" }
+atelier-shape = { path = "../shape" }
+atelier-unicode = { path = "../unicode" }
+
+[dev-dependencies]
+atelier-fmt-ooxml = { path = "../fmt-ooxml" }
+
 [lints]
 workspace = true
