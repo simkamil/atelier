@@ -70,8 +70,9 @@ La [revue triée](../_bmad-output/implementation-artifacts/editor-drag-spacing-p
 l'[audit des matrices](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-matrix.json),
 les [mesures répétées](../_bmad-output/implementation-artifacts/editor-incremental-perf-benchmark.json)
 et le [reçu Graphify](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-graph.json)
-conservent les preuves et les limites. La validation locale n'établit pas la
-réussite de la CI distante; son état sera enregistré après publication.
+conservent les preuves et les limites.
+
+Le code est publié dans [2c1f16c](https://github.com/simkamil/mon-bureau/commit/2c1f16cb1d7be958cd79359bc043ccfe109bc11c). La [CI de ce commit](https://github.com/simkamil/mon-bureau/actions/runs/38306301922) refuse les trois jobs avant démarrage pour paiement/plafond Actions. Aucun test distant n'a été exécuté. Voir le [reçu CI](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-ci.json).
 
 ## Document initial, pagination incrémentale et bordures — 2026-10-12
 
