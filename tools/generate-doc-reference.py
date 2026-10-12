@@ -65,6 +65,27 @@ STYLES = [
     ("Emphase_20_forte", "Emphase forte", "text", None, {}, {"bold": True, "color": "CC0000"}),
 ]
 
+# Underline descriptions: name -> (ODF style, ODF type, ODF width, model value).
+UL = {
+    "single": ("solid", "single", "auto", "single"),
+    "double": ("solid", "double", "auto", "double"),
+    "thick": ("solid", "single", "bold", "thick"),
+    "dotted": ("dotted", "single", "auto", "dotted"),
+    "dash": ("dash", "single", "auto", "dashed"),
+    "long-dash": ("long-dash", "single", "auto", "dashed"),
+    "dot-dash": ("dot-dash", "single", "auto", "dashed"),
+    "dot-dot-dash": ("dot-dot-dash", "single", "auto", "dashed"),
+    "wave": ("wave", "single", "auto", "wave"),
+    "dotted-bold": ("dotted", "single", "bold", "dotted"),
+    "dash-bold": ("dash", "single", "bold", "dashed"),
+    "long-dash-bold": ("long-dash", "single", "bold", "dashed"),
+    "dot-dash-bold": ("dot-dash", "single", "bold", "dashed"),
+    "dot-dot-dash-bold": ("dot-dot-dash", "single", "bold", "dashed"),
+    "wave-bold": ("wave", "single", "bold", "wave"),
+    "wave-double": ("wave", "double", "auto", "wave"),
+}
+
+
 DOCS = {
     "text-accents": {
         "meta": {
@@ -126,6 +147,12 @@ DOCS = {
                 ("tout", {"bold": True, "italic": True, "underline": "single", "size": 14,
                           "color": "00AA00", "font": "Arial"}),
             ]},
+        ],
+    },
+    "underlines": {
+        "meta": {"title": "Soulignements", "initial_creator": "Atelier"},
+        "paragraphs": [
+            {"runs": [(name, {"underline": name})]} for name in UL
         ],
     },
     "para-formatting": {
@@ -202,12 +229,10 @@ def text_props_xml(p: dict) -> str:
         a.append('fo:font-weight="bold"')
     if p.get("italic"):
         a.append('fo:font-style="italic"')
-    if p.get("underline") == "single":
-        a.append('style:text-underline-style="solid" style:text-underline-width="auto" '
-                 'style:text-underline-color="font-color"')
-    if p.get("underline") == "double":
-        a.append('style:text-underline-style="solid" style:text-underline-type="double" '
-                 'style:text-underline-width="auto" style:text-underline-color="font-color"')
+    if "underline" in p:
+        style, kind, width, _ = UL[p["underline"]]
+        a.append(f'style:text-underline-style="{style}" style:text-underline-type="{kind}" '
+                 f'style:text-underline-width="{width}" style:text-underline-color="font-color"')
     if p.get("strike"):
         a.append('style:text-line-through-style="solid"')
     if p.get("vertical_align") == "superscript":
@@ -351,7 +376,7 @@ def expected_paragraph(para: dict) -> dict:
             if key in rp:
                 e[key] = rp[key]
         if "underline" in rp:
-            e["underline"] = rp["underline"]
+            e["underline"] = UL[rp["underline"]][3]
         if "size" in rp:
             e["size_half_points"] = round(rp["size"] * 2)
         if "style" in rp:
@@ -517,6 +542,43 @@ def main_text(doc_bytes: bytes) -> tuple[str, dict]:
                  "table": "1Table" if flags & 0x200 else "0Table"}
 
 
+def read_kuls(doc_bytes: bytes) -> list[int]:
+    """sprmCKul (0x2A3E) operands in file order, read from the CHPX pages."""
+    streams = read_cfb(doc_bytes)
+    word = streams["WordDocument"]
+    flags = struct.unpack_from("<H", word, 10)[0]
+    table = streams["1Table" if flags & 0x200 else "0Table"]
+    csw = struct.unpack_from("<H", word, 32)[0]
+    lw_at = 34 + csw * 2
+    cslw = struct.unpack_from("<H", word, lw_at)[0]
+    pairs_at = lw_at + 2 + cslw * 4 + 2
+    fc, lcb = struct.unpack_from("<II", word, pairs_at + 12 * 8)
+    n = (lcb - 4) // 8
+    found = []
+    for i in range(n):
+        pn = struct.unpack_from("<I", table, fc + 4 * (n + 1) + 4 * i)[0] & 0x3FFFFF
+        page = word[pn * 512:(pn + 1) * 512]
+        crun = page[511]
+        for k in range(crun):
+            start = struct.unpack_from("<I", page, 4 * k)[0]
+            b = page[4 * (crun + 1) + k]
+            if not b:
+                continue
+            cb = page[b * 2]
+            g = page[b * 2 + 1:b * 2 + 1 + cb]
+            pos = 0
+            while pos + 2 <= len(g):
+                op = struct.unpack_from("<H", g, pos)[0]
+                spra = op >> 13
+                size = {0: 1, 1: 1, 2: 2, 3: 4, 4: 2, 5: 2, 7: 3}.get(spra)
+                if size is None:
+                    size = g[pos + 2] + 1
+                if op == 0x2A3E:
+                    found.append((start, g[pos + 2]))
+                pos += 2 + size
+    return [v for _, v in sorted(found)]
+
+
 def paragraphs_of(text: str) -> list[str]:
     assert text.endswith("\r"), "main text must end with a paragraph mark"
     return text[:-1].split("\r")
@@ -590,6 +652,8 @@ def generate() -> None:
                 "libreoffice_text_lines": lo_text.replace("\r\n", "\n").rstrip("\n").split("\n"),
                 "paragraphs": expected_paras,
             }
+            if name == "underlines":
+                files[f"{name}.doc"]["kul_observed"] = dict(zip(UL, read_kuls(doc_bytes)))
             for key, value in expected_meta(doc["meta"]).items():
                 if files[f"{name}.doc"]["properties"].get(key) != value:
                     raise ValueError(f"{name}: property {key} differs from the description")
@@ -627,6 +691,8 @@ def check() -> None:
             raise ValueError(f"{fname}: expected paragraphs differ from the generator description")
         if paragraphs_of(text) != [p["text"] for p in want]:
             raise ValueError(f"{fname}: decoded text differs from the expected text")
+        if "kul_observed" in entry and dict(zip(UL, read_kuls(data))) != entry["kul_observed"]:
+            raise ValueError(f"{fname}: sprmCKul values differ from expected.json")
         props = read_summary(data)
         if props != entry["properties"]:
             raise ValueError(f"{fname}: summary information differs from expected.json")

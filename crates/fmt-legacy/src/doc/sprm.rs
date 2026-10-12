@@ -42,13 +42,14 @@ const SPRM_C_DXASPACE: u16 = 0x8840;
 const SPRM_C_FDSTRIKE: u16 = 0x2A53;
 const SPRM_C_PLAIN: u16 = 0x2A33;
 const SPRM_C_HPSPOS: u16 = 0x4845;
+const SPRM_C_SYMBOL: u16 = 0x6A09;
 const SPRM_C_SHD80: u16 = 0x4866;
 const SPRM_C_SHD: u16 = 0xCA71;
 /// Known sprms ignored without a notice (pictures, symbols, proofing,
 /// complex-script variants, revision ids).
-const C_SILENT: [u16; 20] = [
-    0x0855, 0x6A03, 0x0806, 0x6A09, 0x080A, 0x0875, 0x085C, 0x085D, 0x4A5E, 0x485F, 0x4A60, 0x4A61,
-    0x486D, 0x486E, 0x6815, 0x6816, 0x6817, 0x486B, 0x4873, 0x4874,
+const C_SILENT: [u16; 19] = [
+    0x0855, 0x6A03, 0x0806, 0x080A, 0x0875, 0x085C, 0x085D, 0x4A5E, 0x485F, 0x4A60, 0x4A61, 0x486D,
+    0x486E, 0x6815, 0x6816, 0x6817, 0x486B, 0x4873, 0x4874,
 ];
 
 // Paragraph sprms.
@@ -248,6 +249,8 @@ pub(crate) struct CharDelta {
     /// Character shading (`sprmCShd`, `sprmCShd80`), as a fill colour.
     pub shading: Option<ColorSpec>,
     pub ftc: [Option<u16>; 3],
+    /// `sprmCSymbol`: font index and character code of an inserted symbol.
+    pub symbol: Option<(u16, u16)>,
     pub istd: Option<u16>,
     pub dxa_space: Option<i16>,
     pub hps_pos: Option<i16>,
@@ -262,6 +265,18 @@ pub(crate) struct BaseToggles {
 }
 
 impl CharDelta {
+    /// The character a `sprmCSymbol` run stands for: codes below 0x100 go to
+    /// the private use area U+F000..U+F0FF, as Word does for symbol fonts;
+    /// other codes are code points.
+    pub fn symbol_char(&self) -> Option<char> {
+        let (_, code) = self.symbol?;
+        char::from_u32(if code < 0x100 {
+            0xF000 | u32::from(code)
+        } else {
+            u32::from(code)
+        })
+    }
+
     /// True when a toggle depends on the inherited value (`0x81`).
     pub fn needs_base(&self) -> bool {
         [self.bold, self.italic, self.strike].contains(&Toggle::Opposite)
@@ -347,6 +362,11 @@ impl CharDelta {
                     self.ftc = [Some(v); 3];
                 }
             }
+            SPRM_C_SYMBOL => {
+                if let [a, b, c, d] = prl.operand[..] {
+                    self.symbol = Some((u16::from_le_bytes([a, b]), u16::from_le_bytes([c, d])));
+                }
+            }
             SPRM_C_ISTD => self.istd = prl.u16().or(self.istd),
             SPRM_C_DXASPACE => self.dxa_space = prl.i16().or(self.dxa_space),
             SPRM_C_HPSPOS => self.hps_pos = prl.i16().or(self.hps_pos),
@@ -367,28 +387,33 @@ impl CharDelta {
         a.italic = value_of(self.italic, base.italic);
         a.strike = value_of(self.strike, base.strike);
         if let Some(k) = self.kul {
+            // Values of `Kul`, checked against a LibreOffice file (see
+            // `tests/doc-reference/underlines.doc`). Heavy and patterned variants
+            // are reduced to the closest model value.
             a.underline = Some(match k {
                 0 => Underline::None,
-                1 | 2 => {
-                    if k == 2 {
-                        stats.approximated("wordsOnlyUnderline");
-                    }
+                1 => Underline::Single,
+                2 => {
+                    stats.approximated("wordsOnlyUnderline");
                     Underline::Single
                 }
-                3 | 0x11 => {
-                    if k == 0x11 {
-                        stats.approximated("doubleWaveUnderline");
-                    }
-                    if k == 3 {
-                        Underline::Double
+                3 => Underline::Double,
+                4 => Underline::Dotted,
+                6 => Underline::Thick,
+                7 | 9 | 0x0A | 0x27 => Underline::Dashed,
+                0x0B => Underline::Wave,
+                0x14 | 0x17 | 0x19 | 0x1A | 0x37 => {
+                    stats.approximated("heavyUnderline");
+                    if k == 0x14 {
+                        Underline::Dotted
                     } else {
-                        Underline::Wave
+                        Underline::Dashed
                     }
                 }
-                4 | 0x0A => Underline::Dotted,
-                5 => Underline::Thick,
-                6..=8 | 0x0B..=0x0D | 0x0F | 0x10 => Underline::Dashed,
-                9 | 0x0E => Underline::Wave,
+                0x1B | 0x2B => {
+                    stats.approximated("heavyUnderline");
+                    Underline::Wave
+                }
                 _ => {
                     stats.approximated("unknownUnderline");
                     Underline::Single
@@ -421,7 +446,13 @@ impl CharDelta {
             }
         }
         // The model keeps a single font: ASCII first, then the "other" slot.
-        let ftc = self.ftc[0].or(self.ftc[2]).or(self.ftc[1]);
+        let ftc = match self.symbol {
+            Some((font, _)) => {
+                stats.approximated("symbolCharacter");
+                Some(font)
+            }
+            None => self.ftc[0].or(self.ftc[2]).or(self.ftc[1]),
+        };
         if let Some(f) = ftc {
             match fonts.get(f as usize) {
                 Some(font) if !font.name.is_empty() => a.font = Some(font.name.clone()),

@@ -422,17 +422,31 @@ fn bold_italic_strike() {
 
 #[test]
 fn underline_kinds() {
+    // `Kul` values: 0x00-0x0B, 0x14, 0x17, 0x19-0x1B, 0x27, 0x2B and 0x37
+    // are those written by LibreOffice (tests/doc-reference/underlines.doc).
     for (kul, expected) in [
         (0u8, Underline::None),
-        (1, Underline::Single),
-        (2, Underline::Single),
-        (3, Underline::Double),
-        (4, Underline::Dotted),
-        (5, Underline::Thick),
-        (6, Underline::Dashed),
-        (9, Underline::Wave),
-        (0x0A, Underline::Dotted),
-        (0x11, Underline::Wave),
+        (0x01, Underline::Single),
+        (0x02, Underline::Single),
+        (0x03, Underline::Double),
+        (0x04, Underline::Dotted),
+        (0x06, Underline::Thick),
+        (0x07, Underline::Dashed),
+        (0x09, Underline::Dashed),
+        (0x0A, Underline::Dashed),
+        (0x0B, Underline::Wave),
+        (0x14, Underline::Dotted),
+        (0x17, Underline::Dashed),
+        (0x19, Underline::Dashed),
+        (0x1A, Underline::Dashed),
+        (0x1B, Underline::Wave),
+        (0x27, Underline::Dashed),
+        (0x2B, Underline::Wave),
+        (0x37, Underline::Dashed),
+        // Regression: these used to be mapped to other styles.
+        (0x05, Underline::Single),
+        (0x08, Underline::Single),
+        (0x0C, Underline::Single),
         (0x7F, Underline::Single),
     ] {
         let doc = open(&char_run("U", sprm_u8(0x2A3E, kul)));
@@ -1241,4 +1255,31 @@ fn toggles_same_as_style_keep_the_inherited_value() {
             .iter()
             .all(|r| r.attrs.bold.is_none() || r.attrs.bold == Some(true))
     );
+}
+
+#[test]
+fn symbol_characters_use_the_private_use_area_and_their_font() {
+    // "a(b": the "(" placeholder carries sprmCSymbol { ftc 1, code 0xE0 }.
+    let mut op = 0x6A09u16.to_le_bytes().to_vec();
+    op.extend_from_slice(&[1, 0, 0xE0, 0]);
+    let mut spec = DocSpec::ansi("a(b\r");
+    spec.fonts = vec![FontSpec::new("Times New Roman"), FontSpec::new("Wingdings")];
+    spec.chpx.push(CharRunSpec {
+        cp_start: 1,
+        cp_end: 2,
+        grpprl: op,
+    });
+    let doc = open(&spec);
+    let p = &paras(&doc)[0];
+    assert_eq!(p.text, "a\u{F0E0}b");
+    assert_eq!(p.runs.len(), 1);
+    assert_eq!(p.runs[0].attrs.font.as_deref(), Some("Wingdings"));
+    assert_eq!(&p.text[p.runs[0].start..p.runs[0].end], "\u{F0E0}");
+    assert!(has(
+        &doc,
+        &ImportNotice::ApproximatedProperty {
+            name: "symbolCharacter",
+            count: 1
+        }
+    ));
 }

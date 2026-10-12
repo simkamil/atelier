@@ -155,6 +155,202 @@
         }
       ]
     },
+    "underlines.doc": {
+      "size": 9728,
+      "sha256": "b809b360566f5d7c47b0ecde55c5bc75dc34bb20eff2c0832a31d6582fd52c5d",
+      "fib": {
+        "n_fib": 257,
+        "ccp_text": 160,
+        "pieces": 1,
+        "table": "1Table"
+      },
+      "properties": {
+        "title": "Soulignements",
+        "author": "Atelier"
+      },
+      "libreoffice_text_lines": [
+        "single",
+        "double",
+        "thick",
+        "dotted",
+        "dash",
+        "long-dash",
+        "dot-dash",
+        "dot-dot-dash",
+        "wave",
+        "dotted-bold",
+        "dash-bold",
+        "long-dash-bold",
+        "dot-dash-bold",
+        "dot-dot-dash-bold",
+        "wave-bold",
+        "wave-double"
+      ],
+      "paragraphs": [
+        {
+          "text": "single",
+          "runs": [
+            {
+              "text": "single",
+              "underline": "single"
+            }
+          ]
+        },
+        {
+          "text": "double",
+          "runs": [
+            {
+              "text": "double",
+              "underline": "double"
+            }
+          ]
+        },
+        {
+          "text": "thick",
+          "runs": [
+            {
+              "text": "thick",
+              "underline": "thick"
+            }
+          ]
+        },
+        {
+          "text": "dotted",
+          "runs": [
+            {
+              "text": "dotted",
+              "underline": "dotted"
+            }
+          ]
+        },
+        {
+          "text": "dash",
+          "runs": [
+            {
+              "text": "dash",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "long-dash",
+          "runs": [
+            {
+              "text": "long-dash",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "dot-dash",
+          "runs": [
+            {
+              "text": "dot-dash",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "dot-dot-dash",
+          "runs": [
+            {
+              "text": "dot-dot-dash",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "wave",
+          "runs": [
+            {
+              "text": "wave",
+              "underline": "wave"
+            }
+          ]
+        },
+        {
+          "text": "dotted-bold",
+          "runs": [
+            {
+              "text": "dotted-bold",
+              "underline": "dotted"
+            }
+          ]
+        },
+        {
+          "text": "dash-bold",
+          "runs": [
+            {
+              "text": "dash-bold",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "long-dash-bold",
+          "runs": [
+            {
+              "text": "long-dash-bold",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "dot-dash-bold",
+          "runs": [
+            {
+              "text": "dot-dash-bold",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "dot-dot-dash-bold",
+          "runs": [
+            {
+              "text": "dot-dot-dash-bold",
+              "underline": "dashed"
+            }
+          ]
+        },
+        {
+          "text": "wave-bold",
+          "runs": [
+            {
+              "text": "wave-bold",
+              "underline": "wave"
+            }
+          ]
+        },
+        {
+          "text": "wave-double",
+          "runs": [
+            {
+              "text": "wave-double",
+              "underline": "wave"
+            }
+          ]
+        }
+      ],
+      "kul_observed": {
+        "single": 1,
+        "double": 3,
+        "thick": 6,
+        "dotted": 4,
+        "dash": 7,
+        "long-dash": 39,
+        "dot-dash": 9,
+        "dot-dot-dash": 10,
+        "wave": 11,
+        "dotted-bold": 20,
+        "dash-bold": 23,
+        "long-dash-bold": 55,
+        "dot-dash-bold": 25,
+        "dot-dot-dash-bold": 26,
+        "wave-bold": 27,
+        "wave-double": 43
+      }
+    },
     "para-formatting.doc": {
       "size": 9728,
       "sha256": "5b10383c93fcd3cbd550cd4ac3f8d1e689699dc07d9f4c15e23d5e5c9dc4ad16",

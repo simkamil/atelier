@@ -782,6 +782,11 @@ fn walk(b: &mut Builder<'_>, units: &[u16]) -> Result<(), DocError> {
                 }
             }
             0xDC00..=0xDFFF => open.push('\u{FFFD}', seg),
+            0x28 if seg.is_some_and(|s| b.segs[s].delta.symbol.is_some()) => {
+                // Placeholder of an inserted symbol (sprmCSymbol).
+                let c = seg.and_then(|s| b.segs[s].delta.symbol_char());
+                open.push(c.unwrap_or('\u{FFFD}'), seg);
+            }
             _ => open.push(char::from_u32(u32::from(u)).unwrap_or('\u{FFFD}'), seg),
         }
     }

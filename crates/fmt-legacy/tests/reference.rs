@@ -226,10 +226,13 @@ fn check_char(key: &str, c: &CharAttrs, exp: &Json) {
         "strike" => assert_eq!(c.strike, Some(matches!(exp, Json::Bool(true))), "strike"),
         "underline" => assert_eq!(
             c.underline,
-            Some(if exp.str() == "double" {
-                Underline::Double
-            } else {
-                Underline::Single
+            Some(match exp.str() {
+                "double" => Underline::Double,
+                "thick" => Underline::Thick,
+                "dotted" => Underline::Dotted,
+                "dashed" => Underline::Dashed,
+                "wave" => Underline::Wave,
+                _ => Underline::Single,
             })
         ),
         "vertical_align" => assert_eq!(
@@ -267,7 +270,7 @@ fn libreoffice_reference_files() {
         i: 0,
     }
     .value();
-    let files: [(&str, &[u8]); 4] = [
+    let files: [(&str, &[u8]); 5] = [
         (
             "text-accents.doc",
             include_bytes!("../../../tests/doc-reference/text-accents.doc"),
@@ -279,6 +282,10 @@ fn libreoffice_reference_files() {
         (
             "para-formatting.doc",
             include_bytes!("../../../tests/doc-reference/para-formatting.doc"),
+        ),
+        (
+            "underlines.doc",
+            include_bytes!("../../../tests/doc-reference/underlines.doc"),
         ),
         (
             "styles.doc",

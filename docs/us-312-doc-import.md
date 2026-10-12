@@ -97,7 +97,7 @@ Caractère (`CharAttrs`) :
 | Sprm | Opcode | Modèle |
 |---|---|---|
 | `sprmCFBold`, `sprmCFItalic`, `sprmCFStrike` | 0x0835, 0x0836, 0x0837 | `bold`, `italic`, `strike` (bascules) |
-| `sprmCKul` | 0x2A3E | `underline` : 0 aucun ; 1, 2 simple (2 « mots seuls » approché) ; 3 double ; 4, 0x0A pointillé ; 5 épais ; 6–8, 0x0B–0x0D, 0x0F, 0x10 tirets ; 9, 0x0E, 0x11 ondulé ; autre → simple (avis) |
+| `sprmCKul` | 0x2A3E | `underline` (`Kul`, valeurs écrites par LibreOffice, voir `underlines.doc`) : 0 aucun ; 1 simple ; 2 « mots seuls » (simple, avis) ; 3 double ; 4 pointillé ; 6 épais ; 7, 9, 0x0A, 0x27 tirets (tirets, point-tiret, point-point-tiret, tirets longs : le motif se perd) ; 0x0B ondulé ; variantes grasses 0x14 (pointillé), 0x17, 0x19, 0x1A, 0x37 (tirets), 0x1B (ondulé) et 0x2B (double ondulé → ondulé) ramenées au plus proche avec l'avis `heavyUnderline` ; toute autre valeur → simple (avis `unknownUnderline`) |
 | `sprmCIss` | 0x2A48 | `vertical_align` |
 | `sprmCHps` | 0x4A43 | `size_half_points` (2 à 3276, sinon ignoré) |
 | `sprmCIco`, `sprmCCv` | 0x2A42, 0x6870 | `color` (table `Ico` de 16 couleurs ; `Cv` RGB ; le dernier gagne ; automatique → avis `automaticColor`) |
@@ -105,6 +105,7 @@ Caractère (`CharAttrs`) :
 | `sprmCShd`, `sprmCShd80` | 0xCA71, 0x4866 | `highlight` si aucun surlignage (le modèle n'a pas de trame de caractère : avis `characterShadingAsHighlight`) |
 | `sprmCRgFtc0/1/2`, `sprmCFtcDefault` | 0x4A4F, 0x4A50, 0x4A51, 0x4A3D | `font` : ASCII, sinon « autre », sinon Extrême-Orient ; index inconnu → avis |
 | `sprmCIstd` | 0x4A30 | style de caractère (`ImportedRunStyle`) |
+| `sprmCSymbol` | 0x6A09 | caractère de symbole inséré (`ftc` puis code, 2 octets chacun) : le substitut `(` est remplacé par U+F000 + code (plage d'usage privé, comme Word pour les polices Symbol/Wingdings) et la police `ftc` est appliquée à ce caractère ; avis `symbolCharacter`. Vérifié sur fixture seulement : LibreOffice écrit ces caractères en Unicode direct, sans ce sprm |
 | `sprmCPlain` | 0x2A33 | réinitialise la mise en forme directe du grpprl |
 | `sprmCFSmallCaps`, `sprmCFCaps`, `sprmCFVanish` | 0x083A, 0x083B, 0x083C | **sans équivalent** : attribut opaque `urn:atelier:doc` (`smallCaps`, `caps`, `hidden`) + avis |
 | `sprmCFDStrike` | 0x2A53 | `strike` (approché) + opaque `doubleStrike` + avis |
@@ -198,15 +199,15 @@ sommes sont saturantes (cibles 32 bits).
 
 ## Preuves
 
-- `crates/fmt-legacy/tests/doc_import.rs` : 42 tests sur des fichiers fabriqués par le
+- `crates/fmt-legacy/tests/doc_import.rs` : 43 tests sur des fichiers fabriqués par le
   constructeur déterministe `tests/common/mod.rs` (FIB, `Clx`, FKP, `STSH`, `SttbfFfn`, flux
   `Data`, propriétés OLE, au-dessus du constructeur CFB de `atelier-cfb` inclus par chemin).
   Chaque sprm pris en charge a un test au résultat calculé à la main ; texte 8 bits/Unicode,
   pièces dans le désordre, héritage de styles et bascules 0x80/0x81, cycles et références
   invalides, chiffrement, versions, champs, tableaux, sections, limites de forme.
-- `crates/fmt-legacy/tests/reference.rs` : quatre vrais `.doc` produits par **LibreOffice** (filtre
+- `crates/fmt-legacy/tests/reference.rs` : cinq vrais `.doc` produits par **LibreOffice** (filtre
   « MS Word 97 ») dans [`tests/doc-reference`](../tests/doc-reference/README.md) : texte accentué et
-  Unicode, mise en forme de caractère, de paragraphe, titres et styles. Les attendus (`expected.json`)
+  Unicode, mise en forme de caractère, de paragraphe, titres et styles, seize types de soulignement. Les attendus (`expected.json`)
   sont décrits une fois dans `tools/generate-doc-reference.py` ; `--check` redécode les fichiers
   stockés avec un lecteur Python indépendant (CFB, FIB, table des pièces, propriétés). **Microsoft
   Word n'était pas installé** : le corpus ne vient pas de Word.
