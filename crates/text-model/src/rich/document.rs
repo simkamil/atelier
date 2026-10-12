@@ -275,6 +275,7 @@ impl RichDocument {
             Node::Table(Table {
                 columns,
                 rows: row_ids,
+                style: None,
                 opaque: Vec::new(),
             }),
         );

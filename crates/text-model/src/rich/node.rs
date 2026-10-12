@@ -107,6 +107,8 @@ pub struct HeaderFooter {
 pub struct Table {
     pub columns: usize,
     pub rows: Vec<NodeId>,
+    /// Optional table style identifier resolved by the US-201 style engine.
+    pub style: Option<String>,
     pub opaque: Vec<OpaqueAttr>,
 }
 

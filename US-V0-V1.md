@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Référence | [SPEC.md](SPEC.md) v0.2 |
-| Date | 2026-10-09 |
+| Date | 2026-10-12 |
 | Statut | Développement en cours — critères cochés après validation, aligné sur SPEC v0.2 |
 
 ## Conventions
@@ -107,10 +107,12 @@ Validation US-012 (2026-10-11) : [contrat et preuves](docs/us-012-line-breaks.md
 
 #### US-013 — Casse et normalisation
 *En tant que* développeur, *je veux* les conversions de casse et la normalisation NFC/NFD *afin de* gérer la recherche et les changements de casse.
-- [ ] Majuscules, minuscules, casse de titre, repli de casse (y compris les cas spéciaux comme ß → SS).
-- [ ] 100 % de `NormalizationTest.txt` passent (NFC, NFD).
+- [x] Majuscules, minuscules, casse de titre, repli de casse (y compris les cas spéciaux comme ß → SS).
+- [x] 100 % de `NormalizationTest.txt` passent (NFC, NFD).
 
 Réf : §6.15 · Taille : M · Dépend de : US-010
+
+Validation US-013 (2026-10-12) : [contrat et preuves](docs/us-013-case-normalization.md), [validation intégrée](_bmad-output/implementation-artifacts/styles-formats-raster-validation.json).
 
 #### US-014 — Encodages de texte
 *En tant que* développeur, *je veux* décoder et encoder les encodages courants *afin d'ouvrir* les fichiers texte et les formats anciens.
@@ -210,19 +212,23 @@ Validation US-040 (2026-10-10) : [contrat et preuves](docs/us-040-png.md), [vali
 
 #### US-041 — Encodeur PNG
 *En tant que* développeur, *je veux* encoder en PNG *afin de* produire des miniatures et des images de test.
-- [ ] RGBA 8 bits et niveaux de gris, filtres adaptatifs.
-- [ ] Aller-retour avec US-040.
+- [x] RGBA 8 bits et niveaux de gris, filtres adaptatifs.
+- [x] Aller-retour avec US-040.
 
 Réf : §6.2 `image` · Taille : S · Dépend de : US-040, US-021
 
+Validation US-041 (2026-10-12) : [contrat et preuves](docs/us-041-png-encoder.md), [validation intégrée](_bmad-output/implementation-artifacts/styles-formats-raster-validation.json).
+
 #### US-042 — Décodeur JPEG
 *En tant que* développeur, *je veux* décoder les JPEG *afin d'afficher* les photos insérées.
-- [ ] Baseline et progressif, Huffman, sous-échantillonnages 4:4:4 / 4:2:2 / 4:2:0, marqueurs de redémarrage.
-- [ ] Niveaux de gris, YCbCr, CMYK et YCCK (marqueur Adobe).
-- [ ] Lecture de l'orientation EXIF.
-- [ ] Écart moyen ≤ 1 niveau par canal par rapport aux images de référence.
+- [x] Baseline et progressif, Huffman, sous-échantillonnages 4:4:4 / 4:2:2 / 4:2:0, marqueurs de redémarrage.
+- [x] Niveaux de gris, YCbCr, CMYK et YCCK (marqueur Adobe).
+- [x] Lecture de l'orientation EXIF.
+- [x] Écart moyen ≤ 1 niveau par canal par rapport aux images de référence.
 
 Réf : §6.2 `image` · Taille : L · Dépend de : US-001
+
+Validation US-042 (2026-10-12) : [contrat et preuves](docs/us-042-jpeg.md), [validation intégrée](_bmad-output/implementation-artifacts/styles-formats-raster-validation.json).
 
 #### US-043 — Décodeurs GIF et BMP
 *En tant que* développeur, *je veux* décoder GIF et BMP *afin de* couvrir les formats d'image du MVP.
@@ -310,11 +316,13 @@ Réf : §6.2 `geom` · Taille : S · Dépend de : US-001
 
 #### US-061 — Rasteriseur logiciel
 *En tant que* développeur, *je veux* un rasteriseur anti-crénelé *afin de* produire miniatures et images de test sans navigateur.
-- [ ] Remplissage non nul et pair-impair, couleurs unies avec transparence, contours (épaisseur, jointures, extrémités).
-- [ ] Images avec transformation (interpolation bilinéaire), clips rectangulaires et par chemin.
-- [ ] Sortie RGBA → PNG.
+- [x] Remplissage non nul et pair-impair, couleurs unies avec transparence, contours (épaisseur, jointures, extrémités).
+- [x] Images avec transformation (interpolation bilinéaire), clips rectangulaires et par chemin.
+- [x] Sortie RGBA → PNG.
 
 Réf : §6.6 · Taille : L · Dépend de : US-060
+
+Validation US-061 (2026-10-12) : [contrat et preuves](docs/us-061-software-rasterizer.md), [validation intégrée](_bmad-output/implementation-artifacts/styles-formats-raster-validation.json).
 
 ## E0.8 — Modèle commun
 
@@ -572,19 +580,23 @@ Avancement US-120 (2026-10-11) : premier [éditeur intégré](docs/us-120-editor
 
 #### US-200 — Modèle de document texte
 *En tant que* développeur, *je veux* le modèle du traitement de texte *afin de* représenter tout le contenu d'un docx.
-- [ ] Nœuds : document, section, paragraphe (texte + plages d'attributs + objets ancrés), tableau / ligne / cellule, bloc opaque, en-tête/pied, champ, signet, lien.
-- [ ] Opérations : insérer/supprimer du texte, appliquer des attributs, scinder/fusionner des paragraphes, insérer/supprimer des blocs, opérations de tableau (lignes, colonnes, fusion), insérer/modifier un objet.
-- [ ] Chaque opération est inversible et testée en propriété (US-071).
+- [x] Nœuds : document, section, paragraphe (texte + plages d'attributs + objets ancrés), tableau / ligne / cellule, bloc opaque, en-tête/pied, champ, signet, lien.
+- [x] Opérations : insérer/supprimer du texte, appliquer des attributs, scinder/fusionner des paragraphes, insérer/supprimer des blocs, opérations de tableau (lignes, colonnes, fusion), insérer/modifier un objet.
+- [x] Chaque opération est inversible et testée en propriété (US-071).
 
 Réf : §6.3 · Taille : L · Dépend de : US-070, US-071, US-073
 
+Validation US-200 (2026-10-12) : [contrat et preuves](docs/us-200-rich-text-model.md), [validation intégrée](_bmad-output/implementation-artifacts/styles-formats-raster-validation.json).
+
 #### US-201 — Moteur de styles
 *En tant que* développeur, *je veux* résoudre les propriétés calculées selon la cascade Word *afin que* l'affichage corresponde au fichier.
-- [ ] Cascade : valeurs par défaut du document → styles de tableau → chaîne de styles de paragraphe (`basedOn`) → style de caractère → mise en forme directe ; styles liés.
-- [ ] Propriétés calculées mises en cache, invalidées finement par opération.
-- [ ] Couleurs et polices de thème résolues.
+- [x] Cascade : valeurs par défaut du document → styles de tableau → chaîne de styles de paragraphe (`basedOn`) → style de caractère → mise en forme directe ; styles liés.
+- [x] Propriétés calculées mises en cache, invalidées finement par opération.
+- [x] Couleurs et polices de thème résolues.
 
 Réf : F-TXT-020 · Taille : M · Dépend de : US-200
+
+Validation US-201 (2026-10-12) : [contrat et preuves](docs/us-201-style-engine.md), [validation intégrée](_bmad-output/implementation-artifacts/styles-formats-raster-validation.json).
 
 #### US-202 — Document par défaut
 *En tant qu'*utilisateur, *je veux* qu'un nouveau document ait les réglages habituels de Word *afin de* ne rien avoir à configurer.
@@ -1033,10 +1045,12 @@ Réf : F-TXT-034 · Taille : S · Dépend de : US-200
 
 #### US-300 — Paquet OPC
 *En tant que* développeur, *je veux* lire et écrire la structure d'un paquet OPC *afin de* gérer docx, dotx et docm.
-- [ ] `[Content_Types].xml`, relations (`_rels`), parties et URI relatives, propriétés `core.xml` et `app.xml`.
-- [ ] Toutes les parties, y compris inconnues, conservées en mémoire avec leur type et leurs relations.
+- [x] `[Content_Types].xml`, relations (`_rels`), parties et URI relatives, propriétés `core.xml` et `app.xml`.
+- [x] Toutes les parties, y compris inconnues, conservées en mémoire avec leur type et leurs relations.
 
 Réf : §5.1 · Taille : M · Dépend de : US-022, US-023, US-030
+
+Validation US-300 (2026-10-12) : [contrat et preuves](docs/us-300-opc-package.md), [validation intégrée](_bmad-output/implementation-artifacts/styles-formats-raster-validation.json).
 
 #### US-301 — Lecture docx : texte, propriétés et styles
 *En tant qu'*utilisateur, *je veux* ouvrir mes fichiers Word *afin de* retrouver leur contenu et leur mise en forme.

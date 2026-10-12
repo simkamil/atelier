@@ -24,3 +24,14 @@ Deux modules de `atelier-unicode` s'appuient sur les tables Unicode 17.0.0 de US
 
 - `crates/unicode/tests/normalization.rs` : 100 % de `NormalizationTest.txt` (20 034 lignes, 200 340 contrôles NFC/NFD), invariance de tous les scalaires absents de la partie 1, exactitude de `is_nfc`/`is_nfd` sur chaque scalaire, lois d'idempotence sur des chaînes pseudo-aléatoires, test de 600 000 marques combinantes sans comportement quadratique.
 - `crates/unicode/tests/case.rs` : majuscule, minuscule, titre et repli de chaque scalaire comparés à `UnicodeData.txt`, `SpecialCasing.txt` (lignes inconditionnelles) et `CaseFolding.txt` ; cas ciblés (ß, ŉ, ǅ, sigma final, İ) ; entrées longues.
+
+## Validation d’intégration — 2026-10-12
+
+La [passe finale](../_bmad-output/implementation-artifacts/styles-formats-raster-validation.json)
+réussit 41 contrôles, 507 tests workspace et 55 tests natifs release,
+avec sources et lock inchangés. Les 57 assertions de l’éditeur utilisent le vrai
+Worker/WASM. Clippy Windows/WASM, format, licences et builds Windows/WASM/musl
+passent ; les tests musl sont compilés localement et exécutés en CI Linux.
+La [copie portable](../_bmad-output/implementation-artifacts/styles-formats-raster-portable.json)
+fonctionne avec le seul atelier.exe et ses 18 ressources embarquées.
+Les limites des US parentes et l’échec strict de handles US-111 restent ouverts.

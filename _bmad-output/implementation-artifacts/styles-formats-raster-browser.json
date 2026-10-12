@@ -1,0 +1,261 @@
+{
+  "status": "passed",
+  "suites": [
+    {
+      "name": "canvas",
+      "checks": [
+        {
+          "name": "invalid pageGap NaN is rejected",
+          "passed": true
+        },
+        {
+          "name": "invalid pageGap Infinity is rejected",
+          "passed": true
+        },
+        {
+          "name": "invalid pageGap -1 is rejected",
+          "passed": true
+        },
+        {
+          "name": "invalid renderer callback is rejected",
+          "passed": true
+        },
+        {
+          "name": "invalid renderer callback is rejected",
+          "passed": true
+        },
+        {
+          "name": "invalid renderer callback is rejected",
+          "passed": true
+        },
+        {
+          "name": "bounds handle one million valid path segments",
+          "passed": true
+        },
+        {
+          "name": "Path2D filled into real canvas",
+          "passed": true
+        },
+        {
+          "name": "Path2D stroke with miter join",
+          "passed": true
+        },
+        {
+          "name": "non-commutative current then new transform composition",
+          "passed": true
+        },
+        {
+          "name": "page-coordinate clip and current*new affine transform",
+          "passed": true
+        },
+        {
+          "name": "CanvasImageSource and injected glyph Path2D",
+          "passed": true
+        },
+        {
+          "name": "dirty clear removes old pixels and limits repaint to dirty bounds",
+          "passed": true
+        },
+        {
+          "name": "bounded glyph Path2D cache reuses outlines",
+          "passed": true
+        },
+        {
+          "name": "resource invalidation reloads glyph paths",
+          "passed": true
+        },
+        {
+          "name": "glyph origin, page offset, and DPR transform order",
+          "passed": true
+        },
+        {
+          "name": "viewport-local underline overlay",
+          "passed": true
+        },
+        {
+          "name": "overlay can be erased",
+          "passed": true
+        },
+        {
+          "name": "DPR 1.5 backing dimensions",
+          "passed": true
+        },
+        {
+          "name": "DPR 1 backing dimensions",
+          "passed": true
+        },
+        {
+          "name": "DPR 2 backing dimensions",
+          "passed": true
+        },
+        {
+          "name": "300-page scroll replays visible pages only",
+          "passed": true
+        },
+        {
+          "name": "empty viewport draws no pages",
+          "passed": true
+        },
+        {
+          "name": "benchmark 300-page scroll",
+          "passed": true,
+          "informational": true,
+          "pages": 300,
+          "frames": 120,
+          "medianMs": 0,
+          "p95Ms": 0.10000002384185791,
+          "maxMs": 0.30000007152557373,
+          "pagesDrawnPerFrame": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "environment": "headless software Canvas",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0"
+        }
+      ]
+    },
+    {
+      "name": "input",
+      "checks": [
+        "focus, caret placement, invalid rectangles, dialog focus, and lifecycle restoration",
+        "resolved text, shortcuts, navigation, and AltGraph preservation",
+        "non-cloneable owner selection reports through onError",
+        "editing commands, paste text/plain, and unsupported input delegation",
+        "composition preview, stable selection, single commit, and cancellation",
+        "focus changes, callback errors, and disposal during composition",
+        "copy and reversed UTF-8 selection write only the selected plain text",
+        "copy preserves a leading U+FEFF content character",
+        "cut writes before emitting one selection-and-revision delete command",
+        "failed, empty, stale-boundary, and unavailable snapshots preserve native clipboard behavior",
+        "clipboard commands pause during composition and shortcuts use semantic commands"
+      ]
+    },
+    {
+      "name": "composition-integration",
+      "checks": [
+        "DOM composition callback draws then clears a real Canvas underline with fixture geometry"
+      ]
+    }
+  ],
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0",
+  "executable": "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "environment": "headless software Canvas; synthetic input events are not native keyboard/IME evidence"
+}

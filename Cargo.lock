@@ -66,6 +66,10 @@ version = "0.1.0"
 [[package]]
 name = "atelier-fmt-ooxml"
 version = "0.1.0"
+dependencies = [
+ "atelier-xml",
+ "atelier-zip",
+]
 
 [[package]]
 name = "atelier-fmt-pdf"
@@ -103,6 +107,10 @@ dependencies = [
 [[package]]
 name = "atelier-raster"
 version = "0.1.0"
+dependencies = [
+ "atelier-geom",
+ "atelier-image",
+]
 
 [[package]]
 name = "atelier-render"

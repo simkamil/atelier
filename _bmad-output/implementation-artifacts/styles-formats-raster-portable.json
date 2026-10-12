@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "exit_code": 0,
+  "result": "embedded resources: assets=18; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts=52; callback objects 0->0",
+  "stderr": "",
+  "executable_sha256": "926daa8e69bac0f8979e30de230a4fc5718ef220f177688ae23d355c0ac1eb3c",
+  "cwd_contains_web_or_data": false,
+  "only_copied_input": "atelier.exe"
+}

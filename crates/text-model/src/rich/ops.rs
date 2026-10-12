@@ -52,6 +52,11 @@ pub enum RichOp {
         set: ParaProps,
         clear: ParaProps,
     },
+    /// Assigns or removes the style reference of a table.
+    SetTableStyle {
+        table: NodeId,
+        style: Option<String>,
+    },
     /// Adds an anchored object, field, bookmark or link (new id required).
     InsertInline {
         para: NodeId,
@@ -355,6 +360,25 @@ impl RichOp {
                 p.props.overlay(set);
                 Ok(())
             }),
+            RichOp::SetTableStyle { table, style } => {
+                if style.as_deref() == Some("") {
+                    return Err(RichError::InvalidAttribute("empty table style reference"));
+                }
+                match doc.node(*table) {
+                    Some(Node::Table(_)) => {}
+                    Some(_) => {
+                        return Err(RichError::WrongNodeKind {
+                            id: *table,
+                            expected: "table",
+                        });
+                    }
+                    None => return Err(RichError::NodeNotFound(*table)),
+                }
+                if let Some(Node::Table(value)) = doc.nodes.get_mut(table) {
+                    value.style = style.clone();
+                }
+                Ok(())
+            }
             RichOp::InsertInline { para, item } => {
                 edit_paragraph(doc, *para, |p| p.insert_inline(item.clone()))
             }
@@ -548,6 +572,19 @@ impl RichOp {
             RichOp::DeleteText { para, .. }
             | RichOp::SetCharAttrs { para, .. }
             | RichOp::SetParaProps { para, .. } => Self::snapshot_paragraph(doc, *para)?,
+            RichOp::SetTableStyle { table, .. } => match doc.node(*table) {
+                Some(Node::Table(value)) => RichOp::SetTableStyle {
+                    table: *table,
+                    style: value.style.clone(),
+                },
+                Some(_) => {
+                    return Err(RichError::WrongNodeKind {
+                        id: *table,
+                        expected: "table",
+                    });
+                }
+                None => return Err(RichError::NodeNotFound(*table)),
+            },
             RichOp::InsertInline { para, item } => {
                 doc.paragraph(*para)?;
                 RichOp::RemoveInline {

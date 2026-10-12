@@ -42,7 +42,8 @@ Table → Row* → Cell* → Bloc* (au moins un paragraphe par cellule)
   exposant/indice, police, taille, couleur, surlignage ; alignement, retraits
   (gauche, droite, première ligne), espacements avant/après, interligne, référence de
   style, référence de liste + niveau (0 à 8). Chaque propriété est `Option` :
-  `None` = non définie = héritée. La cascade (US-201) n'est pas faite.
+  `None` = non définie = héritée. Le [moteur de styles US-201](us-201-style-engine.md)
+  résout maintenant la cascade dans le module `rich::styles`.
 
 ## Opérations (`RichOp`)
 
@@ -57,7 +58,7 @@ Toutes implémentent `atelier_model::Operation<RichDocument>` et s'exécutent da
 | Paragraphes | `SplitParagraph`, `MergeParagraphs` | `CollapsePair`, `ExpandPair` |
 | Blocs | `InsertBlock`, `RemoveBlock` (paragraphe, tableau, bloc opaque ; section si le parent est le document) | `RemoveBlock`, `InsertBlock` (branche complète) |
 | En-têtes/pieds | `AttachHeaderFooter`, `DetachHeaderFooter` | l'une pour l'autre |
-| Tableaux | `InsertRow`, `DeleteRow`, `InsertColumn`, `DeleteColumn`, `MergeCells`, `SplitCell` | `RestoreSubtree` (instantané du tableau) |
+| Tableaux | `InsertRow`, `DeleteRow`, `InsertColumn`, `DeleteColumn`, `MergeCells`, `SplitCell`, `SetTableStyle` | `RestoreSubtree` (instantané du tableau) ; ancienne référence de style |
 | Restauration | `RestoreSubtree`, `CollapsePair`, `ExpandPair` | entre elles |
 
 Sémantique retenue :
@@ -101,9 +102,9 @@ entrée d'opération.
 
 ## Preuves
 
-`cargo test -p atelier-text-model --locked --offline` : 47 tests (12 de
-`plain_text.rs`, inchangés ; 33 ciblés dans `tests/rich_ops.rs` ; 2 de propriété dans
-`tests/rich_property.rs`).
+`cargo test -p atelier-text-model --locked --offline` : 59 tests (12 de
+`plain_text.rs`, 33 ciblés dans `tests/rich_ops.rs`, 2 de propriété dans
+`tests/rich_property.rs` et 12 du moteur de styles US-201 dans `tests/styles.rs`).
 
 - **Ciblés** : début/fin de paragraphe, plage vide, graphèmes multi-octets (é, emoji
   famille ZWJ, e + accent combinant, rejet d'un décalage à l'intérieur), insertion qui
@@ -118,8 +119,9 @@ entrée d'opération.
   chaque refus, égalité structurelle avec l'état précédent ; pour chaque transaction,
   annuler restitue exactement le document (égalité structurelle complète, hors
   distributeur d'ids) puis rejouer redonne l'état d'arrivée ; 1 381 transactions
-  terminées par une opération invalide ont été vérifiées sans effet. Toutes les
-  variantes d'opération sont exercées avec succès. Certaines opérations valides par
+  terminées par une opération invalide ont été vérifiées sans effet. Les variantes
+  de la livraison US-200 sont exercées avec succès ; `SetTableStyle`, ajouté
+  par US-201, possède un test dédié de réversibilité et d’invalidation du cache. Certaines opérations valides par
   construction (attributs de caractère, propriétés de paragraphe, insertion de bloc
   bien placé, insertion de ligne/colonne) ne doivent jamais être refusées, ce qui
   détecte une implémentation qui refuserait trop. Contrôle par mutation : désactiver
@@ -127,8 +129,8 @@ entrée d'opération.
 
 ## Hors périmètre et limites
 
-- Cascade de styles (US-201), mise en page, lecture/écriture docx, raccordement à
-  l'éditeur ou au WASM.
+- Mise en page, lecture/écriture docx, raccordement à l'éditeur ou au WASM.
+  La cascade de styles est désormais fournie séparément par US-201.
 - **Codec binaire du journal de récupération** : `encode`/`decode` renvoient
   `CodecError::InvalidData` (comme `decode` de `PlainTextDocument`). Les opérations
   riches ne sont donc pas encore sérialisables dans le journal.
@@ -141,3 +143,14 @@ entrée d'opération.
 - Besoin constaté dans `atelier-model` (non modifié) : un `NodeId` ne peut être créé
   que par un `IndexedTree`, d'où l'arbre distributeur d'identifiants ; un arbre
   hiérarchique natif ou un constructeur public d'identifiants simplifierait le modèle.
+
+## Validation d’intégration — 2026-10-12
+
+La [passe finale](../_bmad-output/implementation-artifacts/styles-formats-raster-validation.json)
+réussit 41 contrôles, 507 tests workspace et 55 tests natifs release,
+avec sources et lock inchangés. Les 57 assertions de l’éditeur utilisent le vrai
+Worker/WASM. Clippy Windows/WASM, format, licences et builds Windows/WASM/musl
+passent ; les tests musl sont compilés localement et exécutés en CI Linux.
+La [copie portable](../_bmad-output/implementation-artifacts/styles-formats-raster-portable.json)
+fonctionne avec le seul atelier.exe et ses 18 ressources embarquées.
+Les limites des US parentes et l’échec strict de handles US-111 restent ouverts.

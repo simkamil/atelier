@@ -2,13 +2,59 @@
 
 Le dépôt utilise un workspace Cargo local, Rust stable et l'édition 2024. Aucun crate de registre n'est autorisé. Les sources Rust du produit et des outils vivent sous `crates/` et `tools/` et portent l'identifiant SPDX `AGPL-3.0-or-later`. Les répertoires `web/`, `data/` et `tests/` accueillent respectivement le client, les ressources et les corpus. Les polices embarquées et les corpus de référence sont versionnés ; le client web dispose du chargeur ABI WASM, et le premier éditeur de texte brut relie Canvas, Worker/WASM et pont fichiers natif.
 
-Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages de texte, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions atomiques, historique annuler/rétablir, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent aussi les conteneurs ZIP et le XML en flux avec capture opaque ; `atelier-font` lit les tables de base OpenType et les cmap 4/6/12/14 et expose vingt polices embarquées ; `atelier-image` décode PNG, GIF et BMP en RGBA8 avec limites explicites. Les autres crates produit restent des squelettes. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
+Les crates `atelier-unicode`, `atelier-compress`, `atelier-geom`, `atelier-model` et `atelier-render` fournissent les encodages, la casse et la normalisation Unicode, DEFLATE/zlib, la géométrie, l'arbre indexé avec transactions, historique, sélections et journal de récupération, ainsi que la liste d'affichage et le backend SVG. `atelier-zip` et `atelier-xml` fournissent les conteneurs ZIP et le XML en flux avec capture opaque. `atelier-font` expose vingt polices embarquées, les contours TrueType, une prise en charge CFF partielle et le façonnage latin.
+
+`atelier-image` décode PNG, GIF, BMP et [JPEG](us-042-jpeg.md) en RGBA8 et [encode PNG](us-041-png-encoder.md), avec limites explicites. `atelier-text-model::rich` fournit le [modèle riche](us-200-rich-text-model.md) et le [moteur de styles](us-201-style-engine.md). `atelier-raster` expose les [primitives logicielles](us-061-software-rasterizer.md), et `atelier-fmt-ooxml` lit et écrit le [paquet OPC](us-300-opc-package.md). Le raccordement de ces API à l'éditeur riche et l'import sémantique DOCX restent à développer. Le garde `atelier-check-workspace`, le vérificateur de licence et `atelier-bench` sont les outils internes disponibles. Pour les commandes de compilation, formatage, Clippy, contrôle de licence et mesure, voir le README racine.
 
 ## Crates autorisant FFI
 
 `atelier-core-wasm`, `atelier-desktop-win` et `atelier-server` sont les seules crates exemptées de l'attribut `#![forbid(unsafe_code)]`. Les liaisons WASM, Win32 et WebView2 isolent leurs blocs `unsafe` et documentent les contrats ABI selon la spécification.
 
 ## Validation
+
+## Styles, OPC, JPEG et raster logiciel — 2026-10-12
+
+Le lot développé en parallèle avec GPT-6 Luna, raisonnement moyen, termine
+**US-201, US-300, US-042 et US-061**. La même passe valide l’intégration des
+livraisons précédentes **US-013, US-041 et US-200** : le backlog atteint
+**42 US terminées sur 158**. US-052 reste partielle (charsets Expert, `seac`,
+`random` et `FontMatrix` non pris en charge).
+
+- [Styles](us-201-style-engine.md) : cascade, styles liés explicites, bascules Word,
+  thèmes et cache invalidé par opération ; 12 tests dédiés.
+- [OPC](us-300-opc-package.md) : parties opaques, types MIME, relations, URI
+  relatives, propriétés core/app et écriture déterministe ; 14 tests dédiés.
+- [JPEG](us-042-jpeg.md) : baseline/progressif, redémarrages, gris/YCbCr/CMYK/YCCK,
+  orientation EXIF ; 11 tests, 17 références positives indépendantes, erreur
+  moyenne ≤ 1 par canal et fixture malformée de redémarrage progressif.
+- [Raster logiciel](us-061-software-rasterizer.md) : remplissages, contours,
+  clips, images transformées, alpha et sortie PNG ; 13 tests dédiés.
+
+La [validation finale](../_bmad-output/implementation-artifacts/styles-formats-raster-validation.json)
+réussit **41 contrôles, 507 tests workspace, 55 tests natifs release et 57
+assertions de l’éditeur dans le navigateur**. Clippy Windows/WASM, format,
+licences, build Windows/WASM/musl et compilation des tests musl passent.
+Les 32 paquets Cargo sont locaux ; aucune dépendance externe ajoutée.
+Les sources et le lock restent inchangés pendant cette passe. Le moteur embarqué
+mesure 1 179 080 octets, sous le plafond existant de 1 180 429 octets.
+La [copie isolée](../_bmad-output/implementation-artifacts/styles-formats-raster-portable.json)
+charge ses 18 ressources et exécute Worker, saisie, pixels, undo/redo sans web/data.
+
+La [revue](../_bmad-output/implementation-artifacts/styles-formats-raster-review.md)
+trace 38 constats et leur décision. R6 conserve une comparaison avec Word à
+réaliser pour les tableaux imbriqués ; aucune divergence n’est établie à ce stade.
+Les deux passes interrompues par Clippy puis rustfmt sont conservées dans
+`styles-formats-raster-exploration.json` et `styles-formats-raster-format-attempt.json`.
+La dernière passe reprend tous les contrôles sur les sources corrigées.
+
+Ces modules exposent des API de bibliothèque. L’import WordprocessingML
+(US-301), le backend raster de liste d’affichage (US-082) et leur raccordement
+à l’éditeur restent à développer. Les diagnostics WebView2 debug/release sont
+fonctionnels, mais US-111 reste ouverte : le test strict des handles échoue
+encore. Les essais AZERTY/IME physiques et les dialogues manuels restent ouverts.
+Les tests musl sont seulement compilés localement ; leur exécution appartient
+au job Linux distant du commit publié. Le graphe et les statuts des 158 US
+sont contrôlés par le [reçu Graphify](../_bmad-output/implementation-artifacts/styles-formats-raster-graph.json).
 
 ## Édition TXT au clavier, à la souris et presse-papiers — 2026-10-11
 

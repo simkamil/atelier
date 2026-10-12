@@ -44,6 +44,7 @@ prototype_docs.extend(['docs/us-120-editor-engine.md','docs/us-120-editor-ui.md'
 prototype_docs.extend(['docs/us-112-embedded-resources.md','docs/us-113-file-access.md','docs/us-120-plain-text-model.md','data/engine/README.md'])
 prototype_docs.extend(['docs/us-221-keyboard-editing.md','docs/us-222-mouse-selection.md','docs/us-225-plain-clipboard.md'])
 prototype_docs.extend(['docs/us-013-case-normalization.md','docs/us-041-png-encoder.md','docs/us-052-cff-outlines.md','docs/us-200-rich-text-model.md'])
+prototype_docs.extend(['docs/us-042-jpeg.md','docs/us-061-software-rasterizer.md','docs/us-201-style-engine.md','docs/us-300-opc-package.md','crates/image/tests/fixtures/jpeg/README.md'])
 document_paths.update(prototype_docs)
 document_paths.update({'web/index.html','web/app.css','web/i18n/fr-FR.txt'})
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
@@ -108,6 +109,7 @@ for rel in prototype_docs+['tests/image-reference/README.md', 'data/fonts/README
             doc['edges'].append({'source':node_id,'target':'spec_document','relation':'references','confidence':'EXTRACTED','confidence_score':1.0,'source_file':str(p),'source_location':str(contents[:contents.index('SPEC.md')].count('\n')+1)})
 code=[p for folder in ['crates','tools'] for p in (root/folder).rglob('*.rs') if 'target' not in p.parts]
 code += [root/'tools/package-engine.py']
+code += [root/'crates/image/tests/fixtures/jpeg/generate.py']
 code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
 # Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.

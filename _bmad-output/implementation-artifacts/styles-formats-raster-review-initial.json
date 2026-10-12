@@ -1,0 +1,13 @@
+{
+  "baseline_commit": "2b39b2f287265156577ac927978e22d2f3e22981",
+  "snapshot_excludes": [
+    "_bmad-output/implementation-artifacts/styles-formats-raster-review-snapshot.json (self-referential metadata)"
+  ],
+  "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-styles-formats-raster-review-05w52ksy\\complete.diff",
+  "complete_bytes": 12253079,
+  "complete_sha256": "f3e9b0134387acf4e45c95d75a5168d54a0430193eca491a564c38ebf7b7aecd",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-styles-formats-raster-review-05w52ksy\\sources.diff",
+  "sources_bytes": 312808,
+  "sources_sha256": "87f2bc348065e665180ee38f5478969a4a4b15f2ea9bd855f78cd50cd9a31240"
+}

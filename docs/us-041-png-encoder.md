@@ -22,3 +22,14 @@ Les tests (`crates/image/tests/png_encode.rs` et tests unitaires du module) couv
 cargo test -p atelier-image --locked --offline
 cargo check -p atelier-image --target wasm32-unknown-unknown --locked --offline
 ```
+
+## Validation d’intégration — 2026-10-12
+
+La [passe finale](../_bmad-output/implementation-artifacts/styles-formats-raster-validation.json)
+réussit 41 contrôles, 507 tests workspace et 55 tests natifs release,
+avec sources et lock inchangés. Les 57 assertions de l’éditeur utilisent le vrai
+Worker/WASM. Clippy Windows/WASM, format, licences et builds Windows/WASM/musl
+passent ; les tests musl sont compilés localement et exécutés en CI Linux.
+La [copie portable](../_bmad-output/implementation-artifacts/styles-formats-raster-portable.json)
+fonctionne avec le seul atelier.exe et ses 18 ressources embarquées.
+Les limites des US parentes et l’échec strict de handles US-111 restent ouverts.

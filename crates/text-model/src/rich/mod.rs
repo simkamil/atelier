@@ -8,7 +8,7 @@
 //! `atelier_model::Transaction` and `History`.
 //!
 //! This module is independent of `PlainTextDocument` and is not wired to the
-//! editor. The style cascade is out of scope (US-201).
+//! editor. Style resolution is provided by [`styles`] (US-201).
 
 mod attrs;
 mod document;
@@ -16,6 +16,7 @@ mod error;
 mod node;
 mod ops;
 mod paragraph;
+mod styles;
 mod table;
 mod validate;
 
@@ -35,5 +36,9 @@ pub use node::{
 pub use ops::RichOp;
 pub use paragraph::{
     AnchoredObject, Bookmark, CharRun, Field, Inline, Link, LinkTarget, Paragraph,
+};
+pub use styles::{
+    DocumentStyleDefaults, ResolvedProperties, Style, StyleCatalog, StyleCharAttrs, StyleEngine,
+    StyleError, StyleKind, Theme, ThemeColor, ThemeFont,
 };
 pub use table::NewCell;

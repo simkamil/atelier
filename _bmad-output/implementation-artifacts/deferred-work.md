@@ -18,3 +18,7 @@
 ## Résolutions partielles du lot édition TXT — 2026-10-11
 
 Les trois reports précédents (copy/cut, Ctrl+flèches par mot, colonne visuelle) sont résolus pour le parcours TXT. Voir `editing-ergonomics-validation.json` et `editing-ergonomics-review.md`. Les critères riches, objets, formats HTML/interne et essais physiques des US parentes restent ouverts. Les entrées historiques ci-dessus conservent la décision du lot initial.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-us201-style-engine.md`
+  summary: Comparer dans Word le style calculé des paragraphes d’une table imbriquée sans style propre.
+  evidence: R6 (medium non vérifié) : le moteur hérite du style de table ancêtre; les sources consultées ne prouvent pas une divergence. Une fixture DOCX et son rendu Word de référence trancheraient ce cas.
