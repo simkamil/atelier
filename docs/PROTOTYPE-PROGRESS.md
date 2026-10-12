@@ -77,8 +77,10 @@ et la [machine](../_bmad-output/implementation-artifacts/rich-incremental-border
 sont enregistrées. L’interface testable reste TXT; aucune fidélité Word
 supplémentaire n’est établie.
 
-La CI du nouveau commit sera consultée après le push; la dernière exécution
-connue était bloquée avant démarrage par la facturation/plafond Actions.
+Le code est publié dans [51034b3](https://github.com/simkamil/mon-bureau/commit/51034b31d2871d5f3245c6ef6aaab620b685ec92). La [CI de ce commit](https://github.com/simkamil/mon-bureau/actions/runs/38296298769)
+refuse les trois jobs avant leur démarrage pour paiement/plafond Actions;
+voir le [reçu CI](../_bmad-output/implementation-artifacts/rich-incremental-borders-ci.json).
+Aucun test distant n’a été exécuté.
 
 ## Tabulations, pagination et curseur riche — 2026-10-12
 

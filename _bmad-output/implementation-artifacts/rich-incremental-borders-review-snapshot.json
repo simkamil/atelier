@@ -4,10 +4,10 @@
     "_bmad-output/implementation-artifacts/rich-incremental-borders-review-snapshot.json (self-referential metadata)"
   ],
   "generated_review_policy": "Complete diff retains Graphify; source diff excludes regenerated graph artifacts. Graph integrity is checked separately by deterministic tooling.",
-  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-incremental-borders-review-tk6oxx29\\complete.diff",
-  "complete_bytes": 17560192,
-  "complete_sha256": "64be0ada5c2ff52f4acba37521f5f1bbf5669a29c8cb9dd54e8d60cfd5b7975a",
-  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-incremental-borders-review-tk6oxx29\\sources.diff",
-  "sources_bytes": 537921,
-  "sources_sha256": "2e32592a6795e7a50dfee3e9151c260934e25a118c189757357cb3176e5d10f4"
+  "complete_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-incremental-borders-review-8s3er_yr\\complete.diff",
+  "complete_bytes": 17566182,
+  "complete_sha256": "115127b3dc5fba20ec0fd841a51117d355d939ae23c0391ac3582c54401375e7",
+  "sources_diff_file": "C:\\Users\\simka\\AppData\\Local\\Temp\\atelier-rich-incremental-borders-review-8s3er_yr\\sources.diff",
+  "sources_bytes": 543911,
+  "sources_sha256": "527475de0679c9921f7bc5b3b1a5cd1b27b7815c261ca2b316ace402910c95cd"
 }

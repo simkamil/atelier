@@ -20,10 +20,10 @@
   "unreported_semantic_runs": 6,
   "api_report_llm_tokens": 0,
   "graph_sha256": {
-    "graphify-out/GRAPH_REPORT.md": "a48b65552504d0fd05b21573d7cfd8421897647c649f9bc7298f1f5d934690e1",
-    "graphify-out/graph.json": "00f939139302660fbdf9ad47385f552018c871030d4b2a9da712d4f2aaaa4422",
+    "graphify-out/GRAPH_REPORT.md": "195158e0cf18aceba2f9da81861d6d9000cad25f51f5e8d9aa1b5d12b290cc4d",
+    "graphify-out/graph.json": "66bd6d5e9d704e1a78d658b86bcda158a53d51e40d70773727cd8a8c4a8be82d",
     "graphify-out/graph.html": "dc090588afe30973abb7adc586cb834511da15e32a46445d04e9d686170faa9b",
-    "graphify-out/story-dependencies.json": "b100e0e9820b4827e06425a3d08e082b2bd2ffa6d5275d266f7b921eece3f47a",
+    "graphify-out/story-dependencies.json": "3228a725e026ab65d3bc4c075e30611c9311513a8db66903e500ee9909106ec9",
     "graphify-out/unresolved-structural-references.json": "891b23f0acc02c475b80f51d5fb1ad8b9385f7f994373f560fd70ba3edf24c2b"
   }
 }

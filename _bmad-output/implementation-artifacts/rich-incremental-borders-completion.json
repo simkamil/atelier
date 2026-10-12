@@ -1,0 +1,24 @@
+{
+  "source_commit": "51034b31d2871d5f3245c6ef6aaab620b685ec92",
+  "source_pushed": true,
+  "local_validation_passed": true,
+  "local_checks": 21,
+  "windows_tests": 739,
+  "layout_release_tests": 78,
+  "validated_inputs": 844,
+  "matrix_rows": 28,
+  "all_baseline_graph_nodes_preserved": true,
+  "story_count": 158,
+  "fully_completed_stories": 47,
+  "partial_stories": [
+    "US-202",
+    "US-213",
+    "US-215"
+  ],
+  "ci_run": "https://github.com/simkamil/mon-bureau/actions/runs/38296298769",
+  "ci_jobs_started": 0,
+  "ci_billing_blocked": true,
+  "linux_tests_locally_executed": false,
+  "ui_latency_16_ms_certified": false,
+  "local_edit_cpu_ms": 268.214
+}

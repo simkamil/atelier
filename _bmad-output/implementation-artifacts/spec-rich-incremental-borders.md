@@ -83,3 +83,5 @@ Plan établi après lecture du graphe et investigations indépendantes des trois
 - Audit de matrices, comparaison de blobs publiés, santé du graphe et état CI enregistrés séparément.
 
 Tranche API validée le 2026-10-12 : 739 tests workspace Windows, 78 text-layout release, 21 contrôles. L’US utilisateur reste partielle selon docs/backlog. Revue et matrice : `rich-incremental-borders-review.md`, `rich-incremental-borders-matrix.json`.
+
+Publication source `51034b31d2871d5f3245c6ef6aaab620b685ec92` : 844 entrées validées comparées aux blobs Git, normalisation LF uniquement. CI : trois jobs refusés avant démarrage pour paiement/plafond Actions, reçu `rich-incremental-borders-ci.json`. Pas de succès distant déclaré.
