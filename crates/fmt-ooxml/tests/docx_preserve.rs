@@ -988,6 +988,14 @@ fn inventory_over_reference_libreoffice_and_built_documents() {
     documents.push(("built:misc".into(), doc(body(
         r#"<w:p><w:pPr><w:rPr><w:i/></w:rPr></w:pPr><w:r><w:rPr><w:rStyle w:val="A"/><w:rFonts w:ascii="X" w:eastAsia="Y"/><w:u w:val="words"/><w:color w:val="auto" w:themeShade="1"/></w:rPr><w:br w:clear="all"/><w:sym w:font="F" w:char="41"/></w:r><w:fldSimple w:instr="PAGE"><w:r><w:t>1</w:t></w:r></w:fldSimple><w:dir w:val="rtl"><w:r><w:t>d</w:t></w:r></w:dir></w:p>"#,
     )).bytes()));
+    // Invalid but seen: children inside elements the schema leaves empty.
+    documents.push((
+        "built:leaf-children".into(),
+        doc(body(
+            r#"<w:p><w:r><w:tab><w:ext w:a="1"/></w:tab><w:br><z:q xmlns:z="urn:z"/></w:br><w:cr><w:ext/></w:cr><w:noBreakHyphen><w:ext/></w:noBreakHyphen><w:sym w:font="F" w:char="41"><w:ext/></w:sym><w:t>t<w:ext w:b="2"/></w:t></w:r></w:p>"#,
+        ))
+        .bytes(),
+    ));
     let (mut elements, mut attributes) = (0, 0);
     for (name, bytes) in &documents {
         let (e, a) = std::panic::catch_unwind(|| inventory(bytes))

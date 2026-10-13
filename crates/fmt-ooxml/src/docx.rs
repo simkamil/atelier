@@ -1175,6 +1175,13 @@ fn parse_paragraph(
             if leaf {
                 let mut element = pres.shell(item)?;
                 element.range = Some((item_start, paragraph.text.len()));
+                // An element the schema gives no children (invalid input):
+                // keep them as copies after the text the element produced.
+                for child in &item.children {
+                    element
+                        .children
+                        .push(PreservedChild::Opaque(preserve::xml_of(child)));
+                }
                 run_tree.push(PreservedChild::Element(element));
             }
         }
