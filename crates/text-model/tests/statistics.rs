@@ -422,6 +422,9 @@ fn selection_ranges_are_merged_and_summed() {
     // two separate ranges add up
     let s = selection(&doc, &sel(&[(p0, 0, p0, 2), (p2, 0, p2, 6)]), &o).unwrap();
     assert_eq!(tuple(s), (2, 8, 8, 2));
+    // two disjoint ranges of the same paragraph stay one paragraph
+    let s = selection(&doc, &sel(&[(p0, 0, p0, 2), (p0, 8, p0, 13)]), &o).unwrap();
+    assert_eq!(tuple(s), (2, 7, 7, 1));
 }
 
 #[test]
