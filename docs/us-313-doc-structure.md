@@ -49,7 +49,7 @@ identifiant de paragraphe, en-têtes compris.
 | `sprmTCellPaddingDefault` 0xD634, `sprmTCellPadding` 0xD632 | marges de cellule |
 | autres sprms de tableau | avis `UnsupportedProperty("tableFormatting")` ; 0xD670 écrit par LibreOffice est ignoré sans avis |
 | `PlfLst` (`LSTF` 28 octets, `LVL` : `LVLF` 28 octets, `grpprlPapx`, `grpprlChpx`, `xst`), `PlfLfo` (`LFO` 16 octets, `LFOData`, `LFOLVL` 8 octets + `LVL`) | listes ; **les `LVL` suivent le tableau `LSTF`** dans le flux de tables (`lcb` ne couvre que l'en-tête et les `LSTF`) |
-| `sprmPIlfo` 0x460B, `sprmPIlvl` 0x260A | rattachement, dans le paragraphe ou hérité du style (chaîne `istdBase`) ; `sprmPAnld` 0xC63E / `sprmPNLvlAnm` 0x262A (listes Word 6) : avis `LegacyNumbering` |
+| `sprmPIlfo` 0x460B, `sprmPIlvl` 0x260A | rattachement, dans le paragraphe ou hérité du style (chaîne `istdBase`) ; `sprmPAnld` 0xC63E / `sprmPNLvlAnm` 0x262A (listes Word 6) : avis `LegacyNumbering`. Valeurs spéciales de `ilfo` : 0x07FF (« était dans une liste, n'y est plus ») = paragraphe sans liste, sans avis ; 0xF801 (−2047, ancienne numérotation `ANLD`) = paragraphe sans liste, avis `LegacyNumbering`. Ni l'une ni l'autre n'est une référence cassée. **Prouvé seulement sur fixture construite, valeurs lues de mémoire de [MS-DOC]** (aucun fichier LibreOffice ne les contient) |
 | `PlcfSed` (pair 6), `Sed`, `SEPX` | sections ; les sprms de section sont lus dans `WordDocument` |
 | `PlcfHdd` (pair 11), `ccpHdd` | histoires d'en-têtes ; `Plcffld` d'en-têtes (pair 17) |
 | `Plcffld` (pair 16) | marques de champ et type `flt` du début de champ |
@@ -159,8 +159,12 @@ un avis `TableRepaired { what, count }`) :
 * Les marques 0x13/0x14/0x15 sont vérifiées contre le `Plcffld` de l'histoire : une marque absente
   du `Plcffld` (quand il existe) est ignorée (`FieldDegraded "field mark missing from Plcffld"`) ;
   sans `Plcffld`, les marques du texte sont prises telles quelles.
-* Le code (entre 0x13 et 0x14) n'entre pas dans le texte ; le texte d'un champ imbriqué dans le code
-  est ajouté au code. Un champ **imbriqué dans le résultat** d'un autre : seul le champ intérieur
+* Le code (entre 0x13 et 0x14) n'entre pas dans le texte. Un champ **imbriqué dans le code** d'un
+  autre ne crée aucun champ du modèle : son code, rogné et entre accolades, est ajouté au code du
+  champ englobant et son résultat est abandonné (`x{ IF { PAGE }2 > 1 }RES y` donne un seul champ,
+  celui du `IF`, sur « RES », d'instruction `IF {PAGE} > 1`, texte `xRESy`). Un champ **à
+  instruction vide** (code vide ou d'espaces) n'est pas un champ : son résultat reste du texte
+  ordinaire (`FieldDegraded "field with empty instruction"`). Un champ **imbriqué dans le résultat** d'un autre : seul le champ intérieur
   est un `Field` (`"field containing a field"`). Un champ qui traverse une fin de paragraphe :
   résultat conservé en texte, ni champ ni lien (`"field spans paragraphs"`). Marques isolées :
   `"unmatched field mark"` ; champ non refermé : `"field not closed"` ; profondeur au-delà de
@@ -224,7 +228,7 @@ Une structure secondaire endommagée donne un avis `DamagedData` et un import pa
   Python indépendant (CFB, FKP, sprms, listes, sections, histoires, champs, signets) et compare à
   la description. Le test Rust `reference_structure.rs` compare l'import aux mêmes attendus
   (`expected.json`, clé `structure`). `--only-structure` régénère ces seuls fichiers.
-* `tests/doc_structure.rs` : 20 tests sur fichiers fabriqués pour ce que LibreOffice n'écrit pas
+* `tests/doc_structure.rs` : 26 tests sur fichiers fabriqués pour ce que LibreOffice n'écrit pas
   (voir les colonnes « fixture » ci-dessus) et pour les dégradations.
 * `tests/robustness.rs` : campagne de mutations à graine fixe étendue aux cinq fichiers
   (5 × 2 500) et troncatures progressives de chaque flux.

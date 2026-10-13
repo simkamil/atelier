@@ -327,13 +327,18 @@ impl ListTables {
         let mut stats = Stats::default();
         let stats = &mut stats;
         let mut out = Vec::with_capacity(self.lfo.len());
+        // Linear-time lookups: first LSTF per lsid, and LFO count per lsid.
+        let mut by_lsid: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        for (k, l) in self.lstf.iter().enumerate() {
+            by_lsid.entry(l.lsid).or_insert(k);
+        }
+        let mut lfo_count: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+        for o in &self.lfo {
+            *lfo_count.entry(o.lsid).or_insert(0) += 1;
+        }
         for (i, lfo) in self.lfo.iter().enumerate() {
-            let def = self.lstf.iter().find(|l| l.lsid == lfo.lsid);
-            let shared = self
-                .lfo
-                .iter()
-                .enumerate()
-                .any(|(j, o)| j != i && o.lsid == lfo.lsid);
+            let def = by_lsid.get(&lfo.lsid).map(|&k| &self.lstf[k]);
+            let shared = lfo_count.get(&lfo.lsid).copied().unwrap_or(0) > 1;
             let mut levels = Vec::new();
             if let Some(def) = def {
                 for (n, l) in def.levels.iter().enumerate() {

@@ -320,7 +320,13 @@ impl Builder<'_> {
         let ilfo = delta.ilfo.or(style_ilfo);
         let ilvl = delta.ilvl.or(style_ilvl);
         let mut list_item = None;
-        if let Some(i) = ilfo.filter(|i| *i != 0) {
+        // Special values of ilfo ([MS-DOC], read from memory): 0x07FF = the
+        // paragraph was in a list and no longer is; 0xF801 (-2047) = the
+        // paragraph carries the old ANLD numbering. Neither is a list reference.
+        if ilfo == Some(-2047) && !delta.anld {
+            self.counters.legacy_numbering += 1;
+        }
+        if let Some(i) = ilfo.filter(|i| !matches!(*i, 0 | 0x07FF | -2047)) {
             if i > 0 && (i as usize) <= self.lfo_count {
                 let level = ilvl.unwrap_or(0).min(8);
                 props.list = Some(ListRef {
@@ -930,6 +936,9 @@ pub(super) fn import(cfb: &Compound, limits: &DocLimits) -> Result<ImportedDoc, 
             position: k,
             subtree: sub,
         });
+        if ops.len() >= BATCH {
+            apply_ops(&mut b.document, &mut ops)?;
+        }
     }
     apply_ops(&mut b.document, &mut ops)?;
     let mut positions = vec![1usize; nsec];
@@ -971,6 +980,9 @@ pub(super) fn import(cfb: &Compound, limits: &DocLimits) -> Result<ImportedDoc, 
                     parent: Some(section_ids[k]),
                     position: 0,
                 });
+                if ops.len() >= BATCH {
+                    apply_ops(em.doc, &mut ops)?;
+                }
             }
         }
         apply_ops(em.doc, &mut ops)?;
@@ -981,6 +993,7 @@ pub(super) fn import(cfb: &Compound, limits: &DocLimits) -> Result<ImportedDoc, 
 
     // Headers and footers.
     let (fc, lcb) = fib.pair(PAIR_PLCFFLD_HDR);
+    let mut hf_ops: Vec<RichOp> = Vec::new();
     let hdr_marks = FldMarks::parse(&table, fc, lcb, limits);
     {
         for (k, def) in sec_defs.iter().enumerate() {
@@ -1043,14 +1056,17 @@ pub(super) fn import(cfb: &Compound, limits: &DocLimits) -> Result<ImportedDoc, 
                                 }),
                             );
                             header_paragraphs.push((hf, paras));
-                            let ops = vec![RichOp::AttachHeaderFooter {
+                            // Attached in batches: one transaction per story costs
+                            // time proportional to the document each time.
+                            hf_ops.push(RichOp::AttachHeaderFooter {
                                 section: section_ids[k],
                                 kind,
                                 variant,
                                 subtree: Subtree { root: hf, nodes },
-                            }];
-                            let mut ops = ops;
-                            apply_ops(em.doc, &mut ops)?;
+                            });
+                            if hf_ops.len() >= BATCH {
+                                apply_ops(em.doc, &mut hf_ops)?;
+                            }
                             HfState::Present(hf)
                         }
                     };
@@ -1075,6 +1091,7 @@ pub(super) fn import(cfb: &Compound, limits: &DocLimits) -> Result<ImportedDoc, 
             });
         }
     }
+    apply_ops(&mut b.document, &mut hf_ops)?;
     // Body paragraphs in document order, read back from the model (cells
     // absorbed by a vertical merge are gone, merged content has moved).
     order.clear();
@@ -1321,6 +1338,20 @@ fn walk(b: &mut Builder<'_>, units: &[u16], start: usize, end: usize) -> Result<
                 if !f.in_result {
                     code_depth -= 1;
                 }
+                if frames.iter().any(|p| !p.in_result) {
+                    // Field nested in the code of another field: it creates no
+                    // model field. Its code, in braces, becomes part of the
+                    // enclosing code; its result is dropped. (Inside the result
+                    // of a field that is itself in a code, nothing is kept.)
+                    if let Some(p) = frames.last_mut().filter(|p| !p.in_result) {
+                        if p.code.len() < 8192 {
+                            p.code.push('{');
+                            p.code.push_str(f.code.trim());
+                            p.code.push('}');
+                        }
+                    }
+                    continue;
+                }
                 close_field(b, f, &mut open);
                 continue;
             }
@@ -1330,7 +1361,8 @@ fn walk(b: &mut Builder<'_>, units: &[u16], start: usize, end: usize) -> Result<
             continue;
         }
         if code_depth > 0 {
-            if let Some(f) = frames.iter_mut().rev().find(|f| !f.in_result) {
+            // Characters of a field's result nested in a code are dropped.
+            if let Some(f) = frames.last_mut().filter(|f| !f.in_result) {
                 if f.code.len() < 8192 {
                     match u {
                         0x09 => f.code.push(' '),
@@ -1418,6 +1450,11 @@ fn walk(b: &mut Builder<'_>, units: &[u16], start: usize, end: usize) -> Result<
 /// Turns a finished field into model items of the open paragraph.
 fn close_field(b: &mut Builder<'_>, f: Frame, open: &mut Open) {
     let code = f.code.trim().to_owned();
+    if code.is_empty() {
+        // Empty instruction: no model field; the result stays plain text.
+        Builder::issue(&mut b.counters.field_issues, "field with empty instruction");
+        return;
+    }
     let kind = fields::kind_of(&code);
     if f.para != b.recs.len() {
         Builder::issue(&mut b.counters.field_issues, "field spans paragraphs");

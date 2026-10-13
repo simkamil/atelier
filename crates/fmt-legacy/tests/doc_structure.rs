@@ -1093,3 +1093,150 @@ fn bookmarks_cut_at_paragraph_ends_and_duplicates() {
     assert_eq!((p2.bookmarks[0].start, p2.bookmarks[0].end), (0, 0));
     assert!(doc.document.bookmark_named("A").is_some());
 }
+
+// ----- review fixes (fields, lists, performance) ----------------------------------------
+
+fn first_paragraph(doc: &ImportedDoc) -> &atelier_text_model::rich::Paragraph {
+    doc.document.paragraph(doc.paragraph_ids()[0]).unwrap()
+}
+
+#[test]
+fn field_nested_in_the_code_of_another_field_creates_no_field() {
+    // x { IF { PAGE }2 > 1 }RES y
+    let doc = open(&DocSpec::ansi(
+        "x\u{13} IF \u{13} PAGE \u{14}2\u{15} > 1 \u{14}RES\u{15}y\r",
+    ));
+    let p = first_paragraph(&doc);
+    assert_eq!(p.text, "xRESy");
+    assert_eq!(p.fields.len(), 1);
+    assert_eq!((p.fields[0].start, p.fields[0].end), (1, 4));
+    // Rule: the inner code, trimmed and in braces, joins the outer code; the
+    // inner result is not kept.
+    assert_eq!(doc.fields.len(), 1);
+    assert_eq!(doc.fields[0].code, "IF {PAGE} > 1");
+    assert_eq!(p.fields[0].instruction, "IF {PAGE} > 1");
+    // Inner field without result, and a field nested in the result of an
+    // inner field: still one field, nothing leaks.
+    let doc = open(&DocSpec::ansi(
+        "\u{13} IF \u{13} A \u{14}r\u{13} B \u{14}s\u{15}t\u{15} \u{13} C \u{15}\u{14}RES\u{15}\r",
+    ));
+    let p = first_paragraph(&doc);
+    assert_eq!(p.text, "RES");
+    assert_eq!(doc.fields.len(), 1);
+    assert_eq!(doc.fields[0].code, "IF {A} {C}");
+}
+
+#[test]
+fn field_nested_in_the_result_of_another_field_still_gives_two_fields() {
+    let doc = open(&DocSpec::ansi(
+        "x\u{13} IF 1 \u{14}A\u{13} PAGE \u{14}2\u{15}B\u{15}y\r",
+    ));
+    let p = first_paragraph(&doc);
+    assert_eq!(p.text, "xA2By");
+    // Model fields do not nest: the outer field is only kept as an imported
+    // field (the existing "field containing a field" degradation), the inner
+    // PAGE is the model field.
+    assert_eq!(p.fields.len(), 1);
+    assert_eq!(
+        (
+            p.fields[0].start,
+            p.fields[0].end,
+            p.fields[0].instruction.as_str()
+        ),
+        (2, 3, "PAGE")
+    );
+    assert_eq!(doc.fields.len(), 2);
+    assert_eq!(doc.fields.iter().filter(|f| f.field.is_some()).count(), 1);
+    assert_eq!(issue(&doc, "field containing a field"), 1);
+}
+
+#[test]
+fn field_with_an_empty_instruction_stays_plain_text() {
+    let doc = open(&DocSpec::ansi(
+        "a\u{13}\u{14}res\u{15}b\u{13}  \u{14}two\u{15}c\r",
+    ));
+    let p = first_paragraph(&doc);
+    assert_eq!(p.text, "aresbtwoc");
+    assert!(p.fields.is_empty());
+    assert!(doc.fields.is_empty());
+    assert_eq!(issue(&doc, "field with empty instruction"), 2);
+}
+
+#[test]
+fn special_ilfo_values_are_not_broken_list_references() {
+    let mut spec = list_spec("a\rb\rc\r", &[(7, nine(vec![decimal()]))], &[(7, vec![])]);
+    marks(
+        &mut spec,
+        vec![
+            (1, list_para(0x07FF, 0)),
+            (3, list_para(-2047, 0)),
+            (5, list_para(1, 0)),
+        ],
+    );
+    let doc = open(&spec);
+    // Only the real reference is a list item.
+    assert_eq!(doc.list_items.len(), 1);
+    assert!(!doc.notices.iter().any(|n| matches!(
+        n,
+        ImportNotice::DamagedData {
+            what: "list reference to a missing list",
+            ..
+        }
+    )));
+    // 0xF801 is the old ANLD numbering.
+    assert!(
+        doc.notices
+            .contains(&ImportNotice::LegacyNumbering { paragraphs: 1 })
+    );
+    // A genuinely missing list is still reported.
+    let mut spec = list_spec("a\r", &[(7, nine(vec![decimal()]))], &[(7, vec![])]);
+    marks(&mut spec, vec![(1, list_para(5, 0))]);
+    assert!(open(&spec).notices.contains(&ImportNotice::DamagedData {
+        what: "list reference to a missing list",
+        count: 1
+    }));
+}
+
+#[test]
+fn many_lists_import_in_bounded_time() {
+    let n = 40_000u32;
+    let lists: Vec<(u32, Vec<Vec<u8>>)> = (0..n).map(|i| (1000 + i, vec![decimal()])).collect();
+    let lfos: Vec<(u32, Vec<LfoLvl>)> = (0..n).map(|i| (1000 + i, vec![])).collect();
+    let spec = list_spec("a\r", &lists, &lfos);
+    let bytes = spec.build();
+    let t = std::time::Instant::now();
+    let doc = import_doc(&bytes).expect("import");
+    let took = t.elapsed();
+    assert_eq!(doc.lists.len(), n as usize);
+    assert!(took.as_secs() < 5, "list import took {took:?}");
+}
+
+#[test]
+fn many_sections_with_many_field_marks_import_in_bounded_time() {
+    let s = 5_000usize;
+    let mut text = "m\u{C}".repeat(s - 1);
+    text.push_str("n\r");
+    let mut spec = DocSpec::new(vec![
+        PieceSpec::ansi(&text),
+        PieceSpec {
+            story: 2,
+            ..PieceSpec::ansi(&"H\r".repeat(s))
+        },
+    ]);
+    spec.section_ends = (1..=s as u32).map(|k| 2 * k).collect();
+    spec.sepx = vec![sprm_u8(0x300A, 1)];
+    let mut cps = vec![0u32; 6];
+    for k in 0..s as u32 {
+        cps.extend_from_slice(&[2 * k, 2 * k, 2 * k + 2, 2 * k + 2, 2 * k + 2, 2 * k + 2]);
+    }
+    cps.push(2 * s as u32);
+    let plc: Vec<u8> = cps.iter().flat_map(|c| c.to_le_bytes()).collect();
+    let marks: Vec<(u32, u8, u8)> = (0..2 * s as u32).map(|c| (c, 0x13, 0)).collect();
+    spec.table_extra = vec![(11, plc, None), (17, plcffld(&marks, 2 * s as u32), None)];
+    let bytes = spec.build();
+    let t = std::time::Instant::now();
+    let doc = import_doc(&bytes).expect("import");
+    let took = t.elapsed();
+    assert_eq!(doc.sections.len(), s);
+    assert!(took.as_secs() < 10, "section import took {took:?}");
+}
