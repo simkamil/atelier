@@ -13,17 +13,22 @@ use atelier_font::FontFace;
 use atelier_font::manager::{FontManager, FontSource};
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
-    Alignment, CharAttrs, Color, DocumentStyleDefaults, LineRule, LineSpacing, Node, NodeId,
-    OpaqueAttr, ParaProps, Paragraph, ResolvedProperties, RichDocument, RichOp, Style,
-    StyleCatalog, StyleCharAttrs, StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont, Underline,
-    VerticalAlign,
+    Alignment, AnchoredObject, CharAttrs, Color, DocumentStyleDefaults, LineRule, LineSpacing,
+    Node, NodeId, OpaqueAttr, ParaProps, Paragraph, ResolvedProperties, RichDocument, RichOp,
+    Style, StyleCatalog, StyleCharAttrs, StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont,
+    Underline, VerticalAlign,
 };
 use atelier_unicode::segmentation::grapheme_boundaries;
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+mod preserve;
 mod tables;
+pub use preserve::{
+    MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart,
+    interpreted_elements, para_mark_rpr_rank, ppr_rank, rpr_rank, sect_pr_rank,
+};
 pub use tables::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
     HeightRule, ImportedCell, ImportedRow, ImportedTable, ImportedTables, ResolvedCell, RowHeight,
@@ -68,6 +73,12 @@ pub struct DocxLimits {
     pub max_table_columns: usize,
     /// Cells of all tables of the document.
     pub max_table_cells: usize,
+    /// Total bytes of unknown XML copied verbatim (US-306), all parts.
+    pub max_opaque_bytes: usize,
+    /// Number of unknown elements copied verbatim (US-306), all parts.
+    pub max_opaque_items: usize,
+    /// Elements of the preserved source skeleton (US-306).
+    pub max_preserved_nodes: usize,
 }
 impl Default for DocxLimits {
     fn default() -> Self {
@@ -84,6 +95,9 @@ impl Default for DocxLimits {
             max_table_rows: 1_000_000,
             max_table_columns: 1024,
             max_table_cells: 2_000_000,
+            max_opaque_bytes: 128 * 1024 * 1024,
+            max_opaque_items: 8_000_000,
+            max_preserved_nodes: 32_000_000,
         }
     }
 }
@@ -222,6 +236,8 @@ pub struct ImportedDocx {
     /// Table properties without a slot in the rich model, table styles and
     /// the paragraph-to-cell index (US-303).
     pub tables: ImportedTables,
+    /// What the import does not interpret, with its position (US-306).
+    pub preserved: Preserved,
     paragraph_order: Vec<NodeId>,
 }
 impl ImportedDocx {
@@ -378,7 +394,8 @@ pub fn import_docx_with_limits(
             detail: "main part has a non-DOCX content type",
         });
     }
-    let main_xml = parse_xml(main, &limits.xml)?;
+    let mut budget = preserve::CaptureBudget::new(&limits, &Preserved::default());
+    let main_xml = parse_xml_captured(main, &limits.xml, &mut budget)?;
     if !is_w(&main_xml, "document") {
         return Err(DocxError::InvalidStructure {
             part: main_uri.to_string(),
@@ -408,7 +425,7 @@ pub fn import_docx_with_limits(
             _ if rel.rel_type == REL_STYLES
                 || rel.rel_type == format!("{REL_BASE_STRICT}styles") =>
             {
-                let xml = parse_xml(target, &limits.xml)?;
+                let xml = parse_xml_captured(target, &limits.xml, &mut budget)?;
                 if !is_w(&xml, "styles") {
                     return Err(DocxError::InvalidStructure {
                         part: target.uri.to_string(),
@@ -430,7 +447,7 @@ pub fn import_docx_with_limits(
             _ if rel.rel_type == REL_SETTINGS
                 || rel.rel_type == format!("{REL_BASE_STRICT}settings") =>
             {
-                let xml = parse_xml(target, &limits.xml)?;
+                let xml = parse_xml_captured(target, &limits.xml, &mut budget)?;
                 if !is_w(&xml, "settings") {
                     return Err(DocxError::InvalidStructure {
                         part: target.uri.to_string(),
@@ -457,6 +474,8 @@ pub fn import_docx_with_limits(
             }),
         }
     }
+    let mut pres = preserve::Pres::new(&limits);
+    pres.decls = preserve::root_declarations(&main.bytes);
     collect_unsupported_resets(&main_xml, &main_uri, &mut notices);
     if let Some((part, xml)) = &styles_xml {
         collect_unsupported_resets(xml, &part.uri, &mut notices);
@@ -495,8 +514,8 @@ pub fn import_docx_with_limits(
         fonts = parsed.0;
         font_records = parsed.1;
     }
-    let settings = if let Some((_, xml)) = settings_xml {
-        let (settings, mut latent) = parse_settings(&xml)?;
+    let settings = if let Some((_, xml)) = &settings_xml {
+        let (settings, mut latent) = parse_settings(xml)?;
         latent_styles.append(&mut latent);
         settings
     } else {
@@ -533,38 +552,64 @@ pub fn import_docx_with_limits(
             part: main_uri.to_string(),
             detail: "rich section has no paragraph",
         })?;
-    let mut sink = ParagraphSink::new(&limits, &theme, default_paragraph_style.clone());
+    if let Some((part, xml)) = &styles_xml {
+        let root = pres.prop_tree(xml, preserve::Level::StylesRoot)?;
+        let info = pres.part(part.uri.as_str(), &part.bytes, xml, root);
+        preserve::markup_notices(xml, &info, &mut notices);
+        pres.out.styles = Some(info);
+    }
+    if let Some((part, xml)) = &settings_xml {
+        let root = pres.prop_tree(xml, preserve::Level::SettingsRoot)?;
+        let info = pres.part(part.uri.as_str(), &part.bytes, xml, root);
+        preserve::markup_notices(xml, &info, &mut notices);
+        pres.out.settings = Some(info);
+    }
+    pres.out.opaque_bytes = budget.bytes;
+    pres.out.opaque_items = budget.items;
+    let mut sink = ParagraphSink::new(&limits, &theme, default_paragraph_style.clone(), pres);
     let mut table_builder =
         tables::TableBuilder::new(&limits, style_engine.catalog(), &theme, main_uri.as_str());
     if let Some((part, xml)) = &styles_xml {
         table_builder.read_styles(xml, part.uri.as_str());
     }
-    let mut blocks = Vec::new();
-    tables::collect_blocks(body, &mut blocks);
+    let events = preserve::events(body, preserve::Level::Body, &sink.pres.decls);
+    let mut body_tree = preserve::TreeBuilder::new(sink.pres.shell(body)?);
     let mut position = 0usize;
     let mut initial_used = false;
-    for block in &blocks {
-        match block {
-            tables::Block::Table(xml_table) => {
+    let mut pending: Vec<RichOp> = Vec::new();
+    for event in &events {
+        match event {
+            preserve::Ev::Open(node, shadow) => {
+                let mut element = sink.pres.shell(node)?;
+                element.shadow = *shadow;
+                body_tree.open(element);
+            }
+            preserve::Ev::Close => body_tree.close(),
+            preserve::Ev::Prop(node) => {
+                body_tree.push(PreservedChild::Opaque(preserve::xml_of(node)));
+            }
+            preserve::Ev::Opaque(node) if is_w(node, "sectPr") => {
+                body_tree.push(PreservedChild::Opaque(preserve::xml_of(node)));
+            }
+            preserve::Ev::Opaque(node) => {
+                let subtree = document
+                    .new_opaque(&node.name.qualified(), &preserve::xml_of(node))
+                    .map_err(model_error)?;
+                body_tree.push(PreservedChild::Block(subtree.root));
+                insert_block(&mut document, &mut pending, section, subtree, position)?;
+                position += 1;
+            }
+            preserve::Ev::Known(xml_table) if is_w(xml_table, "tbl") => {
                 if let Some(subtree) =
                     table_builder.build_table(&mut document, &mut sink, xml_table)?
                 {
-                    let op = RichOp::InsertBlock {
-                        parent: Some(section),
-                        position,
-                        subtree,
-                    };
-                    document
-                        .apply(
-                            &Transaction::new(vec![op])
-                                .map_err(|e| DocxError::Model(e.to_string()))?,
-                        )
-                        .map_err(model_error)?;
+                    body_tree.push(PreservedChild::Block(subtree.root));
+                    insert_block(&mut document, &mut pending, section, subtree, position)?;
                     position += 1;
                 }
             }
-            tables::Block::Paragraph(xml_paragraph) => {
-                let (mut paragraph, meta) = sink.read(xml_paragraph)?;
+            preserve::Ev::Known(xml_paragraph) => {
+                let (mut paragraph, meta) = sink.read(&mut document, xml_paragraph)?;
                 let para_id = if !initial_used {
                     initial_used = true;
                     initial
@@ -574,17 +619,7 @@ pub fn import_docx_with_limits(
                     if let Some(Node::Paragraph(p)) = subtree.nodes.get_mut(&id) {
                         *p = paragraph.clone();
                     }
-                    let op = RichOp::InsertBlock {
-                        parent: Some(section),
-                        position,
-                        subtree,
-                    };
-                    document
-                        .apply(
-                            &Transaction::new(vec![op])
-                                .map_err(|e| DocxError::Model(e.to_string()))?,
-                        )
-                        .map_err(model_error)?;
+                    insert_block(&mut document, &mut pending, section, subtree, position)?;
                     id
                 };
                 // Set text and source formatting in a single transaction. All run
@@ -614,14 +649,39 @@ pub fn import_docx_with_limits(
                             });
                         }
                     }
+                    for object in paragraph.anchored.drain(..) {
+                        ops.push(RichOp::InsertInline {
+                            para: para_id,
+                            item: atelier_text_model::rich::Inline::Anchored(object),
+                        });
+                    }
                     document
                         .apply(&Transaction::new(ops).map_err(|e| DocxError::Model(e.to_string()))?)
                         .map_err(model_error)?;
                 }
+                body_tree.push(PreservedChild::Block(para_id));
                 sink.record(para_id, meta);
                 position += 1;
             }
         }
+    }
+    flush_blocks(&mut document, &mut pending)?;
+    let body_element = body_tree.finish();
+    {
+        let root = sink.pres.shell(&main_xml)?;
+        let mut tree = preserve::TreeBuilder::new(root);
+        for child in &main_xml.children {
+            if is_w(child, "body") {
+                tree.push(PreservedChild::Element(body_element.clone()));
+            } else {
+                tree.push(PreservedChild::Opaque(preserve::xml_of(child)));
+            }
+        }
+        let info = sink
+            .pres
+            .part(main_uri.as_str(), &main.bytes, &main_xml, tree.finish());
+        preserve::markup_notices(&main_xml, &info, &mut notices);
+        sink.pres.out.document = Some(info);
     }
     let (table_info, table_notices) = table_builder.finish();
     notices.extend(table_notices);
@@ -629,6 +689,7 @@ pub fn import_docx_with_limits(
         breaks: break_records,
         symbols: symbol_records,
         run_styles: run_style_records,
+        pres,
         ..
     } = sink;
     // Every paragraph of the document, in document order: cells, the empty
@@ -665,6 +726,7 @@ pub fn import_docx_with_limits(
         latent_styles,
         font_records,
         tables: table_info,
+        preserved: pres.out,
         paragraph_order: ids,
     })
 }
@@ -675,6 +737,9 @@ struct XmlNode {
     attrs: Vec<Attribute>,
     children: Vec<XmlNode>,
     text: String,
+    /// The element and its subtree as a US-032 opaque copy (US-306), when the
+    /// import does not interpret it. `children` stay available for notices.
+    opaque: Option<Vec<u8>>,
 }
 impl XmlNode {
     fn find(&self, ns: &str, local: &str) -> Option<&XmlNode> {
@@ -707,58 +772,139 @@ impl XmlNode {
         }
     }
 }
+/// Blocks inserted per transaction. A transaction takes a checkpoint of the
+/// whole document, so one transaction per block copies the document (and every
+/// captured byte in it) once per block: quadratic in the number of blocks.
+const INSERT_BATCH: usize = 512;
+
+fn insert_block(
+    document: &mut RichDocument,
+    pending: &mut Vec<RichOp>,
+    section: NodeId,
+    subtree: atelier_text_model::rich::Subtree,
+    position: usize,
+) -> Result<(), DocxError> {
+    pending.push(RichOp::InsertBlock {
+        parent: Some(section),
+        position,
+        subtree,
+    });
+    if pending.len() >= INSERT_BATCH {
+        flush_blocks(document, pending)?;
+    }
+    Ok(())
+}
+
+fn flush_blocks(document: &mut RichDocument, pending: &mut Vec<RichOp>) -> Result<(), DocxError> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let ops = std::mem::take(pending);
+    document
+        .apply(&Transaction::new(ops).map_err(|e| DocxError::Model(e.to_string()))?)
+        .map_err(model_error)?;
+    Ok(())
+}
 fn parse_xml(part: &Part, limits: &XmlLimits) -> Result<XmlNode, DocxError> {
     if part.bytes.len() > 16 * 1024 * 1024 {
         return Err(DocxError::Limit("XML part bytes"));
     }
-    let mut reader = Reader::with_limits(part.bytes.as_slice(), limits.clone());
+    parse_xml_bytes(&part.bytes, &part.uri, limits, None)
+}
+/// Like [`parse_xml`], also copying the elements the import does not
+/// interpret (see `preserve::classify`) as opaque subtrees.
+fn parse_xml_captured(
+    part: &Part,
+    limits: &XmlLimits,
+    budget: &mut preserve::CaptureBudget,
+) -> Result<XmlNode, DocxError> {
+    if part.bytes.len() > 16 * 1024 * 1024 {
+        return Err(DocxError::Limit("XML part bytes"));
+    }
+    budget.context = preserve::root_declarations(&part.bytes);
+    parse_xml_bytes(&part.bytes, &part.uri, limits, Some(budget))
+}
+fn parse_xml_bytes(
+    bytes: &[u8],
+    uri: &PartUri,
+    limits: &XmlLimits,
+    mut capture: Option<&mut preserve::CaptureBudget>,
+) -> Result<XmlNode, DocxError> {
+    let mut reader = Reader::with_limits(bytes, limits.clone());
     let mut stack: Vec<XmlNode> = Vec::new();
     let mut root = None;
-    while let Some(event) = reader.next_event().map_err(|e| DocxError::Xml {
-        part: part.uri.to_string(),
+    let xml_error = |e: atelier_xml::XmlError| DocxError::Xml {
+        part: uri.to_string(),
         message: e.to_string(),
-    })? {
+    };
+    while let Some(event) = reader.next_event().map_err(xml_error)? {
         match event {
             Event::StartElement {
                 name,
                 attributes,
                 empty,
             } => {
+                if let Some(budget) = capture.as_deref_mut() {
+                    let captured = preserve::level_of_children(&stack).is_some_and(|level| {
+                        preserve::classify(level, &name) == preserve::Class::Capture
+                    });
+                    if captured {
+                        let subtree = reader.capture_opaque().map_err(xml_error)?;
+                        let xml = preserve::subtree_bytes(&subtree)?;
+                        // The root declarations are kept once per part, not in
+                        // every copy (see `PreservedPart::standalone`).
+                        let xml = preserve::strip_context(xml, &budget.context);
+                        budget.charge(xml.len())?;
+                        let wrapped = preserve::reparse_input(&xml, &budget.context);
+                        let mut node = parse_xml_bytes(&wrapped, uri, limits, None)?
+                            .children
+                            .pop()
+                            .ok_or(DocxError::InvalidStructure {
+                                part: uri.to_string(),
+                                detail: "empty opaque capture",
+                            })?;
+                        node.opaque = Some(xml);
+                        attach_node(node, &mut stack, &mut root, uri)?;
+                        continue;
+                    }
+                }
                 let node = XmlNode {
                     name,
                     attrs: attributes,
                     children: Vec::new(),
                     text: String::new(),
+                    opaque: None,
                 };
                 if empty {
-                    attach_node(node, &mut stack, &mut root, &part.uri)?;
+                    attach_node(node, &mut stack, &mut root, uri)?;
                 } else {
                     stack.push(node);
                 }
             }
             Event::EndElement { .. } => {
                 let node = stack.pop().ok_or(DocxError::InvalidStructure {
-                    part: part.uri.to_string(),
+                    part: uri.to_string(),
                     detail: "unbalanced XML event stream",
                 })?;
-                attach_node(node, &mut stack, &mut root, &part.uri)?;
+                attach_node(node, &mut stack, &mut root, uri)?;
             }
             Event::Text(text) => {
                 if let Some(parent) = stack.last_mut() {
                     parent.text.push_str(&text);
                 }
             }
+            // Not preserved outside the copies of captured elements (US-306 doc).
             Event::Comment(_) | Event::ProcessingInstruction { .. } => {}
         }
     }
     if !stack.is_empty() {
         return Err(DocxError::InvalidStructure {
-            part: part.uri.to_string(),
+            part: uri.to_string(),
             detail: "XML is incomplete",
         });
     }
     root.ok_or(DocxError::InvalidStructure {
-        part: part.uri.to_string(),
+        part: uri.to_string(),
         detail: "XML has no root element",
     })
 }
@@ -878,37 +1024,12 @@ fn collect_unsupported_resets(root: &XmlNode, part: &PartUri, notices: &mut Vec<
     }
     walk(root, part, notices);
 }
-fn collect_inline_runs<'a>(node: &'a XmlNode, out: &mut Vec<&'a XmlNode>) {
-    for child in &node.children {
-        if is_w(child, "r") {
-            out.push(child);
-        } else if is_w(child, "del") || is_w(child, "moveFrom") {
-            continue;
-        } else if is_w(child, child.name.local.as_str())
-            && matches!(
-                child.name.local.as_str(),
-                "hyperlink"
-                    | "ins"
-                    | "moveTo"
-                    | "smartTag"
-                    | "customXml"
-                    | "sdt"
-                    | "sdtContent"
-                    | "fldSimple"
-                    | "proofErr"
-                    | "dir"
-                    | "bdo"
-            )
-        {
-            collect_inline_runs(child, out);
-        }
-    }
-}
 type ParagraphImport = (
     Paragraph,
     Vec<(usize, usize, Option<String>)>,
     Vec<(usize, String, Option<String>)>,
     Vec<(usize, String, String)>,
+    PreservedElement,
 );
 
 fn parse_paragraph(
@@ -916,21 +1037,60 @@ fn parse_paragraph(
     limits: &DocxLimits,
     run_count: &mut usize,
     theme: &Theme,
+    document: &mut RichDocument,
+    pres: &mut preserve::Pres,
 ) -> Result<ParagraphImport, DocxError> {
     let mut paragraph = Paragraph::default();
-    if let Some(ppr) = node
+    let ppr = node
         .find(W_NS, "pPr")
-        .or_else(|| node.find(W_STRICT_NS, "pPr"))
-    {
+        .or_else(|| node.find(W_STRICT_NS, "pPr"));
+    if let Some(ppr) = ppr {
         paragraph.props = parse_para_props(ppr)?;
     }
+    let mut tree = preserve::TreeBuilder::new(pres.shell(node)?);
     let mut source_metadata = Vec::new();
     let mut breaks = Vec::new();
     let mut symbols = Vec::new();
-    let mut xml_runs = Vec::new();
-    collect_inline_runs(node, &mut xml_runs);
+    let events = preserve::events(node, preserve::Level::Para, &pres.decls);
     let mut source_runs = Vec::new();
-    for child in xml_runs {
+    for event in events {
+        let child = match event {
+            preserve::Ev::Known(c) if is_w(c, "pPr") => {
+                tree.push(if ppr.is_some_and(|first| std::ptr::eq(first, c)) {
+                    PreservedChild::Element(pres.prop_tree(c, preserve::Level::PPr)?)
+                } else {
+                    PreservedChild::Opaque(preserve::xml_of(c))
+                });
+                continue;
+            }
+            preserve::Ev::Known(c) => c,
+            preserve::Ev::Open(c, shadow) => {
+                let mut element = pres.shell(c)?;
+                element.shadow = shadow;
+                tree.open(element);
+                continue;
+            }
+            preserve::Ev::Close => {
+                tree.close();
+                continue;
+            }
+            preserve::Ev::Prop(c) => {
+                tree.push(PreservedChild::Opaque(preserve::xml_of(c)));
+                continue;
+            }
+            preserve::Ev::Opaque(c) => {
+                let id = document.alloc_id().map_err(model_error)?;
+                paragraph.anchored.push(AnchoredObject {
+                    id,
+                    offset: paragraph.text.len(),
+                    kind: c.name.qualified(),
+                    data: preserve::xml_of(c),
+                });
+                tree.push(PreservedChild::Anchored(id));
+                continue;
+            }
+        };
+        let mut run_tree = preserve::TreeBuilder::new(pres.shell(child)?);
         *run_count = run_count
             .checked_add(1)
             .ok_or(DocxError::Limit("run count"))?;
@@ -953,7 +1113,17 @@ fn parse_paragraph(
             .and_then(|s| s.w_attr("val"))
             .map(str::to_owned);
         for item in &child.children {
+            let item_start = paragraph.text.len();
+            let mut leaf = true;
             match item.name.local.as_str() {
+                "rPr" if is_w(item, "rPr") => {
+                    leaf = false;
+                    run_tree.push(if rpr.is_some_and(|first| std::ptr::eq(first, item)) {
+                        PreservedChild::Element(pres.prop_tree(item, preserve::Level::RPr)?)
+                    } else {
+                        PreservedChild::Opaque(preserve::xml_of(item))
+                    });
+                }
                 "t" if is_w(item, "t") => paragraph.text.push_str(&item.text),
                 "tab" if is_w(item, "tab") => paragraph.text.push('\t'),
                 "br" | "cr" if is_w(item, "br") || is_w(item, "cr") => {
@@ -991,10 +1161,35 @@ fn parse_paragraph(
                     paragraph.text.push(scalar);
                     symbols.push((offset, font, code.to_owned()));
                 }
-                _ => {}
+                _ => {
+                    leaf = false;
+                    let id = document.alloc_id().map_err(model_error)?;
+                    paragraph.anchored.push(AnchoredObject {
+                        id,
+                        offset: paragraph.text.len(),
+                        kind: item.name.qualified(),
+                        data: preserve::xml_of(item),
+                    });
+                    run_tree.push(PreservedChild::Anchored(id));
+                }
+            }
+            if leaf {
+                let mut element = pres.shell(item)?;
+                element.range = Some((item_start, paragraph.text.len()));
+                // An element the schema gives no children (invalid input):
+                // keep them as copies after the text the element produced.
+                for child in &item.children {
+                    element
+                        .children
+                        .push(PreservedChild::Opaque(preserve::xml_of(child)));
+                }
+                run_tree.push(PreservedChild::Element(element));
             }
         }
         let end = paragraph.text.len();
+        let mut run_element = run_tree.finish();
+        run_element.range = Some((start, end));
+        tree.push(PreservedChild::Element(run_element));
         if end > start {
             source_runs.push(atelier_text_model::rich::CharRun { start, end, attrs });
         }
@@ -1055,6 +1250,10 @@ fn parse_paragraph(
         }
     }
     let metadata = normalized_metadata;
+    for object in &mut paragraph.anchored {
+        object.offset = bounds.floor_boundary(object.offset).unwrap_or(0);
+    }
+    paragraph.anchored.sort_by_key(|x| (x.offset, x.id));
     for (offset, font, _) in &symbols {
         let char_bytes = paragraph.text[*offset..]
             .chars()
@@ -1104,10 +1303,11 @@ fn parse_paragraph(
         replacement.sort_by_key(|r| (r.start, r.end));
         paragraph.runs = replacement;
     }
-    Ok((paragraph, metadata, breaks, symbols))
+    Ok((paragraph, metadata, breaks, symbols, tree.finish()))
 }
 /// Paragraph metadata collected while reading a `w:p`.
 struct ParagraphMeta {
+    element: PreservedElement,
     runs: Vec<(usize, usize, Option<String>)>,
     breaks: Vec<(usize, String, Option<String>)>,
     symbols: Vec<(usize, String, String)>,
@@ -1124,10 +1324,17 @@ struct ParagraphSink<'a> {
     breaks: Vec<ImportedBreak>,
     symbols: Vec<ImportedSymbol>,
     run_styles: Vec<ImportedRunStyle>,
+    pres: preserve::Pres,
 }
 impl<'a> ParagraphSink<'a> {
-    fn new(limits: &'a DocxLimits, theme: &'a Theme, default_style: Option<String>) -> Self {
+    fn new(
+        limits: &'a DocxLimits,
+        theme: &'a Theme,
+        default_style: Option<String>,
+        pres: preserve::Pres,
+    ) -> Self {
         Self {
+            pres,
             limits,
             theme,
             default_style,
@@ -1138,9 +1345,19 @@ impl<'a> ParagraphSink<'a> {
             run_styles: Vec::new(),
         }
     }
-    fn read(&mut self, node: &XmlNode) -> Result<(Paragraph, ParagraphMeta), DocxError> {
-        let (mut paragraph, runs, breaks, symbols) =
-            parse_paragraph(node, self.limits, &mut self.run_count, self.theme)?;
+    fn read(
+        &mut self,
+        document: &mut RichDocument,
+        node: &XmlNode,
+    ) -> Result<(Paragraph, ParagraphMeta), DocxError> {
+        let (mut paragraph, runs, breaks, symbols, element) = parse_paragraph(
+            node,
+            self.limits,
+            &mut self.run_count,
+            self.theme,
+            document,
+            &mut self.pres,
+        )?;
         if paragraph.props.style.is_none() {
             paragraph.props.style = self.default_style.clone();
         }
@@ -1154,6 +1371,7 @@ impl<'a> ParagraphSink<'a> {
         Ok((
             paragraph,
             ParagraphMeta {
+                element,
                 runs,
                 breaks,
                 symbols,
@@ -1161,6 +1379,9 @@ impl<'a> ParagraphSink<'a> {
         ))
     }
     fn record(&mut self, para_id: NodeId, meta: ParagraphMeta) {
+        let mut element = meta.element;
+        element.node = Some(para_id);
+        self.pres.out.paragraphs.insert(para_id, element);
         for (start, end, style_id) in meta.runs {
             self.run_styles.push(ImportedRunStyle {
                 paragraph: para_id,
