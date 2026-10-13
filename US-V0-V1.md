@@ -1320,6 +1320,8 @@ Réf : F-COM-023 · Taille : M · Dépend de : US-092, US-320
 - [ ] Titre, sujet, auteur, mots-clés, commentaires, catégorie ; dates et statistiques en lecture seule.
 - [ ] Lues et écrites dans `core.xml` / `app.xml` ; reprises dans les métadonnées du PDF exporté.
 
+Avancement US-328 (2026-10-13) : bibliothèque livrée dans `atelier_fmt_ooxml` (propriétés de base et étendues, dates W3CDTF, modification, mise à jour à l'enregistrement, conversion vers les métadonnées PDF, aller-retour sans modification identique octet pour octet), relue par un agent indépendant et corrigée ; [contrat](docs/us-328-document-properties.md). LibreOffice relit les paquets tels qu'ils sont écrits. Reste ouvert : dialogue Propriétés, appel à l'enregistrement et passage des métadonnées à l'export PDF. Aucun fichier Word testé.
+
 Réf : F-COM-017 · Taille : S · Dépend de : US-300
 
 #### US-329 — Options
