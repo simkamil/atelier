@@ -157,13 +157,19 @@ pub fn selection(
         }
     }
     let mut total = Counts::default();
+    // Paragraph whose partial pieces already counted for one paragraph.
+    let mut counted = None;
     for (i, s, e) in merged {
         let text = &paragraph_of(doc, order[i].0)?.text;
         let mut counts = count_paragraph(&text[s..e], &options.rules);
         // A piece shorter than its paragraph counts as a paragraph when it
-        // holds text; a whole paragraph follows the paragraph rule.
+        // holds text, once per paragraph however many disjoint pieces lie in
+        // it; a whole paragraph follows the paragraph rule.
         if !(s == 0 && e == text.len()) {
-            counts.paragraphs = usize::from(s < e);
+            counts.paragraphs = usize::from(s < e && counted != Some(i));
+            if s < e {
+                counted = Some(i);
+            }
         }
         total += counts;
     }
