@@ -8,6 +8,8 @@
 
 pub mod docx;
 pub use docx::{
+    MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart, ppr_rank,
+    rpr_rank, sect_pr_rank,
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
     DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice,
     ImportedBreak, ImportedCell, ImportedDocx, ImportedRow, ImportedRunStyle, ImportedSymbol,

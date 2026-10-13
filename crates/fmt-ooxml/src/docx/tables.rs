@@ -9,13 +9,14 @@
 //! original `tblPr`/`trPr`/`tcPr`/`tblPrEx`/`tblGrid` elements are also kept
 //! verbatim in the `opaque` attribute slot of the table, row and cell nodes.
 
+use super::preserve::{self, Ev, Level, PreservedChild, PreservedElement, TreeBuilder};
 use super::{
     DocxError, DocxLimits, ImportNotice, ParagraphSink, W_NS, W_STRICT_NS, XmlNode,
     collect_paragraphs, is_w, model_error, parse_color, parse_para_props, parse_style_char_attrs,
     theme_color_slot,
 };
 use atelier_text_model::rich::{
-    BlockList, Cell, CharAttrs, Color, Node, NodeId, OpaqueAttr, ParaProps, Paragraph,
+    BlockList, Cell, CharAttrs, Color, Node, NodeId, OpaqueAttr, OpaqueBlock, ParaProps, Paragraph,
     RichDocument, Row, StyleCatalog, StyleCharAttrs, Subtree, Table, Theme, ThemeColor,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -1056,6 +1057,14 @@ fn serialize(node: &XmlNode, declared: &mut Vec<(String, String)>, out: &mut Vec
     declared.truncate(mark);
 }
 
+/// The element serialized from the parsed tree (US-306 fallback for elements
+/// that have no US-032 capture).
+pub(super) fn dom_bytes(node: &XmlNode) -> Vec<u8> {
+    let mut out = Vec::new();
+    serialize(node, &mut Vec::new(), &mut out);
+    out
+}
+
 fn opaque_of(node: &XmlNode) -> OpaqueAttr {
     let mut out = Vec::new();
     serialize(node, &mut Vec::new(), &mut out);
@@ -1073,34 +1082,8 @@ fn sorted(mut list: Vec<OpaqueAttr>) -> Vec<OpaqueAttr> {
 }
 
 // ---------------------------------------------------------------------------
-// Block collection
+// Row and cell collection
 // ---------------------------------------------------------------------------
-
-/// A block read from a container (body or cell).
-pub(super) enum Block<'a> {
-    Paragraph(&'a XmlNode),
-    Table(&'a XmlNode),
-}
-
-/// Paragraphs and tables of a container, looking through wrappers such as
-/// `w:sdt` and `w:ins`; deleted content is skipped (as for paragraphs).
-pub(super) fn collect_blocks<'a>(node: &'a XmlNode, out: &mut Vec<Block<'a>>) {
-    for child in &node.children {
-        if !matches!(child.name.namespace.as_deref(), Some(W_NS | W_STRICT_NS))
-            || is_w(child, "del")
-            || is_w(child, "moveFrom")
-        {
-            continue;
-        }
-        if is_w(child, "p") {
-            out.push(Block::Paragraph(child));
-        } else if is_w(child, "tbl") {
-            out.push(Block::Table(child));
-        } else {
-            collect_blocks(child, out);
-        }
-    }
-}
 
 /// Rows of a table or cells of a row, looking through content wrappers only.
 fn collect_named<'a>(node: &'a XmlNode, target: &str, out: &mut Vec<&'a XmlNode>) {
@@ -1258,6 +1241,7 @@ struct Item<'a> {
 }
 
 struct RowPlan<'a> {
+    tr: &'a XmlNode,
     props: RowProps,
     opaque: Vec<OpaqueAttr>,
     items: Vec<Item<'a>>,
@@ -1267,6 +1251,11 @@ struct CellBuild {
     id: NodeId,
     blocks: Vec<NodeId>,
     has_paragraph: bool,
+    tree: TreeBuilder,
+}
+
+fn key(node: &XmlNode) -> usize {
+    node as *const XmlNode as usize
 }
 
 pub(super) struct TableBuilder<'a> {
@@ -1525,6 +1514,8 @@ impl<'a> TableBuilder<'a> {
         let mut row_ids = Vec::new();
         let mut cell_builds: BTreeMap<(usize, usize), CellBuild> = BTreeMap::new();
         let mut row_cells: Vec<Vec<(usize, NodeId)>> = Vec::new();
+        let mut folded: BTreeMap<usize, PreservedElement> = BTreeMap::new();
+        let mut cell_elems: BTreeMap<usize, PreservedElement> = BTreeMap::new();
         for (r, plan) in plans.iter().enumerate() {
             let row_id = document.alloc_id().map_err(model_error)?;
             row_ids.push(row_id);
@@ -1532,17 +1523,17 @@ impl<'a> TableBuilder<'a> {
             for (k, item) in plan.items.iter().enumerate() {
                 if let Some((ar, ak)) = item.merged_into {
                     // Folded continuation: keep any real content.
-                    if item.tc.is_some_and(has_content) {
-                        self.notes.note(
-                            "vMerge",
-                            "content of a merged continuation cell was moved to the first cell",
-                        );
-                        let tc = item.tc;
-                        let (cell_id, mut blocks, mut has_p) = {
-                            let b = cell_builds.get(&(ar, ak)).expect("anchor built first");
-                            (b.id, Vec::new(), b.has_paragraph)
-                        };
-                        if let Some(tc) = tc {
+                    if let Some(tc) = item.tc {
+                        let mut local = TreeBuilder::new(sink.pres.shell(tc)?);
+                        if item.tc.is_some_and(has_content) {
+                            self.notes.note(
+                                "vMerge",
+                                "content of a merged continuation cell was moved to the first cell",
+                            );
+                            let (cell_id, mut blocks, mut has_p) = {
+                                let b = cell_builds.get(&(ar, ak)).expect("anchor built first");
+                                (b.id, Vec::new(), b.has_paragraph)
+                            };
                             self.fill_blocks(
                                 document,
                                 sink,
@@ -1550,22 +1541,30 @@ impl<'a> TableBuilder<'a> {
                                 depth,
                                 cell_id,
                                 nodes,
-                                &mut blocks,
-                                &mut has_p,
+                                (&mut blocks, &mut has_p),
+                                (&mut local, false),
                             )?;
+                            let b = cell_builds.get_mut(&(ar, ak)).expect("anchor built first");
+                            b.blocks.extend(blocks);
+                            b.has_paragraph = has_p;
+                        } else if let Some(pr) = find_w(tc, "tcPr") {
+                            local.push(PreservedChild::Opaque(dom_bytes(pr)));
                         }
-                        let b = cell_builds.get_mut(&(ar, ak)).expect("anchor built first");
-                        b.blocks.extend(blocks);
-                        b.has_paragraph = has_p;
+                        folded.insert(key(tc), local.finish());
                     }
                     continue;
                 }
                 self.count_cell()?;
                 let cell_id = document.alloc_id().map_err(model_error)?;
+                let root = match item.tc {
+                    Some(tc) => sink.pres.shell(tc)?,
+                    None => PreservedElement::default(),
+                };
                 let mut build = CellBuild {
                     id: cell_id,
                     blocks: Vec::new(),
                     has_paragraph: false,
+                    tree: TreeBuilder::new(root),
                 };
                 if let Some(tc) = item.tc {
                     self.fill_blocks(
@@ -1575,10 +1574,11 @@ impl<'a> TableBuilder<'a> {
                         depth,
                         cell_id,
                         nodes,
-                        &mut build.blocks,
-                        &mut build.has_paragraph,
+                        (&mut build.blocks, &mut build.has_paragraph),
+                        (&mut build.tree, true),
                     )?;
                     for extra in &item.extra {
+                        let mut local = TreeBuilder::new(sink.pres.shell(extra)?);
                         if has_content(extra) {
                             self.fill_blocks(
                                 document,
@@ -1587,10 +1587,13 @@ impl<'a> TableBuilder<'a> {
                                 depth,
                                 cell_id,
                                 nodes,
-                                &mut build.blocks,
-                                &mut build.has_paragraph,
+                                (&mut build.blocks, &mut build.has_paragraph),
+                                (&mut local, false),
                             )?;
+                        } else if let Some(pr) = find_w(extra, "tcPr") {
+                            local.push(PreservedChild::Opaque(dom_bytes(pr)));
                         }
+                        folded.insert(key(extra), local.finish());
                     }
                 }
                 list.push((k, cell_id));
@@ -1610,6 +1613,12 @@ impl<'a> TableBuilder<'a> {
                     nodes.insert(pid, Node::Paragraph(Paragraph::default()));
                     self.out.paragraph_cell.insert(pid, *cell_id);
                     build.blocks.push(pid);
+                }
+                let tree = std::mem::replace(&mut build.tree, TreeBuilder::new(Default::default()));
+                if let Some(tc) = item.tc {
+                    let mut element = tree.finish();
+                    element.node = Some(*cell_id);
+                    cell_elems.insert(key(tc), element);
                 }
                 let blocks = BlockList::from_ids(&build.blocks).map_err(model_error)?;
                 nodes.insert(
@@ -1657,6 +1666,15 @@ impl<'a> TableBuilder<'a> {
                 },
             );
         }
+        table_tree(
+            &mut sink.pres,
+            tbl,
+            table_id,
+            &plans,
+            &row_ids,
+            &mut cell_elems,
+            &mut folded,
+        )?;
         let mut style = None;
         if let Some(id) = props.style.clone() {
             if self.style_is_usable(&id) {
@@ -1775,12 +1793,16 @@ impl<'a> TableBuilder<'a> {
             cursor += span;
         }
         Ok(RowPlan {
+            tr,
             props,
             opaque,
             items,
         })
     }
 
+    /// Reads the blocks of a cell container. `(blocks, has_paragraph)` collect
+    /// the model blocks; `(tree, slot)` receives the source skeleton, `slot`
+    /// telling whether `w:tcPr` is held by the cell's `opaque` slot.
     #[allow(clippy::too_many_arguments)]
     fn fill_blocks(
         &mut self,
@@ -1790,40 +1812,69 @@ impl<'a> TableBuilder<'a> {
         depth: usize,
         cell_id: NodeId,
         nodes: &mut BTreeMap<NodeId, Node>,
-        blocks: &mut Vec<NodeId>,
-        has_paragraph: &mut bool,
+        (blocks, has_paragraph): (&mut Vec<NodeId>, &mut bool),
+        (tree, slot): (&mut TreeBuilder, bool),
     ) -> Result<(), DocxError> {
-        let mut found = Vec::new();
-        collect_blocks(container, &mut found);
-        for block in found {
-            match block {
-                Block::Paragraph(p) => {
-                    self.add_paragraph(document, sink, p, cell_id, nodes, blocks)?;
+        let events = preserve::events(container, Level::Cell, &sink.pres.decls);
+        for event in events {
+            match event {
+                Ev::Known(n) if is_w(n, "tcPr") => {
+                    if slot {
+                        let mut marker = sink.pres.shell(n)?;
+                        marker.slot = true;
+                        tree.push(PreservedChild::Element(marker));
+                    } else {
+                        tree.push(PreservedChild::Opaque(dom_bytes(n)));
+                    }
+                }
+                Ev::Known(p) if is_w(p, "p") => {
+                    self.add_paragraph(document, sink, p, cell_id, nodes, blocks, Some(tree))?;
                     *has_paragraph = true;
                 }
-                Block::Table(t) => {
+                Ev::Known(t) => {
                     if depth + 1 < self.limits.max_table_depth {
                         if let Some(root) = self.build(document, sink, t, depth + 1, nodes)? {
                             blocks.push(root);
+                            tree.push(PreservedChild::Block(root));
                         }
                     } else {
                         self.notes.note(
                             "tbl",
                             "table nested beyond the depth limit was flattened to paragraphs",
                         );
+                        tree.push(PreservedChild::Opaque(dom_bytes(t)));
                         let mut flat = Vec::new();
                         collect_paragraphs(t, &mut flat);
                         for p in flat {
-                            self.add_paragraph(document, sink, p, cell_id, nodes, blocks)?;
+                            self.add_paragraph(document, sink, p, cell_id, nodes, blocks, None)?;
                             *has_paragraph = true;
                         }
                     }
+                }
+                Ev::Open(n, shadow) => {
+                    let mut element = sink.pres.shell(n)?;
+                    element.shadow = shadow;
+                    tree.open(element);
+                }
+                Ev::Close => tree.close(),
+                Ev::Opaque(n) => {
+                    let id = document.alloc_id().map_err(model_error)?;
+                    nodes.insert(
+                        id,
+                        Node::Opaque(OpaqueBlock {
+                            kind: n.name.qualified(),
+                            data: preserve::xml_of(n),
+                        }),
+                    );
+                    blocks.push(id);
+                    tree.push(PreservedChild::Block(id));
                 }
             }
         }
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn add_paragraph(
         &mut self,
         document: &mut RichDocument,
@@ -1832,15 +1883,92 @@ impl<'a> TableBuilder<'a> {
         cell_id: NodeId,
         nodes: &mut BTreeMap<NodeId, Node>,
         blocks: &mut Vec<NodeId>,
+        tree: Option<&mut TreeBuilder>,
     ) -> Result<(), DocxError> {
-        let (paragraph, meta) = sink.read(p)?;
+        let (paragraph, meta) = sink.read(document, p)?;
         let id = document.alloc_id().map_err(model_error)?;
         nodes.insert(id, Node::Paragraph(paragraph));
         sink.record(id, meta);
         self.out.paragraph_cell.insert(id, cell_id);
         blocks.push(id);
+        if let Some(tree) = tree {
+            tree.push(PreservedChild::Block(id));
+        }
         Ok(())
     }
+}
+
+/// Records the source skeleton of a table: `w:tbl`, its rows and cells, with
+/// the wrappers, unknown children and attributes the model does not hold.
+fn table_tree(
+    pres: &mut preserve::Pres,
+    tbl: &XmlNode,
+    table_id: NodeId,
+    plans: &[RowPlan<'_>],
+    row_ids: &[NodeId],
+    cells: &mut BTreeMap<usize, PreservedElement>,
+    folded: &mut BTreeMap<usize, PreservedElement>,
+) -> Result<(), DocxError> {
+    let mut root = pres.shell(tbl)?;
+    root.node = Some(table_id);
+    let mut table = TreeBuilder::new(root);
+    for event in preserve::events(tbl, Level::Table, &pres.decls) {
+        match event {
+            Ev::Known(n) if n.name.local == "tr" => {
+                let Some(r) = plans.iter().position(|p| std::ptr::eq(p.tr, n)) else {
+                    table.push(PreservedChild::Opaque(dom_bytes(n)));
+                    continue;
+                };
+                let mut root = pres.shell(n)?;
+                root.node = Some(row_ids[r]);
+                let mut row = TreeBuilder::new(root);
+                for ev in preserve::events(n, Level::Row, &pres.decls) {
+                    match ev {
+                        Ev::Known(c) if c.name.local == "tc" => {
+                            if let Some(cell) = cells.remove(&key(c)) {
+                                let id = cell.node.expect("cell element has an id");
+                                pres.out.tables.insert(id, cell);
+                                row.push(PreservedChild::Block(id));
+                            } else if let Some(f) = folded.remove(&key(c)) {
+                                row.push(PreservedChild::Element(f));
+                            } else {
+                                row.push(PreservedChild::Opaque(dom_bytes(c)));
+                            }
+                        }
+                        Ev::Known(c) => {
+                            let mut marker = pres.shell(c)?;
+                            marker.slot = true;
+                            row.push(PreservedChild::Element(marker));
+                        }
+                        Ev::Open(c, shadow) => {
+                            let mut element = pres.shell(c)?;
+                            element.shadow = shadow;
+                            row.open(element);
+                        }
+                        Ev::Close => row.close(),
+                        Ev::Opaque(c) => row.push(PreservedChild::Opaque(preserve::xml_of(c))),
+                    }
+                }
+                let element = row.finish();
+                pres.out.tables.insert(row_ids[r], element);
+                table.push(PreservedChild::Block(row_ids[r]));
+            }
+            Ev::Known(n) => {
+                let mut marker = pres.shell(n)?;
+                marker.slot = true;
+                table.push(PreservedChild::Element(marker));
+            }
+            Ev::Open(n, shadow) => {
+                let mut element = pres.shell(n)?;
+                element.shadow = shadow;
+                table.open(element);
+            }
+            Ev::Close => table.close(),
+            Ev::Opaque(n) => table.push(PreservedChild::Opaque(preserve::xml_of(n))),
+        }
+    }
+    pres.out.tables.insert(table_id, table.finish());
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
