@@ -32,6 +32,9 @@ pub const MAX_HYPERLINK_BASE_CHARS: usize = 2048;
 pub const MAX_LANGUAGE_CHARS: usize = 35;
 /// Longest date text the parser looks at, in bytes.
 const MAX_DATE_BYTES: usize = 64;
+/// XML Schema `dateTime` bounds the zone offset to plus or minus 14:00.
+const MAX_OFFSET_MINUTES: i16 = 14 * 60;
+
 // ---------------------------------------------------------------------------
 // Dates
 // ---------------------------------------------------------------------------
@@ -154,7 +157,9 @@ impl W3cDateTime {
             && self.minute < 60
             && self.second < 60
             && self.nanosecond < 1_000_000_000
-            && self.offset_minutes.is_none_or(|o| o.abs() < 24 * 60)
+            && self
+                .offset_minutes
+                .is_none_or(|o| o.abs() <= MAX_OFFSET_MINUTES)
     }
 
     /// Seconds since 1970-01-01T00:00:00Z (a missing offset counts as UTC).

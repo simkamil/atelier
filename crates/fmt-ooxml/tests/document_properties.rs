@@ -164,6 +164,9 @@ fn rejects_invalid_dates() {
         "2024-05-17 10:20",
         "2024-05-17T10:20:30.Z",
         "2024-05-17T10:20:30+25:00",
+        "2024-05-17T10:30:15+15:00",
+        "2024-05-17T10:30:15-14:01",
+        "2024-05-17T10:30:15+14:60",
         "2024-05-17T10:20:30+02:99",
         "2024-05-17T10:20:30Zjunk",
         "0000-01-01",
@@ -173,6 +176,9 @@ fn rejects_invalid_dates() {
     }
     assert!(W3cDateTime::parse(&"1".repeat(10_000)).is_err());
     assert!(W3cDateTime::parse("2024-02-29").is_ok()); // leap year
+    // The offset bound of XML Schema dateTime is inclusive.
+    assert_eq!(dt("2024-05-17T10:30:15+14:00").offset_minutes, Some(840));
+    assert_eq!(dt("2024-05-17T10:30:15-14:00").offset_minutes, Some(-840));
 }
 
 #[test]
@@ -921,25 +927,17 @@ fn pdf_metadata_maps_field_by_field() {
             utc_offset_minutes: 0
         })
     );
+    // An offset beyond +-14:00 is not a valid dateTime: no PDF date, text kept.
     let c = core_xml(
-        "<dcterms:created>2024-05-17T10:20:30+20:00</dcterms:created><dcterms:modified>nope</dcterms:modified>",
+        "<dcterms:created>2024-05-17T10:20:30+14:01</dcterms:created><dcterms:modified>nope</dcterms:modified>",
     );
-    let m = Package::read(&package(Some(&c), None, true))
-        .unwrap()
-        .pdf_metadata();
-    // 10:20:30+20:00 is 14:20:30Z the previous day.
+    let p = Package::read(&package(Some(&c), None, true)).unwrap();
     assert_eq!(
-        m.creation_date,
-        Some(PdfDateFields {
-            year: 2024,
-            month: 5,
-            day: 16,
-            hour: 14,
-            minute: 20,
-            second: 30,
-            utc_offset_minutes: 0
-        })
+        p.properties_snapshot().read_only.created,
+        Some(PropertyDate::Invalid("2024-05-17T10:20:30+14:01".into()))
     );
+    let m = p.pdf_metadata();
+    assert_eq!(m.creation_date, None);
     assert_eq!(m.modification_date, None);
     assert_eq!(
         Package::read(&package(None, None, true))
