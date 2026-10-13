@@ -1,0 +1,37 @@
+{
+  "run": {
+    "conclusion": "failure",
+    "databaseId": 38356618514,
+    "headSha": "521e685b1aad1e93cb86d76f64d64ef955feddbb",
+    "status": "completed",
+    "url": "https://github.com/simkamil/mon-bureau/actions/runs/38356618514"
+  },
+  "checks": [
+    {
+      "name": "Linux musl build and tests",
+      "conclusion": "failure",
+      "url": "https://github.com/simkamil/mon-bureau/actions/runs/38356618514/job/115160898812",
+      "annotations": [
+        "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+      ]
+    },
+    {
+      "name": "WASM compile, lint and native engine tests",
+      "conclusion": "failure",
+      "url": "https://github.com/simkamil/mon-bureau/actions/runs/38356618514/job/115160898761",
+      "annotations": [
+        "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+      ]
+    },
+    {
+      "name": "Windows MSVC, tests and quality",
+      "conclusion": "failure",
+      "url": "https://github.com/simkamil/mon-bureau/actions/runs/38356618514/job/115160898684",
+      "annotations": [
+        "The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings"
+      ]
+    }
+  ],
+  "blocked_before_jobs_by_billing_or_limit": true,
+  "local_validation": "_bmad-output/implementation-artifacts/merged-branches-validation.json"
+}

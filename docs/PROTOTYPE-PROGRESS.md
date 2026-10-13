@@ -16,7 +16,9 @@ La [validation après fusion](../_bmad-output/implementation-artifacts/merged-br
 
 Le WASM a été reconstruit après la fusion : **3 977 489 octets**, SHA-256 `9d769e12bcc663ea6ef1103dae9924cb4f32ce30bb6877c024f8c3494a80bc61`, sous le seuil existant. Le binaire à tester est `target/release/atelier.exe` dans le checkout principal. Le [graphe synchronisé](../_bmad-output/implementation-artifacts/merged-branches-graph.json) conserve les concepts documentaires du lot UI, les 158 statuts, les nouveaux modules et les 34 paquets Cargo sans cycle. La vue simple agrège 924 groupes de relations entre mêmes nœuds; l’extraction locale conserve le détail.
 
-La CI distante reste à relancer une fois le problème de facturation/plafond GitHub Actions résolu. Les essais locaux n’établissent pas un passage Linux distant ni les essais physiques clavier/lecteurs d’écran.
+Après le premier push, le contrôle des empreintes a relevé des fins de ligne locales CRLF dans 17 manifestes Cargo/JSON alors que Git conserve LF. Le checkout a été aligné sur les octets Git et les **19 contrôles / 987 tests ont été entièrement relancés** sur ces 1 071 entrées canoniques. Le package WASM reconstruit est identique octet pour octet. Le reçu remplace les empreintes locales par celles des fichiers effectivement publiés.
+
+La [CI distante du commit d’intégration](https://github.com/simkamil/mon-bureau/actions/runs/38356618514) est bloquée avant le démarrage des trois jobs par la facturation/plafond GitHub Actions : [annotations](../_bmad-output/implementation-artifacts/merged-branches-ci.json). Les essais locaux n’établissent pas un passage Linux distant ni les essais physiques clavier/lecteurs d’écran.
 
 ## Lot formats et outils — 2026-10-13
 

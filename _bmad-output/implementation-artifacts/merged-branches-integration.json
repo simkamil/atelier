@@ -22,5 +22,30 @@
     "US-340",
     "US-343"
   ],
-  "remote_ci": "Previous run blocked before jobs by GitHub account billing/spending limit; local validation reported separately"
+  "remote_ci": "Previous run blocked before jobs by GitHub account billing/spending limit; local validation reported separately",
+  "canonical_worktree_verification": {
+    "normalized_paths": [
+      "crates/base/Cargo.toml",
+      "crates/calc/Cargo.toml",
+      "crates/cfb/Cargo.toml",
+      "crates/compress/Cargo.toml",
+      "crates/crypto/Cargo.toml",
+      "crates/fmt-markdown/Cargo.toml",
+      "crates/fmt-ooxml/Cargo.toml",
+      "crates/fmt-pdf/Cargo.toml",
+      "crates/geom/Cargo.toml",
+      "crates/lua/Cargo.toml",
+      "crates/server/Cargo.toml",
+      "crates/sheet-model/Cargo.toml",
+      "crates/slide-model/Cargo.toml",
+      "crates/text-layout/Cargo.toml",
+      "crates/text-model/Cargo.toml",
+      "tests/cfb-reference/expected.json",
+      "tools/check-license/Cargo.toml"
+    ],
+    "transformation": "CRLF to LF only; worktree aligned to existing Git blobs",
+    "full_validation_rerun": true,
+    "wasm_bytes_unchanged": true
+  },
+  "remote_ci_evidence": "_bmad-output/implementation-artifacts/merged-branches-ci.json"
 }
