@@ -788,7 +788,7 @@ STRUCT_DOCS = {
                     {"depth": 1, "columns": 2, "grid": [1701, 1701],
                      "cells": [[0, 0, 1, 1, "In a"], [0, 1, 1, 1, "In b"]]},
                 ],
-                "body_texts": ["Avant", "A1-2", "A3", "B1", "B2", "B3", "", "C2", "C3", "Entre", "H1", "H2",
+                "body_texts": ["Avant", "A1-2", "A3", "B1", "B2", "B3", "C2", "C3", "Entre", "H1", "H2",
                                "Ext 1", "In a", "In b", "Apres interne", "Ext 2", "Fin"],
             },
         },
@@ -887,10 +887,11 @@ STRUCT_DOCS = {
                 "hyperlinks": [("http://example.com/x?a=1", None), (None, "Point")],
             },
             "model": {
+                # LibreOffice does not export the link title (no \o switch): no tooltip.
                 "bookmarks": [["Point", "Un texte avec plage fin", 3, 3, False],
                               ["Plage", "Un texte avec plage fin", 9, 19, False],
                               ["Deux", "Debut de plage", 6, 14, True]],
-                "links": [["externe", "External", "http://example.com/x?a=1", "Infobulle"],
+                "links": [["externe", "External", "http://example.com/x?a=1", None],
                           ["interne", "Bookmark", "Point", None]],
                 "fields": ["DATE", "TIME", "PAGE", "NUMPAGES"],
             },

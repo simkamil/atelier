@@ -1067,6 +1067,8 @@ pub(super) fn import(cfb: &Compound, limits: &DocLimits) -> Result<ImportedDoc, 
                 .unwrap_or_default()
         });
     }
+    // Cells absorbed by a vertical merge no longer exist.
+    order.retain(|id| b.document.paragraph(*id).is_ok());
     b.document.validate().map_err(Builder::model_err)?;
 
     // Notices, in a stable order.

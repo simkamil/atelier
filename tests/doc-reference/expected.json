@@ -876,7 +876,6 @@
             "B1",
             "B2",
             "B3",
-            "",
             "C2",
             "C3",
             "Entre",
@@ -1987,7 +1986,7 @@
     },
     "struct-fields.doc": {
       "size": 10752,
-      "sha256": "75de212e720b8176e2540c0f5ff693e8c0aac72da4681844131d3fd7f3de762f",
+      "sha256": "459b51a13856c34bc59994b300fe592bfed4952e4e439903b506e956728e3139",
       "producer": "LibreOffice",
       "expect": {
         "file": {
@@ -2071,7 +2070,7 @@
               "externe",
               "External",
               "http://example.com/x?a=1",
-              "Infobulle"
+              null
             ],
             [
               "interne",
@@ -2142,7 +2141,7 @@
             {
               "cp": 191,
               "code": "TIME \\@\"HH:mm:ss\"",
-              "result": "08:30:20",
+              "result": "08:31:46",
               "sep": true,
               "flt": 32
             },
