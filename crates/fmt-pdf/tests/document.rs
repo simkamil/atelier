@@ -276,7 +276,7 @@ fn shared_fonts_are_embedded_once_with_the_union_of_glyphs() {
     let src = FontFace::parse(embedded("Carlito", 400, false)).unwrap();
     let has = |c: char| {
         face.outline(src.glyph_index(c))
-            .map_or(false, |p| !p.is_empty())
+            .is_ok_and(|p| !p.is_empty())
     };
     for c in "abcxyzQé".chars() {
         assert!(has(c), "{c} missing from the subset");
@@ -649,7 +649,7 @@ fn spaces_are_inferred_only_when_missing() {
 }
 
 #[test]
-fn missing_and_conflicting_glyph_text_are_reported() {
+fn missing_glyph_text_is_reported_and_conflicting_text_is_kept() {
     let mut res = Res::default();
     standard_fonts(&mut res);
     let face = FontFace::parse(embedded("Carlito", 400, false)).unwrap();
@@ -667,7 +667,7 @@ fn missing_and_conflicting_glyph_text_are_reported() {
         }
     };
     let l = list(50.0, 50.0, vec![run(&res)]);
-    let out = render_pdf(&[l.clone()], &res, &PdfOptions::default()).unwrap();
+    let out = render_pdf(std::slice::from_ref(&l), &res, &PdfOptions::default()).unwrap();
     assert_eq!(
         out.notices,
         [PdfNotice::MissingGlyphText {
@@ -695,13 +695,10 @@ fn missing_and_conflicting_glyph_text_are_reported() {
         ],
     );
     let out = render_pdf(&[l2], &res, &PdfOptions::default()).unwrap();
-    assert_eq!(
-        out.notices,
-        [PdfNotice::ConflictingGlyphText {
-            font_id: CARLITO_BIG,
-            glyph_id: g
-        }]
-    );
+    // No notice: the second text is written as `ActualText`.
+    assert!(out.notices.is_empty(), "{:?}", out.notices);
+    let pdf = open(&out.bytes);
+    assert_eq!(extract_text(&pdf, &pdf.pages()[0].1), ["a", "b"]);
 }
 
 #[test]

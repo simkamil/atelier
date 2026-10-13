@@ -123,7 +123,7 @@ impl State {
     }
 
     fn gray_or_rgb(&mut self, c: [u8; 3], gray_op: &str, rgb_op: &str) {
-        let f = |v: u8| f64::from(v) / 255.0;
+        let f = crate::out::unit_level;
         if c[0] == c[1] && c[1] == c[2] {
             self.b.n(f(c[0]));
             self.b.op(gray_op);
@@ -329,18 +329,9 @@ impl<W: Write> PdfWriter<W> {
                     if t.chars().count() > MAX_GLYPH_TEXT {
                         return Err(PdfError::LimitExceeded("glyph text"));
                     }
-                    match entry.text.get(&gid) {
-                        None => {
-                            entry.text.insert(gid, t.to_owned());
-                        }
-                        Some(old) if old != t && entry.text_reported.insert(gid) => {
-                            report = Some(PdfNotice::ConflictingGlyphText {
-                                font_id,
-                                glyph_id: g.glyph_id,
-                            });
-                        }
-                        Some(_) => {}
-                    }
+                    // The first text seen feeds `ToUnicode`; a glyph used with another
+                    // text is wrapped in `ActualText` by `glyph_run`.
+                    entry.text.entry(gid).or_insert_with(|| t.to_owned());
                 }
                 _ => {
                     if !entry.text.contains_key(&gid) && entry.text_reported.insert(gid) {
@@ -402,11 +393,15 @@ impl<W: Write> PdfWriter<W> {
         let entry = &mut self.fonts[fi];
         let space = entry.space_gid;
         let infer = self.options.infer_spaces;
-        let mut eff: Vec<(u16, f64, f64)> = Vec::with_capacity(glyphs.len());
+        let mut eff: Vec<(u16, f64, f64, Option<String>)> = Vec::with_capacity(glyphs.len());
         for (i, g) in glyphs.iter().enumerate() {
             let gid = g.glyph_id as u16;
+            let actual = provider
+                .glyph_text(font_id, g.glyph_id)
+                .filter(|t| !t.is_empty() && entry.text.get(&gid).is_some_and(|c| c != t))
+                .map(str::to_owned);
             let (x, y) = (g.position.x(), g.position.y());
-            if let (true, Some(sp), Some(&(pg, px, py))) = (infer, space, eff.last()) {
+            if let (true, Some(sp), Some(&(pg, px, py, _))) = (infer, space, eff.last()) {
                 let is_space = |gid: u16| {
                     gid == sp
                         || entry
@@ -421,10 +416,10 @@ impl<W: Write> PdfWriter<W> {
                     && !is_space(gid)
                     && i > 0
                 {
-                    eff.push((sp, end, py));
+                    eff.push((sp, end, py, None));
                 }
             }
-            eff.push((gid, x, y));
+            eff.push((gid, x, y, actual));
         }
         if eff.iter().any(|e| Some(e.0) == space) {
             if let Some(sp) = space {
@@ -443,7 +438,18 @@ impl<W: Write> PdfWriter<W> {
         st.b.op("Tf");
         let mut i = 0;
         while i < eff.len() {
-            let (_, x0, y0) = eff[i];
+            let (_, x0, y0, _) = eff[i];
+            // A glyph that stands for another text than its `ToUnicode` entry
+            // is a marked-content sequence of its own.
+            let single = eff[i].3.is_some();
+            if let Some(t) = &eff[i].3 {
+                st.b.raw("/Span<</ActualText");
+                crate::out::text_string(&mut st.b.v, t);
+                st.b.raw(
+                    ">>BDC
+",
+                );
+            }
             st.b.raw("1 0 0 -1 ");
             st.b.n(x0);
             st.b.n(y0);
@@ -452,7 +458,10 @@ impl<W: Write> PdfWriter<W> {
             let mut pen = x0;
             let mut first = true;
             while i < eff.len() && (eff[i].2 - y0).abs() <= 0.001 {
-                let (gid, x, _) = eff[i];
+                if !first && (single || eff[i].3.is_some()) {
+                    break;
+                }
+                let (gid, x, _, _) = eff[i];
                 if !first {
                     let delta = (x - pen) / size * 1000.0;
                     let r = (delta * 10.0).round() / 10.0;
@@ -476,6 +485,9 @@ impl<W: Write> PdfWriter<W> {
                 i += 1;
             }
             st.b.raw("]TJ\n");
+            if single {
+                st.b.op("EMC");
+            }
         }
         st.b.op("ET");
         st.check()

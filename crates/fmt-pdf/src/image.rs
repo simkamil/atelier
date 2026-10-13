@@ -20,6 +20,8 @@ struct JpegInfo {
     width: u32,
     height: u32,
     components: u8,
+    /// Transform byte of the Adobe `APP14` marker, when there is one.
+    adobe: Option<u8>,
 }
 
 /// Structural scan of a JPEG stream. `Ok(None)`: valid but not passable as is.
@@ -29,6 +31,8 @@ fn jpeg_info(b: &[u8]) -> Result<Option<JpegInfo>, ImageError> {
     }
     let mut at = 2usize;
     let mut sof: Option<JpegInfo> = None;
+    let mut adobe: Option<u8> = None;
+    let mut rgb_ids = false;
     let mut passable = true;
     loop {
         while b.get(at) == Some(&0xff) && b.get(at + 1) == Some(&0xff) {
@@ -64,18 +68,33 @@ fn jpeg_info(b: &[u8]) -> Result<Option<JpegInfo>, ImageError> {
                 if width == 0 || height == 0 || seg.len() < 6 + 3 * usize::from(comps) {
                     return Err(ImageError::InvalidData("bad JPEG frame header"));
                 }
-                if seg[0] != 8 || !(comps == 1 || comps == 3) {
+                if seg[0] != 8 || !matches!(comps, 1 | 3 | 4) {
                     passable = false;
                 }
+                rgb_ids = comps == 3 && seg[6] == b'R' && seg[9] == b'G' && seg[12] == b'B';
                 sof = Some(JpegInfo {
                     width,
                     height,
                     components: comps,
+                    adobe: None,
                 });
+            }
+            0xee if seg.starts_with(b"Adobe") => {
+                if seg.len() != 12 || seg[11] > 2 {
+                    return Err(ImageError::InvalidData("invalid Adobe JPEG marker"));
+                }
+                adobe = Some(seg[11]);
             }
             0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf => passable = false,
             0xda => {
-                let info = sof.ok_or(ImageError::InvalidData("JPEG scan before frame"))?;
+                let mut info = sof.ok_or(ImageError::InvalidData("JPEG scan before frame"))?;
+                info.adobe = adobe;
+                match (adobe, info.components) {
+                    (Some(1), c) if c != 3 => passable = false,
+                    (Some(2), c) if c != 4 => passable = false,
+                    (None, 3) if rgb_ids => passable = false,
+                    _ => {}
+                }
                 let tail = &b[b.len().saturating_sub(1024)..];
                 if !tail.windows(2).any(|w| w == [0xff, 0xd9]) {
                     return Err(ImageError::Truncated);
@@ -141,15 +160,17 @@ pub(crate) fn write_image<W: Write>(
             if u64::from(info.width) * u64::from(info.height) > limits.max_pixels {
                 return Err(PdfError::LimitExceeded("image pixels"));
             }
-            let cs = if info.components == 1 {
-                "DeviceGray"
-            } else {
-                "DeviceRGB"
+            let (cs, decode) = match info.components {
+                1 => ("DeviceGray", ""),
+                3 => ("DeviceRGB", ""),
+                // Adobe writes CMYK (and YCCK) inverted; plain CMYK is not.
+                _ if info.adobe.is_some() => ("DeviceCMYK", "/Decode[1 0 1 0 1 0 1 0]"),
+                _ => ("DeviceCMYK", ""),
             };
             let id = out.alloc()?;
             let dict = format!(
                 "/Type/XObject/Subtype/Image/Width {}/Height {}/ColorSpace/{cs}\
-                 /BitsPerComponent 8/Interpolate true/Filter/DCTDecode",
+                 /BitsPerComponent 8{decode}/Interpolate true/Filter/DCTDecode",
                 info.width, info.height
             );
             write_raw_stream(out, id, dict.as_bytes(), bytes)?;

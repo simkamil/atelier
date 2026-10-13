@@ -230,7 +230,7 @@ impl<W: Write> PdfWriter<W> {
         }
         let id = self.out.alloc()?;
         let mut b = Buf::default();
-        b.num(f64::from(alpha) / 255.0, 4);
+        b.num(crate::out::unit_level(alpha), 4);
         let a = String::from_utf8_lossy(&b.v).into_owned();
         self.out
             .object(id, format!("<</Type/ExtGState/ca {a}/CA {a}>>").as_bytes())?;

@@ -60,6 +60,9 @@ fn main() {
     // 2. Three pages, shared fonts, links and bookmarks.
     let mut res = Res::default();
     standard_fonts(&mut res);
+    // Same program as CARLITO, own font id: it carries the literal U+FB01 of
+    // page 2, while CARLITO's ligature glyph stands for "fi" on page 3.
+    res.add_font(8, 1, embedded("Carlito", 400, false), 12.0);
     let texts = [
         "Premier chapitre : où l’été déjà s’achève.",
         "Deuxième chapitre : Œdipe, Noël, façade, naïveté, ﬁn.",
@@ -73,7 +76,13 @@ fn main() {
                 842.0,
                 vec![
                     res.text(CARLITO_BOLD, "Document de test", 56.0, 80.0, BLACK),
-                    res.text(CARLITO, t, 56.0, 120.0, BLACK),
+                    res.text(
+                        if t.contains('\u{FB01}') { 8 } else { CARLITO },
+                        t,
+                        56.0,
+                        120.0,
+                        BLACK,
+                    ),
                     atelier_render::Command::Link {
                         bounds: atelier_geom::Rect::from_xywh(56.0, 106.0, 300.0, 18.0).unwrap(),
                         target: "#chap2".to_owned(),
@@ -120,7 +129,41 @@ fn main() {
     }
     std::fs::write(dir.join("multi.txt"), expected).unwrap();
 
-    // 3. Optional: any TrueType or OpenType/CFF font from disk.
+    // 3. Every JPEG kind passed through, with the raster rendering of the decoded pixels.
+    let mut res = Res::default();
+    let ycck: &[u8] = include_bytes!("../../image/tests/fixtures/jpeg/adobe-ycck.jpg");
+    let kinds: [(&str, &[u8]); 6] = [
+        ("baseline", JPEG_420),
+        ("gray", JPEG_GRAY),
+        ("progressive", JPEG_PROGRESSIVE),
+        ("cmyk", JPEG_CMYK),
+        ("ycck", ycck),
+        ("png", &[]),
+    ];
+    let mut commands = Vec::new();
+    for (i, (_, bytes)) in kinds.iter().enumerate() {
+        let id = 20 + i as u64;
+        if bytes.is_empty() {
+            res.add_image(id, "image/png", png_rgba(16, 16, true));
+        } else {
+            res.add_image(id, "image/jpeg", bytes.to_vec());
+        }
+        commands.push(atelier_render::Command::DrawImage {
+            image_id: id,
+            bounds: atelier_geom::Rect::from_xywh(10.0 + 70.0 * i as f64, 10.0, 60.0, 60.0)
+                .unwrap(),
+        });
+    }
+    let page = list(430.0, 80.0, commands);
+    let out = render_pdf(std::slice::from_ref(&page), &res, &PdfOptions::default()).unwrap();
+    std::fs::write(dir.join("jpegs.pdf"), &out.bytes).unwrap();
+    std::fs::write(
+        dir.join("jpegs-raster.png"),
+        render_png(&page, &res, &opts).unwrap(),
+    )
+    .unwrap();
+
+    // 4. Optional: any TrueType or OpenType/CFF font from disk.
     if let Some(path) = args.next() {
         let data: &'static [u8] = Box::leak(std::fs::read(&path).unwrap().into_boxed_slice());
         let mut res = Res::default();

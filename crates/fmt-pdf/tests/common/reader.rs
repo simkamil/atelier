@@ -480,11 +480,7 @@ impl Pdf {
         } else {
             o
         };
-        if !matches!(o, Obj::Stream(..)) {
-            l.skip_ws();
-        } else {
-            l.skip_ws();
-        }
+        l.skip_ws();
         if l.keyword() != "endobj" {
             return Err(format!("object {n} does not end with endobj"));
         }
@@ -638,10 +634,35 @@ pub fn extract_text(pdf: &Pdf, page: &Dict) -> Vec<String> {
     }
     let mut cur_font = String::new();
     let mut pieces: Vec<String> = Vec::new();
+    // Text of an enclosing `/ActualText` marked-content sequence.
+    let mut actual: Option<String> = None;
     for (op, args) in ops {
         match op.as_str() {
             "Tf" => cur_font = args[0].name().to_owned(),
             "Tm" => pieces.push(String::new()),
+            "BDC" => {
+                if let Some(Obj::Dict(d)) = args.get(1) {
+                    if let Some(a) = d.get("ActualText") {
+                        let b = a.str_bytes();
+                        assert!(b.starts_with(&[0xFE, 0xFF]) || b.is_ascii());
+                        actual = Some(if b.starts_with(&[0xFE, 0xFF]) {
+                            let units: Vec<u16> = b[2..]
+                                .chunks(2)
+                                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                                .collect();
+                            String::from_utf16(&units).expect("UTF-16 ActualText")
+                        } else {
+                            String::from_utf8_lossy(b).into_owned()
+                        });
+                    }
+                }
+            }
+            "EMC" => actual = None,
+            "TJ" | "Tj" if actual.is_some() => {
+                let piece = pieces.last_mut().expect("text outside Tm");
+                piece.push_str(&actual.take().unwrap_or_default());
+                actual = Some(String::new());
+            }
             "TJ" | "Tj" => {
                 let strings: Vec<&Obj> = match &args[0] {
                     Obj::Arr(a) => a.iter().collect(),

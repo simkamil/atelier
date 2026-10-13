@@ -203,8 +203,6 @@ pub enum PdfNotice {
     FontEmbeddedWhole { font_id: u64 },
     /// The provider gave no text for a glyph: it is not extractable.
     MissingGlyphText { font_id: u64, glyph_id: u32 },
-    /// The provider gave different texts for one glyph of a font program; the first is kept.
-    ConflictingGlyphText { font_id: u64, glyph_id: u32 },
     /// A `Link` target could not be resolved; no annotation was written.
     UnresolvedLink { page: usize, target: String },
     /// More notices were produced than the list keeps.

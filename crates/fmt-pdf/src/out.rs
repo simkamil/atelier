@@ -43,6 +43,17 @@ impl Buf {
     }
 }
 
+/// An 8-bit level as a number in 0..=1. Intermediate levels are written at
+/// a quarter of their 1/255 step above the level, so that a reader that truncates (MuPDF)
+/// and one that rounds both come back to the same 8-bit value.
+pub(crate) fn unit_level(v: u8) -> f64 {
+    match v {
+        0 => 0.0,
+        255 => 1.0,
+        v => (f64::from(v) + 0.25) / 255.0,
+    }
+}
+
 pub(crate) fn write_num(out: &mut Vec<u8>, bad: &mut bool, x: f64, decimals: u32) {
     if !x.is_finite() || x.abs() > MAX_ABS {
         *bad = true;
