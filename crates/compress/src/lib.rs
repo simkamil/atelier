@@ -1136,29 +1136,41 @@ fn make_lengths(freq: &[u32], max_bits: usize) -> Vec<u8> {
     if max_seen <= max_bits {
         return lens;
     }
-    // Length limiting via zlib's overflow redistribution, then assign shorter
-    // lengths to the most frequent symbols.
-    let mut count = vec![0i32; max_seen + 1];
+    // Length limiting: clamp every code to `max_bits`, then repair the Kraft
+    // sum from the leaf counts. Clamping alone over-subscribes the code when
+    // leaves sit more than one level below the limit, so the sum is measured
+    // rather than inferred from an overflow count.
+    let mut count = vec![0u64; max_seen + 1];
     for &l in &lens {
         if l > 0 {
             count[l as usize] += 1;
         }
     }
-    let mut overflow = 0;
     for i in (max_bits + 1)..count.len() {
-        overflow += count[i];
         count[max_bits] += count[i];
         count[i] = 0;
     }
-    while overflow > 0 {
-        let mut bits = max_bits - 1;
-        while bits > 0 && count[bits] == 0 {
-            bits -= 1;
-        }
+    count.truncate(max_bits + 1);
+    let full = 1u64 << max_bits;
+    let mut kraft: u64 = (1..=max_bits).map(|b| count[b] << (max_bits - b)).sum();
+    // Over-subscribed: lengthen the deepest code that can still grow.
+    while kraft > full {
+        let bits = (1..max_bits).rev().find(|&b| count[b] > 0).unwrap_or(1);
         count[bits] -= 1;
-        count[bits + 1] += 2;
-        count[max_bits] -= 1;
-        overflow -= 2;
+        count[bits + 1] += 1;
+        kraft -= 1 << (max_bits - bits - 1);
+    }
+    // Incomplete: shorten the deepest code whose growth still fits.
+    while kraft < full {
+        let Some(bits) = (2..=max_bits)
+            .rev()
+            .find(|&b| count[b] > 0 && (1u64 << (max_bits - b)) <= full - kraft)
+        else {
+            break;
+        };
+        count[bits] -= 1;
+        count[bits - 1] += 1;
+        kraft += 1 << (max_bits - bits);
     }
     let mut syms: Vec<usize> = (0..freq.len()).filter(|&i| freq[i] > 0).collect();
     syms.sort_by_key(|&i| (freq[i], i));
