@@ -1364,6 +1364,8 @@ Réf : F-COM-013 · Taille : M · Dépend de : US-081, US-111
 - [ ] Options : respecter la casse, mot entier, ignorer les accents, respecter les espaces insécables.
 - [ ] Recherche dans les en-têtes, pieds et tableaux ; Entrée / Maj+Entrée pour suivant/précédent.
 
+Avancement (2026-10-13) : Bibliothèque de recherche fusionnée : options Unicode, plages exactes, contexte et navigation. Le volet Ctrl+F, le surlignage et ses raccourcis restent à raccorder; [contrat](docs/us-340-search.md).
+
 Réf : F-COM-010 · Taille : M · Dépend de : US-013, US-200
 
 #### US-341 — Remplacer
@@ -1384,6 +1386,8 @@ Réf : F-COM-012 · Taille : S · Dépend de : US-101
 *En tant qu'*utilisateur, *je veux* connaître le nombre de mots *afin de* respecter une longueur imposée.
 - [ ] Barre d'état : mots (de la sélection et du document) ; dialogue : pages, mots, caractères avec et sans espaces, paragraphes, lignes ; option notes et zones de texte.
 - [ ] Comptage identique à Word sur le corpus (tolérance ≤ 0,5 %).
+
+Avancement (2026-10-13) : Bibliothèque de statistiques fusionnée : compteurs et caches pour texte brut/riche, sélection et corpus LibreOffice. Barre d’état/dialogue, notes/zones de texte et preuve de parité Word restent ouverts; [contrat](docs/us-343-statistics.md).
 
 Réf : F-TXT-006 · Taille : S · Dépend de : US-011
 

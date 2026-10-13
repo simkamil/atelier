@@ -6,6 +6,18 @@ L’ouverture DOCX donne toujours un aperçu A4 en lecture seule.
 Le glisser-déposer TXT, les espaces françaises et le cache incrémental restent disponibles.
 US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves Word.
 
+## Fusion des branches prêtes — 2026-10-13
+
+`main` réunit maintenant `us-340-search`, `us-343-statistics` et `codex/ui-components-ribbon`, en plus des formats/outils déjà fusionnés. Les conflits des déclarations de modules et du suivi ont été résolus en conservant les deux apports. US-313 et US-331 restent en développement dans leurs worktrees; leurs fichiers non commités n’ont pas été modifiés ni fusionnés.
+
+Les [API de recherche](us-340-search.md) et de [statistiques](us-343-statistics.md) sont intégrées à `atelier-text-model`. Le volet Ctrl+F, le surlignage, la barre d’état/dialogue de statistiques et la comparaison réelle avec Word restent ouverts : **US-340/343 ne sont pas déclarées complètes**. Le total est **53/158 US complètes**, en cumulant les deux validations formats/outils et les trois validations UI.
+
+La [validation après fusion](../_bmad-output/implementation-artifacts/merged-branches-validation.json) passe **19 contrôles**, **987 tests Rust** (3 tests optionnels ignorés), **112/114 assertions UI normale/contraste élevé**, **118 éditeur** et **36 Canvas/saisie**. Les compilations et Clippy hôte/WASM, le formatage, les licences, le garde du lock, le package et la sonde réelle WebView2 passent. **1 071 entrées sont figées**, sans changement pendant cette passe complète; aucun résultat de l’ancien lot n’est réutilisé. La recherche et les statistiques conservent leurs preuves et limites documentées.
+
+Le WASM a été reconstruit après la fusion : **3 977 489 octets**, SHA-256 `9d769e12bcc663ea6ef1103dae9924cb4f32ce30bb6877c024f8c3494a80bc61`, sous le seuil existant. Le binaire à tester est `target/release/atelier.exe` dans le checkout principal. Le [graphe synchronisé](../_bmad-output/implementation-artifacts/merged-branches-graph.json) conserve les concepts documentaires du lot UI, les 158 statuts, les nouveaux modules et les 34 paquets Cargo sans cycle. La vue simple agrège 924 groupes de relations entre mêmes nœuds; l’extraction locale conserve le détail.
+
+La CI distante reste à relancer une fois le problème de facturation/plafond GitHub Actions résolu. Les essais locaux n’établissent pas un passage Linux distant ni les essais physiques clavier/lecteurs d’écran.
+
 ## Lot formats et outils — 2026-10-13
 
 Cinq stories développées en parallèle avec des agents Sonnet 5.5 moyen, chacune relue

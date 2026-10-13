@@ -1,0 +1,26 @@
+{
+  "baseline_main": "50aa8ab37f6f05276932b1f787ec57c3536bb1ce",
+  "merged_branches": {
+    "us-340-search": "870f942515e3321b04296acae33ee454c0ed5699",
+    "us-343-statistics": "0b2589a81887e053513513a2af14f643c545e0ca",
+    "codex/ui-components-ribbon": "0327fd1851d80394f7241339197d7ee2b2a9c582"
+  },
+  "merge_commits": [
+    "0512261",
+    "bfff95e",
+    "4b6745c"
+  ],
+  "not_merged": {
+    "us-313-doc-structure": "In progress, confirmed by user; uncommitted work preserved",
+    "us-331-pdf-writer": "In progress, confirmed by user; uncommitted work preserved"
+  },
+  "validation": "_bmad-output/implementation-artifacts/merged-branches-validation.json",
+  "graph": "_bmad-output/implementation-artifacts/merged-branches-graph.json",
+  "completed_stories": 53,
+  "total_stories": 158,
+  "partial_stories": [
+    "US-340",
+    "US-343"
+  ],
+  "remote_ci": "Previous run blocked before jobs by GitHub account billing/spending limit; local validation reported separately"
+}
