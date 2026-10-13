@@ -13,10 +13,10 @@ use atelier_font::FontFace;
 use atelier_font::manager::{FontManager, FontSource};
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
-    Alignment, AnchoredObject, CharAttrs, Color, DocumentStyleDefaults, LineRule, LineSpacing, Node, NodeId,
-    OpaqueAttr, ParaProps, Paragraph, ResolvedProperties, RichDocument, RichOp, Style,
-    StyleCatalog, StyleCharAttrs, StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont, Underline,
-    VerticalAlign,
+    Alignment, AnchoredObject, CharAttrs, Color, DocumentStyleDefaults, LineRule, LineSpacing,
+    Node, NodeId, OpaqueAttr, ParaProps, Paragraph, ResolvedProperties, RichDocument, RichOp,
+    Style, StyleCatalog, StyleCharAttrs, StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont,
+    Underline, VerticalAlign,
 };
 use atelier_unicode::segmentation::grapheme_boundaries;
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader};
@@ -26,8 +26,8 @@ use std::fmt;
 mod preserve;
 mod tables;
 pub use preserve::{
-    MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart, ppr_rank,
-    rpr_rank, sect_pr_rank,
+    MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart,
+    interpreted_elements, ppr_rank, rpr_rank, sect_pr_rank,
 };
 pub use tables::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
@@ -595,6 +595,9 @@ pub fn import_docx_with_limits(
                 body_tree.open(element);
             }
             preserve::Ev::Close => body_tree.close(),
+            preserve::Ev::Prop(node) => {
+                body_tree.push(PreservedChild::Opaque(preserve::xml_of(node)));
+            }
             preserve::Ev::Opaque(node) if is_w(node, "sectPr") => {
                 body_tree.push(PreservedChild::Opaque(preserve::xml_of(node)));
             }
@@ -817,8 +820,9 @@ fn parse_xml_bytes(
                 empty,
             } => {
                 if let Some(budget) = capture.as_deref_mut() {
-                    let captured = preserve::level_of_children(&stack)
-                        .is_some_and(|level| preserve::classify(level, &name) == preserve::Class::Capture);
+                    let captured = preserve::level_of_children(&stack).is_some_and(|level| {
+                        preserve::classify(level, &name) == preserve::Class::Capture
+                    });
                     if captured {
                         let subtree = reader.capture_opaque().map_err(xml_error)?;
                         let xml = preserve::subtree_bytes(&subtree)?;
@@ -1032,6 +1036,10 @@ fn parse_paragraph(
             }
             preserve::Ev::Close => {
                 tree.close();
+                continue;
+            }
+            preserve::Ev::Prop(c) => {
+                tree.push(PreservedChild::Opaque(preserve::xml_of(c)));
                 continue;
             }
             preserve::Ev::Opaque(c) => {

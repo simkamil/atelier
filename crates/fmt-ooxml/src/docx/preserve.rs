@@ -196,6 +196,40 @@ pub(super) fn interpreted(level: Level) -> &'static [&'static str] {
     }
 }
 
+/// Every `(level, element)` pair the import interprets, plus the content
+/// wrappers it looks through (`Container`). Tests hold the import code to it.
+pub fn interpreted_elements() -> Vec<(String, &'static str)> {
+    const LEVELS: &[Level] = &[
+        Level::DocRoot,
+        Level::Body,
+        Level::Cell,
+        Level::Table,
+        Level::Row,
+        Level::Para,
+        Level::PPr,
+        Level::RPr,
+        Level::Run,
+        Level::StylesRoot,
+        Level::DocDefaults,
+        Level::RPrDefault,
+        Level::PPrDefault,
+        Level::Style,
+        Level::SettingsRoot,
+        Level::SdtShell,
+    ];
+    let mut out = Vec::new();
+    for level in LEVELS {
+        for name in interpreted(*level) {
+            out.push((format!("{level:?}"), *name));
+        }
+        for name in containers(*level) {
+            out.push((format!("{level:?}/container"), *name));
+        }
+    }
+    out.push((format!("{:?}/container", Level::SdtShell), "sdtContent"));
+    out
+}
+
 /// Content wrappers the import looks through at this level.
 pub(super) fn containers(level: Level) -> &'static [&'static str] {
     match level {
@@ -293,6 +327,16 @@ pub(super) enum Ev<'a> {
     Close,
     /// An element that is captured (`node.opaque` holds its XML).
     Opaque(&'a XmlNode),
+    /// A captured property of the enclosing wrapper (`w:sdtPr`,
+    /// `w:smartTagPr`...): part of the wrapper, not content.
+    Prop(&'a XmlNode),
+}
+
+fn is_wrapper_property(node: &XmlNode) -> bool {
+    matches!(
+        w_local(&node.name),
+        Some("sdtPr" | "sdtEndPr" | "smartTagPr" | "customXmlPr" | "fldData")
+    )
 }
 
 pub(super) fn events<'a>(
@@ -328,7 +372,7 @@ fn walk<'a>(
                             walk(part, level, decls, shadow, out);
                             out.push(Ev::Close);
                         } else if !shadow {
-                            out.push(Ev::Opaque(part));
+                            out.push(Ev::Prop(part));
                         }
                     }
                 } else {
@@ -337,6 +381,12 @@ fn walk<'a>(
                 out.push(Ev::Close);
             }
             Class::Capture if shadow => {}
+            Class::Capture
+                if is_wrapper_property(child)
+                    && !matches!(node.name.local.as_str(), "body" | "tc" | "p" | "tbl" | "tr") =>
+            {
+                out.push(Ev::Prop(child));
+            }
             Class::Capture => {
                 out.push(Ev::Opaque(child));
                 if is_mc(child, "AlternateContent")
@@ -434,7 +484,9 @@ impl CaptureBudget {
 /// The XML of an element: its capture when it has one, else a serialization
 /// of the parsed tree (elements the import reads but the model cannot hold).
 pub(super) fn xml_of(node: &XmlNode) -> Vec<u8> {
-    node.opaque.clone().unwrap_or_else(|| tables::dom_bytes(node))
+    node.opaque
+        .clone()
+        .unwrap_or_else(|| tables::dom_bytes(node))
 }
 
 // ---------------------------------------------------------------------------
@@ -708,7 +760,8 @@ pub(super) fn markup_notices(
         if let Some(list) = node.attr(MC_NS, "MustUnderstand") {
             for prefix in list.split_ascii_whitespace() {
                 let ns = namespace_of(&part.declarations, prefix).unwrap_or("");
-                if !UNDERSTOOD.contains(&ns) && seen.insert((ns.to_owned(), "MustUnderstand".into()))
+                if !UNDERSTOOD.contains(&ns)
+                    && seen.insert((ns.to_owned(), "MustUnderstand".into()))
                 {
                     out.push(ImportNotice::UnsupportedProperty {
                         part: part.uri.clone(),
@@ -792,7 +845,10 @@ pub fn rpr_rank(local: &str) -> usize {
         "oMath",
         "rPrChange",
     ];
-    ORDER.iter().position(|n| *n == local).unwrap_or(ORDER.len())
+    ORDER
+        .iter()
+        .position(|n| *n == local)
+        .unwrap_or(ORDER.len())
 }
 
 /// Position of a child element in the sequence of `w:pPr` (CT_PPr, §17.3.1).
@@ -835,7 +891,10 @@ pub fn ppr_rank(local: &str) -> usize {
         "sectPr",
         "pPrChange",
     ];
-    ORDER.iter().position(|n| *n == local).unwrap_or(ORDER.len())
+    ORDER
+        .iter()
+        .position(|n| *n == local)
+        .unwrap_or(ORDER.len())
 }
 
 /// Position of a child element in the sequence of `w:sectPr` (§17.6.17).
@@ -864,5 +923,8 @@ pub fn sect_pr_rank(local: &str) -> usize {
         "printerSettings",
         "sectPrChange",
     ];
-    ORDER.iter().position(|n| *n == local).unwrap_or(ORDER.len())
+    ORDER
+        .iter()
+        .position(|n| *n == local)
+        .unwrap_or(ORDER.len())
 }

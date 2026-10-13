@@ -8,14 +8,13 @@
 
 pub mod docx;
 pub use docx::{
-    MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart, ppr_rank,
-    rpr_rank, sect_pr_rank,
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
     DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice,
     ImportedBreak, ImportedCell, ImportedDocx, ImportedRow, ImportedRunStyle, ImportedSymbol,
-    ImportedTable, ImportedTables, LatentStyleInfo, ResolvedCell, RowHeight, RowProps, Shading,
+    ImportedTable, ImportedTables, LatentStyleInfo, MC_NS, Preserved, PreservedAttr,
+    PreservedChild, PreservedElement, PreservedPart, ResolvedCell, RowHeight, RowProps, Shading,
     TableAlign, TableColor, TableLayout, TableLook, TableProps, TableStyleDef, TableWidth, VMerge,
-    import_docx, import_docx_with_limits,
+    import_docx, import_docx_with_limits, interpreted_elements, ppr_rank, rpr_rank, sect_pr_rank,
 };
 
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader, Writer as XmlWriter};

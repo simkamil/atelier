@@ -1547,8 +1547,10 @@ impl<'a> TableBuilder<'a> {
                             let b = cell_builds.get_mut(&(ar, ak)).expect("anchor built first");
                             b.blocks.extend(blocks);
                             b.has_paragraph = has_p;
-                        } else if let Some(pr) = find_w(tc, "tcPr") {
-                            local.push(PreservedChild::Opaque(dom_bytes(pr)));
+                        } else {
+                            for child in &tc.children {
+                                local.push(PreservedChild::Opaque(preserve::xml_of(child)));
+                            }
                         }
                         folded.insert(key(tc), local.finish());
                     }
@@ -1590,8 +1592,10 @@ impl<'a> TableBuilder<'a> {
                                 (&mut build.blocks, &mut build.has_paragraph),
                                 (&mut local, false),
                             )?;
-                        } else if let Some(pr) = find_w(extra, "tcPr") {
-                            local.push(PreservedChild::Opaque(dom_bytes(pr)));
+                        } else {
+                            for child in &extra.children {
+                                local.push(PreservedChild::Opaque(preserve::xml_of(child)));
+                            }
                         }
                         folded.insert(key(extra), local.finish());
                     }
@@ -1857,6 +1861,7 @@ impl<'a> TableBuilder<'a> {
                     tree.open(element);
                 }
                 Ev::Close => tree.close(),
+                Ev::Prop(n) => tree.push(PreservedChild::Opaque(preserve::xml_of(n))),
                 Ev::Opaque(n) => {
                     let id = document.alloc_id().map_err(model_error)?;
                     nodes.insert(
@@ -1946,7 +1951,9 @@ fn table_tree(
                             row.open(element);
                         }
                         Ev::Close => row.close(),
-                        Ev::Opaque(c) => row.push(PreservedChild::Opaque(preserve::xml_of(c))),
+                        Ev::Opaque(c) | Ev::Prop(c) => {
+                            row.push(PreservedChild::Opaque(preserve::xml_of(c)))
+                        }
                     }
                 }
                 let element = row.finish();
@@ -1964,7 +1971,7 @@ fn table_tree(
                 table.open(element);
             }
             Ev::Close => table.close(),
-            Ev::Opaque(n) => table.push(PreservedChild::Opaque(preserve::xml_of(n))),
+            Ev::Opaque(n) | Ev::Prop(n) => table.push(PreservedChild::Opaque(preserve::xml_of(n))),
         }
     }
     pres.out.tables.insert(table_id, table.finish());
