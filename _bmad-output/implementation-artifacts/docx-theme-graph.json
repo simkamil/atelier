@@ -1,0 +1,49 @@
+{
+  "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
+  "nodes": 9322,
+  "edges": 23883,
+  "stories": 158,
+  "done": 53,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 9322,
+  "html_node_limit": 10000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 1211,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 63,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "94df23fb037145d75542f54dbc0215d0daf929bc:graphify-out/GRAPH_REPORT.md",
+  "local_cost_meter_available": false,
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "replacement_story_status": null,
+  "zoom_story_status": null,
+  "navigation_story_status": null,
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "07cac7cd9a0d39eb07b0005385edf7bf7477730be2c030a2b8bea23f0e6364e6",
+    "graphify-out/graph.json": "a1e1889bb736ba5573ef286ca2596f0b21c633c9afa77021046b39e0bd77fcf1",
+    "graphify-out/graph.html": "468bd9a4781ffd5dfea57d185798497e250ebc7e5c006109d1018d4114975f9e",
+    "graphify-out/story-dependencies.json": "eb7c750e558e59e597c276aaa54b8908e72248d6a4b6806cd321c81580611ea7",
+    "graphify-out/unresolved-structural-references.json": "f1b7683ace12f3911ac096b3f230780430a4afd82f1318742db1aed6fffd8050"
+  },
+  "graph_tools_sha256": {
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "4b4760411737e75e2e746f74027ec5d89a4b46975e3526379e87c02376ab3ea1",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "b300ef1ca26ae8d9acb8ba39d483ba05b096e250cf292c824e8560d822dd94ec"
+  }
+}

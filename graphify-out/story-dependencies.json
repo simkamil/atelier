@@ -4474,6 +4474,76 @@
       "type": "http_route"
     },
     {
+      "id": "http_route_document_status_css",
+      "label": "/document-status.css",
+      "_origin": "extracted",
+      "file_type": "concept",
+      "norm_label": "/document-status.css",
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "48",
+      "type": "http_route"
+    },
+    {
+      "id": "http_route_document_status_mjs",
+      "label": "/document-status.mjs",
+      "_origin": "extracted",
+      "file_type": "concept",
+      "norm_label": "/document-status.mjs",
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "43",
+      "type": "http_route"
+    },
+    {
+      "id": "http_route_replace_controls_css",
+      "label": "/replace-controls.css",
+      "_origin": "extracted",
+      "file_type": "concept",
+      "norm_label": "/replace-controls.css",
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "38",
+      "type": "http_route"
+    },
+    {
+      "id": "http_route_page_navigation_mjs",
+      "label": "/page-navigation.mjs",
+      "_origin": "extracted",
+      "file_type": "concept",
+      "norm_label": "/page-navigation.mjs",
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "28",
+      "type": "http_route"
+    },
+    {
+      "id": "http_route_replace_controls_mjs",
+      "label": "/replace-controls.mjs",
+      "_origin": "extracted",
+      "file_type": "concept",
+      "norm_label": "/replace-controls.mjs",
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "33",
+      "type": "http_route"
+    },
+    {
+      "id": "embedded_web_document_status_css",
+      "label": "web/document-status.css",
+      "embedded_path": "web/document-status.css",
+      "file_type": "concept",
+      "norm_label": "web/document-status.css",
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "51",
+      "type": "embedded_asset"
+    },
+    {
+      "id": "embedded_web_replace_controls_css",
+      "label": "web/replace-controls.css",
+      "embedded_path": "web/replace-controls.css",
+      "file_type": "concept",
+      "norm_label": "web/replace-controls.css",
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "41",
+      "type": "embedded_asset"
+    },
+    {
       "id": "document_docs_us-012-line-breaks_md",
       "label": "docs/us-012-line-breaks.md",
       "file_type": "document",
@@ -13361,6 +13431,159 @@
       "confidence_score": 1.0,
       "source_file": "crates/desktop-win/src/resources.rs",
       "source_location": "58"
+    },
+    {
+      "source": "crates_desktop_win_src_resources",
+      "target": "embedded_web_replace_controls_css",
+      "relation": "embeds",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "41"
+    },
+    {
+      "source": "crates_desktop_win_src_resources",
+      "target": "embedded_web_document_status_css",
+      "relation": "embeds",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "51"
+    },
+    {
+      "source": "web_app",
+      "target": "http_route_document_status_mjs",
+      "relation": "requests_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "web/app.mjs",
+      "source_location": "10"
+    },
+    {
+      "source": "web_index",
+      "target": "http_route_replace_controls_css",
+      "relation": "requests_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "web/index.html",
+      "source_location": "16"
+    },
+    {
+      "source": "web_index",
+      "target": "http_route_document_status_css",
+      "relation": "requests_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "web/index.html",
+      "source_location": "17"
+    },
+    {
+      "source": "http_route_document_status_css",
+      "target": "embedded_web_document_status_css",
+      "relation": "serves_embedded_bytes",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "48"
+    },
+    {
+      "source": "http_route_replace_controls_css",
+      "target": "embedded_web_replace_controls_css",
+      "relation": "serves_embedded_bytes",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "38"
+    },
+    {
+      "source": "http_route_document_status_css",
+      "target": "web_document_status",
+      "relation": "serves_source_file",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "48"
+    },
+    {
+      "source": "http_route_document_status_mjs",
+      "target": "web_document_status",
+      "relation": "serves_source_file",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "43"
+    },
+    {
+      "source": "http_route_page_navigation_mjs",
+      "target": "web_page_navigation",
+      "relation": "serves_source_file",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "28"
+    },
+    {
+      "source": "http_route_replace_controls_css",
+      "target": "web_replace_controls",
+      "relation": "serves_source_file",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "38"
+    },
+    {
+      "source": "http_route_replace_controls_mjs",
+      "target": "web_replace_controls",
+      "relation": "serves_source_file",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "33"
+    },
+    {
+      "source": "crates_desktop_win_src_resources",
+      "target": "http_route_page_navigation_mjs",
+      "relation": "serves_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "28"
+    },
+    {
+      "source": "crates_desktop_win_src_resources",
+      "target": "http_route_replace_controls_mjs",
+      "relation": "serves_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "33"
+    },
+    {
+      "source": "crates_desktop_win_src_resources",
+      "target": "http_route_replace_controls_css",
+      "relation": "serves_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "38"
+    },
+    {
+      "source": "crates_desktop_win_src_resources",
+      "target": "http_route_document_status_mjs",
+      "relation": "serves_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "43"
+    },
+    {
+      "source": "crates_desktop_win_src_resources",
+      "target": "http_route_document_status_css",
+      "relation": "serves_url",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "crates/desktop-win/src/resources.rs",
+      "source_location": "48"
     },
     {
       "source": "document_readme_md",

@@ -14,11 +14,12 @@ from graphify.cargo_introspect import introspect_cargo
 from graphify.export import to_html
 from graphify.diagnostics import diagnose_extraction
 
-if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"], ["--finalize-navigation"], ["--finalize-replacement"]):
+if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"], ["--finalize-navigation"], ["--finalize-replacement"], ["--finalize-docx"]):
     raise SystemExit("Usage: py ui-shell-graph-receipt.py --finalize (only after parent GO)")
 zoom_run = sys.argv[1:] == ["--finalize-zoom"]
 navigation_run = sys.argv[1:] == ["--finalize-navigation"]
 replacement_run = sys.argv[1:] == ["--finalize-replacement"]
+docx_run = sys.argv[1:] == ["--finalize-docx"]
 
 ROOT = Path(__file__).resolve().parents[2]
 ART = Path(__file__).resolve().parent
@@ -197,7 +198,7 @@ evidence = {
         for name in ("merged-branches-graph-refresh.py", "merged-branches-graph-receipt.py")
     },
 }
-(ART / ("replacement-status-graph.json" if replacement_run else "navigation-graph.json" if navigation_run else "zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
+(ART / ("docx-theme-graph.json" if docx_run else "replacement-status-graph.json" if replacement_run else "navigation-graph.json" if navigation_run else "zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
     json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
     newline="\n",
