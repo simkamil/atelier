@@ -50,6 +50,9 @@ La sonde réelle WebView2 sert les **28 ressources**, exerce Worker/WASM et sais
 
 Les vues claire/sombre/étroite et contraste élevé ont été inspectées. Les essais physiques AZERTY/IME, NVDA/Narrator et les mesures matérielles restent distincts de ces tests automatiques. Le lot est publié sur une branche isolée pour la fusion avec les travaux parallèles; les résultats locaux ne valent pas résultat de CI distante.
 
+
+CI distante du commit `3aeab6e` : les trois jobs [du run 38354586127](https://github.com/simkamil/mon-bureau/actions/runs/38354586127) n’ont pas démarré, bloqués par la facturation ou le plafond du compte GitHub. La [preuve des annotations](../_bmad-output/implementation-artifacts/ui-shell-ci.json) distingue ce blocage des 17 contrôles locaux réussis.
+
 ## Aperçu DOCX intégré — 2026-10-12
 
 Le MVP ajoute **Ouvrir DOCX…**, un aperçu A4 en lecture seule et **Retour au texte** / Échap. Le document TXT, sa sélection, son historique et son état de sauvegarde sont préservés. Le rendu visible des styles, les erreurs/annulations, les réponses tardives, le défilement horizontal et le filtre natif DOCX sont vérifiés. Voir le [contrat et les limites](rich-docx-preview.md).
