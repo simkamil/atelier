@@ -7,3 +7,5 @@ de page, un lien, un signet, un suivi des modifications (insertion et suppressio
 Ce n'est pas un fichier Word : Microsoft Word n'est pas installé sur la machine de livraison. Les entrées sont
 compressées (pas la convention « stocké » de `basic.docx`) ; le fichier fait moins de 8 Ko. Il sert à
 l'inventaire de complétude de `crates/fmt-ooxml/tests/docx_preserve.rs`.
+
+`properties.docx` (US-328) vient de la meme maniere de `properties.fodt` (titre, sujet, auteur, mots-cles, commentaires avec accents et caracteres speciaux dans `office:meta`) ; script : `tools/check-docx-properties-libreoffice.py --regenerate`. Pas un fichier Word.

@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod docx;
+mod properties;
 pub use docx::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
     DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice,
@@ -18,7 +19,15 @@ pub use docx::{
     rpr_rank, sect_pr_rank,
 };
 
-use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader, Writer as XmlWriter};
+pub use properties::{
+    AppExtra, ApplyReport, CoreExtra, DateError, DatePrecision, DocumentStatistics,
+    EditableProperties, MAX_COMMENTS_CHARS, MAX_HYPERLINK_BASE_CHARS, MAX_KEYWORDS_CHARS,
+    MAX_LANGUAGE_CHARS, MAX_LINE_CHARS, PdfDateFields, PdfMetadata, PropertiesSnapshot,
+    PropertyChanges, PropertyDate, PropertyError, PropertyNotice, ReadOnlyProperties, SaveContext,
+    SaveReport, W3cDateTime,
+};
+
+use atelier_xml::{Attribute, Event, Limits as XmlLimits, Reader};
 use atelier_zip::{Archive, Limits as ZipLimits, Method, WriteOptions, Writer as ZipWriter};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -369,12 +378,15 @@ pub struct Package {
     defaults: BTreeMap<String, String>,
     core: CoreProperties,
     app: AppProperties,
-    core_unknown: Vec<atelier_xml::OpaqueSubtree>,
-    app_unknown: Vec<atelier_xml::OpaqueSubtree>,
     core_uri: Option<PartUri>,
     app_uri: Option<PartUri>,
     core_dirty: bool,
     app_dirty: bool,
+    core_extra: CoreExtra,
+    app_extra: AppExtra,
+    /// The property part was found by content type, without a relationship.
+    core_orphan: bool,
+    app_orphan: bool,
 }
 impl Package {
     pub fn new() -> Self {
@@ -659,21 +671,38 @@ impl Package {
                 });
         self.core_uri = core_uri;
         self.app_uri = app_uri;
+        // Tolerant read of a property part that no relationship points to.
+        if self.core_uri.is_none() {
+            self.core_uri = self.orphan_part(CORE_CONTENT_TYPE);
+            self.core_orphan = self.core_uri.is_some();
+        }
+        if self.app_uri.is_none() {
+            self.app_uri = self.orphan_part(APP_CONTENT_TYPE);
+            self.app_orphan = self.app_uri.is_some();
+        }
         if let Some(uri) = self.core_uri.clone() {
             if let Some(part) = self.parts.get(&uri) {
-                let (p, u) = parse_core(&part.bytes, xml_limits.clone())?;
+                let (p, _) = parse_core(&part.bytes, xml_limits.clone())?;
                 self.core = p;
-                self.core_unknown = u;
             }
         }
         if let Some(uri) = self.app_uri.clone() {
             if let Some(part) = self.parts.get(&uri) {
-                let (p, u) = parse_app(&part.bytes, xml_limits)?;
+                let (p, _) = parse_app(&part.bytes, xml_limits)?;
                 self.app = p;
-                self.app_unknown = u;
             }
         }
+        self.load_extras();
         Ok(())
+    }
+
+    fn orphan_part(&self, content_type: &str) -> Option<PartUri> {
+        let mut found = self
+            .parts
+            .values()
+            .filter(|p| p.content_type.eq_ignore_ascii_case(content_type));
+        let first = found.next()?;
+        found.next().is_none().then(|| first.uri.clone())
     }
 
     pub fn write(&self) -> Result<Vec<u8>, OpcError> {
@@ -688,8 +717,13 @@ impl Package {
                 if !self.parts.contains_key(uri) {
                     return Err(OpcError::Missing(format!("core properties part {uri}")));
                 }
+                if self.core_orphan {
+                    let uri = uri.clone();
+                    self.link_property_part(&uri, CORE_REL)?;
+                    self.core_orphan = false;
+                }
             } else {
-                let bytes = write_core(&self.core, &self.core_unknown)?;
+                let bytes = self.render_core_part()?;
                 self.core_uri = Some(self.insert_property_part(
                     "docProps/core.xml",
                     CORE_CONTENT_TYPE,
@@ -703,8 +737,13 @@ impl Package {
                 if !self.parts.contains_key(uri) {
                     return Err(OpcError::Missing(format!("app properties part {uri}")));
                 }
+                if self.app_orphan {
+                    let uri = uri.clone();
+                    self.link_property_part(&uri, APP_REL)?;
+                    self.app_orphan = false;
+                }
             } else {
-                let bytes = write_app(&self.app, &self.app_unknown)?;
+                let bytes = self.render_app_part()?;
                 self.app_uri = Some(self.insert_property_part(
                     "docProps/app.xml",
                     APP_CONTENT_TYPE,
@@ -737,6 +776,11 @@ impl Package {
             )));
         }
         self.insert_part(uri.clone(), content_type, bytes)?;
+        self.link_property_part(&uri, rel_type)?;
+        Ok(uri)
+    }
+
+    fn link_property_part(&mut self, uri: &PartUri, rel_type: &str) -> Result<(), OpcError> {
         let base_id = if rel_type == CORE_REL {
             "rIdCoreProperties"
         } else {
@@ -748,8 +792,7 @@ impl Package {
             id = format!("{base_id}{suffix}");
             suffix = suffix.saturating_add(1);
         }
-        self.add_relationship(None, id, rel_type, path, TargetMode::Internal)?;
-        Ok(uri)
+        self.add_relationship(None, id, rel_type, uri.to_string(), TargetMode::Internal)
     }
 
     fn write_materialized(&self) -> Result<Vec<u8>, OpcError> {
@@ -768,7 +811,7 @@ impl Package {
             self.core_uri
                 .as_ref()
                 .and_then(|u| self.parts.get(u))
-                .map(|p| write_core(&self.core, &self.core_unknown).map(|b| (p.uri.to_string(), b)))
+                .map(|p| self.render_core_part().map(|b| (p.uri.to_string(), b)))
                 .transpose()?
         } else {
             None
@@ -777,7 +820,7 @@ impl Package {
             self.app_uri
                 .as_ref()
                 .and_then(|u| self.parts.get(u))
-                .map(|p| write_app(&self.app, &self.app_unknown).map(|b| (p.uri.to_string(), b)))
+                .map(|p| self.render_app_part().map(|b| (p.uri.to_string(), b)))
                 .transpose()?
         } else {
             None
@@ -1269,43 +1312,6 @@ fn parse_relationships(
     Ok(out)
 }
 
-fn write_events(events: &[Event]) -> Result<Vec<u8>, OpcError> {
-    let mut w = XmlWriter::new(Vec::new())?;
-    for e in events {
-        w.write_event(e)?;
-    }
-    Ok(w.finish()?)
-}
-fn n(local: &str, ns: &str) -> Name {
-    Name {
-        prefix: None,
-        local: local.into(),
-        namespace: Some(ns.into()),
-    }
-}
-fn plain(local: &str) -> Name {
-    Name {
-        prefix: None,
-        local: local.into(),
-        namespace: None,
-    }
-}
-fn start(local: &str, ns: &str, attrs: Vec<Attribute>) -> Event {
-    Event::StartElement {
-        name: n(local, ns),
-        attributes: attrs,
-        empty: false,
-    }
-}
-fn end(local: &str, ns: &str) -> Event {
-    Event::EndElement { name: n(local, ns) }
-}
-fn a(local: &str, value: String) -> Attribute {
-    Attribute {
-        name: plain(local),
-        value,
-    }
-}
 fn read_simple_properties(
     bytes: &[u8],
     root_ns: &str,
@@ -1441,129 +1447,82 @@ fn parse_app(
     }
     Ok((p, unknown))
 }
-fn write_relationships(rels: &[Relationship]) -> Result<Vec<u8>, OpcError> {
-    let mut e = vec![start("Relationships", REL_NS, vec![])];
-    for r in rels {
-        let mut attrs = vec![
-            a("Id", r.id.clone()),
-            a("Type", r.rel_type.clone()),
-            a("Target", r.target.clone()),
-        ];
-        if r.mode == TargetMode::External {
-            attrs.push(a("TargetMode", "External".into()));
+/// Attribute-value escaping for the OPC parts written below.
+fn escape_attr(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\t' => out.push_str("&#9;"),
+            '\n' => out.push_str("&#10;"),
+            '\r' => out.push_str("&#13;"),
+            c => out.push(c),
         }
-        e.push(Event::StartElement {
-            name: n("Relationship", REL_NS),
-            attributes: attrs,
-            empty: true,
-        });
     }
-    e.push(end("Relationships", REL_NS));
-    write_events(&e)
+    out
+}
+// `[Content_Types].xml` and the relationship parts are written with the
+// default namespace declared once on the root. The generic XML writer would
+// prefix every element (`ns0:`) and repeat the declaration, which other
+// consumers (LibreOffice, Word) do not accept in these parts. The reader
+// still accepts both forms.
+fn write_relationships(rels: &[Relationship]) -> Result<Vec<u8>, OpcError> {
+    let mut out = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Relationships xmlns=\"{REL_NS}\">"
+    );
+    for r in rels {
+        out.push_str(&format!(
+            "<Relationship Id=\"{}\" Type=\"{}\" Target=\"{}\"",
+            escape_attr(&r.id),
+            escape_attr(&r.rel_type),
+            escape_attr(&r.target)
+        ));
+        if r.mode == TargetMode::External {
+            out.push_str(" TargetMode=\"External\"");
+        }
+        out.push_str("/>");
+    }
+    out.push_str("</Relationships>");
+    Ok(out.into_bytes())
 }
 fn write_content_types(p: &Package) -> Result<Vec<u8>, OpcError> {
-    let mut e = vec![start("Types", CONTENT_TYPES_NS, vec![])];
+    let mut out = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<Types xmlns=\"{CONTENT_TYPES_NS}\">"
+    );
     let mut used = BTreeSet::new();
     for part in p.parts.values() {
         used.insert(part.content_type.clone());
     }
     let has_rels = p.relationships.values().any(|rels| !rels.is_empty());
     let mut wrote_rels = false;
+    let default = |ext: &str, ct: &str| {
+        format!(
+            "<Default Extension=\"{}\" ContentType=\"{}\"/>",
+            escape_attr(ext),
+            escape_attr(ct)
+        )
+    };
     for (ext, ct) in &p.defaults {
         if ext == "rels" && ct == REL_CONTENT_TYPE {
             wrote_rels = true;
         }
         if !used.contains(ct) || (ext == "rels" && has_rels) {
-            e.push(Event::StartElement {
-                name: n("Default", CONTENT_TYPES_NS),
-                attributes: vec![a("Extension", ext.clone()), a("ContentType", ct.clone())],
-                empty: true,
-            });
+            out.push_str(&default(ext, ct));
         }
     }
     if has_rels && !wrote_rels {
-        e.push(Event::StartElement {
-            name: n("Default", CONTENT_TYPES_NS),
-            attributes: vec![
-                a("Extension", "rels".into()),
-                a("ContentType", REL_CONTENT_TYPE.into()),
-            ],
-            empty: true,
-        });
+        out.push_str(&default("rels", REL_CONTENT_TYPE));
     }
     for part in p.parts.values() {
-        e.push(Event::StartElement {
-            name: n("Override", CONTENT_TYPES_NS),
-            attributes: vec![
-                a("PartName", format!("/{}", part.uri)),
-                a("ContentType", part.content_type.clone()),
-            ],
-            empty: true,
-        });
+        out.push_str(&format!(
+            "<Override PartName=\"/{}\" ContentType=\"{}\"/>",
+            escape_attr(part.uri.as_str()),
+            escape_attr(&part.content_type)
+        ));
     }
-    e.push(end("Types", CONTENT_TYPES_NS));
-    write_events(&e)
-}
-fn property_events(
-    root: &str,
-    ns: &str,
-    fields: &[(&str, &str, Option<&String>)],
-    unknown: &[atelier_xml::OpaqueSubtree],
-) -> Result<Vec<u8>, OpcError> {
-    let mut w = XmlWriter::new(Vec::new())?;
-    w.write_event(&start(root, ns, vec![]))?;
-    for (name, child_ns, value) in fields {
-        if let Some(value) = value {
-            w.write_event(&start(name, child_ns, vec![]))?;
-            w.write_event(&Event::Text(value.to_string()))?;
-            w.write_event(&end(name, child_ns))?;
-        }
-    }
-    for u in unknown {
-        w.write_opaque(u)?;
-    }
-    w.write_event(&end(root, ns))?;
-    Ok(w.finish()?)
-}
-fn write_core(p: &CoreProperties, u: &[atelier_xml::OpaqueSubtree]) -> Result<Vec<u8>, OpcError> {
-    property_events(
-        "coreProperties",
-        CORE_NS,
-        &[
-            ("title", DC_NS, p.title.as_ref()),
-            ("subject", DC_NS, p.subject.as_ref()),
-            ("creator", DC_NS, p.creator.as_ref()),
-            ("keywords", CORE_NS, p.keywords.as_ref()),
-            ("description", DC_NS, p.description.as_ref()),
-            ("lastModifiedBy", CORE_NS, p.last_modified_by.as_ref()),
-            ("revision", CORE_NS, p.revision.as_ref()),
-            ("created", DCTERMS_NS, p.created.as_ref()),
-            ("modified", DCTERMS_NS, p.modified.as_ref()),
-            ("category", CORE_NS, p.category.as_ref()),
-            ("contentStatus", CORE_NS, p.content_status.as_ref()),
-            ("identifier", DC_NS, p.identifier.as_ref()),
-            ("language", DC_NS, p.language.as_ref()),
-            ("version", CORE_NS, p.version.as_ref()),
-        ],
-        u,
-    )
-}
-fn write_app(p: &AppProperties, u: &[atelier_xml::OpaqueSubtree]) -> Result<Vec<u8>, OpcError> {
-    property_events(
-        "Properties",
-        APP_NS,
-        &[
-            ("Application", APP_NS, p.application.as_ref()),
-            ("AppVersion", APP_NS, p.app_version.as_ref()),
-            ("Company", APP_NS, p.company.as_ref()),
-            ("Manager", APP_NS, p.manager.as_ref()),
-            ("Pages", APP_NS, p.pages.as_ref()),
-            ("Words", APP_NS, p.words.as_ref()),
-            ("Characters", APP_NS, p.characters.as_ref()),
-            ("Paragraphs", APP_NS, p.paragraphs.as_ref()),
-            ("Lines", APP_NS, p.lines.as_ref()),
-            ("Template", APP_NS, p.template.as_ref()),
-        ],
-        u,
-    )
+    out.push_str("</Types>");
+    Ok(out.into_bytes())
 }
