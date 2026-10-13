@@ -16,7 +16,16 @@ pub(crate) const PAIR_PLCFSED: usize = 6;
 pub(crate) const PAIR_PLCFBTE_CHPX: usize = 12;
 pub(crate) const PAIR_PLCFBTE_PAPX: usize = 13;
 pub(crate) const PAIR_STTBF_FFN: usize = 15;
+pub(crate) const PAIR_PLCFHDD: usize = 11;
+pub(crate) const PAIR_PLCFFLD_MOM: usize = 16;
+pub(crate) const PAIR_PLCFFLD_HDR: usize = 17;
+pub(crate) const PAIR_STTBF_BKMK: usize = 21;
+pub(crate) const PAIR_PLCF_BKF: usize = 22;
+pub(crate) const PAIR_PLCF_BKL: usize = 23;
+pub(crate) const PAIR_DOP: usize = 31;
 pub(crate) const PAIR_CLX: usize = 33;
+pub(crate) const PAIR_PLCF_LST: usize = 73;
+pub(crate) const PAIR_PLF_LFO: usize = 74;
 
 /// Upper bound on `cbRgFcLcb` accepted (Word 2007 uses 183).
 const MAX_PAIRS: usize = 1024;
