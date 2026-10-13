@@ -123,3 +123,5 @@ Conclusion honnête : l'écart « mots » contre LibreOffice dépasse 0,5 % sur 
 ## Tests
 
 `crates/text-model/tests/` : `statistics.rs` (29 cas calculés à la main), `statistics_property.rs` (propriétés à graine fixe : somme des paragraphes = global, cache incrémental = recomptage, sélections adjacentes cohérentes avec leur union, cache texte brut), `statistics_oracle.rs` (LibreOffice + contrôle local), `statistics_perf.rs` (mesure, ignoré par défaut). Données : `statistics-data/*.stats.txt` générées par `tools/extract-statistics-oracle.py`.
+
+Intégration (2026-10-13) : le correctif de revue `c4e0539` est fusionné. Plusieurs plages disjointes du même paragraphe comptent ce paragraphe une seule fois; la régression est vérifiée dans `statistics.rs` et la passe complète après fusion. Le dialogue et la comparaison à Word restent ouverts.

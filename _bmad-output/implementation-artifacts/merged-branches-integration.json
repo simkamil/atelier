@@ -2,13 +2,14 @@
   "baseline_main": "50aa8ab37f6f05276932b1f787ec57c3536bb1ce",
   "merged_branches": {
     "us-340-search": "870f942515e3321b04296acae33ee454c0ed5699",
-    "us-343-statistics": "0b2589a81887e053513513a2af14f643c545e0ca",
+    "us-343-statistics": "c4e053911081fcc131800f7ed459b2a5d434a6b5",
     "codex/ui-components-ribbon": "0327fd1851d80394f7241339197d7ee2b2a9c582"
   },
   "merge_commits": [
     "0512261",
     "bfff95e",
-    "4b6745c"
+    "4b6745c",
+    "ac5604e"
   ],
   "not_merged": {
     "us-313-doc-structure": "In progress, confirmed by user; uncommitted work preserved",
@@ -47,5 +48,6 @@
     "full_validation_rerun": true,
     "wasm_bytes_unchanged": true
   },
-  "remote_ci_evidence": "_bmad-output/implementation-artifacts/merged-branches-ci.json"
+  "remote_ci_evidence": "_bmad-output/implementation-artifacts/merged-branches-ci.json",
+  "statistics_review_fix": "Count one paragraph for disjoint selection ranges within that paragraph; regression assertion included and full validation rerun"
 }

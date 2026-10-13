@@ -72,7 +72,7 @@
     "crates/text-model/src/search/source.rs": "70e0d272deb9762fd6be757712d0e27f2d12836c4842aa215fbe379117e1cb96",
     "crates/text-model/src/statistics/mod.rs": "76b38880c11b482559459227101664a743a62933ca39c707125a084973e974f0",
     "crates/text-model/src/statistics/plain.rs": "de7c9d457cdd6c713f7799a7cd69506c99e6eb9b35e2e6f42e7be29b9a7deb96",
-    "crates/text-model/src/statistics/rich.rs": "713619d8fe6783cd7ad6745f2a8b4ea69d7eea5e7450ff5f77baa455580d375d",
+    "crates/text-model/src/statistics/rich.rs": "2da7624b5fc7b423e7ecc1086e29f8e821460571b1a93b32c23e22135b02f788",
     "crates/text-model/src/statistics/rules.rs": "38b7cd7e3356ac36b09d4fd04579ca13d5d949ba54b3433e1a93eed706bf99db",
     "crates/unicode/build.rs": "424192b0343a3a3d2ed31cafbbf948b1a8a530ebb928ea181cdb9882638d38ae",
     "crates/unicode/Cargo.toml": "9f3054fe819df01d5c8c3f94260a845156c4fc5c65706bdfd343a6fa25bb403d",

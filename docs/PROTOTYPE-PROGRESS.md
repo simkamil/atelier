@@ -10,6 +10,8 @@ US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves
 
 `main` réunit maintenant `us-340-search`, `us-343-statistics` et `codex/ui-components-ribbon`, en plus des formats/outils déjà fusionnés. Les conflits des déclarations de modules et du suivi ont été résolus en conservant les deux apports. US-313 et US-331 restent en développement dans leurs worktrees; leurs fichiers non commités n’ont pas été modifiés ni fusionnés.
 
+Le correctif de revue US-343 `c4e0539`, commité pendant l’intégration, est également fusionné : plusieurs plages disjointes dans un même paragraphe ne doublent plus son comptage. La validation complète a été relancée après ce dernier changement.
+
 Les [API de recherche](us-340-search.md) et de [statistiques](us-343-statistics.md) sont intégrées à `atelier-text-model`. Le volet Ctrl+F, le surlignage, la barre d’état/dialogue de statistiques et la comparaison réelle avec Word restent ouverts : **US-340/343 ne sont pas déclarées complètes**. Le total est **53/158 US complètes**, en cumulant les deux validations formats/outils et les trois validations UI.
 
 La [validation après fusion](../_bmad-output/implementation-artifacts/merged-branches-validation.json) passe **19 contrôles**, **987 tests Rust** (3 tests optionnels ignorés), **112/114 assertions UI normale/contraste élevé**, **118 éditeur** et **36 Canvas/saisie**. Les compilations et Clippy hôte/WASM, le formatage, les licences, le garde du lock, le package et la sonde réelle WebView2 passent. **1 071 entrées sont figées**, sans changement pendant cette passe complète; aucun résultat de l’ancien lot n’est réutilisé. La recherche et les statistiques conservent leurs preuves et limites documentées.

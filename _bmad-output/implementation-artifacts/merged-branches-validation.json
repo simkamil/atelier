@@ -1,6 +1,6 @@
 {
   "baseline_commit": "50aa8ab37f6f05276932b1f787ec57c3536bb1ce",
-  "generated_at": "2026-10-13T06:33:44.052634+00:00",
+  "generated_at": "2026-10-13T06:42:30.249088+00:00",
   "status": "passed",
   "platform": "Windows MSVC; installed Edge; real WebView2 embedded-origin smoke",
   "input_scope": "All versioned/untracked production, data, test, tooling and CI files, plus this validator; excludes documentation and agent reports.",
@@ -286,7 +286,7 @@
     "crates/text-model/src/search/source.rs": "70e0d272deb9762fd6be757712d0e27f2d12836c4842aa215fbe379117e1cb96",
     "crates/text-model/src/statistics/mod.rs": "76b38880c11b482559459227101664a743a62933ca39c707125a084973e974f0",
     "crates/text-model/src/statistics/plain.rs": "de7c9d457cdd6c713f7799a7cd69506c99e6eb9b35e2e6f42e7be29b9a7deb96",
-    "crates/text-model/src/statistics/rich.rs": "713619d8fe6783cd7ad6745f2a8b4ea69d7eea5e7450ff5f77baa455580d375d",
+    "crates/text-model/src/statistics/rich.rs": "2da7624b5fc7b423e7ecc1086e29f8e821460571b1a93b32c23e22135b02f788",
     "crates/text-model/src/statistics/rules.rs": "38b7cd7e3356ac36b09d4fd04579ca13d5d949ba54b3433e1a93eed706bf99db",
     "crates/text-model/tests/common/mod.rs": "6e4c1d54ea5d0acabf5b8258a25e7774218111ad60d2b9769db9597900ff8862",
     "crates/text-model/tests/default_document.rs": "9649bf0e9c1dfc14ebcf814c9ac50fbb7b22e482f79d3d3268b719b4b4d69f11",
@@ -311,7 +311,7 @@
     "crates/text-model/tests/statistics-data/table-merge.odt.stats.txt": "fb1fd3e9d71acf17da95e5cbe48faf8bd9a2117f330b205238c6155ff447d841",
     "crates/text-model/tests/statistics-data/text-accents.odt.stats.txt": "23598c07793ca81728d3835d319c8c0c7e995f4ac509e2c76afbfd6975c4b05f",
     "crates/text-model/tests/statistics-data/trailing-spaces.odt.stats.txt": "ea990c90f10c13d5d99c451ebd94343638445c08a22e16e0cd45d9aa98eed2f7",
-    "crates/text-model/tests/statistics.rs": "68a207166824410f2bf69d053d951f60438af5dad8cbfe52c03e73fe3b27985f",
+    "crates/text-model/tests/statistics.rs": "c554d220dc579e95291c27ea1c59bfeb91958dbf554aef7050c5391367d707f7",
     "crates/text-model/tests/statistics_oracle.rs": "ccbb68fc1636765c39b284080e6af369f1ab877f873fd6cfd5011f2ad67b03ae",
     "crates/text-model/tests/statistics_perf.rs": "d4171d5138769a43293b3c1f5ca6a2135bee1767743647ed774b418e8fed3a6a",
     "crates/text-model/tests/statistics_property.rs": "4b92e1f32c983460153e668797e91abab272de9f68cdb0c183ddbefbdde16b16",
@@ -342,7 +342,7 @@
     "data/README.md": "299ff32e136f2a5f40462b13946539247e9b243ea6b3f47a51d82e7ece4e9f49",
     "data/engine/README.md": "692e57d84dca3610ce872295f9bd3a03fb355eb6307e7ab90ed8e6773c0b5e13",
     "data/engine/atelier_core_wasm.wasm": "9d769e12bcc663ea6ef1103dae9924cb4f32ce30bb6877c024f8c3494a80bc61",
-    "data/engine/manifest.json": "54084297265141c1b0e286165d22ab255ac3dfc987626aaab2904fa1938cf1dc",
+    "data/engine/manifest.json": "551eadee4fb9d8e4ae98f79f097f974305f219d66360586590f77c12b80a5545",
     "data/fonts/README.md": "562c94bae492eb14505d831f6f94defe2f28fc4886b5f4a08a391d60d5fbdaf3",
     "data/fonts/caladea/Caladea-Bold.ttf": "ae3cb2dcbc925809dd29d2a44e9802211cab66be541bacbfc9c08c74b27c3742",
     "data/fonts/caladea/Caladea-BoldItalic.ttf": "ccabaa7b7e2fdf253d2b1a5fa699dd8a3df8d835a9eb285ad82631a677eb76c0",
@@ -1089,7 +1089,7 @@
         "--check"
       ],
       "exit_code": 0,
-      "seconds": 0.89,
+      "seconds": 0.86,
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -1106,8 +1106,8 @@
         "warnings"
       ],
       "exit_code": 0,
-      "seconds": 0.5,
-      "log_sha256": "bd500a1cd68cc1146fabdb33bfb54a5e8989001b1ac7391944bff55ce492d433"
+      "seconds": 1.297,
+      "log_sha256": "a50be5ddda675dc72745a2b003059e094857bf4add090ab45e0f28446f6e54be"
     },
     {
       "gate": "workspace-tests",
@@ -1119,8 +1119,8 @@
         "--offline"
       ],
       "exit_code": 0,
-      "seconds": 122.016,
-      "log_sha256": "f8dbafb9cb4c3d3d0a0ee08028f46cc224bb0256121170e8f734cdff8e51ac67",
+      "seconds": 204.781,
+      "log_sha256": "213d2f0f4ff01c1cab87f4b0cf24dfa24d46b8c3beafb0c178b83270a097e027",
       "passed": 987,
       "ignored": 3,
       "failed": 0
@@ -1137,7 +1137,7 @@
       ],
       "exit_code": 0,
       "seconds": 1.906,
-      "log_sha256": "26e5ec2eb66c902a93dd92d89828f47a681d42636c0054124cad45197db7c4bc"
+      "log_sha256": "4a22f3ba1819f5e41a92100b6d9a48e520ab68cb916f865b8419110ecec96993"
     },
     {
       "gate": "workspace-guard",
@@ -1168,7 +1168,7 @@
         "."
       ],
       "exit_code": 0,
-      "seconds": 0.094,
+      "seconds": 0.078,
       "log_sha256": "863feca995f8c68c52cbc955f7aa733c99c1beeb1b17bebd36d56bf5a5368885"
     },
     {
@@ -1188,8 +1188,8 @@
         "--offline"
       ],
       "exit_code": 0,
-      "seconds": 0.078,
-      "log_sha256": "02db5a66fa0c60ca8618bd08aac556eac4f3ec863e8630a0d353dba6a0f6e126"
+      "seconds": 0.906,
+      "log_sha256": "cbcbca8fe7ce1646a6f9e66532fe704846923980eb186780a0de7e8394932feb"
     },
     {
       "gate": "wasm-lint-merged-modules",
@@ -1212,8 +1212,8 @@
         "warnings"
       ],
       "exit_code": 0,
-      "seconds": 0.172,
-      "log_sha256": "59639588a6f1826f129cbcd121edc07279dab94786f5fa5bde6b3439b2e845cc"
+      "seconds": 0.704,
+      "log_sha256": "592f02e03b9284bd137a72f81c255795adff49e1eb4a1e0059284e80609fe5d1"
     },
     {
       "gate": "theme-node",
@@ -1222,7 +1222,7 @@
         "tests/theme.mjs"
       ],
       "exit_code": 0,
-      "seconds": 0.047,
+      "seconds": 0.031,
       "log_sha256": "89bdc45cdb6b9b6e2283f853e6308cae080d4bf835cd0333736a92c47da95654"
     },
     {
@@ -1233,7 +1233,7 @@
         "--screenshots"
       ],
       "exit_code": 0,
-      "seconds": 1.547,
+      "seconds": 3.39,
       "log_sha256": "9bfa33a4faf21e5cf4adc5df656bf9b5a1141c6c5983f7b09f461dee65e1e15b",
       "assertions": 112,
       "browser_report": {
@@ -1368,7 +1368,7 @@
         "--screenshots"
       ],
       "exit_code": 0,
-      "seconds": 1.625,
+      "seconds": 2.11,
       "log_sha256": "d4c2fc08e29ae6b7f36895a53ff20dcfcc2211fa415238c35388faf56955fd9f",
       "assertions": 114,
       "browser_report": {
@@ -1503,7 +1503,7 @@
         "tests/run-editor-browser.mjs"
       ],
       "exit_code": 0,
-      "seconds": 2.672,
+      "seconds": 3.672,
       "log_sha256": "8e26c56729944b4c0b6db572f7a30b0b4edd5761f6d714223b26642ba8934c76",
       "assertions": 118,
       "browser_report": {
@@ -1639,7 +1639,7 @@
         "tests/run-frontend-browser.mjs"
       ],
       "exit_code": 0,
-      "seconds": 1.015,
+      "seconds": 1.359,
       "log_sha256": "0a9a9b1ffa23b1b23f50271828e1aca295b8904716fbf31c2ab0025e49c42408",
       "assertions": 36,
       "browser_report": {
@@ -1915,8 +1915,8 @@
         "tests/rich-preview-protocol.mjs"
       ],
       "exit_code": 0,
-      "seconds": 2.266,
-      "log_sha256": "818110e962ab5c4e3c0ccc30261a189614b99c3d4cefa524a2209f6d6f781736"
+      "seconds": 2.844,
+      "log_sha256": "7c710fdc3a6e15a59296d69951136b2165547f145d6f26bbb0242b110f4220c6"
     },
     {
       "gate": "release-host",
@@ -1930,8 +1930,8 @@
         "--offline"
       ],
       "exit_code": 0,
-      "seconds": 1.641,
-      "log_sha256": "45df10e5eb5f8808256912b9b7bc4d60f11067195dd70a053a08883015e92426"
+      "seconds": 1.906,
+      "log_sha256": "46e2aff61c0ab19b41a46e76086ae79e618243e5cf5f52cd78edd2b453cbb7ab"
     },
     {
       "gate": "release-embedded-origin",
@@ -1941,7 +1941,7 @@
         "target/merged-validation/native-origin"
       ],
       "exit_code": 0,
-      "seconds": 0.578,
+      "seconds": 1.656,
       "log_sha256": "7bfffb721de84b79531ca6c1cab786caaf491d341e69eea8d0da40405fd3de52",
       "output": "embedded resources: assets=28; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts=64; rotated=8; callback objects 0->0"
     },
@@ -1975,13 +1975,13 @@
         "--check"
       ],
       "exit_code": 0,
-      "seconds": 0.031,
-      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      "seconds": 0.156,
+      "log_sha256": "2ff7b13f4e3df324d08e8bdce9323b77e032eae174be15a81e2aebee31145e6e"
     }
   ],
   "release_executable": {
     "path": "target/release/atelier.exe",
-    "sha256": "9f18c4cc2cb87317dd06498fd0399a6a7296ef3028c10898d88fdf244a5724bf"
+    "sha256": "31afd61f5aeb743d3c327c50e0500d699197b9e3f15f36e55410fea790ac0ccc"
   },
   "limitations": [
     "Synthetic DOM keyboard/CDP media events do not establish physical AZERTY/IME or screen-reader acceptance.",
