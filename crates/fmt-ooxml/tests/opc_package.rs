@@ -619,7 +619,12 @@ fn validates_content_types_and_extension_syntax() {
             .unwrap()
             .read_all()
             .unwrap();
-        let xml = String::from_utf8(ct).unwrap().replace("</ns0:Types>", &format!("<ns0:Default Extension=\"{extension}\" ContentType=\"application/xml\"/></ns0:Types>"));
+        let xml = String::from_utf8(ct).unwrap().replace(
+            "</Types>",
+            &format!(
+                "<Default Extension=\"{extension}\" ContentType=\"application/xml\"/></Types>"
+            ),
+        );
         let malformed = replace_zip_member(&bytes, "[Content_Types].xml", xml.as_bytes());
         assert!(
             Package::read(&malformed).is_err(),

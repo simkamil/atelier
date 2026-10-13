@@ -63,6 +63,8 @@ limits.max_total_part_bytes = 128 * 1024 * 1024;
 let package = Package::read_with_limits(&docx_bytes, limits)?;
 ```
 
+`[Content_Types].xml` et les `.rels` sont écrits avec l'espace de noms par défaut déclaré une seule fois sur la racine, sans préfixe généré (US-328) ; la lecture accepte les formes avec et sans préfixe.
+
 La couche OPC ne fait pas l'import sémantique WordprocessingML. Cette étape
 relève de US-301 (texte, propriétés et styles). La numérotation correspond à US-302.
 

@@ -32,7 +32,6 @@ pub const MAX_HYPERLINK_BASE_CHARS: usize = 2048;
 pub const MAX_LANGUAGE_CHARS: usize = 35;
 /// Longest date text the parser looks at, in bytes.
 const MAX_DATE_BYTES: usize = 64;
-
 // ---------------------------------------------------------------------------
 // Dates
 // ---------------------------------------------------------------------------
@@ -433,6 +432,10 @@ pub enum PropertyNotice {
     /// The part exists but no package relationship points to it; it was read
     /// anyway and will be linked if properties are written.
     UnreferencedPart { part: &'static str },
+    /// The part cannot be edited in place (for example UTF-16); if properties
+    /// are written it is regenerated from the values and unknown elements
+    /// are lost.
+    PartRegenerated { part: &'static str },
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -1315,7 +1318,9 @@ fn patch(
         }
     }
     // Insertions at one position keep field order (stable sort).
-    ops.sort_by_key(|o| o.pos);
+    // At one position an insertion (empty range) goes before a removal or
+    // replacement that starts there.
+    ops.sort_by_key(|o| (o.pos, o.end));
     let mut out = String::with_capacity(text.len() + 256);
     let mut cursor = 0usize;
     for op in &ops {
@@ -1444,7 +1449,11 @@ impl Package {
         let new = core_values(&self.core, &self.core_extra);
         match render(Kind::Core, original, &new) {
             Ok(b) => Ok(b),
-            Err(_) => crate::write_core(&self.core, &self.core_unknown),
+            // The original cannot be edited in place (not UTF-8, not well formed
+            // for the scanner): write a clean part from the values. The snapshot
+            // reports it as `PartRegenerated` beforehand.
+            Err(_) => render(Kind::Core, None, &new)
+                .map_err(|_| OpcError::InvalidPackage("core properties cannot be written")),
         }
     }
 
@@ -1457,7 +1466,8 @@ impl Package {
         let new = app_values(&self.app, &self.app_extra);
         match render(Kind::App, original, &new) {
             Ok(b) => Ok(b),
-            Err(_) => crate::write_app(&self.app, &self.app_unknown),
+            Err(_) => render(Kind::App, None, &new)
+                .map_err(|_| OpcError::InvalidPackage("app properties cannot be written")),
         }
     }
 
@@ -1576,6 +1586,16 @@ impl Package {
                         element,
                         count,
                     });
+                }
+            }
+        }
+        for (kind, uri, part) in [
+            (Kind::Core, &self.core_uri, "docProps/core.xml"),
+            (Kind::App, &self.app_uri, "docProps/app.xml"),
+        ] {
+            if let Some(p) = uri.as_ref().and_then(|u| self.parts.get(u)) {
+                if legacy_values(kind, &p.bytes).is_none() {
+                    notices.push(PropertyNotice::PartRegenerated { part });
                 }
             }
         }

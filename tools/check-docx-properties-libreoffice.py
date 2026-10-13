@@ -4,20 +4,18 @@
 
 1. (--regenerate) rebuild tests/docx-reference/libreoffice/properties.docx from properties.fodt;
 2. run the Rust test that edits the file and writes it under target/tmp;
-3. convert the result to .fodt with LibreOffice (headless) and compare the office:meta it shows.
+3. convert the result (the file exactly as written, untouched) to .fodt with LibreOffice (headless) and compare the office:meta it shows.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,29 +53,6 @@ def convert(exe: str, source: Path, fmt: str, outdir: Path) -> Path:
     return outdir / (source.stem + "." + fmt.split(":")[0])
 
 
-def deprefix_opc(source: Path, target: Path) -> None:
-    """Rewrite [Content_Types].xml and *.rels with the default namespace.
-
-    The package writer of fmt-ooxml (US-300) prefixes every element of these two parts (`ns0:`), which
-    LibreOffice refuses to load; this is a known defect outside US-328 (see docs/us-328-document-properties.md).
-    Only these two kinds of parts are touched: the property parts under test are passed through unchanged.
-    """
-    namespaces = {
-        "Types": "http://schemas.openxmlformats.org/package/2006/content-types",
-        "Relationships": "http://schemas.openxmlformats.org/package/2006/relationships",
-    }
-    with zipfile.ZipFile(source) as zin, zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zout:
-        for name in zin.namelist():
-            data = zin.read(name)
-            if name == "[Content_Types].xml" or name.endswith(".rels"):
-                text = data.decode("utf-8")
-                text = re.sub(r' xmlns:ns0="[^"]*"', "", text).replace("ns0:", "")
-                text = re.sub(r"<(Types|Relationships)",
-                              lambda m: f'<{m.group(1)} xmlns="{namespaces[m.group(1)]}"', text, count=1)
-                data = text.encode("utf-8")
-            zout.writestr(name, data)
-
-
 CREATED = {
     "title": EXPECTED["title"],
     "subject": "Créé à l'enregistrement",
@@ -90,9 +65,8 @@ CREATED = {
 
 def read_back(exe: str, docx: Path, expected: dict) -> int:
     with tempfile.TemporaryDirectory() as tmp:
-        readable = Path(tmp) / "readable.docx"
-        deprefix_opc(docx, readable)
-        fodt = convert(exe, readable, "fodt", Path(tmp))
+        # The package exactly as the project wrote it: no rewriting of any part.
+        fodt = convert(exe, docx, "fodt", Path(tmp))
         meta = ET.parse(fodt).getroot().find("office:meta", NS)
         seen = {
             "title": meta.findtext("dc:title", namespaces=NS),

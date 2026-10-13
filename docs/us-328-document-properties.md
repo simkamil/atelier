@@ -57,7 +57,8 @@ interprétés : ils restent tels quels dans le fichier.
 - **Éléments en double** : le **dernier** gagne en lecture (règle de l'existant) ; une modification
   touche le dernier, une suppression les retire tous ; avis `DuplicateElement`.
 - **Dates** : formes `YYYY`, `YYYY-MM`, `YYYY-MM-DD`, `…Thh:mm`, `…:ss`, `…:ss.s{1,9}`, avec `Z`,
-  `±hh:mm`, `±hhmm` ou sans fuseau (toléré, `offset_minutes = None`). Une date invalide reste du texte
+  `±hh:mm`, `±hhmm` (décalage borné à ±14:00 comme le `dateTime` de XML Schema) ou sans fuseau
+  (toléré, `offset_minutes = None`). Une date invalide reste du texte
   (`PropertyDate::Invalid`, avis `InvalidDate`), n'est jamais réécrite tant qu'on ne touche pas à
   son champ, et `update_on_save` ne la « répare » pas (`created` est présent). `modified` est écrit en
   UTC, secondes, `Z`, avec `xsi:type="dcterms:W3CDTF"`.
@@ -74,7 +75,13 @@ interprétés : ils restent tels quels dans le fichier.
 - **Partie sans relation** : lue (avis `UnreferencedPart`) et reliée (relation ajoutée) seulement si
   on écrit des propriétés ; sinon le paquet est réécrit comme il est.
 - **Repli** : si la partie d'origine n'est pas de l'UTF-8 simple (par ex. UTF-16) ou ne se balaye
-  pas, l'ancien écrivain régénère la partie (perte des extras et de `xsi:type`) ; jamais de panique.
+  pas, elle est régénérée proprement à partir des valeurs (préfixes `cp`, `dc`, `dcterms`, `xsi`, espace
+  de noms par défaut pour `app.xml`) ; les éléments inconnus sont alors perdus, ce que l'instantané
+  signale d'avance par l'avis `PartRegenerated`. L'ancien écrivain (préfixes `nsN:`) n'existe plus.
+- **Opérations qui se touchent** : à une même position, une insertion passe avant la suppression ou le
+  remplacement qui commence là (ex. supprimer `title` et ajouter `keywords` en même temps).
+- **`]]>` dans une valeur** : écrit `]]&gt;` ; l'analyseur XML du projet (`atelier-xml`) a été corrigé
+  pour ne refuser que la séquence littérale `]]>` dans le texte, pas celle obtenue en décodant `&gt;`.
 - **Robustesse** : le balayeur est borné (100 000 enfants, profondeur 1024, 1024 attributs) ; tailles
   bornées en amont par `Limits::max_xml_part_bytes`.
 
@@ -95,13 +102,15 @@ mots-clés, commentaires (accents, `« »`, `—`, `œ`, `&`, `<`, retour à la 
 Microsoft Word n'est pas installé ; les docx du corpus (`basic.docx` sans `docProps`, `rich.docx`
 écrit par LibreOffice) ne viennent pas de Word : aucun aller-retour sur un fichier Word réel.
 
-**Défaut hors périmètre constaté** : l'écrivain de `[Content_Types].xml` et des `.rels` (US-300)
-préfixe tous les éléments (`ns0:`, déclaration répétée) ; LibreOffice refuse de charger un tel paquet
-(« source file could not be loaded »), Word très probablement aussi. Le script retire ces préfixes avant
-de donner le fichier à LibreOffice (les parties de propriétés ne sont pas touchées). Le correctif
-(écrire ces deux parties avec l'espace de noms par défaut) tient en une soixantaine de lignes dans
-`lib.rs` mais change le test existant `validates_content_types_and_extension_syntax`, qui remplace le
-texte littéral `</ns0:Types>` : laissé à l'intégrateur (et à l'US-307).
+**Paquet OPC** : `[Content_Types].xml` et les `.rels` étaient écrits avec des préfixes générés (`ns0:`,
+déclaration répétée sur chaque élément) et LibreOffice refusait de charger tout paquet écrit par le
+projet. Ces deux types de parties sont maintenant écrits avec l'espace de noms par défaut déclaré une
+seule fois sur la racine (la lecture accepte toujours les deux formes). `tools/check-docx-properties-libreoffice.py`
+donne à LibreOffice le fichier **tel qu'écrit**, sans retouche, et il l'ouvre. Le test existant
+`validates_content_types_and_extension_syntax` cherchait le littéral `</ns0:Types>` : il cherche
+désormais `</Types>`. Tests : `tests/document_properties_files.rs` (absence de préfixe généré et
+déclaration unique dans les quatre types de parties, lecture de l'ancienne forme, propriété à graine fixe
+sur 400 jeux aléatoires de `core.xml`/`app.xml`).
 
 ## À brancher par l'intégrateur
 
