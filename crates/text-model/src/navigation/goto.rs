@@ -6,11 +6,10 @@
 //! "Previous" the last start strictly before `cur`. `+n` repeats Next `n`
 //! times, `-n` repeats Previous `n` times, `n` is absolute.
 
-use super::bookmarks::{BookmarkInfo, BookmarkOrder, list_with};
-use super::name::name_key;
+use super::bookmarks::{BookmarkInfo, BookmarkOrder, Resolver, list_with};
 use super::pages::PageMap;
 use super::{Direction, Reading};
-use crate::rich::{Node, NodeId, RichDocument};
+use crate::rich::{Node, NodeId, RichDocument, StyleCatalog};
 use crate::search::Zone;
 use atelier_model::selection::{Affinity, TextPosition};
 use core::fmt;
@@ -119,6 +118,9 @@ pub struct Landing {
     pub index: usize,
     pub count: usize,
     pub clamp: Option<Clamp>,
+    /// Bookmark reached by name: no exact match, several up to case; the
+    /// first in reading order was taken.
+    pub ambiguous: bool,
 }
 
 /// Result of a Go To.
@@ -136,6 +138,9 @@ pub enum GotoError {
     BookmarkNotFound(String),
     /// The current position (or one given by the layout) is not in the document.
     UnknownPosition,
+    /// The `PageMap` contradicts itself or the document (a start that does
+    /// not exist, a position outside the document).
+    InconsistentPageMap,
 }
 
 impl fmt::Display for GotoError {
@@ -144,6 +149,7 @@ impl fmt::Display for GotoError {
             Self::Parse(e) => write!(f, "invalid Go To input: {e:?}"),
             Self::BookmarkNotFound(n) => write!(f, "no bookmark named {n:?}"),
             Self::UnknownPosition => write!(f, "position outside the document"),
+            Self::InconsistentPageMap => write!(f, "inconsistent page map"),
         }
     }
 }
@@ -156,8 +162,10 @@ impl From<ParseError> for GotoError {
 }
 
 /// Heading style identifiers: `atelier.heading.1`..`9`, and the docx-style
-/// `Heading1`, `heading 2`, `Titre3` (case ignored). Hypothesis: the style
-/// is read from the paragraph itself, not inherited through a style chain.
+/// `Heading1`, `heading 2`, `Titre3` (case ignored). This reads one
+/// identifier only: without a style catalogue, inheritance (a style based on
+/// a heading) is **not** seen; this is an approximation. Use
+/// [`is_heading_style_in`] / [`goto_with_styles`] when the catalogue is known.
 pub fn is_heading_style(style: &str) -> bool {
     let lower = style.to_lowercase();
     let rest = lower
@@ -167,10 +175,40 @@ pub fn is_heading_style(style: &str) -> bool {
     matches!(rest.map(|r| r.trim_start().as_bytes()), Some([b'1'..=b'9']))
 }
 
+/// Longest `based_on` chain followed by [`is_heading_style_in`]; it also ends
+/// any cycle.
+pub const MAX_STYLE_CHAIN: usize = 64;
+
+/// Whether the style, or one of the styles it is (transitively) based on, is a
+/// heading style ([`is_heading_style`]). The chain is followed at most
+/// [`MAX_STYLE_CHAIN`] steps, so a cycle or a missing style ends it with
+/// `false`. The model has no outline level stored on the paragraph itself
+/// (`ParaProps` has none), so only styles define headings here.
+pub fn is_heading_style_in(style: &str, catalog: &StyleCatalog) -> bool {
+    let mut id = style;
+    for _ in 0..MAX_STYLE_CHAIN {
+        if is_heading_style(id) {
+            return true;
+        }
+        match catalog.style(id).and_then(|s| s.based_on.as_deref()) {
+            Some(next) => id = next,
+            None => return false,
+        }
+    }
+    false
+}
+
 #[derive(Clone, Copy)]
 struct Place {
     position: TextPosition,
     end: Option<TextPosition>,
+}
+
+fn place(position: TextPosition) -> Place {
+    Place {
+        position,
+        end: None,
+    }
 }
 
 fn at(node: NodeId, offset: usize) -> TextPosition {
@@ -195,10 +233,7 @@ fn sections(doc: &RichDocument, reading: &Reading) -> Vec<Place> {
     let mut out = Vec::new();
     for (id, zone, section) in &reading.paras {
         if in_body(*zone) && !std::mem::replace(&mut seen[*section], true) {
-            out.push(Place {
-                position: at(*id, 0),
-                end: None,
-            });
+            out.push(place(at(*id, 0)));
         }
     }
     out
@@ -217,10 +252,7 @@ fn tables(doc: &RichDocument) -> Vec<Place> {
             if matches!(node, Node::Table(_))
                 && let Some(p) = first_paragraph(doc, id)
             {
-                out.push(Place {
-                    position: at(p, 0),
-                    end: None,
-                });
+                out.push(place(at(p, 0)));
             }
             if matches!(node, Node::Table(_) | Node::Row(_) | Node::Cell(_)) {
                 stack.extend(node.children().into_iter().rev());
@@ -230,22 +262,25 @@ fn tables(doc: &RichDocument) -> Vec<Place> {
     out
 }
 
-fn paragraph_items(doc: &RichDocument, reading: &Reading, kind: GotoKind) -> Vec<Place> {
+fn paragraph_items(
+    doc: &RichDocument,
+    reading: &Reading,
+    kind: GotoKind,
+    styles: Option<&StyleCatalog>,
+) -> Vec<Place> {
+    let is_heading = |style: &str| match styles {
+        Some(catalog) => is_heading_style_in(style, catalog),
+        None => is_heading_style(style),
+    };
     let mut out = Vec::new();
     for (id, zone, _) in &reading.paras {
         let (true, Ok(p)) = (in_body(*zone), doc.paragraph(*id)) else {
             continue;
         };
         if kind == GotoKind::Object {
-            out.extend(p.anchored.iter().map(|o| Place {
-                position: at(*id, o.offset),
-                end: None,
-            }));
-        } else if p.props.style.as_deref().is_some_and(is_heading_style) {
-            out.push(Place {
-                position: at(*id, 0),
-                end: None,
-            });
+            out.extend(p.anchored.iter().map(|o| place(at(*id, o.offset))));
+        } else if p.props.style.as_deref().is_some_and(is_heading) {
+            out.push(place(at(*id, 0)));
         }
     }
     out
@@ -258,24 +293,36 @@ fn bookmark_place(b: &BookmarkInfo) -> Place {
     }
 }
 
-/// A numbered sequence of starts, in reading order.
+/// A numbered sequence of starts, in reading order. Several elements may
+/// start at the same position.
 struct Seq<'a> {
     count: usize,
     get: Box<dyn Fn(usize) -> Option<Place> + 'a>,
     /// Number of starts at or before the current position.
     after: usize,
+    /// Number of starts strictly before it.
+    before: usize,
 }
 
 fn list_seq<'a>(places: Vec<Place>, reading: &Reading, cur: (usize, usize)) -> Seq<'a> {
-    let after = places.partition_point(|p| reading.key(p.position).is_some_and(|k| k <= cur));
+    let key = |p: &Place| reading.key(p.position);
+    let before = places.partition_point(|p| key(p).is_some_and(|k| k < cur));
+    let after = places.partition_point(|p| key(p).is_some_and(|k| k <= cur));
     Seq {
         count: places.len(),
         get: Box::new(move |i| places.get(i.checked_sub(1)?).copied()),
         after,
+        before,
     }
 }
 
-fn layout_seq<'a>(kind: GotoKind, pages: &'a dyn PageMap, from: TextPosition) -> Seq<'a> {
+fn layout_seq<'a>(
+    kind: GotoKind,
+    pages: &'a dyn PageMap,
+    reading: &Reading,
+    from: TextPosition,
+    cur: (usize, usize),
+) -> Seq<'a> {
     let line = kind == GotoKind::Line;
     let count = if line {
         pages.line_count()
@@ -287,50 +334,48 @@ fn layout_seq<'a>(kind: GotoKind, pages: &'a dyn PageMap, from: TextPosition) ->
     } else {
         pages.page_of(from)
     };
+    let get = move |i: usize| {
+        if line {
+            pages.line_start(i)
+        } else {
+            pages.page_start(i)
+        }
+        .map(place)
+    };
+    let after = rank.min(count);
+    let starts_here = after > 0 && get(after).and_then(|p| reading.key(p.position)) == Some(cur);
     Seq {
         count,
-        get: Box::new(move |i| {
-            let p = if line {
-                pages.line_start(i)
-            } else {
-                pages.page_start(i)
-            };
-            p.map(|position| Place {
-                position,
-                end: None,
-            })
-        }),
-        after: rank.min(count),
+        get: Box::new(get),
+        after,
+        before: if starts_here { after - 1 } else { after },
     }
 }
 
-/// 1-based index reached and the clamp, for a request on `seq`.
-fn pick(
-    seq: &Seq<'_>,
-    amount: GotoAmount,
-    reading: &Reading,
-    cur: (usize, usize),
-) -> (usize, Option<Clamp>) {
-    let after = seq.after as i64;
-    // Starts strictly before the position.
-    let before = match (seq.get)(seq.after).and_then(|p| reading.key(p.position)) {
-        Some(k) if seq.after > 0 && k == cur => after - 1,
-        _ => after,
-    };
+/// 1-based index reached and the clamp, for a request on `seq`. `hint` is the
+/// rank of the element the caret was last put on, honoured only if that
+/// element starts at the caret. All arithmetic is done in `i128`.
+fn pick(seq: &Seq<'_>, amount: GotoAmount, hint: Option<usize>) -> (usize, Option<Clamp>) {
+    let (mut after, mut before) = (seq.after as i128, seq.before as i128);
+    if let Some(r) = hint.filter(|r| *r > seq.before && *r <= seq.after) {
+        after = r as i128;
+        before = after - 1;
+    }
     let target = match amount {
-        GotoAmount::Absolute(n) => n as i64,
+        GotoAmount::Absolute(n) => i128::from(n),
         GotoAmount::Relative(0) => after,
-        GotoAmount::Relative(d) if d > 0 => after + d,
-        GotoAmount::Relative(d) => before + d + 1,
-        GotoAmount::PageInSection { page, .. } => page as i64,
+        GotoAmount::Relative(d) if d > 0 => after + i128::from(d),
+        GotoAmount::Relative(d) => before + i128::from(d) + 1,
+        GotoAmount::PageInSection { page, .. } => i128::from(page),
     };
     clamp_index(target, seq.count)
 }
 
-fn clamp_index(target: i64, count: usize) -> (usize, Option<Clamp>) {
+/// `target` brought into `1..=count` (`count >= 1`).
+fn clamp_index(target: i128, count: usize) -> (usize, Option<Clamp>) {
     if target < 1 {
         (1, Some(Clamp::ToFirst))
-    } else if target > count as i64 {
+    } else if target > count as i128 {
         (count, Some(Clamp::ToLast))
     } else {
         (target as usize, None)
@@ -356,10 +401,14 @@ fn landing(
         index,
         count,
         clamp,
+        ambiguous: false,
     }))
 }
 
-/// `p<page>s<section>`: page `page` counted from the first page of the section.
+/// `p<page>s<section>`: page `page` counted from the first page of the
+/// section. A `PageMap` that contradicts itself (page numbers out of
+/// `1..=page_count`, missing starts) never panics: numbers are brought into
+/// range, and a missing start is `InconsistentPageMap`.
 fn page_in_section(
     doc: &RichDocument,
     pages: &dyn PageMap,
@@ -368,111 +417,227 @@ fn page_in_section(
     section: u64,
 ) -> Result<GotoOutcome, GotoError> {
     let starts = sections(doc, reading);
-    if starts.is_empty() || pages.page_count() == 0 {
+    let total = pages.page_count();
+    if starts.is_empty() || total == 0 {
         return Ok(GotoOutcome::NoElements);
     }
-    let (s, s_clamp) = clamp_index(section as i64, starts.len());
-    let first = pages.page_of(starts[s - 1].position).max(1);
+    let (s, s_clamp) = clamp_index(i128::from(section), starts.len());
+    let first = pages.page_of(starts[s - 1].position).clamp(1, total);
     let last = match starts.get(s) {
         Some(next) => {
-            let np = pages.page_of(next.position).max(1);
-            let starts_page =
+            let np = pages.page_of(next.position).clamp(1, total);
+            let begins_page =
                 pages.page_start(np).and_then(|p| reading.key(p)) == reading.key(next.position);
-            (if starts_page { np - 1 } else { np }).max(first)
+            if begins_page { np - 1 } else { np }
         }
-        None => pages.page_count(),
-    };
-    let (n, p_clamp) = clamp_index(page as i64, last - first + 1);
-    let target = first + n - 1;
-    let place = pages.page_start(target).ok_or(GotoError::UnknownPosition)?;
-    landing(
-        reading,
-        Place {
-            position: place,
-            end: None,
-        },
-        target,
-        pages.page_count(),
-        s_clamp.or(p_clamp),
-    )
+        None => total,
+    }
+    .max(first);
+    let (n, p_clamp) = clamp_index(i128::from(page), last - first + 1);
+    let target = first + (n - 1);
+    let start = pages
+        .page_start(target)
+        .ok_or(GotoError::InconsistentPageMap)?;
+    landing(reading, place(start), target, total, s_clamp.or(p_clamp))
+        .map_err(|_| GotoError::InconsistentPageMap)
 }
 
-/// Resolves a Go To request from the position `from`.
+/// Where a request starts: the caret and, optionally, the rank of the element
+/// of the requested kind the caret was last put on by Go To.
 ///
-/// `input` is parsed by [`parse_amount`]; for [`GotoKind::Bookmark`] a text
-/// that starts with a letter or an underscore is a bookmark name (case
-/// ignored, hidden bookmarks reachable), anything else is a number as above.
-/// An unknown name is an error; a kind without any element is
-/// [`GotoOutcome::NoElements`]; beyond the ends the nearest element is reached
-/// and `clamp` says so. Linear in the document size.
+/// Several elements can start at the same position (a table nested at the
+/// start of the first cell of another, objects anchored at the same offset).
+/// Given the position alone, the caret counts as being on the last of them;
+/// with `rank` set to `Landing::index` of the previous result, "Next" and
+/// "Previous" step through them one by one. The rank is ignored when the
+/// element of that rank does not start at the caret (the caret moved).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GotoOrigin {
+    pub position: TextPosition,
+    pub rank: Option<usize>,
+}
+
+impl From<TextPosition> for GotoOrigin {
+    fn from(position: TextPosition) -> Self {
+        Self {
+            position,
+            rank: None,
+        }
+    }
+}
+
+impl Landing {
+    /// The origin for the next request of the same kind, if the caret stays.
+    pub fn origin(&self) -> GotoOrigin {
+        GotoOrigin {
+            position: self.position,
+            rank: Some(self.index),
+        }
+    }
+}
+
+struct Ctx<'a> {
+    doc: &'a RichDocument,
+    pages: &'a dyn PageMap,
+    reading: Reading,
+    styles: Option<&'a StyleCatalog>,
+}
+
+/// Resolves a Go To request from `from` (a `TextPosition` or a [`GotoOrigin`]).
+///
+/// `input` is parsed by [`parse_amount`]. For [`GotoKind::Bookmark`] the text
+/// is first looked up as a **name** (exact name first, else case ignored,
+/// hidden bookmarks reachable; `Landing::ambiguous` is set when several
+/// bookmarks differ only by case and the first was taken); only when no
+/// bookmark has that name is it read as a number. An unknown name starting
+/// with a letter or `_` is `BookmarkNotFound`. A kind without any element is
+/// [`GotoOutcome::NoElements`]; beyond the ends the nearest element is
+/// reached and `clamp` says so. Headings are recognized from the paragraph's
+/// own style only (see [`is_heading_style`]); [`goto_with_styles`] follows
+/// style inheritance. Linear in the document size.
 pub fn goto(
     doc: &RichDocument,
     pages: &dyn PageMap,
-    from: TextPosition,
+    from: impl Into<GotoOrigin>,
     kind: GotoKind,
     input: &str,
 ) -> Result<GotoOutcome, GotoError> {
-    let reading = Reading::new(doc);
-    let trimmed = input.trim();
-    if kind == GotoKind::Bookmark && trimmed.starts_with(|c: char| c.is_alphabetic() || c == '_') {
-        return goto_name(doc, &reading, trimmed);
-    }
-    let amount = parse_amount(kind, input)?;
-    resolve(doc, pages, &reading, from, kind, amount)
+    goto_impl(doc, pages, from.into(), kind, input, None)
+}
+
+/// [`goto`] with the style catalogue, so that a style based on a heading style
+/// (directly or through a chain) counts as a heading.
+pub fn goto_with_styles(
+    doc: &RichDocument,
+    pages: &dyn PageMap,
+    from: impl Into<GotoOrigin>,
+    kind: GotoKind,
+    input: &str,
+    styles: &StyleCatalog,
+) -> Result<GotoOutcome, GotoError> {
+    goto_impl(doc, pages, from.into(), kind, input, Some(styles))
 }
 
 /// The "Next" and "Previous" buttons: `+1` and `-1`.
 pub fn step(
     doc: &RichDocument,
     pages: &dyn PageMap,
-    from: TextPosition,
+    from: impl Into<GotoOrigin>,
     kind: GotoKind,
     direction: Direction,
 ) -> Result<GotoOutcome, GotoError> {
-    let d = if direction == Direction::Next { 1 } else { -1 };
-    resolve(
+    step_impl(doc, pages, from.into(), kind, direction, None)
+}
+
+/// [`step`] with the style catalogue (see [`goto_with_styles`]).
+pub fn step_with_styles(
+    doc: &RichDocument,
+    pages: &dyn PageMap,
+    from: impl Into<GotoOrigin>,
+    kind: GotoKind,
+    direction: Direction,
+    styles: &StyleCatalog,
+) -> Result<GotoOutcome, GotoError> {
+    step_impl(doc, pages, from.into(), kind, direction, Some(styles))
+}
+
+fn context<'a>(
+    doc: &'a RichDocument,
+    pages: &'a dyn PageMap,
+    styles: Option<&'a StyleCatalog>,
+) -> Ctx<'a> {
+    Ctx {
         doc,
         pages,
-        &Reading::new(doc),
+        reading: Reading::new(doc),
+        styles,
+    }
+}
+
+fn step_impl(
+    doc: &RichDocument,
+    pages: &dyn PageMap,
+    from: GotoOrigin,
+    kind: GotoKind,
+    direction: Direction,
+    styles: Option<&StyleCatalog>,
+) -> Result<GotoOutcome, GotoError> {
+    let d = if direction == Direction::Next { 1 } else { -1 };
+    resolve(
+        &context(doc, pages, styles),
         from,
         kind,
         GotoAmount::Relative(d),
     )
 }
 
-fn goto_name(doc: &RichDocument, reading: &Reading, name: &str) -> Result<GotoOutcome, GotoError> {
-    let key = name_key(name);
-    let all = list_with(doc, reading, BookmarkOrder::Position, true);
-    let found = all
-        .iter()
-        .find(|b| name_key(&b.name) == key)
-        .ok_or_else(|| GotoError::BookmarkNotFound(name.to_owned()))?;
+fn goto_impl(
+    doc: &RichDocument,
+    pages: &dyn PageMap,
+    from: GotoOrigin,
+    kind: GotoKind,
+    input: &str,
+    styles: Option<&StyleCatalog>,
+) -> Result<GotoOutcome, GotoError> {
+    let ctx = context(doc, pages, styles);
+    let trimmed = input.trim();
+    if kind == GotoKind::Bookmark && !trimmed.is_empty() {
+        let all = list_with(doc, &ctx.reading, BookmarkOrder::Position, true);
+        if let Some((i, ambiguous)) = Resolver::new(&all).resolve(trimmed) {
+            return goto_name(&ctx.reading, &all, i, ambiguous);
+        }
+        if trimmed.starts_with(|c: char| c.is_alphabetic() || c == '_') {
+            return Err(GotoError::BookmarkNotFound(trimmed.to_owned()));
+        }
+    }
+    let amount = parse_amount(kind, input)?;
+    resolve(&ctx, from, kind, amount)
+}
+
+fn goto_name(
+    reading: &Reading,
+    all: &[BookmarkInfo],
+    found: usize,
+    ambiguous: bool,
+) -> Result<GotoOutcome, GotoError> {
+    let found = &all[found];
     let visible: Vec<&BookmarkInfo> = all.iter().filter(|b| !b.hidden).collect();
     let index = visible
         .iter()
         .position(|b| b.id == found.id)
         .map_or(0, |i| i + 1);
-    landing(reading, bookmark_place(found), index, visible.len(), None)
+    let mut out = landing(reading, bookmark_place(found), index, visible.len(), None)?;
+    if let GotoOutcome::Reached(l) = &mut out {
+        l.ambiguous = ambiguous;
+    }
+    Ok(out)
 }
 
 fn resolve(
-    doc: &RichDocument,
-    pages: &dyn PageMap,
-    reading: &Reading,
-    from: TextPosition,
+    ctx: &Ctx<'_>,
+    from: GotoOrigin,
     kind: GotoKind,
     amount: GotoAmount,
 ) -> Result<GotoOutcome, GotoError> {
-    let cur = reading.key(from).ok_or(GotoError::UnknownPosition)?;
+    let Ctx {
+        doc,
+        pages,
+        reading,
+        styles,
+    } = ctx;
+    let cur = reading
+        .key(from.position)
+        .ok_or(GotoError::UnknownPosition)?;
     if let GotoAmount::PageInSection { page, section } = amount {
-        return page_in_section(doc, pages, reading, page, section);
+        return page_in_section(doc, *pages, reading, page, section);
     }
+    let layout = matches!(kind, GotoKind::Page | GotoKind::Line);
     let seq = match kind {
-        GotoKind::Page | GotoKind::Line => layout_seq(kind, pages, from),
+        GotoKind::Page | GotoKind::Line => layout_seq(kind, *pages, reading, from.position, cur),
         GotoKind::Section => list_seq(sections(doc, reading), reading, cur),
         GotoKind::Table => list_seq(tables(doc), reading, cur),
         GotoKind::Object | GotoKind::Heading => {
-            list_seq(paragraph_items(doc, reading, kind), reading, cur)
+            list_seq(paragraph_items(doc, reading, kind, *styles), reading, cur)
         }
         GotoKind::Bookmark => {
             let all = list_with(doc, reading, BookmarkOrder::Position, false);
@@ -482,7 +647,17 @@ fn resolve(
     if seq.count == 0 {
         return Ok(GotoOutcome::NoElements);
     }
-    let (index, clamp) = pick(&seq, amount, reading, cur);
-    let place = (seq.get)(index).ok_or(GotoError::UnknownPosition)?;
-    landing(reading, place, index, seq.count, clamp)
+    let (index, clamp) = pick(&seq, amount, from.rank);
+    // A position or a start unknown to the document can only come from the layout.
+    let fix = |e: GotoError| {
+        if layout && e == GotoError::UnknownPosition {
+            GotoError::InconsistentPageMap
+        } else {
+            e
+        }
+    };
+    let found = (seq.get)(index)
+        .ok_or(GotoError::UnknownPosition)
+        .map_err(fix)?;
+    landing(reading, found, index, seq.count, clamp).map_err(fix)
 }

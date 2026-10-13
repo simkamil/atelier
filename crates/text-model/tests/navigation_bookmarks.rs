@@ -503,3 +503,54 @@ fn composed_and_decomposed_names_are_the_same() {
     let after = apply_checked(&mut doc, &edit);
     assert_eq!(names_of(&after), ["éléve"]);
 }
+
+#[test]
+fn sort_by_position_with_header_footer_and_nested_table() {
+    let (mut doc, p0) = with_text("body");
+    let section = first_section(&doc);
+    let hdr = add_header(&mut doc, section, "head");
+    let ftr = {
+        let subtree = doc.new_header_footer("foot").unwrap();
+        let hf = subtree.root;
+        run_checked(
+            &mut doc,
+            RichOp::AttachHeaderFooter {
+                section,
+                kind: HfKind::Footer,
+                variant: HfVariant::Default,
+                subtree,
+            },
+        );
+        doc.block_ids(Some(hf)).unwrap()[0]
+    };
+    let (nested, outer) = add_nested_table(&mut doc, section);
+    set_text(&mut doc, nested, "nest");
+    set_text(&mut doc, outer, "outer");
+    // Inserted in an order unrelated to the reading order.
+    for (n, p) in [
+        ("f", ftr),
+        ("o", outer),
+        ("n", nested),
+        ("b", p0),
+        ("h", hdr),
+    ] {
+        bookmark_at(&mut doc, n, p, 0, 1);
+    }
+    bookmark_at(&mut doc, "o2", outer, 0, 0);
+    let list = list_bookmarks(&doc, BookmarkOrder::Position, false);
+    // Reading order: header, body paragraph, nested cell, outer cell, footer.
+    assert_eq!(names(&list), ["h", "b", "n", "o2", "o", "f"]);
+    assert_eq!(
+        list.iter()
+            .map(|b| (b.zone, b.paragraph_index))
+            .collect::<Vec<_>>(),
+        vec![
+            (Zone::Header, 0),
+            (Zone::Body, 1),
+            (Zone::Table, 2),
+            (Zone::Table, 3),
+            (Zone::Table, 3),
+            (Zone::Footer, 4)
+        ]
+    );
+}

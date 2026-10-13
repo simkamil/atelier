@@ -28,8 +28,8 @@ pub use bookmarks::{
     rename_bookmark,
 };
 pub use goto::{
-    Clamp, GotoAmount, GotoError, GotoKind, GotoOutcome, Landing, ParseError, goto,
-    is_heading_style, parse_amount, step,
+    Clamp, GotoAmount, GotoError, GotoKind, GotoOrigin, GotoOutcome, Landing, ParseError, goto,
+    goto_with_styles, is_heading_style, is_heading_style_in, parse_amount, step, step_with_styles,
 };
 pub use name::{
     MAX_NAME_CHARS, NameError, NameMode, is_hidden_name, name_key, normalize_name,

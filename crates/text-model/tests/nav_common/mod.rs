@@ -173,3 +173,23 @@ pub fn raw_bookmark(doc: &mut RichDocument, name: &str, para: NodeId, start: usi
         },
     );
 }
+
+/// A 1x1 table whose cell starts with a nested 1x1 table. Returns the paragraph
+/// of the nested cell and the paragraph of the outer cell (after the nested table).
+pub fn add_nested_table(doc: &mut RichDocument, section: NodeId) -> (NodeId, NodeId) {
+    let outer = add_table_to(doc, section, 1, 1);
+    let cell = cells(doc, outer)[0][0];
+    let outer_para = cell_para(doc, cell);
+    let nested = doc.new_table(1, 1).unwrap();
+    let nested_root = nested.root;
+    run_checked(
+        doc,
+        RichOp::InsertBlock {
+            parent: Some(cell),
+            position: 0,
+            subtree: nested,
+        },
+    );
+    let ncell = cells(doc, nested_root)[0][0];
+    (cell_para(doc, ncell), outer_para)
+}
