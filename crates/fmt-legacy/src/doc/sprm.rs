@@ -7,6 +7,7 @@
 //! opaque attributes (namespace [`OPAQUE_NS`]) and counted in [`Stats`].
 
 use super::DocFont;
+use super::tables::TapDelta;
 use atelier_text_model::rich::{
     Alignment, CharAttrs, Color, LineRule, LineSpacing, OpaqueAttr, ParaProps, Underline,
     VerticalAlign,
@@ -76,6 +77,13 @@ const SPRM_P_CHGTABSPAPX: u16 = 0xC60D;
 const SPRM_P_CHGTABS: u16 = 0xC615;
 /// Operand: offset in the `Data` stream of the real grpprl.
 pub(crate) const SPRM_P_HUGEPAPX: u16 = 0x6646;
+const SPRM_P_ITAP: u16 = 0x6649;
+const SPRM_P_FINNERCELL: u16 = 0x244B;
+const SPRM_P_FINNERTTP: u16 = 0x244C;
+const SPRM_P_ILVL: u16 = 0x260A;
+const SPRM_P_ILFO: u16 = 0x460B;
+const SPRM_P_ANLD: u16 = 0xC63E;
+const SPRM_P_NLVLANM: u16 = 0x262A;
 
 pub(crate) fn sprm_sgc(op: u16) -> u8 {
     ((op >> 10) & 7) as u8
@@ -118,17 +126,21 @@ pub(crate) struct Prl<'a> {
 }
 
 impl Prl<'_> {
-    fn byte(&self) -> Option<u8> {
+    pub(crate) fn byte(&self) -> Option<u8> {
         self.operand.first().copied()
     }
-    fn u16(&self) -> Option<u16> {
+    pub(crate) fn u16(&self) -> Option<u16> {
         Some(u16::from_le_bytes([
             *self.operand.first()?,
             *self.operand.get(1)?,
         ]))
     }
-    fn i16(&self) -> Option<i16> {
+    pub(crate) fn i16(&self) -> Option<i16> {
         self.u16().map(|v| v as i16)
+    }
+    pub(crate) fn u32(&self) -> Option<u32> {
+        let b = self.operand.get(..4)?;
+        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
 }
 
@@ -185,10 +197,10 @@ pub(crate) struct Stats {
 }
 
 impl Stats {
-    fn unsupported(&mut self, name: &'static str) {
+    pub(crate) fn unsupported(&mut self, name: &'static str) {
         *self.unsupported.entry(name).or_insert(0) += 1;
     }
-    fn approximated(&mut self, name: &'static str) {
+    pub(crate) fn approximated(&mut self, name: &'static str) {
         *self.approximated.entry(name).or_insert(0) += 1;
     }
 }
@@ -572,6 +584,18 @@ pub(crate) struct ParaDelta {
     pub in_table: bool,
     pub row_end: bool,
     pub huge: Option<u32>,
+    /// `sprmPItap`: nesting depth of the table (0 outside tables).
+    pub itap: Option<u32>,
+    /// `sprmPFInnerTableCell`, `sprmPFInnerTtp` (nested tables).
+    pub inner_cell: bool,
+    pub inner_ttp: bool,
+    /// `sprmPIlfo`, `sprmPIlvl`.
+    pub ilfo: Option<i16>,
+    pub ilvl: Option<u8>,
+    /// `sprmPAnld`: Word 6 numbering.
+    pub anld: bool,
+    /// Table (`sgc` 5) sprms.
+    pub tap: TapDelta,
 }
 
 impl ParaDelta {
@@ -616,8 +640,13 @@ impl ParaDelta {
             }
             0x6424..=0x6428 | 0xC64E..=0xC653 => stats.unsupported("paragraphBorders"),
             0x442D | 0xC64D => stats.unsupported("paragraphShading"),
-            0x260A | 0x460B => stats.unsupported("listNumbering"),
-            op if sprm_sgc(op) == 5 => stats.unsupported("tableFormatting"),
+            SPRM_P_ITAP => self.itap = prl.u32().or(self.itap),
+            SPRM_P_FINNERCELL => self.inner_cell = prl.byte().is_some_and(|b| b != 0),
+            SPRM_P_FINNERTTP => self.inner_ttp = prl.byte().is_some_and(|b| b != 0),
+            SPRM_P_ILVL => self.ilvl = prl.byte().or(self.ilvl),
+            SPRM_P_ILFO => self.ilfo = prl.i16().or(self.ilfo),
+            SPRM_P_ANLD | SPRM_P_NLVLANM => self.anld = true,
+            op if sprm_sgc(op) == 5 => self.tap.apply(&prl, stats),
             op if sprm_sgc(op) == 1 => stats.unknown_sprms += 1,
             _ => {}
         }

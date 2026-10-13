@@ -358,6 +358,12 @@ fn section_marks_end_paragraphs() {
 fn table_cells_become_paragraphs() {
     // Two cells then the row-end mark (all 0x07), then a normal paragraph.
     let mut spec = DocSpec::ansi("one\u{07}two\u{07}\u{07}after\r");
+    spec.papx.push(ParaRunSpec {
+        cp_start: 0,
+        cp_end: 8,
+        istd: 0,
+        grpprl: sprm_u8(0x2416, 1),
+    });
     // Paragraph 3 (the row end mark, cp 8) carries sprmPFTtp.
     spec.papx.push(ParaRunSpec {
         cp_start: 8,
@@ -366,8 +372,16 @@ fn table_cells_become_paragraphs() {
         grpprl: cat(&[sprm_u8(0x2416, 1), sprm_u8(0x2417, 1)]),
     });
     let doc = open(&spec);
+    // US-313: the cells are now a one-row table (adapted from the provisional
+    // flattening test of US-312).
     assert_eq!(texts(&doc), ["one", "two", "after"]);
-    assert!(has(&doc, &ImportNotice::TableCellsFlattened { cells: 2 }));
+    assert_eq!(doc.tables.tables.len(), 1);
+    assert_eq!(doc.tables.cells.len(), 2);
+    assert!(
+        !doc.notices
+            .iter()
+            .any(|n| matches!(n, ImportNotice::TableCellsFlattened { .. }))
+    );
 }
 
 #[test]
@@ -376,7 +390,13 @@ fn fields_keep_results_and_drop_codes() {
         "Page \u{13} PAGE \u{14}3\u{15} de \u{13}HYPERLINK \"x\" \u{14}\u{13}A\u{14}lien\u{15}\u{15}.\r",
     ));
     assert_eq!(texts(&doc), ["Page 3 de lien."]);
-    assert!(has(&doc, &ImportNotice::FieldCodesDropped { fields: 3 }));
+    // US-313: codes are analysed instead of dropped. The hyperlink holds a
+    // nested field, so only the PAGE field and the link are model items.
+    let p = &paras(&doc)[0];
+    assert_eq!(p.fields.len(), 2);
+    assert_eq!(p.links.len(), 1);
+    assert_eq!(p.fields[0].instruction, "PAGE");
+    assert_eq!((p.fields[0].start, p.fields[0].end), (5, 6));
     // A field without separator is entirely code.
     let doc = open(&DocSpec::ansi("a\u{13} SEQ x \u{15}b\r"));
     assert_eq!(texts(&doc), ["ab"]);

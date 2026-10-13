@@ -433,3 +433,50 @@ fn random_streams_with_a_valid_fib_never_panic() {
     }
     assert!(counts.0 > 0, "{counts:?}");
 }
+
+const STRUCTURE_FILES: [(&str, &[u8]); 5] = [
+    (
+        "struct-tables",
+        include_bytes!("../../../tests/doc-reference/struct-tables.doc"),
+    ),
+    (
+        "struct-lists",
+        include_bytes!("../../../tests/doc-reference/struct-lists.doc"),
+    ),
+    (
+        "struct-sections",
+        include_bytes!("../../../tests/doc-reference/struct-sections.doc"),
+    ),
+    (
+        "struct-headers",
+        include_bytes!("../../../tests/doc-reference/struct-headers.doc"),
+    ),
+    (
+        "struct-fields",
+        include_bytes!("../../../tests/doc-reference/struct-fields.doc"),
+    ),
+];
+
+/// US-313: the same fixed-seed campaign on the structure files (tables, lists,
+/// sections, headers, fields, bookmarks).
+#[test]
+fn mutation_campaign_on_structure_files() {
+    for (i, (name, bytes)) in STRUCTURE_FILES.into_iter().enumerate() {
+        campaign(name, bytes, 0x5EED_2000 + i as u64, 2500);
+    }
+}
+
+#[test]
+fn structure_streams_truncated_at_every_step_never_panic() {
+    for (name, bytes) in STRUCTURE_FILES {
+        let (word, table, extra) = streams_of(bytes);
+        let mut counts = (0, 0);
+        for cut in (0..table.len()).step_by(7) {
+            exercise(&rebuild(&word, &table[..cut], &extra), &mut counts);
+        }
+        for cut in (0..word.len()).step_by(61) {
+            exercise(&rebuild(&word[..cut], &table, &extra), &mut counts);
+        }
+        println!("{name}: {} accepted, {} rejected", counts.0, counts.1);
+    }
+}

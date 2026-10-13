@@ -200,6 +200,8 @@ pub(crate) struct Converted {
     kinds: Vec<Option<DocStyleKind>>,
     bases: Vec<Option<usize>>,
     deltas: Vec<CharDelta>,
+    /// `(ilfo, ilvl)` of each paragraph style, base styles included.
+    style_lists: Vec<(Option<i16>, Option<u8>)>,
 }
 
 impl Converted {
@@ -242,6 +244,10 @@ impl Converted {
 
     /// Effective toggles inherited by a run: paragraph style chain, then the
     /// character style chain.
+    pub fn style_list(&self, istd: usize) -> (Option<i16>, Option<u8>) {
+        self.style_lists.get(istd).copied().unwrap_or((None, None))
+    }
+
     pub fn base_toggles(&self, para: Option<usize>, chr: Option<usize>) -> BaseToggles {
         let mut t = BaseToggles::default();
         if let Some(p) = para {
@@ -376,6 +382,27 @@ pub(crate) fn convert(
             para_deltas[i].apply_all(r, stats);
         }
     }
+    let mut style_lists = vec![(None, None); n];
+    for (i, slot) in style_lists.iter_mut().enumerate() {
+        let mut chain = Vec::new();
+        let mut cur = Some(i);
+        while let Some(c) = cur {
+            if chain.len() > n || c >= n {
+                break;
+            }
+            chain.push(c);
+            cur = bases[c];
+        }
+        for &c in chain.iter().rev() {
+            let d = &para_deltas[c];
+            if d.ilfo.is_some() {
+                slot.0 = d.ilfo;
+            }
+            if d.ilvl.is_some() {
+                slot.1 = d.ilvl;
+            }
+        }
+    }
     let default_font = stsh.default_ftc[0]
         .and_then(|f| fonts.get(f as usize))
         .map(|f| f.name.clone())
@@ -400,6 +427,7 @@ pub(crate) fn convert(
         kinds,
         bases,
         deltas,
+        style_lists,
     };
     for (i, s) in stsh.stds.iter().enumerate() {
         let Some(s) = s else { continue };

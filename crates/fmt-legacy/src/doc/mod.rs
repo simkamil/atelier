@@ -10,17 +10,38 @@
 //! resource limits. Encrypted documents are rejected with
 //! [`DocError::PasswordProtected`] before any text is read.
 
+mod assemble;
+mod bookmarks;
 mod build;
 mod fib;
+mod fields;
 mod fkp;
 mod fonts;
+mod headers;
+mod lists;
+mod sections;
 mod sprm;
 mod stsh;
 mod summary;
+mod tables;
 mod text;
 
 pub use fib::{Fib, N_FIB_WORD97, W_IDENT};
+pub use fields::{FieldKind, ImportedField};
+pub use lists::{
+    ImportedList, ImportedListItem, ImportedListLevel, LevelAlignment, LevelFollow, ListLevelKind,
+    NumberFormat,
+};
+pub use sections::{
+    ColumnSetup, HfState, ImportedHeaderFooter, ImportedSection, PageNumbering, PageSetup,
+    SectionBreak,
+};
 pub use sprm::OPAQUE_NS;
+pub use tables::{
+    Border, Borders, CellMargins, CellProps, CellVerticalAlign, HeightRule, ImportedCell,
+    ImportedDocTables, ImportedRow, ImportedTable, RowHeight, RowProps, Shading, TableAlign,
+    TableColor, TableProps, TableWidth,
+};
 
 use atelier_cfb::{CfbError, Compound, Limits as CfbLimits};
 use atelier_text_model::rich::{
@@ -60,6 +81,17 @@ pub struct DocLimits {
     pub max_runs: usize,
     /// Sprms interpreted in total.
     pub max_sprms: usize,
+    /// Table rows, cells, grid columns and nesting depth (US-313).
+    pub max_table_rows: usize,
+    pub max_table_cells: usize,
+    pub max_table_columns: usize,
+    pub max_table_depth: usize,
+    /// List definitions (`LSTF`) and instances (`LFO`).
+    pub max_lists: usize,
+    pub max_sections: usize,
+    pub max_fields: usize,
+    pub max_field_depth: usize,
+    pub max_bookmarks: usize,
 }
 
 impl Default for DocLimits {
@@ -74,6 +106,15 @@ impl Default for DocLimits {
             max_paragraphs: 1_000_000,
             max_runs: 4_000_000,
             max_sprms: 64 * 1024 * 1024,
+            max_table_rows: 1_000_000,
+            max_table_cells: 2_000_000,
+            max_table_columns: 1024,
+            max_table_depth: 32,
+            max_lists: 65_536,
+            max_sections: 100_000,
+            max_fields: 1_000_000,
+            max_field_depth: 64,
+            max_bookmarks: 1_000_000,
         }
     }
 }
@@ -204,6 +245,25 @@ pub enum ImportNotice {
     SummaryInformation {
         problem: &'static str,
     },
+    /// Table repaired to keep a rectangular grid (US-313).
+    TableRepaired {
+        what: &'static str,
+        count: usize,
+    },
+    /// Field marks that could not be represented exactly (US-313).
+    FieldDegraded {
+        what: &'static str,
+        count: usize,
+    },
+    /// Bookmark adjusted or dropped (US-313).
+    BookmarkAdjusted {
+        what: &'static str,
+        count: usize,
+    },
+    /// Word 6 numbering (`sprmPAnld`) is not imported (US-313).
+    LegacyNumbering {
+        paragraphs: usize,
+    },
     /// Damaged data skipped; the rest of the file was imported.
     DamagedData {
         what: &'static str,
@@ -314,6 +374,18 @@ impl DocumentProperties {
     }
 }
 
+/// A bookmark and the paragraph holding it (US-313).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImportedBookmark {
+    pub name: String,
+    pub paragraph: NodeId,
+    pub bookmark: NodeId,
+    pub start_cp: usize,
+    pub end_cp: usize,
+    /// The range crossed a paragraph end and was cut there.
+    pub truncated: bool,
+}
+
 /// A fully imported `.doc`.
 pub struct ImportedDoc {
     pub document: RichDocument,
@@ -325,10 +397,46 @@ pub struct ImportedDoc {
     pub breaks: Vec<ImportedBreak>,
     pub run_styles: Vec<ImportedRunStyle>,
     pub notices: Vec<ImportNotice>,
+    /// Table properties the model cannot carry (US-313).
+    pub tables: ImportedDocTables,
+    /// One entry per `LFO`; `ListRef::list_id` is its 1-based index.
+    pub lists: Vec<ImportedList>,
+    pub list_items: Vec<ImportedListItem>,
+    /// One per section of the file, in the order of the model sections.
+    pub sections: Vec<ImportedSection>,
+    /// Paragraphs of each header or footer node.
+    pub header_paragraphs: Vec<(NodeId, Vec<NodeId>)>,
+    pub fields: Vec<ImportedField>,
+    pub bookmarks: Vec<ImportedBookmark>,
+    /// `fFacingPages` of the document properties.
+    pub facing_pages: bool,
     paragraph_order: Vec<NodeId>,
 }
 
 impl ImportedDoc {
+    /// Header or footer in force for a section: the section's own, or the
+    /// nearest previous one when the slot is inherited.
+    pub fn effective_header_footer(
+        &self,
+        section: usize,
+        kind: atelier_text_model::rich::HfKind,
+        variant: atelier_text_model::rich::HfVariant,
+    ) -> Option<NodeId> {
+        for s in self.sections.iter().take(section + 1).rev() {
+            match s
+                .headers_footers
+                .iter()
+                .find(|h| h.kind == kind && h.variant == variant)
+                .map(|h| h.state)
+            {
+                Some(HfState::Present(id)) => return Some(id),
+                Some(HfState::Empty) => return None,
+                _ => {}
+            }
+        }
+        None
+    }
+
     pub fn paragraph_ids(&self) -> &[NodeId] {
         &self.paragraph_order
     }

@@ -57,6 +57,24 @@ fn local_real_files() {
                     .map(|id| doc.document.paragraph(*id).unwrap().text.chars().count())
                     .sum();
                 println!(
+                    "{}: {} tables, {} lists, {} sections, {} fields, {} bookmarks",
+                    f.display(),
+                    doc.tables.tables.len(),
+                    doc.lists.len(),
+                    doc.sections.len(),
+                    doc.fields.len(),
+                    doc.bookmarks.len()
+                );
+                if doc.document.validate().is_err() || doc.sections.is_empty() {
+                    failures.push(format!("{}: invalid structure", f.display()));
+                }
+                for (id, t) in &doc.tables.tables {
+                    // Every table is rectangular and counted once per row.
+                    if t.rows.is_empty() || t.columns == 0 || t.grid.len() != t.columns {
+                        failures.push(format!("{}: table {id:?} inconsistent", f.display()));
+                    }
+                }
+                println!(
                     "{}: {:?}, {} paragraphs, {} chars (ccpText {}), {} notices, table {}",
                     f.display(),
                     doc.info.version,
