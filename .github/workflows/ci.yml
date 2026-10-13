@@ -72,6 +72,11 @@ jobs:
         run: node tests/display-list.mjs
       - name: Check real Canvas and textarea in headless Edge
         run: node tests/run-frontend-browser.mjs
+      - name: Check the string catalog and hard-coded UI strings
+        run: |
+          node tests/i18n.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/check-i18n.mjs
       - name: Check themes and accessible UI in real Edge
         run: |
           node tests/theme.mjs
