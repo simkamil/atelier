@@ -112,6 +112,8 @@ enum C {
 fn expanded(ns: &Option<String>, local: &str) -> String {
     format!("{{{}}}{local}", ns.as_deref().unwrap_or(""))
 }
+/// Comments and processing instructions are skipped here, as the import does
+/// outside captured copies: the inventory makes no claim about them.
 fn parse(bytes: &[u8]) -> C {
     let mut reader = Reader::new(bytes);
     let mut stack: Vec<C> = Vec::new();
@@ -1078,4 +1080,73 @@ fn mutated_and_truncated_documents_never_panic_and_keep_limits() {
         }
     }
     assert!(ok > 5 && err > 50, "ok {ok} err {err}");
+}
+
+/// US-306 does not keep XML comments and processing instructions that sit in
+/// the interpreted structure; inside a captured element they are part of the
+/// copy. The inventory (`parse`) skips them too, so it makes no claim on them.
+#[test]
+fn comments_and_instructions_in_the_interpreted_structure_are_not_preserved() {
+    let imp = doc(body(
+        r#"<!--c1--><w:p><?pi x?><w:r><!--c2--><w:t>a</w:t></w:r><w:drawing><!--kept--></w:drawing></w:p>"#,
+    ))
+    .import();
+    let paragraph = imp.document.paragraph(imp.paragraph_ids()[0]).unwrap();
+    assert_eq!(paragraph.text, "a");
+    let drawing = paragraph
+        .anchored
+        .iter()
+        .find(|a| a.kind == "w:drawing")
+        .unwrap();
+    assert!(String::from_utf8_lossy(&drawing.data).contains("<!--kept-->"));
+    let skeleton = format!("{:?}", imp.preserved);
+    assert!(!skeleton.contains("c1") && !skeleton.contains("c2") && !skeleton.contains("pi x"));
+}
+
+#[test]
+fn visible_text_kept_only_in_a_copy_is_reported() {
+    let imp = doc(body(
+        r#"<w:p><w:r><w:t>a</w:t><w:drawing><wps:txbx><w:txbxContent><w:p><w:r><w:t>boxed</w:t></w:r></w:p></w:txbxContent></wps:txbx></w:drawing></w:r><w:ruby><w:rubyPr/><w:rt><w:r><w:t>r</w:t></w:r></w:rt><w:rubyBase><w:r><w:t>base</w:t></w:r></w:rubyBase></w:ruby></w:p>"#,
+    ))
+    .import();
+    let paragraph = imp.document.paragraph(imp.paragraph_ids()[0]).unwrap();
+    assert_eq!(paragraph.text, "a");
+    for name in ["txbxContent", "ruby"] {
+        assert!(
+            imp.notices.iter().any(|n| matches!(n, ImportNotice::UnsupportedElement { local_name, .. } if local_name == name)),
+            "no notice for {name}: {:?}",
+            imp.notices
+        );
+    }
+}
+
+#[test]
+fn paragraph_mark_properties_put_revision_marks_first() {
+    use atelier_fmt_ooxml::{para_mark_rpr_rank, rpr_rank};
+    let mut names = [
+        "rPrChange",
+        "b",
+        "moveTo",
+        "rStyle",
+        "del",
+        "lang",
+        "ins",
+        "moveFrom",
+    ];
+    names.sort_by_key(|n| para_mark_rpr_rank(n));
+    assert_eq!(
+        names,
+        [
+            "ins",
+            "del",
+            "moveFrom",
+            "moveTo",
+            "rStyle",
+            "b",
+            "lang",
+            "rPrChange"
+        ]
+    );
+    // In a run's properties the revision marks are not in the sequence.
+    assert!(rpr_rank("ins") > rpr_rank("rPrChange"));
 }

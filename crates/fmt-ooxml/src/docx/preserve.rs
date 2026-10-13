@@ -1022,6 +1022,20 @@ pub fn rpr_rank(local: &str) -> usize {
         .unwrap_or(ORDER.len())
 }
 
+/// Position of a child element in the `w:rPr` of a paragraph mark
+/// (`w:pPr/w:rPr`, CT_ParaRPr, §17.3.1.29): the revision marks `w:ins`,
+/// `w:del`, `w:moveFrom` and `w:moveTo` come first, then the properties of
+/// CT_RPr in their order ([`rpr_rank`]), then `w:rPrChange`. In a run's
+/// `w:rPr` (CT_RPr) `w:ins`/`w:del` are not part of the sequence, hence the
+/// separate function: use this one for the mark of a paragraph.
+pub fn para_mark_rpr_rank(local: &str) -> usize {
+    const REVISIONS: &[&str] = &["ins", "del", "moveFrom", "moveTo"];
+    REVISIONS
+        .iter()
+        .position(|n| *n == local)
+        .unwrap_or(REVISIONS.len() + rpr_rank(local))
+}
+
 /// Position of a child element in the sequence of `w:pPr` (CT_PPr, §17.3.1).
 pub fn ppr_rank(local: &str) -> usize {
     const ORDER: &[&str] = &[

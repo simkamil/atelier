@@ -27,7 +27,7 @@ mod preserve;
 mod tables;
 pub use preserve::{
     MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart,
-    interpreted_elements, ppr_rank, rpr_rank, sect_pr_rank,
+    interpreted_elements, para_mark_rpr_rank, ppr_rank, rpr_rank, sect_pr_rank,
 };
 pub use tables::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
@@ -893,6 +893,7 @@ fn parse_xml_bytes(
                     parent.text.push_str(&text);
                 }
             }
+            // Not preserved outside the copies of captured elements (US-306 doc).
             Event::Comment(_) | Event::ProcessingInstruction { .. } => {}
         }
     }
