@@ -126,6 +126,7 @@ dependencies = [
  "atelier-image",
  "atelier-model",
  "atelier-render",
+ "atelier-text-model",
  "atelier-unicode",
  "atelier-xml",
  "atelier-zip",

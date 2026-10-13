@@ -1232,6 +1232,8 @@ Réf : F-TXT-065 · Taille : S · Dépend de : US-311
 - [ ] Ouverture avec détection de l'encodage (US-014), choix manuel possible ; un paragraphe par ligne.
 - [ ] Enregistrement en UTF-8 (défaut, sans BOM), UTF-16 ou Windows-1252 ; fins de ligne CRLF ou LF ; avertissement de perte de mise en forme.
 
+Avancement US-316 (2026-10-13) : bibliothèque livrée dans `atelier_text_model::plain_io` (détection et choix de l'encodage, UTF-8, UTF-16, Windows-1252, CRLF ou LF, aller-retour exact, rapport de perte de mise en forme), relue par un agent indépendant et corrigée ; [contrat](docs/us-316-text-files.md). Reste ouvert : dialogue de choix d'encodage quand la détection est incertaine, options d'enregistrement et message d'avertissement dans l'éditeur.
+
 Réf : §5.1 · Taille : S · Dépend de : US-014, US-200
 
 #### US-317 — Fichiers endommagés
