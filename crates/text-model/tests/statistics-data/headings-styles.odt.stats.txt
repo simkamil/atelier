@@ -1,0 +1,10 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=30 chars=167 chars_spaces=189 paragraphs=8
+B Titre du document
+B Sous-titre
+B Chapitre un
+B Corps de texte du chapitre.
+B Section 1.1
+B Un style personnalisé hérité de Corps de texte, avec un style de caractère.
+B Sous-section 1.1.1
+B Paragraphe standard.

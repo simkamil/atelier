@@ -1,0 +1,13 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=29 chars=112 chars_spaces=120 paragraphs=11
+B Puce un
+B Sous-puce a
+B Sous-sous-puce
+B Sous-puce b
+B Puce deux
+B Entre deux listes.
+B Premier
+B Deuxième
+B Item a
+B Item b
+B Dixième

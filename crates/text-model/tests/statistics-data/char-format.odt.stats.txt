@@ -1,0 +1,3 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=13 chars=76 chars_spaces=88 paragraphs=1
+B Normal gras italique souligné barré x2 H2O rouge surligné police grand petites capitales

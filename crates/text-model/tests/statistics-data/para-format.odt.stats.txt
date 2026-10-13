@@ -1,0 +1,9 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=134 chars=709 chars_spaces=846 paragraphs=7
+B Centré
+B À droite
+B Justifié: Le renard brun et rapide saute par-dessus le chien paresseux; cette phrase accentuée — éàùçœ — est répétée afin de remplir des lignes entières et de produire une pagination stable. Le renard brun et rapide saute par-dessus le chien paresseux; cette phrase accentuée — éàùçœ — est répétée afin de remplir des lignes entières et de produire une pagination stable. Le renard brun et rapide saute par-dessus le chien paresseux; cette phrase accentuée — éàùçœ — est répétée afin de remplir des lignes entières et de produire une pagination stable. 
+B Retrait gauche, première ligne et espacement.
+B Interligne 150 pour cent: Le renard brun et rapide saute par-dessus le chien paresseux; cette phrase accentuée — éàùçœ — est répétée afin de remplir des lignes entières et de produire une pagination stable. 
+B A\tB\tC
+B Après un saut de page.

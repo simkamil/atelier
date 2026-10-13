@@ -1,0 +1,6 @@
+@producer LibreOffice/26.8.0.3$Windows_X86_64 LibreOffice_project/bce0998afefdbc355585ca324285661a2170ba77
+@expected words=15 chars=77 chars_spaces=88 paragraphs=4
+B Date: 12/10/2026, heure: 23:44:41.
+B Texte avec note1 et suite.
+B Auteur: .
+N Contenu de la note.
