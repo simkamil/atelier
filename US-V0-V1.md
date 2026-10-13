@@ -1150,9 +1150,11 @@ Réf : F-TXT-032, F-TXT-040 · Taille : M · Dépend de : US-301, US-272
 #### US-306 — Préservation des éléments inconnus
 *En tant qu'*utilisateur, *je veux* qu'ouvrir et enregistrer un document ne détruise rien *afin de* pouvoir l'éditer sans risque.
 - [ ] Tout élément ou attribut non géré est rattaché à son nœud (US-032) et réémis à sa place.
-- [ ] Parties non gérées (commentaires, notes, glossaire, customXml, VBA…) recopiées à l'identique avec leurs relations.
-- [ ] `mc:Ignorable` respecté ; espaces de noms d'extension conservés.
+- [x] Parties non gérées (commentaires, notes, glossaire, customXml, VBA…) recopiées à l'identique avec leurs relations.
+- [x] `mc:Ignorable` respecté ; espaces de noms d'extension conservés.
 - [ ] Test : sur le corpus, ouvrir puis enregistrer sans modifier → aucune perte d'élément (comparaison XML normalisée).
+
+Avancement US-306 (2026-10-13) : capture livrée dans `atelier-fmt-ooxml` (éléments, attributs et propriétés inconnus rattachés à leur nœud avec position et ordre, parties non interprétées identiques octet pour octet, balisage de compatibilité), relue par un agent indépendant et corrigée ; [contrat](docs/us-306-unknown-preservation.md). La complétude est prouvée par inventaire et reconstruction sur six documents. Reste ouvert : la réémission et la comparaison après enregistrement attendent l'écrivain docx (US-307) ; commentaires XML et instructions de traitement non préservés dans les parties interprétées ; aucun fichier Word testé.
 
 Réf : §5.2 (1) · Taille : L · Dépend de : US-301, US-032
 

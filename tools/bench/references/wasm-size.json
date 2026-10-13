@@ -4,9 +4,9 @@
   "target": "wasm32-unknown-unknown",
   "profile": "wasm-release",
   "features": [],
-  "reference_bytes": 3883549,
+  "reference_bytes": 4280188,
   "allowed_growth_percent": 10,
-  "measured_on": "2026-10-12",
-  "previous_reference_bytes": 1073118,
-  "rebaseline_reason": "Read-only DOCX preview now links ZIP/XML/OOXML import, rich style resolution, line layout/pagination and the three additional Carlito bold/italic faces into the product WASM. Intentional feature growth measured after integration (previous shipped artifact 1046099 bytes); the 10% regression allowance remains unchanged."
+  "measured_on": "2026-10-13",
+  "previous_reference_bytes": 3883549,
+  "rebaseline_reason": "The DOCX import linked into the product WASM now preserves unknown elements, attributes and properties (US-306), and the text model gained the search, statistics, plain-text and navigation modules used by the editor. Intentional feature growth measured after integration (previous shipped artifact 4215005 bytes, +65183 bytes for the preservation code); the 10% regression allowance remains unchanged."
 }
