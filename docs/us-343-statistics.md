@@ -2,7 +2,7 @@
 
 Module `atelier_text_model::statistics` (`crates/text-model/src/statistics/`) : mots, caractères avec et sans espaces, paragraphes d'un document riche, d'un document texte brut ou d'une sélection, selon des règles alignées sur Microsoft Word. Lignes et pages viennent de la mise en page : l'appelant les fournit, le module les restitue.
 
-**Périmètre livré : la bibliothèque seulement.** Ni la barre d'état (US-344), ni le dialogue, ni le calcul des lignes et pages ne sont dans ce lot (voir « À brancher par l'intégrateur »).
+**Périmètre livré : bibliothèque et interface TXT.** Le compteur de mots document/sélection et le dialogue sont raccordés au moteur Rust ; pages et lignes proviennent de la mise en page réelle. Voir [la livraison UI](us-340-343-navigation-ui.md). Les notes/zones de texte et le raccordement riche restent ouverts.
 
 **État de la comparaison à Word : non faite.** Microsoft Word n'est pas installé ici et aucun document enregistré par Word n'a pu être comparé (voir « Comparaison à un oracle externe »). Le critère « identique à Word, tolérance ≤ 0,5 % » n'est donc **pas** démontré ; seule une comparaison à LibreOffice (14 documents) l'est, avec des écarts expliqués.
 

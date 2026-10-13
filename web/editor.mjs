@@ -46,6 +46,8 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   let spacingEnabled = Boolean(frenchSpacing);
   let state;
   let decodedPages = [];
+  let searchHighlights = null;
+  let searchIndex = -1;
   let queue = Promise.resolve();
   let requestId = 2n;
   let disposed = false;
@@ -121,7 +123,19 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     for (const rect of state.selectionRects) selectionRects.push(viewportRect(rect, rect.page));
     const caret = caretViewport();
     const compositionRects = composition ? [{ ...composition.caret, width: composition.width, height: 1 }] : [];
-    renderer.setEditorOverlay({ selectionRects, caret, compositionRects, caretVisible });
+    const searchRects = [], activeSearchRects = [];
+    if (searchHighlights?.revision === state.revision) {
+      searchHighlights.items.forEach((item, index) => {
+        for (const rect of item.rects) {
+          const mapped = viewportRect(rect, rect.page);
+          if (mapped.y + mapped.height >= 0 && mapped.y <= scrollport.clientHeight
+              && mapped.x + mapped.width >= 0 && mapped.x <= scrollport.clientWidth) {
+            (index === searchIndex ? activeSearchRects : searchRects).push(mapped);
+          }
+        }
+      });
+    }
+    renderer.setEditorOverlay({ selectionRects, searchRects, activeSearchRects, caret, compositionRects, caretVisible });
     input.updateCaret(caretScreen());
     dropMarker.hidden = !dropCaret;
     if (dropCaret) {
@@ -164,7 +178,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     });
   }
 
-  function publish(nextState) {
+  function publish(nextState, { documentReplaced = false } = {}) {
     if (nextState.kind !== "state") throw new EditorError("EDITOR_INVALID_STATE");
     // Decode every page before publishing state; a malformed page must never blank the prior UI.
     const pages = nextState.pages.map(bytes => decodeDisplayList(bytes));
@@ -172,6 +186,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       Math.abs(page.page.bounds.width - 595.276) > 0.02 || Math.abs(page.page.bounds.height - 841.89) > 0.02)) {
       throw new EditorError("EDITOR_INVALID_STATE");
     }
+    if (documentReplaced || state?.revision !== nextState.revision) { searchHighlights = null; searchIndex = -1; }
     state = nextState;
     decodedPages = pages;
     if (textRepresentation) textRepresentation.textContent = nextState.text;
@@ -185,7 +200,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       scrollport.scrollTop = Math.max(0, caretContentY + caret.height - scrollport.clientHeight + pad);
     }
     updateViewport();
-    try { onState(nextState); } catch { /* UI callbacks are isolated */ }
+    try { onState(nextState, { documentReplaced }); } catch { /* UI callbacks are isolated */ }
     if (lastHostDirty !== nextState.dirty) {
       lastHostDirty = nextState.dirty;
       void host.notifyDirty(nextState.dirty).then(result => {
@@ -270,13 +285,15 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
         EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo].includes(opcode)) extensionMode = false;
       if (opcode === EditorOpcode.ProbePoint && response.kind !== "point") throw new EditorError("EDITOR_INVALID_RESPONSE");
        if (opcode === EditorOpcode.PreviewDocx && response.kind !== "preview") throw new EditorError("EDITOR_INVALID_RESPONSE");
-      if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx].includes(opcode)) {
+       if (opcode === EditorOpcode.Search && response.kind !== "search") throw new EditorError("EDITOR_INVALID_RESPONSE");
+       if (opcode === EditorOpcode.Statistics && response.kind !== "statistics") throw new EditorError("EDITOR_INVALID_RESPONSE");
+       if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx, EditorOpcode.Search, EditorOpcode.Statistics].includes(opcode)) {
         if (opcode === EditorOpcode.Load || opcode === EditorOpcode.State && !state) {
           pageZoom = 1;
           zoomMode = "custom";
           try { onZoom({ zoom: pageZoom, mode: zoomMode }); } catch { /* UI callbacks are isolated */ }
         }
-        publish(response);
+        publish(response, { documentReplaced: opcode === EditorOpcode.Load });
       }
       return response;
   }
@@ -289,6 +306,12 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   }
 
   function enqueue(opcode, values = {}) { return enqueueTask(() => dispatch(opcode, values)); }
+  function query(opcode, values = {}) {
+    return enqueueTask(() => {
+      if (!state || busy || disposed) throw new EditorError(disposed ? "EDITOR_CLOSED" : "EDITOR_BUSY");
+      return dispatch(opcode, { ...values, revision: state.revision });
+    });
+  }
 
   async function applyInput(command) {
     if (!state || busy) return;
@@ -350,7 +373,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       compositionStart = null;
       compositionPreview.hidden = true;
       compositionPreview.textContent = "";
-      renderer.setEditorOverlay({ selectionRects: state?.selectionRects.map(rect => viewportRect(rect, rect.page)) ?? [], caret: state ? caretViewport() : null, caretVisible });
+      repaintOverlay();
       return;
     }
     if (preview.phase === "start") {
@@ -460,6 +483,34 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     getZoomMode() { return zoomMode; },
     async initialize() { return enqueue(EditorOpcode.State); },
     getState() { return state; },
+    search(queryText, options = {}) { return query(EditorOpcode.Search, { query: queryText, options }); },
+    statistics() { return query(EditorOpcode.Statistics); },
+    setSearchHighlights(result, index = -1) {
+      if (disposed) return false;
+      if (result === null) { searchHighlights = null; searchIndex = -1; repaintOverlay(); return true; }
+      if (!state || result?.kind !== "search" || result.revision !== state.revision) return false;
+      if (!Array.isArray(result.items) || result.items.length > 1000 || !Number.isInteger(index) || index < -1 || index >= result.items.length) {
+        throw new EditorError("EDITOR_INVALID_RESPONSE");
+      }
+      let rectCount = 0;
+      for (const item of result.items) {
+        if (!Number.isInteger(item.start) || !Number.isInteger(item.end) || item.start < 0 || item.end <= item.start || item.end > state.textBytes.length
+            || !Array.isArray(item.rects)) throw new EditorError("EDITOR_INVALID_RESPONSE");
+        rectCount += item.rects.length;
+        if (rectCount > 8192 || item.rects.some(rect => !decodedPages[rect.page])) throw new EditorError("EDITOR_INVALID_RESPONSE");
+      }
+      searchHighlights = result; searchIndex = index; repaintOverlay(); return true;
+    },
+    selectSearchResult(result, index, { signal } = {}) {
+      return enqueueTask(async () => {
+        if (signal?.aborted || disposed || busy || !state || result?.revision !== state.revision) throw new EditorError("EDITOR_STALE_QUERY");
+        const item = result.items?.[index];
+        if (!item) throw new EditorError("EDITOR_INVALID_RESPONSE");
+        const selected = await dispatch(EditorOpcode.SetSelection, { anchor: item.start, focus: item.end });
+        if (result.revision === selected.revision) { searchHighlights = result; searchIndex = index; repaintOverlay(); }
+        return selected;
+      });
+    },
     async exportDocument() {
       const result = await enqueue(EditorOpcode.Export);
       if (result.kind !== "export") throw new EditorError("EDITOR_INVALID_EXPORT");

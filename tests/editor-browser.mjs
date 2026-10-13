@@ -4,6 +4,7 @@ import { createEngineClient } from "../web/engine-client.mjs";
 import { encodeEditorCommand, EditorOpcode } from "../web/editor-protocol.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
 import { checkEditorZoom, checkAppZoom } from "./zoom-browser.mjs";
+import { checkNavigation } from "./navigation-browser.mjs";
 
 const checks = [];
 function assert(value, name) {
@@ -487,7 +488,7 @@ try {
   app.theme.setTheme("light");
   app.ribbon.selectTab("view");
   document.querySelector('[data-ribbon-command-id="appearance"]').click();
-  const appearanceDialog = document.querySelector("dialog");
+  const appearanceDialog = document.querySelector(".shell-preferences").closest("dialog");
   assert(appearanceDialog.open && appearanceDialog.getAttribute("aria-labelledby"), "real app appearance command opens a named modal");
   const modalNativeCalls = nativeCalls.length;
   for (const key of ["n", "o", "s"]) appearanceDialog.querySelector("button").dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }));
@@ -514,6 +515,15 @@ try {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "o", ctrlKey: true, bubbles: true, cancelable: true }));
   await waitFor(() => app.getState()?.text === appLargeText, "Ctrl+O loads the multi-page app fixture");
   const productScrollport = document.querySelector("#document-scroll");
+  await checkNavigation({ app, assert, waitFor, key, inputText, openText: async text => {
+    const bytes = new TextEncoder().encode(text);
+    let binary = "";
+    for (let i=0;i<bytes.length;i+=0x8000) binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+    nextAppOpen = {status:"ok",payload:btoa(binary)};
+    await app.editor.openDocument();
+  } });
+  nextAppOpen = {status:"ok",payload:btoa(appLargeText)};
+  await app.editor.openDocument();
   assert(productScrollport.scrollHeight > productScrollport.clientHeight, "multi-page document scrolls inside document-scroll");
   assert(document.documentElement.scrollHeight <= innerHeight && document.body.scrollHeight <= innerHeight,
     "long document does not grow the product body or move toolbar/footer outside the viewport");
@@ -566,6 +576,9 @@ try {
   assert((await app.openDocx()).kind === "ok", "real app imports DOCX through native host and Worker/WASM");
   assert(app.previewActive && document.querySelector("#text-workspace").hidden && !document.querySelector("#rich-workspace").hidden,
     "read-only DOCX workspace replaces only the visible TXT workspace");
+  assert(document.querySelector("#search-command").disabled && document.querySelector("#statistics-command").disabled
+      && document.querySelector("[data-statistics-status]").disabled,
+    "search and statistics tools are explicitly unavailable in the simplified DOCX preview");
   assert(document.querySelector("#rich-text").textContent.includes("Référence de titre") && document.querySelector("#rich-text").textContent.length > 100,
     "accessible preview mirror contains actual imported text");
   assert(document.querySelector("#rich-canvas").width > 0 && document.querySelector("#rich-canvas").height > 0,

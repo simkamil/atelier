@@ -1,7 +1,7 @@
 # Préparation du démonstrateur — 2026-10-13
 
-Le backlog compte désormais **53 US terminées sur 158**. Le dernier lot valide
-les composants accessibles, les thèmes et le ruban (US-104/105/106), avec des agents GPT-6 Luna moyen.
+Le backlog compte désormais **53 US terminées sur 158**. Le dernier lot raccorde
+la recherche et les statistiques au TXT (US-340/343 partielles), avec des agents GPT-6 Luna moyen.
 L’ouverture DOCX donne toujours un aperçu A4 en lecture seule.
 Le glisser-déposer TXT, les espaces françaises et le cache incrémental restent disponibles.
 US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves Word.
@@ -532,3 +532,11 @@ ainsi que ses mesures de latence et démarrage. US-111 conserve l’échec stric
 de handles ; ses contrôles fonctionnels de 100 cycles et callbacks passent.
 Le backlog reste à **35 US entièrement validées sur 158**. Les tests musl sont
 compilés localement ; leur exécution appartient à la CI Linux du commit publié.
+
+## Recherche et statistiques TXT — 2026-10-13
+
+Le [volet Ctrl+F et le dialogue de statistiques](us-340-343-navigation-ui.md) sont raccordés au moteur, développés avec trois agents GPT-6 Luna moyen, puis relus par trois agents indépendants. Navigation clavier, quatre options Unicode, surlignage, mots document/sélection et six mesures sont disponibles sur le TXT. Les remarques retenues de revue sont corrigées ; aucun défaut de ce lot n’est différé.
+
+La validation immuable passe **18 contrôles**, **1064 tests Rust**, avec 1119 entrées vérifiées. Les suites navigateur réelles couvrent le Worker/WASM, les réponses tardives, la navigation rapide, la composition annulée, les statistiques de sélection, les thèmes et le contraste élevé. Clippy hôte/WASM, paquet moteur, budget WASM et sonde WebView2 passent.
+
+Preuves : [validation](../_bmad-output/implementation-artifacts/navigation-validation.json), [revue](../_bmad-output/implementation-artifacts/spec-search-statistics-ui.md), [graphe](../_bmad-output/implementation-artifacts/navigation-graph.json). **53/158 US complètes** : US-340 reste partielle pour la liste plafonnée à 1 000 résultats et le document riche complet ; US-343 pour les notes/zones de texte et la parité Word. Les branches externes 102/306/315 restent séparées. Les essais physiques clavier/lecteur d’écran et le runtime Linux distant ne sont pas établis par ces contrôles Windows.

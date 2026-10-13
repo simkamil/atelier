@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages, onZoom = () => {} }) {
+export function createEditorShell({ toolbar, messages, onZoom = () => {}, onSearch = () => {}, onStatistics = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -19,6 +19,13 @@ export function createEditorShell({ toolbar, messages, onZoom = () => {} }) {
   zoomCommand.textContent = t("zoom-title");
   zoomCommand.disabled = true;
   zoomCommand.addEventListener("click", onZoom);
+  const toolCommand = (id, label, listener) => {
+    const element = doc.createElement("button");
+    element.type = "button"; element.id = id; element.textContent = t(label); element.disabled = true;
+    element.addEventListener("click",listener); return element;
+  };
+  const searchCommand = toolCommand("search-command","searchTitle",onSearch);
+  const statisticsCommand = toolCommand("statistics-command","statisticsDialogTitle",onStatistics);
   const stateRow = doc.createElement("div");
   stateRow.className = "editor-command-status";
   stateRow.append(back, status);
@@ -52,7 +59,7 @@ export function createEditorShell({ toolbar, messages, onZoom = () => {} }) {
     ] }] },
     { id: "home", label: t("ribbon-home"), keyTip: "A", groups: [
       { id: "history", label: t("ribbon-history-group"), commands: [command("undo", "action-undo", "U", byId("undo")), command("redo", "action-redo", "R", byId("redo"))] },
-      { id: "editing", label: t("ribbon-editing-group"), commands: [command("options", "options-label", "E", options)] },
+      { id: "editing", label: t("ribbon-editing-group"), commands: [command("options", "options-label", "E", options), command("search", "searchTitle", "C", searchCommand)] },
       { id: "format", label: t("ribbon-format-group"), commands: [future("font", "ribbon-font", "P"), future("paragraph", "ribbon-paragraph", "G")] },
     ] },
     { id: "insert", label: t("ribbon-insert"), keyTip: "I", groups: [{ id: "objects", label: t("ribbon-objects-group"), commands: [future("table", "ribbon-table", "T"), future("image", "ribbon-image", "M")] }] },
@@ -61,6 +68,7 @@ export function createEditorShell({ toolbar, messages, onZoom = () => {} }) {
     { id: "view", label: t("ribbon-view"), keyTip: "V", groups: [
       { id: "appearance", label: t("ribbon-appearance-group"), commands: [{ id: "appearance", label: t("appearance-title"), keyTip: "T" }] },
       { id: "zoom", label: t("zoom-group"), commands: [command("zoom", "zoom-title", "Z", zoomCommand)] },
+      { id: "statistics", label: t("statisticsScopeDocument"), commands: [command("statistics", "statisticsDialogTitle", "S", statisticsCommand)] },
     ] },
   ];
   toolbar.id = "ribbon";
@@ -76,7 +84,8 @@ export function createEditorShell({ toolbar, messages, onZoom = () => {} }) {
   return Object.freeze({
     theme, ribbon,
     setZoomEnabled(enabled) { zoomCommand.disabled = !enabled; ribbon.refresh(); },
+    setNavigationEnabled(enabled) { searchCommand.disabled = !enabled; statisticsCommand.disabled = !enabled; ribbon.refresh(); },
     refresh: () => ribbon.refresh(),
-    dispose() { zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
+    dispose() { searchCommand.removeEventListener("click",onSearch); statisticsCommand.removeEventListener("click",onStatistics); zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
   });
 }

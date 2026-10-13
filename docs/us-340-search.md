@@ -1,6 +1,6 @@
 # US-340 — Rechercher du texte (partie bibliothèque)
 
-Module `atelier_text_model::search` : un seul moteur, utilisable sur le document riche (`RichDocument`, US-200) et sur le texte brut (`PlainTextDocument`, US-120). L'interface (volet Ctrl+F, surlignage, raccourcis) n'est pas incluse : elle se branche sur l'API ci-dessous. Aucune dépendance externe ; réutilise `atelier-unicode` (graphèmes et mots UAX #29, `nfc`, `nfd`, `to_case_folded`).
+Module `atelier_text_model::search` : un seul moteur, utilisable sur le document riche (`RichDocument`, US-200) et sur le texte brut (`PlainTextDocument`, US-120). Le volet Ctrl+F, le surlignage et les raccourcis sont désormais raccordés au TXT ; voir [la livraison UI](us-340-343-navigation-ui.md). Le raccordement au document riche reste ouvert. Aucune dépendance externe ; réutilise `atelier-unicode` (graphèmes et mots UAX #29, `nfc`, `nfd`, `to_case_folded`).
 
 ## API
 

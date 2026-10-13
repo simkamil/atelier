@@ -78,6 +78,7 @@ prototype_docs.extend(['docs/us-224-text-drag-drop.md','docs/us-228-french-spaci
 prototype_docs.extend(['docs/us-003-image-reference-tests.md','docs/us-330-font-subsetting.md','docs/us-303-docx-tables.md','docs/us-310-odt-import.md','docs/us-312-doc-import.md','docs/us-340-search.md','docs/us-343-statistics.md','tests/odt-reference/README.md','tests/doc-reference/README.md'])
 prototype_docs.extend(['docs/rich-docx-preview.md','docs/SUBAGENT-WORKFLOW.md'])
 prototype_docs.extend(['docs/us-313-doc-structure.md','docs/us-331-pdf-writer.md','docs/us-342-zoom.md','web/zoom.mjs','web/zoom-controls.mjs','web/zoom-controls.css','tests/zoom.mjs','tests/zoom-browser.mjs','tests/zoom-controls-browser.mjs'])
+prototype_docs.extend(['docs/us-340-343-navigation-ui.md','web/navigation-tools.mjs','web/search-pane.mjs','web/search-pane.css','web/statistics-controls.mjs','web/statistics-controls.css','tests/navigation-browser.mjs','tests/navigation-query-protocol.mjs','tests/navigation-tools-browser.mjs','tests/search-pane-browser.mjs','tests/statistics-controls-browser.mjs'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.

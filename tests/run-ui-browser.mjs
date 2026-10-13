@@ -111,6 +111,7 @@ async function captureShell() {
       }
       assert.equal(resolved, palette, "real browser media change updates the system theme");
     }
+    await evaluate("window.atelierScreenshotApp.editor.element.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:'Un document à lire. Un document à rechercher.',bubbles:true,cancelable:true}))");
     for (const [name, width, theme] of [["light", 1280, "light"], ["dark", 1280, "dark"], ["narrow", 420, "light"]]) {
       await send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: false });
       await evaluate(`window.atelierScreenshotApp.theme.setTheme('${theme}')`);
@@ -120,6 +121,24 @@ async function captureShell() {
         const shot = await send("Page.captureScreenshot", { format: "png" });
         await writeFile(join(output, `${forcedColors ? "forced-" : ""}${name}.png`), Buffer.from(shot.data, "base64"));
       }
+      await evaluate("(()=>{window.atelierScreenshotApp.navigation.openSearch(); const q=document.querySelector('[data-search-query]');q.value='document';q.dispatchEvent(new Event('input',{bubbles:true}));})()");
+      for (let tries=0;tries<100;tries++) {
+        if (await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2")) break;
+        await new Promise(resolve=>setTimeout(resolve,20));
+      }
+      assert(await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2 && document.documentElement.scrollWidth<=innerWidth && document.body.scrollHeight<=innerHeight"), `${name} open search pane fits the real shell`);
+      if (screenshots) {
+        const shot=await send("Page.captureScreenshot",{format:"png"});
+        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-search.png`),Buffer.from(shot.data,"base64"));
+      }
+      await evaluate("document.querySelector('[data-search-close]').click(); window.atelierScreenshotApp.navigation.openStatistics();");
+      await new Promise(resolve=>setTimeout(resolve,180));
+      assert(await evaluate("(()=>{const d=document.querySelector('[data-statistics-dialog]');const r=d.getBoundingClientRect();return d.open&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} statistics dialog stays inside the viewport`);
+      if (screenshots) {
+        const shot=await send("Page.captureScreenshot",{format:"png"});
+        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-statistics.png`),Buffer.from(shot.data,"base64"));
+      }
+      await evaluate("document.querySelector('[data-statistics-dialog] .ui-dialog-close').click()");
     }
   } finally { socket.close(); }
 }
@@ -131,6 +150,7 @@ try {
   assert(report.checks.length >= 20, "all UI suites must execute");
   await captureShell();
   report.checks.push("real packaged app follows live browser system-theme media changes", "real packaged shell fits 1280px and 420px without horizontal overflow");
+  report.checks.push("real search pane and statistics dialog fit 1280px and 420px in light/dark themes");
   if (forcedColors) report.checks.push("primary button and mark preserve readable forced-colors system pairs");
   console.log(JSON.stringify({ ...report, executable, screenshots, environment: "real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence" }));
 } finally {

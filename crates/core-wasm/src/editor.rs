@@ -10,6 +10,7 @@ use crate::protocol::{Message, MessageType};
 const MAX_TEXT: usize = 128 * 1024;
 const MAX_HISTORY: usize = 4 * 1024 * 1024;
 const MAX_RESPONSE: usize = 32 * 1024 * 1024;
+const MAX_QUERY_BYTES: usize = 1024;
 
 #[derive(Clone, Default)]
 pub struct EditorSession {
@@ -119,6 +120,56 @@ impl EditorSession {
             out.f64(caret.y);
             out.f64(14.0);
             return Ok((candidate, out.finish(48)?));
+        }
+        if opcode == 19 {
+            let mut r = Reader::new(body);
+            let revision = r.u64()?;
+            if revision != candidate.revision {
+                return Err(EditorError("EDITOR_STALE_QUERY"));
+            }
+            let flags = r.u8()?;
+            if flags & !0x0f != 0 || r.u8()? != 0 || r.u16()? != 0 {
+                return Err(EditorError("EDITOR_INVALID_COMMAND"));
+            }
+            let query_len = r.u32()? as usize;
+            if query_len > MAX_QUERY_BYTES || r.remaining() != query_len {
+                return Err(EditorError("EDITOR_INVALID_COMMAND"));
+            }
+            let query =
+                core::str::from_utf8(r.rest()).map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+            candidate.current_layout()?;
+            let layout = candidate.layout.as_ref().unwrap();
+            let text = candidate.document.as_ref().unwrap().text();
+            let result = crate::editor_queries::search_response(
+                text,
+                layout,
+                query,
+                atelier_text_model::search::SearchOptions {
+                    match_case: flags & 1 != 0,
+                    whole_word: flags & 2 != 0,
+                    ignore_accents: flags & 4 != 0,
+                    match_nbsp: flags & 8 != 0,
+                    context_graphemes: 0,
+                },
+                revision,
+                crate::editor_queries::SEARCH_LIMITS,
+            )?;
+            return Ok((candidate, result));
+        }
+        if opcode == 20 {
+            let mut r = Reader::new(body);
+            let revision = r.u64()?;
+            if revision != candidate.revision {
+                return Err(EditorError("EDITOR_STALE_QUERY"));
+            }
+            candidate.current_layout()?;
+            let layout = candidate.layout.as_ref().unwrap();
+            let doc = candidate.document.as_ref().unwrap();
+            let selection = doc.selection();
+            let text = doc.text();
+            let result =
+                crate::editor_queries::statistics_response(text, selection, layout, revision)?;
+            return Ok((candidate, result));
         }
         match opcode {
             0 => {
@@ -752,6 +803,8 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         16 if (32..=32 + MAX_TEXT).contains(&body.len()) => None,
         17 if (24..=24 + MAX_TEXT).contains(&body.len()) => None,
         18 if body.len() <= 8 * 1024 * 1024 => None,
+        19 if (16..=16 + MAX_QUERY_BYTES).contains(&body.len()) => None,
+        20 => Some(8),
         _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),
     };
     if expected.is_some_and(|len| len != body.len()) {
@@ -772,14 +825,27 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
     if opcode == 2 && body.len() < 8 {
         return Err(EditorError("EDITOR_INVALID_COMMAND"));
     }
+    if opcode == 19 && body.len() >= 16 {
+        let query_len = u32::from_le_bytes(body[12..16].try_into().unwrap()) as usize;
+        if body[8] & !0x0f != 0
+            || body[9] != 0
+            || body[10] != 0
+            || body[11] != 0
+            || query_len > MAX_QUERY_BYTES
+            || body.len() != 16 + query_len
+        {
+            return Err(EditorError("EDITOR_INVALID_COMMAND"));
+        }
+        core::str::from_utf8(&body[16..]).map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+    }
     Ok((opcode, body))
 }
 
-struct Writer {
+pub(super) struct Writer {
     bytes: Vec<u8>,
 }
 impl Writer {
-    fn with_capacity(capacity: usize) -> Result<Self, EditorError> {
+    pub(super) fn with_capacity(capacity: usize) -> Result<Self, EditorError> {
         if capacity > MAX_RESPONSE {
             return Err(EditorError("EDITOR_RESPONSE_LIMIT"));
         }
@@ -789,22 +855,25 @@ impl Writer {
             .map_err(|_| EditorError("EDITOR_LIMIT"))?;
         Ok(Self { bytes })
     }
-    fn bytes(&mut self, v: &[u8]) {
+    pub(super) fn bytes(&mut self, v: &[u8]) {
         self.bytes.extend_from_slice(v);
     }
-    fn u16(&mut self, v: u16) {
+    pub(super) fn u8(&mut self, v: u8) {
+        self.bytes.push(v)
+    }
+    pub(super) fn u16(&mut self, v: u16) {
         self.bytes(&v.to_le_bytes())
     }
-    fn u32(&mut self, v: u32) {
+    pub(super) fn u32(&mut self, v: u32) {
         self.bytes(&v.to_le_bytes())
     }
-    fn u64(&mut self, v: u64) {
+    pub(super) fn u64(&mut self, v: u64) {
         self.bytes(&v.to_le_bytes())
     }
-    fn f64(&mut self, v: f64) {
+    pub(super) fn f64(&mut self, v: f64) {
         self.bytes(&v.to_le_bytes())
     }
-    fn finish(self, max: usize) -> Result<Vec<u8>, EditorError> {
+    pub(super) fn finish(self, max: usize) -> Result<Vec<u8>, EditorError> {
         if self.bytes.len() > max {
             Err(EditorError("EDITOR_RESPONSE_LIMIT"))
         } else {
@@ -865,6 +934,9 @@ impl<'a> Reader<'a> {
         let rest = &self.bytes[self.at..];
         self.at = self.bytes.len();
         rest
+    }
+    fn remaining(&self) -> usize {
+        self.bytes.len() - self.at
     }
 }
 

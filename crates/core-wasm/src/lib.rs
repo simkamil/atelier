@@ -12,6 +12,7 @@ use std::sync::{Mutex, OnceLock};
 pub mod editor;
 #[path = "editor-layout.rs"]
 mod editor_layout;
+mod editor_queries;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod protocol;
 pub mod rich_preview;

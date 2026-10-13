@@ -14,9 +14,10 @@ from graphify.cargo_introspect import introspect_cargo
 from graphify.export import to_html
 from graphify.diagnostics import diagnose_extraction
 
-if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"]):
+if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"], ["--finalize-navigation"]):
     raise SystemExit("Usage: py ui-shell-graph-receipt.py --finalize (only after parent GO)")
 zoom_run = sys.argv[1:] == ["--finalize-zoom"]
+navigation_run = sys.argv[1:] == ["--finalize-navigation"]
 
 ROOT = Path(__file__).resolve().parents[2]
 ART = Path(__file__).resolve().parent
@@ -140,7 +141,7 @@ assert {node['label'] for node in cargo['nodes']} == {package['name'] for packag
 
 missing_sources = [node['id'] for node in raw['nodes'] if node.get('source_file') and not (ROOT/node['source_file']).is_file()]
 assert not missing_sources, f"missing located sources: {missing_sources[:20]}"
-for url in ('/editor-shell.mjs', '/ui-components.mjs', '/ui-components.css', '/ribbon.mjs', '/ribbon.css', '/theme.mjs', '/theme.css') + (('/zoom.mjs', '/zoom-controls.mjs', '/zoom-controls.css') if zoom_run else ()):
+for url in ('/editor-shell.mjs', '/ui-components.mjs', '/ui-components.css', '/ribbon.mjs', '/ribbon.css', '/theme.mjs', '/theme.css') + (('/zoom.mjs', '/zoom-controls.mjs', '/zoom-controls.css') if zoom_run else ()) + (('/navigation-tools.mjs', '/search-pane.mjs', '/search-pane.css', '/statistics-controls.mjs', '/statistics-controls.css') if navigation_run else ()):
     route = 'http_route_' + re.sub(r'[^a-z0-9]+', '_', url.casefold()).strip('_')
     assert route in node_ids, f"missing UI route: {url}"
     # The simple graph merges multiple relations for one endpoint pair; the raw
@@ -182,6 +183,7 @@ evidence = {
     "api_report_llm_tokens": 0,
     "ui_stories": {key: stories['us_v0_v1_us_'+key].get('status') for key in ('104', '105', '106')},
     "zoom_story_status": stories['us_v0_v1_us_342'].get('status') if zoom_run else None,
+    "navigation_story_status": {key: stories['us_v0_v1_us_'+key].get('status') for key in ('340','343')} if navigation_run else None,
     "missing_located_sources": len(missing_sources),
     "ui_latency_certified": False,
     "graph_sha256": {
@@ -193,7 +195,7 @@ evidence = {
         for name in ("merged-branches-graph-refresh.py", "merged-branches-graph-receipt.py")
     },
 }
-(ART / ("zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
+(ART / ("navigation-graph.json" if navigation_run else "zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
     json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
     newline="\n",

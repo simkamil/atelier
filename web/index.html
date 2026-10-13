@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="/ribbon.css">
     <link rel="stylesheet" href="/theme.css">
     <link rel="stylesheet" href="/zoom-controls.css">
+    <link rel="stylesheet" href="/search-pane.css">
+    <link rel="stylesheet" href="/statistics-controls.css">
     <script type="module" src="/app.mjs"></script>
   </head>
   <body>
@@ -42,6 +44,7 @@
         <span id="editor-status" class="editor-status" role="status" aria-live="polite" data-i18n="status-loading">Initialisation du document…</span>
       </nav>
       <section id="text-workspace" class="workspace" aria-label="Éditeur de texte" data-i18n-aria-label="workspace-label">
+        <div id="search-slot" hidden></div>
         <div id="document-scroll" class="document-scroll" tabindex="0" aria-label="Pages du document" data-i18n-aria-label="pages-label">
           <div class="page-stack">
             <div id="document-text" class="accessible-document" role="region" aria-label="Texte du document" data-i18n-aria-label="document-text-label"></div>
@@ -60,7 +63,7 @@
           </div>
         </div>
       </section>
-      <footer><span data-i18n="footer">Atelier · démonstrateur de texte brut</span><div id="document-zoom"></div></footer>
+      <footer><span data-i18n="footer">Atelier · démonstrateur de texte brut</span><div id="statistics-slot"></div><div id="document-zoom"></div></footer>
     </main>
     <div class="diagnostics" hidden aria-hidden="true">
       <h2 id="status-title">En attente</h2><p id="status-detail">Initialisation</p>

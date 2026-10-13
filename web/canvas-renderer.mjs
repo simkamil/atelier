@@ -163,7 +163,7 @@ export class CanvasRenderer {
   clearOverlay() {
     return this.setOverlay([]);
   }
-  setEditorOverlay({ selectionRects = [], caret = null, compositionRects = [], caretVisible = true } = {}) {
+  setEditorOverlay({ selectionRects = [], searchRects = [], activeSearchRects = [], caret = null, compositionRects = [], caretVisible = true } = {}) {
     const rects = (value, name) => {
       if (!Array.isArray(value)) throw new TypeError(`${name} must be an array`);
       return value.map(rect => {
@@ -178,6 +178,8 @@ export class CanvasRenderer {
     const normalizedCaret = caret === null ? null : rects([caret], "caret")[0];
     this.editorOverlay = {
       selectionRects: rects(selectionRects, "selection"),
+      searchRects: rects(searchRects, "search"),
+      activeSearchRects: rects(activeSearchRects, "active search"),
       caret: normalizedCaret,
       compositionRects: rects(compositionRects, "composition"),
       caretVisible,
@@ -399,6 +401,10 @@ export class CanvasRenderer {
     ctx.save();
     try {
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      ctx.fillStyle = "rgba(255,205,54,0.38)";
+      for (const rect of editor.searchRects ?? []) ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+      ctx.fillStyle = "rgba(244,139,42,0.44)";
+      for (const rect of editor.activeSearchRects ?? []) ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
       ctx.fillStyle = "rgba(35,108,87,0.24)";
       for (const rect of editor.selectionRects) ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
       ctx.strokeStyle = "#236c57";

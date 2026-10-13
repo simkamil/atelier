@@ -5,7 +5,7 @@ export const EditorOpcode = Object.freeze({
   State: 0, Load: 1, InsertText: 2, DeleteBackward: 3, DeleteForward: 4,
   Undo: 5, Redo: 6, SetSelection: 7, Move: 8, HitTest: 9, Export: 10, MarkSaved: 11,
   DeleteWordBackward: 12, DeleteWordForward: 13, SelectPoint: 14,
-  ProbePoint: 15, DropText: 16, ReplaceRange: 17, PreviewDocx: 18,
+  ProbePoint: 15, DropText: 16, ReplaceRange: 17, PreviewDocx: 18, Search: 19, Statistics: 20,
 });
 
 export const EDITOR_LIMITS = Object.freeze({
@@ -16,6 +16,10 @@ export const EDITOR_LIMITS = Object.freeze({
   maxDocxBytes: 8 * 1024 * 1024,
   maxPreviewPages: 256,
   maxPreviewDisplayBytes: 26 * 1024 * 1024,
+  maxQueryBytes: 1024,
+  maxQueryResults: 1000,
+  maxQueryRects: 8192,
+  maxExcerptBytes: 128 * 1024,
 });
 
 const MAX_U64 = (1n << 64n) - 1n;
@@ -69,11 +73,28 @@ function boolByte(value, name) {
 
 /** Encode an ATED v1 command payload as defined by the shared editor contract. */
 export function encodeEditorCommand(opcode, values = {}) {
-  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 18 || values === null || typeof values !== "object") {
+  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 20 || values === null || typeof values !== "object") {
     fail("INVALID_ARGUMENT", "Invalid editor opcode or arguments.");
   }
   let body;
-  if (opcode === EditorOpcode.PreviewDocx) {
+  if (opcode === EditorOpcode.Search) {
+    if (typeof values.query !== "string") fail("INVALID_ARGUMENT", "Search query must be a string.");
+    const query = encoder.encode(values.query);
+    if (query.byteLength > EDITOR_LIMITS.maxQueryBytes) fail("MESSAGE_TOO_LARGE", "Search query exceeds the editor query limit.");
+    const options = values.options ?? {};
+    if (options === null || typeof options !== "object") fail("INVALID_ARGUMENT", "Search options must be an object.");
+    body = new Uint8Array(16 + query.byteLength);
+    const view = new DataView(body.buffer);
+    view.setBigUint64(0, u64(values.revision, "revision"), true);
+    let flags = 0;
+    for (const [key, bit] of [["matchCase", 0], ["wholeWord", 1], ["ignoreAccents", 2], ["matchNbsp", 3]]) {
+      if (options[key] !== undefined) flags |= boolByte(options[key], key) << bit;
+    }
+    view.setUint8(8, flags); view.setUint32(12, query.byteLength, true); body.set(query, 16);
+  } else if (opcode === EditorOpcode.Statistics) {
+    body = new Uint8Array(8);
+    new DataView(body.buffer).setBigUint64(0, u64(values.revision, "revision"), true);
+  } else if (opcode === EditorOpcode.PreviewDocx) {
     if (!isBytes(values.bytes) || values.bytes.byteLength > EDITOR_LIMITS.maxDocxBytes) fail("MESSAGE_TOO_LARGE", "DOCX bytes exceed the preview limit.");
     body = Uint8Array.from(values.bytes);
   } else if (opcode === EditorOpcode.Load) {
@@ -178,6 +199,8 @@ export function decodeEditorResponse(type, payload) {
   if (type !== 0x8020) fail("INVALID_RESPONSE", "Unexpected editor response type.");
   if (payload.byteLength < 8) fail("TRUNCATED", "Truncated editor response.");
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQF") return decodeSearchResponse(view, payload);
+  if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQT") return decodeStatisticsResponse(view, payload);
   if (ascii(payload.subarray(0, 4)) === "ATRP") {
     if (payload.length < 20 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid preview header.");
     const count = view.getUint32(8, true), textLength = view.getUint32(12, true), noticeCount = view.getUint32(16, true);
@@ -284,4 +307,59 @@ export function decodeEditorResponse(type, payload) {
     canUndo: Boolean(flags & 1), canRedo: Boolean(flags & 2), dirty: Boolean(flags & 4), bom: Boolean(flags & 8),
     anchor, focus, text, textBytes: textBytes.slice(), pages, caret: { page: caretPage, x: caretX, y: caretY, height: caretHeight }, selectionRects,
   };
+}
+
+function decodeSearchResponse(view, payload) {
+  if (payload.byteLength < 24 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid search response header.");
+  const revision = view.getBigUint64(8, true), count = view.getUint32(16, true);
+  const truncated = view.getUint8(20);
+  if (count > EDITOR_LIMITS.maxQueryResults || truncated > 1 || view.getUint8(21) !== 0 || view.getUint16(22, true) !== 0) fail("INVALID_RESPONSE", "Invalid search response fields.");
+  let offset = 24, totalRects = 0;
+  const items = [];
+  for (let i = 0; i < count; i += 1) {
+    if (offset + 24 > payload.byteLength) fail("TRUNCATED", "Truncated search occurrence.");
+    const start = view.getUint32(offset, true), end = view.getUint32(offset + 4, true);
+    const excerptLength = view.getUint32(offset + 8, true), excerptStart = view.getUint32(offset + 12, true), excerptEnd = view.getUint32(offset + 16, true);
+    const excerptFlags = view.getUint8(offset + 20);
+    if (start >= end || end > EDITOR_LIMITS.maxTextBytes || excerptLength > EDITOR_LIMITS.maxExcerptBytes || excerptFlags & ~3
+        || view.getUint8(offset + 21) !== 0 || view.getUint16(offset + 22, true) !== 0) fail("INVALID_RESPONSE", "Invalid search occurrence fields.");
+    offset += 24;
+    if (excerptLength > payload.byteLength - offset) fail("TRUNCATED", "Truncated search excerpt.");
+    const excerptBytes = payload.subarray(offset, offset + excerptLength);
+    let excerptText;
+    try { excerptText = decoder.decode(excerptBytes); } catch { fail("INVALID_RESPONSE", "Search excerpt is not valid UTF-8."); }
+    const scalarBoundaries = new Set([0, excerptLength]);
+    let byteAt = 0;
+    for (const scalar of excerptText) { byteAt += encoder.encode(scalar).byteLength; scalarBoundaries.add(byteAt); }
+    if (excerptStart >= excerptEnd || excerptEnd > excerptLength || !scalarBoundaries.has(excerptStart) || !scalarBoundaries.has(excerptEnd)) fail("INVALID_RESPONSE", "Search excerpt range splits a UTF-8 scalar.");
+    offset += excerptLength;
+    if (offset + 4 > payload.byteLength) fail("TRUNCATED", "Truncated search rectangle count.");
+    const rectCount = view.getUint32(offset, true); offset += 4;
+    totalRects += rectCount;
+    if (rectCount === 0 || totalRects > EDITOR_LIMITS.maxQueryRects || rectCount > Math.floor((payload.byteLength - offset) / 36)) fail("INVALID_RESPONSE", "Search rectangle limit exceeded.");
+    const rects = [];
+    for (let j = 0; j < rectCount; j += 1) {
+      const page = view.getUint32(offset, true), x = view.getFloat64(offset + 4, true), y = view.getFloat64(offset + 12, true), width = view.getFloat64(offset + 20, true), height = view.getFloat64(offset + 28, true);
+      offset += 36;
+      if (page >= EDITOR_LIMITS.maxPages || ![x, y, width, height].every(Number.isFinite) || x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 595.296 || y + height > 841.91) fail("INVALID_RESPONSE", "Invalid search highlight geometry.");
+      rects.push({ page, x, y, width, height });
+    }
+    items.push({ start, end, excerpt: { text: excerptText, start: excerptStart, end: excerptEnd, truncatedBefore: Boolean(excerptFlags & 1), truncatedAfter: Boolean(excerptFlags & 2) }, rects });
+  }
+  if (offset !== payload.byteLength) fail("TRAILING_BYTES", "Search response has trailing bytes.");
+  return { kind: "search", revision, items, truncated: Boolean(truncated) };
+}
+
+function decodeStatisticsResponse(view, payload) {
+  if (payload.byteLength !== 72 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid statistics response.");
+  const revision = view.getBigUint64(8, true), anchor = view.getUint32(16, true), focus = view.getUint32(20, true);
+  if (anchor > EDITOR_LIMITS.maxTextBytes || focus > EDITOR_LIMITS.maxTextBytes) fail("INVALID_RESPONSE", "Statistics selection is out of bounds.");
+  let offset = 24;
+  const readStats = () => {
+    const value = { words: view.getUint32(offset, true), characters: view.getUint32(offset + 4, true), charactersWithSpaces: view.getUint32(offset + 8, true), paragraphs: view.getUint32(offset + 12, true), lines: view.getUint32(offset + 16, true), pages: view.getUint32(offset + 20, true) };
+    offset += 24;
+    if (value.pages > EDITOR_LIMITS.maxPages || value.lines > EDITOR_LIMITS.maxTextBytes) fail("INVALID_RESPONSE", "Statistics counters exceed their bounds.");
+    return value;
+  };
+  return { kind: "statistics", revision, anchor, focus, document: readStats(), selection: readStats() };
 }

@@ -4511,6 +4511,83 @@
       "source_location": "1"
     },
     {
+      "id": "document_docs_us-340-343-navigation-ui_md",
+      "label": "docs/us-340-343-navigation-ui.md",
+      "file_type": "document",
+      "source_file": "docs/us-340-343-navigation-ui.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_navigation-tools_mjs",
+      "label": "web/navigation-tools.mjs",
+      "file_type": "document",
+      "source_file": "web/navigation-tools.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_search-pane_mjs",
+      "label": "web/search-pane.mjs",
+      "file_type": "document",
+      "source_file": "web/search-pane.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_search-pane_css",
+      "label": "web/search-pane.css",
+      "file_type": "document",
+      "source_file": "web/search-pane.css",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_statistics-controls_mjs",
+      "label": "web/statistics-controls.mjs",
+      "file_type": "document",
+      "source_file": "web/statistics-controls.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_statistics-controls_css",
+      "label": "web/statistics-controls.css",
+      "file_type": "document",
+      "source_file": "web/statistics-controls.css",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_navigation-browser_mjs",
+      "label": "tests/navigation-browser.mjs",
+      "file_type": "document",
+      "source_file": "tests/navigation-browser.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_navigation-query-protocol_mjs",
+      "label": "tests/navigation-query-protocol.mjs",
+      "file_type": "document",
+      "source_file": "tests/navigation-query-protocol.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_navigation-tools-browser_mjs",
+      "label": "tests/navigation-tools-browser.mjs",
+      "file_type": "document",
+      "source_file": "tests/navigation-tools-browser.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_search-pane-browser_mjs",
+      "label": "tests/search-pane-browser.mjs",
+      "file_type": "document",
+      "source_file": "tests/search-pane-browser.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_statistics-controls-browser_mjs",
+      "label": "tests/statistics-controls-browser.mjs",
+      "file_type": "document",
+      "source_file": "tests/statistics-controls-browser.mjs",
+      "source_location": "1"
+    },
+    {
       "id": "document_tests_image-reference_readme_md",
       "label": "tests/image-reference/README.md",
       "file_type": "document",

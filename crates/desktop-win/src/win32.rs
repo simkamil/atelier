@@ -1589,6 +1589,10 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
       window.__atelierUs112Result=null;
       void (async()=>{
         try {
+          // Finish startup imports before explicit probes so their callback records
+          // remain together in the bounded diagnostic log.
+          const ready=await (await import('/app.mjs')).editorReady;
+          if(ready.status!=='ready')throw new Error('EDITOR_NOT_READY');
           const paths=[
             ['/', 'text/html'], ['/app.mjs','text/javascript'], ['/app.css','text/css'],
             ['/editor-shell.mjs','text/javascript'],
@@ -1605,6 +1609,8 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/engine-client.mjs','text/javascript'], ['/wasm-loader.mjs','text/javascript'],
             ['/editor-protocol.mjs','text/javascript'], ['/editor.mjs','text/javascript'],
             ['/native-host.mjs','text/javascript'], ['/display-list.mjs','text/javascript'],
+            ['/navigation-tools.mjs','text/javascript'], ['/search-pane.mjs','text/javascript'], ['/search-pane.css','text/css'],
+            ['/statistics-controls.mjs','text/javascript'], ['/statistics-controls.css','text/css'],
             ['/zoom.mjs','text/javascript'], ['/zoom-controls.mjs','text/javascript'], ['/zoom-controls.css','text/css'],
             ['/canvas-renderer.mjs','text/javascript'], ['/text-input.mjs','text/javascript'],
             ['/mouse-selection.mjs','text/javascript'],
@@ -1635,9 +1641,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
           const required=['connect-src|https://us112-fetch.invalid','connect-src|wss://us112-socket.invalid','img-src|https://us112-image.invalid','frame-src|https://us112-frame.invalid','script-src-elem|https://us112-script.invalid','style-src-elem|https://us112-style.invalid'];
           const deadline=Date.now()+12000;
           while(Date.now()<deadline&&(document.documentElement.dataset.engineEcho!=='ok'||!required.every(prefix=>window.__atelierUs112Violations.some(v=>v.startsWith(prefix)))))await new Promise(r=>setTimeout(r,40));
-          const ready=await (await import('/app.mjs')).editorReady;
-          if(ready.status!=='ready')throw new Error('EDITOR_NOT_READY');
-          const editor=ready.editor;
+           const editor=ready.editor;
           const input=editor.element;
           input.focus();
           const expected='Bonjour é€\n';
@@ -1738,7 +1742,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
     // Startup plus explicit probes may rotate the bounded diagnostic log.
     // Every required probe above must still be present; report rotation honestly.
     Ok(format!(
-        "embedded resources: assets=31; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
+        "embedded resources: assets=36; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
         attempts.len(),
         view.dropped_resource_attempts()
     ))

@@ -6,6 +6,7 @@ import { createNativeHost } from "/native-host.mjs";
 import { createRichPreview } from "/rich-preview.mjs";
 import { createEditorShell } from "/editor-shell.mjs";
 import { createZoomControls } from "/zoom-controls.mjs";
+import { createNavigationTools } from "/navigation-tools.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -47,6 +48,20 @@ const FALLBACK = new Map(Object.entries({
   "zoom-width": "Largeur de page", "zoom-page": "Page entière", "zoom-pages": "Deux pages",
   "zoom-apply": "Appliquer", "zoom-cancel": "Annuler", "zoom-close": "Fermer",
   "zoom-invalid": "Saisissez un pourcentage entier entre 10 et 500.",
+  searchTitle: "Rechercher", searchQuery: "Texte à rechercher", searchMatchCase: "Respecter la casse",
+  searchWholeWord: "Mot entier", searchIgnoreAccents: "Ignorer les accents", searchMatchNbsp: "Respecter les espaces insécables",
+  searchPrevious: "Précédent", searchNext: "Suivant", searchClose: "Fermer la recherche",
+  searchCount: "{count} sur {total}", searchEmptyQuery: "Saisissez le texte à rechercher.", searchNoResults: "Aucun résultat.",
+  searchTruncated: "Résultats limités (1 000 maximum) : affinez la recherche.", searchBusy: "Recherche en cours…", searchError: "La recherche n’a pas abouti. Vérifiez la requête (1 024 octets maximum).",
+  searchDisabled: "Recherche indisponible dans cette vue.", searchWrapped: "La recherche a repris au début ou à la fin du document.",
+  searchResult: "Résultat {index} : {excerpt}", searchOptions: "Options de recherche", searchResults: "Résultats de recherche",
+  statusDocument: "{words} mots", statusSelection: "{selected} / {words} mots",
+  statisticsMetric: "Statistique", statisticsDialogTitle: "Statistiques", statisticsClose: "Fermer",
+  statisticsScopeDocument: "Document", statisticsScopeSelection: "Sélection", statisticsFieldPages: "Pages", statisticsFieldWords: "Mots",
+  statisticsFieldCharacters: "Caractères sans espaces", statisticsFieldCharactersWithSpaces: "Caractères avec espaces",
+  statisticsFieldParagraphs: "Paragraphes", statisticsFieldLines: "Lignes", statisticsLoading: "Comptage en cours…",
+  statisticsError: "Le comptage n’a pas abouti.", statisticsUnavailableData: "Statistiques indisponibles",
+  statisticsNotesTextBoxes: "Inclure les notes et zones de texte", statisticsNotesUnavailable: "Ces éléments ne sont pas encore pris en charge.",
 }));
 
 document.addEventListener("securitypolicyviolation", event => {
@@ -105,8 +120,10 @@ function showEditorMessage(text, isError = false) {
 async function start() {
   const messages = await loadCatalog();
   let zoomControls;
+  let navigation;
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages,
-    onZoom: () => zoomControls?.open({ returnFocusTo: document.activeElement }) });
+    onZoom: () => zoomControls?.open({ returnFocusTo: document.activeElement }),
+    onSearch: () => navigation?.openSearch(), onStatistics: () => navigation?.openStatistics() });
   let client;
   let host;
   let editor;
@@ -129,7 +146,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    navigation?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -157,15 +174,19 @@ async function start() {
     nodes.frenchSpacing.disabled = blocked;
     nodes.openDocx.disabled = blocked;
     updateZoom();
+    const toolsEnabled = !blocked && !previewActive;
+    navigation?.setEnabled(toolsEnabled, { preview: previewActive });
+    shell.setNavigationEnabled(toolsEnabled);
     shell.refresh();
   };
   const onBusy = value => { busy = value; updateControls(editor?.state); };
-  const onState = state => {
+  const onState = (state, metadata) => {
     if (!previewActive) {
       nodes.documentState.textContent = messages.get(state.dirty ? "state-dirty" : "state-clean");
       nodes.documentState.classList.toggle("dirty", state.dirty);
     }
     updateControls(state);
+    navigation?.update(state,metadata);
   };
   const onError = error => {
     showEditorMessage(messageForError(error, messages), true);
@@ -212,6 +233,9 @@ async function start() {
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
       spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
       onZoom: () => { if (previewActive) updateZoom(); } });
+    const toolKeys = [...FALLBACK.keys()].filter(key => key.startsWith("search") || key.startsWith("statistics") || key === "statusDocument" || key === "statusSelection");
+    navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"),
+      labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key) ?? FALLBACK.get(key)])) });
     async function openDocx() {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
       const generation = ++previewGeneration;
@@ -300,6 +324,7 @@ async function start() {
       editor,
       theme: shell.theme, ribbon: shell.ribbon,
       zoomControls,
+      navigation,
       openDocx, closePreview, dispose,
       get previewActive() { return previewActive; },
     });

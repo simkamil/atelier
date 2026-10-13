@@ -192,7 +192,40 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor.rs",
-    "source_location": "L873",
+    "source_location": "L945",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_editor_queries",
+    "target": "editor",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/editor_queries.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_editor_queries",
+    "target": "atelier_text_model",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/editor_queries.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_editor_queries",
+    "target": "grapheme_boundaries",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/editor_queries.rs",
+    "source_location": "L11",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -203,7 +236,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/lib.rs",
-    "source_location": "L497",
+    "source_location": "L498",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -632,7 +665,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/resources.rs",
-    "source_location": "L307",
+    "source_location": "L332",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -830,7 +863,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2155",
+    "source_location": "L2159",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -841,7 +874,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2160",
+    "source_location": "L2164",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -852,7 +885,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2163",
+    "source_location": "L2167",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -2646,6 +2679,17 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/layout.rs",
     "source_location": "L1381",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_src_lib",
+    "target": "layout",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/src/lib.rs",
+    "source_location": "L17",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -6787,6 +6831,17 @@
     "_origin": "ast"
   },
   {
+    "source": "web_app",
+    "target": "ref_navigation_tools_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
     "source": "web_editor_shell",
     "target": "ref_ribbon_mjs",
     "relation": "imports_from",
@@ -7003,6 +7058,29 @@
     "confidence": "EXTRACTED",
     "source_file": "tests/mouse-selection.mjs",
     "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_navigation_query_protocol",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/navigation-query-protocol.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_navigation_tools_browser_run",
+    "target": "ref_navigation_tools_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "deferred": true,
+    "confidence": "EXTRACTED",
+    "source_file": "tests/navigation-tools-browser.mjs",
+    "source_location": "L66",
     "weight": 1.0,
     "_origin": "ast"
   },
@@ -7355,6 +7433,30 @@
     "confidence": "EXTRACTED",
     "source_file": "tests/run-worker-browser.mjs",
     "source_location": "L9",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_search_pane_browser_run",
+    "target": "ref_search_pane_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "deferred": true,
+    "confidence": "EXTRACTED",
+    "source_file": "tests/search-pane-browser.mjs",
+    "source_location": "L12",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_statistics_controls_browser_run",
+    "target": "ref_statistics_controls_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "deferred": true,
+    "confidence": "EXTRACTED",
+    "source_file": "tests/statistics-controls-browser.mjs",
+    "source_location": "L13",
     "weight": 1.0,
     "_origin": "ast"
   },

@@ -26,6 +26,31 @@ pub struct Resource {
 // Every URL here is an explicit, immutable route. No directory or prefix serving exists.
 pub static RESOURCES: &[Resource] = &[
     Resource {
+        path: "/navigation-tools.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/navigation-tools.mjs"),
+    },
+    Resource {
+        path: "/search-pane.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/search-pane.mjs"),
+    },
+    Resource {
+        path: "/search-pane.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/search-pane.css"),
+    },
+    Resource {
+        path: "/statistics-controls.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/statistics-controls.mjs"),
+    },
+    Resource {
+        path: "/statistics-controls.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/statistics-controls.css"),
+    },
+    Resource {
         path: "/zoom.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/zoom.mjs"),

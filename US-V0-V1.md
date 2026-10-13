@@ -1365,10 +1365,10 @@ Réf : F-COM-013 · Taille : M · Dépend de : US-081, US-111
 #### US-340 — Rechercher
 *En tant qu'*utilisateur, *je veux* rechercher du texte *afin de* trouver rapidement un passage.
 - [ ] Ctrl+F : volet de recherche, résultats listés avec leur contexte, toutes les occurrences surlignées, compteur.
-- [ ] Options : respecter la casse, mot entier, ignorer les accents, respecter les espaces insécables.
+- [x] Options : respecter la casse, mot entier, ignorer les accents, respecter les espaces insécables.
 - [ ] Recherche dans les en-têtes, pieds et tableaux ; Entrée / Maj+Entrée pour suivant/précédent.
 
-Avancement (2026-10-13) : Bibliothèque de recherche fusionnée : options Unicode, plages exactes, contexte et navigation. Le volet Ctrl+F, le surlignage et ses raccourcis restent à raccorder; [contrat](docs/us-340-search.md).
+Avancement (2026-10-13) : Volet Ctrl+F raccordé au TXT avec contexte, compteur, quatre options Unicode, surlignage et Entrée/Maj+Entrée. Liste plafonnée à 1 000 occurrences avec avertissement : le critère « toutes les occurrences » reste partiel au-delà. Le raccordement aux en-têtes, pieds et tableaux du DOCX reste ouvert ; [livraison et validation](docs/us-340-343-navigation-ui.md).
 
 Réf : F-COM-010 · Taille : M · Dépend de : US-013, US-200
 
@@ -1393,7 +1393,7 @@ Réf : F-COM-012 · Taille : S · Dépend de : US-101
 - [ ] Barre d'état : mots (de la sélection et du document) ; dialogue : pages, mots, caractères avec et sans espaces, paragraphes, lignes ; option notes et zones de texte.
 - [ ] Comptage identique à Word sur le corpus (tolérance ≤ 0,5 %).
 
-Avancement (2026-10-13) : Bibliothèque de statistiques fusionnée : compteurs et caches pour texte brut/riche, sélection et corpus LibreOffice. Barre d’état/dialogue, notes/zones de texte et preuve de parité Word restent ouverts; [contrat](docs/us-343-statistics.md).
+Avancement (2026-10-13) : Compteur document/sélection et dialogue à six mesures raccordés au TXT, avec pages/lignes issues de la mise en page Rust. Notes/zones de texte désactivées et expliquées ; ces fonctions et la preuve de parité Word restent ouvertes ; [livraison et validation](docs/us-340-343-navigation-ui.md).
 
 Réf : F-TXT-006 · Taille : S · Dépend de : US-011
 
