@@ -1049,9 +1049,16 @@ impl<R: Read> Reader<R> {
         };
         if c != '<' {
             let mut out = String::new();
+            // Consecutive literal `]` characters seen in the raw text: the
+            // forbidden sequence is a literal `]]>`, not one produced by
+            // decoding `]]&gt;`.
+            let mut brackets = 0usize;
             if c == '&' {
                 self.ref_value(&mut out, self.text_budget())?;
             } else {
+                if c == ']' {
+                    brackets = 1;
+                }
                 let text_budget = self.text_budget();
                 if c.len_utf8() > text_budget {
                     return Err(self.error(ErrorKind::Limit, "text exceeds configured limit"));
@@ -1069,9 +1076,16 @@ impl<R: Read> Reader<R> {
                     break;
                 }
                 if ch == '&' {
+                    brackets = 0;
                     let total_budget = self.text_budget();
                     self.ref_value(&mut out, total_budget)?;
                 } else {
+                    if ch == '>' && brackets >= 2 {
+                        return Err(
+                            self.error(ErrorKind::Syntax, "']]>' is forbidden in character data")
+                        );
+                    }
+                    brackets = if ch == ']' { brackets + 1 } else { 0 };
                     let remaining = self.text_budget().saturating_sub(out.len());
                     if ch.len_utf8() > remaining {
                         return Err(self.error(ErrorKind::Limit, "text exceeds configured limit"));
@@ -1083,9 +1097,6 @@ impl<R: Read> Reader<R> {
                         self.decoder.position(),
                     )?;
                 }
-            }
-            if out.contains("]]>") {
-                return Err(self.error(ErrorKind::Syntax, "']]>' is forbidden in character data"));
             }
             if self.stack.is_empty() {
                 if out.chars().all(is_xml_space) {
@@ -2396,6 +2407,51 @@ mod tests {
             Some(Event::StartElement { empty: true, .. })
         ));
         assert!(consumed.load(std::sync::atomic::Ordering::Relaxed) < 9);
+    }
+
+    #[test]
+    fn close_bracket_sequence_is_tested_on_raw_text() {
+        let text = |input: &[u8]| -> Result<String, XmlError> {
+            Ok(events(input)?
+                .into_iter()
+                .filter_map(|e| match e {
+                    Event::Text(t) => Some(t),
+                    _ => None,
+                })
+                .collect())
+        };
+        // Escaped: valid, decoded to the three characters.
+        assert_eq!(text(b"<r>a]]&gt;b</r>").unwrap(), "a]]>b");
+        assert_eq!(text(b"<r>]]&#62;</r>").unwrap(), "]]>");
+        assert_eq!(text(b"<r>]&#93;&gt;</r>").unwrap(), "]]>");
+        assert_eq!(text(b"<r>]]&gt;]]&gt;</r>").unwrap(), "]]>]]>");
+        // Literal: still refused, alone or after other text.
+        for input in [
+            &b"<r>]]></r>"[..],
+            b"<r>a]]>b</r>",
+            b"<r>]]]></r>",
+            b"<r>&amp;]]></r>",
+        ] {
+            assert!(text(input).is_err(), "{:?}", String::from_utf8_lossy(input));
+        }
+        // Two brackets, a reference, then `>` is not the sequence.
+        assert_eq!(text(b"<r>]]&amp;></r>").unwrap(), "]]&>");
+        // The end of a CDATA section is accepted, with text around it.
+        assert_eq!(text(b"<r><![CDATA[a]]]]></r>").unwrap(), "a]]");
+        assert_eq!(text(b"<r>x<![CDATA[]]>y</r>").unwrap(), "xy");
+        // In an attribute value.
+        let evs = events(b"<r a='x]]&gt;y' b='p]]>q'/>").unwrap();
+        let attr = |name: &str| {
+            evs.iter().find_map(|e| match e {
+                Event::StartElement { attributes, .. } => attributes
+                    .iter()
+                    .find(|a| a.name.local == name)
+                    .map(|a| a.value.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(attr("a").as_deref(), Some("x]]>y"));
+        assert_eq!(attr("b").as_deref(), Some("p]]>q"));
     }
 
     #[test]
