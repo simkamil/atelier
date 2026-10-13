@@ -4,6 +4,7 @@ import { decodeMessage, encodeMessage, MessageType } from "/wasm-protocol.mjs";
 import { createEditor, EditorError } from "/editor.mjs";
 import { createNativeHost } from "/native-host.mjs";
 import { createRichPreview } from "/rich-preview.mjs";
+import { createEditorShell } from "/editor-shell.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -97,6 +98,7 @@ function showEditorMessage(text, isError = false) {
 
 async function start() {
   const messages = await loadCatalog();
+  const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages });
   let client;
   let host;
   let editor;
@@ -118,7 +120,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close();
+    preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -129,6 +131,7 @@ async function start() {
     nodes.undo.disabled = blocked || !state?.canUndo; nodes.redo.disabled = blocked || !state?.canRedo;
     nodes.frenchSpacing.disabled = blocked;
     nodes.openDocx.disabled = blocked;
+    shell.refresh();
   };
   const onBusy = value => { busy = value; updateControls(editor?.state); };
   const onState = state => {
@@ -174,7 +177,7 @@ async function start() {
       previewGeneration += 1; previewAbort?.abort(); previewAbort = null;
       previewActive = false;
       nodes.richWorkspace.hidden = true; nodes.textWorkspace.hidden = false; nodes.closePreview.hidden = true;
-      editor.setSuspended(false); preview.close(); nodes.openDocx.focus();
+      editor.setSuspended(false); preview.close(); shell.ribbon.selectTab("file"); shell.ribbon.setCollapsed(false); nodes.openDocx.focus();
       setPreviewIdentity(false);
       showEditorMessage(messages.get("status-ready"));
     }
@@ -249,6 +252,7 @@ async function start() {
       editor.focus();
     }, { signal: listeners.signal });
     document.addEventListener("keydown", event => {
+      if (document.querySelector("dialog:modal")) return;
       if (previewActive && event.key === "Escape" && !event.isComposing) { event.preventDefault(); closePreview(); return; }
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
       const action = event.key.toLowerCase();
@@ -264,6 +268,7 @@ async function start() {
       getState: () => editor.getState(),
       exportDocument: () => editor.exportDocument(),
       editor,
+      theme: shell.theme, ribbon: shell.ribbon,
       openDocx, closePreview, dispose,
       get previewActive() { return previewActive; },
     });

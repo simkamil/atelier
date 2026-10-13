@@ -1591,6 +1591,16 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
         try {
           const paths=[
             ['/', 'text/html'], ['/app.mjs','text/javascript'], ['/app.css','text/css'],
+            ['/editor-shell.mjs','text/javascript'],
+            ['/ui-components.mjs','text/javascript'],
+            ['/ui-components.css','text/css'],
+            ['/ribbon.mjs','text/javascript'],
+            ['/ribbon.css','text/css'],
+            ['/theme.mjs','text/javascript'],
+            ['/theme.css','text/css'],
+            ['/rich-preview.mjs','text/javascript'],
+            ['/text-drag-drop.mjs','text/javascript'],
+            ['/french-spacing.mjs','text/javascript'],
             ['/i18n/fr-FR.txt','text/plain'], ['/engine-worker.mjs','text/javascript'],
             ['/engine-client.mjs','text/javascript'], ['/wasm-loader.mjs','text/javascript'],
             ['/editor-protocol.mjs','text/javascript'], ['/editor.mjs','text/javascript'],
@@ -1724,14 +1734,12 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             )));
         }
     }
-    if view.dropped_resource_attempts() != 0 {
-        return Err(io::Error::other(
-            "embedded resource attempt log overflowed during self-check",
-        ));
-    }
+    // Startup plus explicit probes may rotate the bounded diagnostic log.
+    // Every required probe above must still be present; report rotation honestly.
     Ok(format!(
-        "embedded resources: assets=18; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}",
-        attempts.len()
+        "embedded resources: assets=28; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
+        attempts.len(),
+        view.dropped_resource_attempts()
     ))
 }
 

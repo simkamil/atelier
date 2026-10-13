@@ -1,0 +1,91 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Shell tokens only. Document pages and Canvas pixels keep their source colors. */
+:root {
+  color-scheme: light;
+  --chrome-background: #f2f5f1;
+  --chrome-surface: #f8faf8;
+  --chrome-surface-raised: #fff;
+  --chrome-workspace: #e9eeea;
+  --chrome-ink: #172a2a;
+  --chrome-muted: #5f716d;
+  --chrome-border: #dce5df;
+  --chrome-control: #fff;
+  --chrome-control-border: #cfdad2;
+  --chrome-control-hover: #f1f6f2;
+  --chrome-control-hover-border: #aebfb3;
+  --chrome-accent: #236c57;
+  --chrome-accent-ink: #fff;
+  --chrome-accent-hover: #185941;
+  --chrome-focus: #368a6a;
+  --chrome-danger: #a33934;
+  --chrome-warning-background: #fff7e5;
+  --chrome-warning-ink: #815b15;
+  --chrome-scroll-track: #e9eeea;
+  --chrome-scroll-thumb: #aabbb0;
+
+  /* Existing shell aliases; consuming rules can migrate without touching Canvas. */
+  --ink: var(--chrome-ink);
+  --muted: var(--chrome-muted);
+  --green: var(--chrome-accent);
+  --line: var(--chrome-border);
+  --paper: var(--chrome-surface-raised);
+  --chrome: var(--chrome-surface);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --chrome-background: #171f1b;
+  --chrome-surface: #202b25;
+  --chrome-surface-raised: #25322b;
+  --chrome-workspace: #101713;
+  --chrome-ink: #eef4ef;
+  --chrome-muted: #bdc9c1;
+  --chrome-border: #405047;
+  --chrome-control: #202b25;
+  --chrome-control-border: #58675d;
+  --chrome-control-hover: #2b3b32;
+  --chrome-control-hover-border: #6a8473;
+  --chrome-accent: #65b38a;
+  --chrome-accent-ink: #13291c;
+  --chrome-accent-hover: #81c89e;
+  --chrome-focus: #89d6a7;
+  --chrome-danger: #ffaaa3;
+  --chrome-warning-background: #3c3020;
+  --chrome-warning-ink: #f5d38a;
+  --chrome-scroll-track: #202b25;
+  --chrome-scroll-thumb: #697a70;
+}
+
+@media (forced-colors: active) {
+  /* Explicit system pairs avoid automatic text backplates hiding these labels. */
+  .mark,
+  .ribbon-root .ribbon-command.primary {
+    forced-color-adjust: none;
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+  }
+  :root[data-theme] {
+    color-scheme: light dark;
+    --chrome-background: Canvas;
+    --chrome-surface: Canvas;
+    --chrome-surface-raised: Canvas;
+    --chrome-workspace: Canvas;
+    --chrome-ink: CanvasText;
+    --chrome-muted: GrayText;
+    --chrome-border: ButtonBorder;
+    --chrome-control: ButtonFace;
+    --chrome-control-border: ButtonBorder;
+    --chrome-control-hover: Highlight;
+    --chrome-control-hover-border: Highlight;
+    --chrome-accent: Highlight;
+    --chrome-accent-ink: HighlightText;
+    --chrome-accent-hover: Highlight;
+    --chrome-focus: Highlight;
+    --chrome-danger: LinkText;
+    --chrome-warning-background: Canvas;
+    --chrome-warning-ink: CanvasText;
+    --chrome-scroll-track: Canvas;
+    --chrome-scroll-thumb: ButtonText;
+  }
+}

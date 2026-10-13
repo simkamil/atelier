@@ -478,27 +478,33 @@ En cours (2026-10-11) : [adaptateur clavier/IME](docs/us-103-text-input.md) racc
 
 #### US-104 — Bibliothèque de composants d'interface
 *En tant que* développeur, *je veux* des composants d'interface maison accessibles *afin de* construire ruban et dialogues.
-- [ ] Bouton, bouton bascule, bouton partagé, liste déroulante, combobox de police (aperçu dans la police), sélecteur de couleur (thème, standard, personnalisée), champ numérique avec unité, dialogue modal, menu contextuel, onglets, info-bulle.
-- [ ] Chaque composant : rôle et attributs ARIA, navigation clavier conforme aux motifs WAI-ARIA, focus visible.
+- [x] Bouton, bouton bascule, bouton partagé, liste déroulante, combobox de police (aperçu dans la police), sélecteur de couleur (thème, standard, personnalisée), champ numérique avec unité, dialogue modal, menu contextuel, onglets, info-bulle.
+- [x] Chaque composant : rôle et attributs ARIA, navigation clavier conforme aux motifs WAI-ARIA, focus visible.
 
 Réf : D13, §6.14 · Taille : L · Dépend de : US-102
 
+Validation (2026-10-13) : [contrat, essais et limites](docs/us-104-105-106-interface.md), [preuve Windows/Edge](_bmad-output/implementation-artifacts/ui-shell-validation.json). Les essais physiques clavier et lecteurs d’écran restent à effectuer; aucun audit complet WCAG n’est revendiqué.
+
 #### US-105 — Thèmes
 *En tant qu'*utilisateur, *je veux* choisir un thème clair, sombre ou système *afin de* travailler confortablement.
-- [ ] Variables CSS par thème ; bascule sans rechargement.
-- [ ] « Système » suit le réglage Windows en direct.
-- [ ] Mode contraste élevé Windows respecté (`forced-colors`).
-- [ ] Le document reste rendu avec ses vraies couleurs (seule l'interface change).
+- [x] Variables CSS par thème ; bascule sans rechargement.
+- [x] « Système » suit le réglage Windows en direct.
+- [x] Mode contraste élevé Windows respecté (`forced-colors`).
+- [x] Le document reste rendu avec ses vraies couleurs (seule l'interface change).
 
 Réf : F-COM-019 · Taille : S · Dépend de : US-104
 
+Validation (2026-10-13) : [contrat, essais et limites](docs/us-104-105-106-interface.md), [preuve Windows/Edge](_bmad-output/implementation-artifacts/ui-shell-validation.json). Les essais physiques clavier et lecteurs d’écran restent à effectuer; aucun audit complet WCAG n’est revendiqué.
+
 #### US-106 — Ruban
 *En tant qu'*utilisateur, *je veux* un ruban à onglets *afin de* trouver les commandes comme dans Office.
-- [ ] Onglets Fichier, Accueil, Insertion, Mise en page, Références, Affichage ; groupes et commandes déclarés dans une table (pas de code par bouton).
-- [ ] Groupes réduits automatiquement quand la fenêtre est étroite ; ruban repliable (Ctrl+F1).
-- [ ] Touche Alt : affichage des info-touches et navigation au clavier.
+- [x] Onglets Fichier, Accueil, Insertion, Mise en page, Références, Affichage ; groupes et commandes déclarés dans une table (pas de code par bouton).
+- [x] Groupes réduits automatiquement quand la fenêtre est étroite ; ruban repliable (Ctrl+F1).
+- [x] Touche Alt : affichage des info-touches et navigation au clavier.
 
 Réf : F-COM-018 · Taille : M · Dépend de : US-104
+
+Validation (2026-10-13) : [contrat, essais et limites](docs/us-104-105-106-interface.md), [preuve Windows/Edge](_bmad-output/implementation-artifacts/ui-shell-validation.json). Les essais physiques clavier et lecteurs d’écran restent à effectuer; aucun audit complet WCAG n’est revendiqué.
 
 ## E0.12 — Shell Windows
 

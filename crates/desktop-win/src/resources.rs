@@ -26,6 +26,41 @@ pub struct Resource {
 // Every URL here is an explicit, immutable route. No directory or prefix serving exists.
 pub static RESOURCES: &[Resource] = &[
     Resource {
+        path: "/editor-shell.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/editor-shell.mjs"),
+    },
+    Resource {
+        path: "/ui-components.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/ui-components.mjs"),
+    },
+    Resource {
+        path: "/ui-components.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/ui-components.css"),
+    },
+    Resource {
+        path: "/ribbon.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/ribbon.mjs"),
+    },
+    Resource {
+        path: "/ribbon.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/ribbon.css"),
+    },
+    Resource {
+        path: "/theme.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/theme.mjs"),
+    },
+    Resource {
+        path: "/theme.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/theme.css"),
+    },
+    Resource {
         path: "/",
         mime: "text/html; charset=utf-8",
         bytes: include_bytes!("../../../web/index.html"),

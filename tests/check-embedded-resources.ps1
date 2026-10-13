@@ -29,7 +29,7 @@ try {
 } finally {
     $process.Dispose()
 }
-$passed = $code -eq 0 -and $output -match '^embedded resources: assets=18; worker-ping=echo; editor=typed\+ink\+undo\+redo; encoded-path=403; CSP fetch\+WebSocket\+image\+frame=blocked; attempts=\d+; callback objects 0->0$'
+$passed = $code -eq 0 -and $output -match '^embedded resources: assets=28; worker-ping=echo; editor=typed\+ink\+undo\+redo; encoded-path=403; CSP fetch\+WebSocket\+image\+frame=blocked; attempts=\d+; rotated=\d+; callback objects 0->0$'
 [ordered]@{ passed = $passed; exit_code = $code; result = $output } | ConvertTo-Json -Depth 4
 if ($passed) { exit 0 }
 exit 1

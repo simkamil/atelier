@@ -1,5 +1,7 @@
 # Front-end web
 
+Le [lot US-104/105/106](../docs/us-104-105-106-interface.md) ajoute `ui-components.mjs`, `theme.mjs`, `ribbon.mjs` et leur intégrateur `editor-shell.mjs`. Le ruban réutilise les nœuds des commandes TXT/DOCX; Affichage → Apparence permet de changer le thème. Les contrôles futurs sont désactivés. Les textes viennent du catalogue existant, compatible avec le futur service US-102.
+
 Le chargeur [wasm-loader.mjs](wasm-loader.mjs) appelle l’ABI manuelle de US-090 en JavaScript vanilla, sans framework ni étape de compilation. Il copie les réponses, libère les allocations et réinitialise l’instance après un trap ; voir le [contrat et les commandes de test](../docs/us-090-wasm-abi.md).
 
 Le codec [wasm-protocol.mjs](wasm-protocol.mjs) fournit les messages binaires

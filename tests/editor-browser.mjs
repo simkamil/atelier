@@ -436,6 +436,12 @@ try {
   const productResponse = await fetch("/index.html");
   assert(productResponse.ok, "product entry document available to the shortcut harness");
   const productDocument = new DOMParser().parseFromString(await productResponse.text(), "text/html");
+  for (const source of productDocument.querySelectorAll('link[rel="stylesheet"]')) {
+    const sheet = document.createElement("link");
+    sheet.rel = "stylesheet"; sheet.href = source.getAttribute("href");
+    const loaded = new Promise((yes, no) => { sheet.onload = yes; sheet.onerror = no; });
+    document.head.append(sheet); await loaded;
+  }
   document.body.replaceWith(document.importNode(productDocument.body, true));
   const nativeCalls = [];
   const webviewListeners = new Set();
@@ -463,6 +469,32 @@ try {
   const { editorReady } = await import("/app.mjs");
   const app = await editorReady;
   assert(app.status === "ready", "real app entry initializes with fake native WebView");
+  assert(document.querySelectorAll('#ribbon [role="tab"]').length === 6, "real app exposes all six ribbon tabs");
+  assert(document.querySelector('#ribbon [data-ribbon-command-id="font"]').disabled,
+    "real app marks unavailable formatting commands disabled");
+  const themeState = app.getState();
+  app.theme.setTheme("light");
+  const lightChrome = getComputedStyle(document.querySelector(".masthead")).backgroundColor;
+  const documentContext = document.querySelector("#document-canvas").getContext("2d");
+  const paperBeforeTheme = [...documentContext.getImageData(30, 30, 1, 1).data].join(",");
+  app.theme.setTheme("dark");
+  assert(getComputedStyle(document.querySelector(".masthead")).backgroundColor !== lightChrome,
+    "real app theme changes the visible shell palette without reloading");
+  assert(app.getState() === themeState && [...documentContext.getImageData(30, 30, 1, 1).data].join(",") === paperBeforeTheme,
+    "real app theme preserves exact TXT state and white document pixels");
+  app.theme.setTheme("light");
+  app.ribbon.selectTab("view");
+  document.querySelector('[data-ribbon-command-id="appearance"]').click();
+  const appearanceDialog = document.querySelector("dialog");
+  assert(appearanceDialog.open && appearanceDialog.getAttribute("aria-labelledby"), "real app appearance command opens a named modal");
+  const modalNativeCalls = nativeCalls.length;
+  for (const key of ["n", "o", "s"]) appearanceDialog.querySelector("button").dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }));
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert(nativeCalls.length === modalNativeCalls && app.getState() === themeState,
+    "appearance modal blocks editor new/open/save shortcuts behind the dialog");
+  appearanceDialog.querySelector(".ui-dialog-close").click();
+  assert(!appearanceDialog.open, "real app appearance modal can close and return to the ribbon");
+  app.ribbon.selectTab("file");
   assert(!document.querySelector("#french-spacing").checked, "app initialization restores a saved disabled French-spacing preference");
   assert(innerWidth >= 1200 && innerHeight >= 800, "product viewport is at least 1280×800 for layout verification");
   assert(document.documentElement.scrollHeight <= innerHeight && document.body.scrollHeight <= innerHeight,
@@ -501,6 +533,7 @@ try {
   const saveMessage = nativeCalls.find(message => message.includes("|save|"));
   assert(atob(saveMessage.split("|")[4]) === "S", "Ctrl+S forwards the exact current document bytes");
   const option = document.querySelector("#french-spacing");
+  app.ribbon.selectTab("home");
   assert(option && !option.disabled && option.labels.length === 1 && option.labels[0].textContent.trim().length > 0,
     "French spacing option is an enabled native checkbox with visible label");
   document.querySelector(".editor-options").open = true;
@@ -524,6 +557,7 @@ try {
   const docxBase64 = btoa(docxBinary);
   assert(docxBytes.length > 131075 && docxBytes.length < 8*1024*1024, "independent DOCX fixture exercises a native response larger than the TXT limit");
   const beforePreview = app.getState();
+  app.ribbon.selectTab("file");
   nextDocxOpen = {status:"ok",payload:docxBase64};
   assert((await app.openDocx()).kind === "ok", "real app imports DOCX through native host and Worker/WASM");
   assert(app.previewActive && document.querySelector("#text-workspace").hidden && !document.querySelector("#rich-workspace").hidden,

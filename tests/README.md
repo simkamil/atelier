@@ -1,5 +1,7 @@
 # Ressources de test
 
+Les [composants, thèmes et ruban](../docs/us-104-105-106-interface.md) sont vérifiés par `node tests/theme.mjs`, `node tests/run-ui-browser.mjs` et son mode `--forced-colors`. Le runner utilise Edge/Chromium installé, le DOM réel et le WASM emballé; il contrôle aussi les media queries système et les vues 1280/420 px via CDP. `--screenshots` écrit les captures sous `target/ui-screenshots/`. Les événements synthétiques ne prouvent pas la validation physique clavier ou lecteur d’écran. Les suites UI tournent dans le job Windows de CI.
+
 `format-reference/` contient des petits corpus ZIP et XML indépendants, leurs
 sémantiques attendues et leurs empreintes SHA-256. Les tests Rust consomment les
 fichiers versionnés sans dépendance Python. Le générateur de références est un

@@ -72,6 +72,14 @@ jobs:
         run: node tests/display-list.mjs
       - name: Check real Canvas and textarea in headless Edge
         run: node tests/run-frontend-browser.mjs
+      - name: Check themes and accessible UI in real Edge
+        run: |
+          node tests/theme.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/run-ui-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/run-ui-browser.mjs --forced-colors
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
       - name: Check formatting

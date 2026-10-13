@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+.ui-button,.ui-popup-trigger,.ui-menu-item,.ui-color-swatch,.ui-number-input,.ui-unit-select,.ui-font-input{
+  box-sizing:border-box;font:inherit;color:var(--ink,#172a2a);background:var(--paper,#fff);border:1px solid var(--line,#dce5df);border-radius:6px;min-height:34px
+}
+.ui-button,.ui-popup-trigger,.ui-menu-item,.ui-color-swatch{cursor:pointer}
+.ui-button,.ui-popup-trigger{padding:6px 11px}
+.ui-button:hover:not(:disabled),.ui-popup-trigger:hover:not(:disabled),.ui-menu-item:hover:not([aria-disabled="true"]){background:var(--chrome,#f8faf8);border-color:#aebfb3}
+.ui-button:disabled,.ui-popup-trigger:disabled{cursor:default;opacity:.55}
+.ui-button:focus-visible,.ui-popup-trigger:focus-visible,.ui-menu-item:focus-visible,.ui-color-swatch:focus-visible,
+.ui-number-input:focus-visible,.ui-unit-select:focus-visible,.ui-font-input:focus-visible,.ui-dialog:focus-visible{
+  outline:2px solid var(--green,#236c57);outline-offset:2px;z-index:1
+}
+.ui-split-button,.ui-dropdown,.ui-font-combo,.ui-color-picker,.ui-number-unit{position:relative;display:inline-flex;align-items:center;gap:0}
+.ui-split-action{border-radius:6px 0 0 6px}.ui-split-disclosure{border-left:0;border-radius:0 6px 6px 0;padding-inline:9px}
+.ui-popup{position:absolute;z-index:30;top:calc(100% + 4px);left:0;min-width:100%;max-height:min(22rem,70vh);overflow:auto;padding:5px;background:var(--paper,#fff);color:var(--ink,#172a2a);border:1px solid var(--line,#dce5df);border-radius:7px;box-shadow:0 5px 18px #172a2a24}
+.ui-context-menu{min-width:min(16rem,calc(100vw - 8px));max-width:calc(100vw - 8px);max-height:calc(100vh - 8px)}
+.ui-menu-item{display:block;width:100%;text-align:left;border:0;background:transparent;white-space:nowrap}.ui-menu-item[aria-disabled="true"]{opacity:.5;cursor:default}
+.ui-listbox{min-width:12rem}.ui-listbox-option{padding:6px 9px;border-radius:4px;cursor:pointer}.ui-listbox-option[aria-selected="true"],.ui-listbox-option:hover{background:var(--chrome-control-hover,#f1f6f2);color:var(--chrome-ink,var(--ink,#172a2a))}.ui-listbox-option:focus{outline:2px solid var(--green,#236c57)}
+.ui-font-input{padding:5px 9px;min-width:12rem}.ui-font-combo .ui-popup{min-width:100%}
+.ui-color-popup{min-width:14rem;padding:10px}.ui-color-group{display:grid;grid-template-columns:repeat(8,28px);gap:5px;margin-block:5px;padding:4px;border:0}.ui-color-group::before{content:attr(aria-label);grid-column:1/-1;font-size:.85em;color:var(--muted,#5f716d)}.ui-color-swatch{width:28px;height:28px;min-height:28px;padding:0;background:var(--ui-swatch-color);border:2px solid #fff;box-shadow:0 0 0 1px #7d8982}.ui-color-swatch[aria-pressed="true"]{outline:2px solid var(--green,#236c57);outline-offset:2px}.ui-color-custom{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:7px 3px}.ui-color-custom input{width:42px;height:32px}
+.ui-number-input{width:6.5rem;padding:5px 7px}.ui-unit-select{padding:5px 7px;border-radius:0 6px 6px 0}
+.ui-dialog{max-width:min(42rem,calc(100vw - 2rem));max-height:min(85vh,calc(100vh - 2rem));padding:1.25rem;color:var(--ink,#172a2a);background:var(--paper,#fff);border:1px solid var(--line,#dce5df);border-radius:9px;box-shadow:0 12px 40px #172a2a38}.ui-dialog::backdrop{background:#172a2a70}.ui-dialog-title{margin:0 3rem 1rem 0;font-size:1.2rem}.ui-dialog-close{position:absolute;right:1rem;top:1rem}.ui-dialog-content{max-height:calc(85vh - 5rem);overflow:auto}
+.ui-tooltip{position:fixed;z-index:40;max-width:min(20rem,calc(100vw - 16px));padding:6px 9px;border:1px solid var(--chrome-border,var(--line,#dce5df));border-radius:5px;color:var(--chrome-control,var(--paper,#fff));background:var(--chrome-ink,var(--ink,#172a2a));font-size:.875rem;box-shadow:0 2px 8px #0003;pointer-events:auto}
+[hidden].ui-popup{display:none!important}
+@media(forced-colors:active){.ui-button,.ui-popup-trigger,.ui-menu-item,.ui-color-swatch,.ui-number-input,.ui-unit-select,.ui-font-input,.ui-popup,.ui-dialog{border:1px solid ButtonText}.ui-button:focus-visible,.ui-popup-trigger:focus-visible,.ui-menu-item:focus-visible,.ui-color-swatch:focus-visible,.ui-number-input:focus-visible,.ui-unit-select:focus-visible,.ui-font-input:focus-visible{outline:2px solid Highlight}.ui-listbox-option[aria-selected="true"],.ui-listbox-option:hover{background:Highlight;color:HighlightText}.ui-color-swatch{forced-color-adjust:none}}
+@media(max-width:560px){.ui-color-group{grid-template-columns:repeat(6,28px)}.ui-dialog{padding:1rem}.ui-dialog-close{right:.75rem;top:.75rem}}
