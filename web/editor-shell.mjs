@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages, onZoom = () => {}, onSearch = () => {}, onStatistics = () => {} }) {
+export function createEditorShell({ toolbar, messages, navigationAvailable = true, onZoom = () => {}, onSearch = () => {}, onStatistics = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -26,7 +26,7 @@ export function createEditorShell({ toolbar, messages, onZoom = () => {}, onSear
   };
   const searchCommand = toolCommand("search-command","searchTitle",onSearch);
   const statisticsCommand = toolCommand("statistics-command","statisticsDialogTitle",onStatistics);
-  const localizedNavigation = ["searchTitle", "statisticsDialogTitle", "statisticsScopeDocument"]
+  const localizedNavigation = navigationAvailable && ["searchTitle", "statisticsDialogTitle", "statisticsScopeDocument"]
     .every(key => typeof messages.get(key) === "string");
   const stateRow = doc.createElement("div");
   stateRow.className = "editor-command-status";

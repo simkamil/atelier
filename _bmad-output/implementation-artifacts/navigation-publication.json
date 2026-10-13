@@ -1,10 +1,10 @@
 {
   "status": "passed",
-  "immutable_inputs": 1119,
+  "immutable_inputs": 1123,
   "graph_files": 5,
-  "gates": 18,
-  "graph_nodes": 8890,
-  "graph_edges": 23057,
+  "gates": 20,
+  "graph_nodes": 9167,
+  "graph_edges": 23537,
   "browser_checks": [
     {
       "command": [
@@ -26,7 +26,7 @@
         "tests/run-ui-browser.mjs",
         "--screenshots"
       ],
-      "assertions": 197
+      "assertions": 198
     },
     {
       "command": [
@@ -35,7 +35,7 @@
         "--forced-colors",
         "--screenshots"
       ],
-      "assertions": 200
+      "assertions": 201
     }
   ],
   "staged_input_mismatches": 0

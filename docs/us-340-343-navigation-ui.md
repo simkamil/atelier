@@ -13,3 +13,5 @@ Les réponses portent une révision ; les requêtes remplacées, modifications, 
 `py _bmad-output/implementation-artifacts/validate-navigation.py` exécute les contrôles Rust, codec, navigateur réel avec Worker/WASM, ressources natives et budget WASM. Les tests couvrent les options Unicode, plages UTF-8, surlignage Canvas, navigation rapide, réponses tardives, sélection/statistiques, dialogues, aperçus et thèmes/contraste élevé. Les événements clavier sont synthétiques ; aucune certification clavier physique ou lecteur d’écran n’est revendiquée.
 
 Les résultats et empreintes exactes sont consignés dans `navigation-validation.json` et `navigation-validation.log`, sous `_bmad-output/implementation-artifacts`. La revue indépendante est suivie dans `spec-search-statistics-ui.md`.
+
+Après fusion d’US-102, `py _bmad-output/implementation-artifacts/validate-navigation-integration.py` vérifie les empreintes de la preuve Rust initiale et réexécute les contrôles i18n, frontend et natifs. Les reçus `navigation-integration-validation.json` et `.log` consignent cette passe combinée. Catalogue absent ou incomplet : outils de navigation omis, édition de secours conservée.

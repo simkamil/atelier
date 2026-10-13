@@ -92,6 +92,19 @@ document_paths.update({'web/index.html','web/app.css','web/app.mjs','web/i18n/fr
 document_paths.update({'docs/us-104-105-106-interface.md','web/ui-components.mjs','web/ui-components.css','web/ribbon.mjs','web/ribbon.css','web/theme.mjs','web/theme.css','web/editor-shell.mjs','tests/ui-components-browser.mjs','tests/ribbon-browser.mjs','tests/theme.mjs','tests/theme-browser.mjs','tests/ui-browser.mjs','tests/ui-browser.html'})
 document_paths.update({'docs/us-092-worker.md', 'docs/us-110-win32-window.md', 'docs/us-116-portable-data.md'})
 document_paths.update({'README.md','web/README.md','tests/README.md','US-V0-V1.md'})
+for node in previous['nodes']:
+    if node.get('_origin') == 'ast' or not (node.get('_origin') == 'semantic' or node.get('file_type') in ('document','paper','image')):
+        continue
+    source = node.get('source_file')
+    if not source:
+        continue
+    try:
+        located_source = (root/source).resolve()
+        relative = located_source.relative_to(root).as_posix()
+    except ValueError:
+        continue
+    if located_source.is_file() and not relative.startswith(('target/','_bmad/','_bmad-output/','graphify-out/','.claude/')):
+        document_paths.add(relative)
 document_paths.update(p.relative_to(root).as_posix() for p in (root/'tests').glob('*browser.html'))
 browser_html_lines = (root/'tests/worker-browser.html').read_text(encoding='utf-8').splitlines()
 for node in previous['nodes'] + doc['nodes']:
@@ -168,6 +181,9 @@ for i,m in enumerate(headings):
     checkboxes=re.findall(r'^- \[([ x])\]',block,re.M)
     for node in doc['nodes']:
         if node['id']==node_id:
+            # Ground display labels in the current UTF-8 backlog as well as
+            # positions/status; old semantic caches may contain replacement chars.
+            node['label']=f'{m.group(1)} — {m.group(2)}'
             node['source_location']=str(line)
             node['status']='done' if checkboxes and all(c=='x' for c in checkboxes) else 'open'
     reference=re.search(r'^Réf :',block,re.M)
@@ -192,11 +208,18 @@ code += [root/'crates/image/tests/fixtures/jpeg/generate.py']
 code += [root/'tools/generate-docx-reference.py', root/'tools/word-line-reference.ps1', root/'tests/docx-reference/expected.json']
 code += [root/'tools/generate-cfb-reference.py', root/'tools/generate-cff-reference.py', root/'tests/cfb-reference/expected.json', root/'tests/font-cff-reference/manifest.json']
 code += [p for folder in ['web','tests'] for p in (root/folder).rglob('*.mjs')]
+# Preserve located Python oracle symbols carried by earlier full CLI snapshots.
+# Restricting this pass to a hand-picked subset silently retires valid symbols.
+code += sorted((root/'tools').glob('*.py'))
+code = list(dict.fromkeys(code))
 # Keep the byte-exact fixture manifest's JSON AST alongside the Rust AST.
 # The Graphify CLI indexes it too; dropping it would lose located source nodes.
 manifest=root/'tests/format-reference/manifest.json'
 font_manifest=root/'crates/font/tests/fixtures/fixtures.json'
 code_inputs=code+[p for p in (manifest,font_manifest,root/'tests/image-reference/manifest.json',root/'data/fonts/manifest.json',root/'data/ucd/17.0.0/manifest.json',root/'tests/unicode-reference/manifest.json',root/'tests/font-outline-reference/manifest.json',root/'tests/font-layout-reference/manifest.json',root/'tools/bench/references/wasm-size.json',root/'tests/check-assets.ps1',root/'tests/check-ucd.ps1',root/'tests/check-webview-assets.ps1',root/'tests/check-webview-host.ps1',root/'data/webview2/manifest.json',root/'data/engine/manifest.json',root/'tests/check-embedded-resources.ps1') if p.is_file()]
+structural_corpus = detect(root, extra_excludes=['target','_bmad','_bmad-output','graphify-out'])
+code_inputs += [Path(p) for p in structural_corpus['files'].get('code', [])]
+code_inputs = list(dict.fromkeys(code_inputs))
 ast=extract(code_inputs,cache_root=root,root=root,parallel=False)
 cargo=introspect_cargo(root)
 merged={'nodes':ast['nodes']+cargo['nodes']+doc['nodes'],'edges':ast['edges']+cargo['edges']+doc['edges'],'hyperedges':doc.get('hyperedges',[]),'input_tokens':0,'output_tokens':0}

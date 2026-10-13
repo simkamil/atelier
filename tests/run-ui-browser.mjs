@@ -43,9 +43,11 @@ const server = createServer(async (request, response) => {
       response.writeHead(200).end("ok"); resolveReport(JSON.parse(body)); return;
     }
     const entry = files.get(path);
-    if (path === "/i18n/fr-FR.txt" && unavailableCatalog) { response.writeHead(503).end(); return; }
+    if (path === "/i18n/fr-FR.txt" && unavailableCatalog === "unavailable") { response.writeHead(503).end(); return; }
     if (request.method !== "GET" || !entry) { response.writeHead(404).end(); return; }
-    response.writeHead(200, { "Content-Type": entry[1], "Cache-Control": "no-store" }).end(await readFile(join(root, entry[0])));
+    let bytes = await readFile(join(root, entry[0]));
+    if (path === "/i18n/fr-FR.txt" && unavailableCatalog === "partial") bytes = Buffer.from(bytes.toString("utf8").replace(/^searchQuery=.*\r?\n/gm, ""));
+    response.writeHead(200, { "Content-Type": entry[1], "Cache-Control": "no-store" }).end(bytes);
   } catch (error) { response.writeHead(500).end("UI harness failed"); rejectReport(error); }
 });
 await new Promise((yes, no) => { server.once("error", no); server.listen(0, "127.0.0.1", yes); });
@@ -142,14 +144,16 @@ async function captureShell() {
       }
       await evaluate("document.querySelector('[data-statistics-dialog] .ui-dialog-close').click()");
     }
-    unavailableCatalog = true;
-    await send("Page.navigate", { url: `${origin}/index.html?catalog-unavailable` });
+    for (const catalogFailure of ["unavailable", "partial"]) {
+    unavailableCatalog = catalogFailure;
+    await send("Page.navigate", { url: `${origin}/index.html?catalog-${catalogFailure}` });
     for (let tries=0;tries<100;tries++) {
-      try { if (await evaluate("location.search==='?catalog-unavailable' && document.readyState==='complete' && !!document.getElementById('ribbon')")) break; } catch { /* navigation context */ }
+      try { if (await evaluate(`location.search==='?catalog-${catalogFailure}' && document.readyState==='complete' && !!document.getElementById('ribbon')`)) break; } catch { /* navigation context */ }
       await new Promise(resolve=>setTimeout(resolve,50));
     }
     assert(await evaluate("(async()=>{const app=await (await import('/app.mjs')).editorReady;if(app.status!=='ready'||app.navigation||document.querySelector('#search-command,#statistics-command,.search-pane,[data-statistics-status]'))return false;app.editor.element.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:'secours',bubbles:true,cancelable:true}));await app.exportDocument();return app.getState().text==='secours';})()"),
       "catalog failure preserves legacy editing without exposing untranslated navigation controls");
+    }
   } finally { socket.close(); }
 }
 
@@ -161,7 +165,7 @@ try {
   await captureShell();
   report.checks.push("real packaged app follows live browser system-theme media changes", "real packaged shell fits 1280px and 420px without horizontal overflow");
   report.checks.push("real search pane and statistics dialog fit 1280px and 420px in light/dark themes");
-  report.checks.push("catalog failure keeps editing available and omits untranslated navigation tools");
+  report.checks.push("missing or partial catalog keeps editing available and omits untranslated navigation tools");
   if (forcedColors) report.checks.push("primary button and mark preserve readable forced-colors system pairs");
   console.log(JSON.stringify({ ...report, executable, screenshots, environment: "real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence" }));
 } finally {

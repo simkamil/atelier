@@ -1,16 +1,16 @@
 {
   "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
-  "nodes": 8890,
-  "edges": 23057,
+  "nodes": 9167,
+  "edges": 23537,
   "stories": 158,
   "done": 53,
   "baseline_document_semantic_nodes": 70,
   "baseline_document_semantic_edges": 56,
-  "html_nodes": 8890,
-  "html_node_limit": 9000,
+  "html_nodes": 9167,
+  "html_node_limit": 10000,
   "dangling_edges": 0,
   "missing_endpoint_edges": 0,
-  "same_endpoint_groups_preserved_in_raw_extract": 1038,
+  "same_endpoint_groups_preserved_in_raw_extract": 1160,
   "cargo_packages": 34,
   "cargo_dependency_edges": 63,
   "cargo_dependency_cycles": 0,
@@ -38,14 +38,14 @@
   "missing_located_sources": 0,
   "ui_latency_certified": false,
   "graph_sha256": {
-    "graphify-out/GRAPH_REPORT.md": "c4bab4e080acdbccc66bde01bc6b5976a44b03c15dc0f8415153d095fad08a24",
-    "graphify-out/graph.json": "dac1fe51eb080ff1f8571ae60fac7df6051a30ffbc2a08181d1ad30fb36824de",
-    "graphify-out/graph.html": "2ac96251cb88316e01baf28605eea01fb4f54587c1240ea68e4c8a3993d551ed",
-    "graphify-out/story-dependencies.json": "6824e233af163374d2b5b662cbe0c59d5f12d7a30363e9f4581f25c8756ba366",
-    "graphify-out/unresolved-structural-references.json": "ac404f3848af2231d1024027deeb38ae94b4c65b14596294c6133d5be4b87764"
+    "graphify-out/GRAPH_REPORT.md": "16e2007d76676300aff3d91fe8d83e45638144018d0daeede033d3d56b6dacf0",
+    "graphify-out/graph.json": "316af5d865dfce1d5198b81cc1e090b33edd4ef19b259c5f5da86d93d617dd00",
+    "graphify-out/graph.html": "3fb77e6e553eb29f0d046291576f2eecfb446865b679626174fd39f7c4f18c2d",
+    "graphify-out/story-dependencies.json": "5cb993a4eb9e91186e9acdda815913f4b96872b57d2f9f467ccdc7d9aeea0aba",
+    "graphify-out/unresolved-structural-references.json": "343b0a682b78655be0a3a6cdfba80ff2d6de081cd79f4a7c448dabfff06c7283"
   },
   "graph_tools_sha256": {
-    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "080d0a8b4cae8ac147623c1e36deb1b1f445d5240d64f8a17bc135935ece3813",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "d814ad80214e2f42556591df6cf939c2804a270bf1b0e23554a423a9a251441c",
     "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "e3e764d508cbd19229665d93c1e318fdfada2eb0b895f039a146c985b962f9e2"
   }
 }

@@ -95,3 +95,14 @@ La sonde WebView2 a également révélé une rotation du journal de 64 entrées 
 Native/wasm Rust tests and strict JS codec negatives; real Edge UI suites in normal/forced colors; integrated query races/Unicode/navigation/statistics tests on fresh optimized WASM; existing zoom/edit/preview regressions. Repackage engine, enforce existing WASM size budget, compile/probe native resources, source/index hash audit. No physical keyboard or screen-reader certification implied.
 
 La validation immuable passe **18 contrôles**, **1064 tests Rust**, avec 1119 entrées vérifiées. Les suites navigateur réelles couvrent le Worker/WASM, les réponses tardives, la navigation rapide, la composition annulée, les statistiques de sélection, les thèmes et le contraste élevé. Clippy hôte/WASM, paquet moteur, budget WASM et sonde WebView2 passent.
+
+## Intégration après revue
+
+`main` a reçu US-102 en parallèle (`f6c9313` et `75d3064`). Les commits sont conservés par fusion, les clés des deux catalogues sont préservées, les traductions de secours ajoutées par ce lot ont été retirées au profit du catalogue. Le contrôle i18n passe sans élargir la référence. Les tests de l’autre développeur acceptent désormais l’évolution du catalogue ; une assertion conserve explicitement les clés zoom/recherche/statistiques/i18n après fusion.
+
+| Revue d’intégration | Verdict | Traitement |
+|---|---|---|
+| Commandes visibles si trois labels présents mais catalogue partiel | low | Disponibilité du shell alignée sur la validation des 38 clés du contrôleur ; tests réels HTTP503 et catalogue incomplet. |
+| Vérification des tests et preuve Rust réutilisée | aucun constat | Référence i18n inchangée ; gardes des empreintes et de l’ensemble des entrées Rust/moteur ; tests frontend/natifs relancés. |
+
+Validation finale : 20 contrôles d’intégration, 1 123 entrées figées. Le reçu initial complet reste conservé ; aucun résultat Rust n’est réutilisé sans vérifier l’identité exacte des entrées. Les tests physiques et Word restent ouverts.

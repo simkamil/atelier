@@ -53,6 +53,8 @@ unchanged = {name: sha for name, sha in prior['inputs_sha256'].items() if name.s
 assert all(digest(root/name) == sha for name, sha in unchanged.items()), 'Rust or engine inputs changed; full workspace validation required'
 assert digest(out / 'navigation-validation.log') == prior['log_sha256']
 before = inventory()
+current_rust = {name for name in before if name.startswith(('crates/', 'tools/', 'data/engine/')) or name in ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'rustfmt.toml', 'clippy.toml')}
+assert current_rust == set(unchanged), 'Rust or engine inputs added/removed; full workspace validation required'
 receipt = {'schema': 1, 'story': 'US-340/343', 'started_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
     'baseline_commit': '95470de', 'platform': sys.platform,
     'scope': 'Integration of US-102 commits f6c9313 with validated TXT navigation 95470de. Rust sources and engine bytes are verified unchanged against full workspace proof; desktop tests, i18n checks, all browsers and native host rerun on integrated sources. Windows browser events are synthetic; physical keyboard and screen-reader certification are excluded.',

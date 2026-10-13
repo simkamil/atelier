@@ -115,7 +115,7 @@ async function start() {
   const toolsAvailable = toolKeys.every(key => messages.has(key));
   let zoomControls;
   let navigation;
-  const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages,
+  const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
     onZoom: () => zoomControls?.open({ returnFocusTo: document.activeElement }),
     onSearch: () => navigation?.openSearch(), onStatistics: () => navigation?.openStatistics() });
   let client;
