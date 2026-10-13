@@ -13,7 +13,7 @@ use atelier_text_model::rich::*;
 use atelier_text_model::search::ParagraphSource;
 use common::*;
 use nav_common::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 const SEEDS: u64 = 48;
 const STEPS: usize = 120;
@@ -48,7 +48,7 @@ fn check(doc: &RichDocument) {
     doc.validate().unwrap();
     let all = list_bookmarks(doc, BookmarkOrder::Position, true);
     // Unique ignoring case.
-    let keys: BTreeSet<String> = all.iter().map(|b| name_key(&b.name)).collect();
+    let keys: BTreeSet<String> = all.iter().map(|b| b.name.to_lowercase()).collect();
     assert_eq!(keys.len(), all.len(), "duplicate names: {all:?}");
     // Reading order.
     let reading = doc.paragraphs();
@@ -94,19 +94,18 @@ fn check(doc: &RichDocument) {
     }
 }
 
-fn links_to(doc: &RichDocument, name: &str) -> usize {
-    let key = name_key(name);
-    doc.paragraph_ids()
-        .iter()
-        .map(|p| {
-            doc.paragraph(*p)
-                .unwrap()
-                .links
-                .iter()
-                .filter(|l| matches!(&l.target, LinkTarget::Bookmark(n) if name_key(n) == key))
-                .count()
-        })
-        .sum()
+/// Target name of every internal link, found by walking the paragraphs
+/// (independent of what the commands report).
+fn link_targets(doc: &RichDocument) -> BTreeMap<NodeId, String> {
+    let mut out = BTreeMap::new();
+    for p in doc.paragraph_ids() {
+        for l in &doc.paragraph(p).unwrap().links {
+            if let LinkTarget::Bookmark(n) = &l.target {
+                out.insert(l.id, n.clone());
+            }
+        }
+    }
+    out
 }
 
 #[test]
@@ -169,18 +168,27 @@ fn random_bookmark_sessions() {
                 ),
                 Ok((edit, renamed_to)) => {
                     let inverse = doc.apply(&edit.transaction).unwrap();
-                    if let Some((old, new)) = renamed_to {
-                        // Every link that pointed to the old name follows the rename.
-                        let moved = if name_key(old) == name_key(new) {
-                            0
-                        } else {
-                            edit.links.len()
-                        };
-                        assert_eq!(
-                            links_to(&doc, new),
-                            links_to(&before, new) + moved,
-                            "seed {seed}"
-                        );
+                    if let Some((old, new)) = renamed_to
+                        && !edit.transaction.operations().is_empty()
+                    {
+                        // Every link aimed at the old name now aims at the new one;
+                        // the others are untouched; none is left on the old name.
+                        let (was, now) = (link_targets(&before), link_targets(&doc));
+                        let old_lower = old.to_lowercase();
+                        assert_eq!(was.len(), now.len(), "seed {seed}");
+                        for (id, target) in &was {
+                            if target.to_lowercase() == old_lower {
+                                assert_eq!(&now[id], new, "seed {seed}: link not retargeted");
+                            } else {
+                                assert_eq!(&now[id], target, "seed {seed}: link touched");
+                            }
+                        }
+                        if old_lower != new.to_lowercase() {
+                            assert!(
+                                now.values().all(|t| t.to_lowercase() != old_lower),
+                                "seed {seed}: a link still aims at the old name"
+                            );
+                        }
                     }
                     applied += 1;
                     undo.push((inverse, before, 0));
