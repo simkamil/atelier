@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod docx;
+mod properties;
 pub use docx::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
     DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice,
@@ -16,6 +17,14 @@ pub use docx::{
     TableAlign, TableColor, TableLayout, TableLook, TableProps, TableStyleDef, TableWidth, VMerge,
     import_docx, import_docx_with_limits, interpreted_elements, para_mark_rpr_rank, ppr_rank,
     rpr_rank, sect_pr_rank,
+};
+
+pub use properties::{
+    AppExtra, ApplyReport, CoreExtra, DateError, DatePrecision, DocumentStatistics,
+    EditableProperties, MAX_COMMENTS_CHARS, MAX_HYPERLINK_BASE_CHARS, MAX_KEYWORDS_CHARS,
+    MAX_LANGUAGE_CHARS, MAX_LINE_CHARS, PdfDateFields, PdfMetadata, PropertiesSnapshot,
+    PropertyChanges, PropertyDate, PropertyError, PropertyNotice, ReadOnlyProperties, SaveContext,
+    SaveReport, W3cDateTime,
 };
 
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader, Writer as XmlWriter};
@@ -375,6 +384,11 @@ pub struct Package {
     app_uri: Option<PartUri>,
     core_dirty: bool,
     app_dirty: bool,
+    core_extra: CoreExtra,
+    app_extra: AppExtra,
+    /// The property part was found by content type, without a relationship.
+    core_orphan: bool,
+    app_orphan: bool,
 }
 impl Package {
     pub fn new() -> Self {
@@ -659,6 +673,15 @@ impl Package {
                 });
         self.core_uri = core_uri;
         self.app_uri = app_uri;
+        // Tolerant read of a property part that no relationship points to.
+        if self.core_uri.is_none() {
+            self.core_uri = self.orphan_part(CORE_CONTENT_TYPE);
+            self.core_orphan = self.core_uri.is_some();
+        }
+        if self.app_uri.is_none() {
+            self.app_uri = self.orphan_part(APP_CONTENT_TYPE);
+            self.app_orphan = self.app_uri.is_some();
+        }
         if let Some(uri) = self.core_uri.clone() {
             if let Some(part) = self.parts.get(&uri) {
                 let (p, u) = parse_core(&part.bytes, xml_limits.clone())?;
@@ -673,7 +696,17 @@ impl Package {
                 self.app_unknown = u;
             }
         }
+        self.load_extras();
         Ok(())
+    }
+
+    fn orphan_part(&self, content_type: &str) -> Option<PartUri> {
+        let mut found = self
+            .parts
+            .values()
+            .filter(|p| p.content_type.eq_ignore_ascii_case(content_type));
+        let first = found.next()?;
+        found.next().is_none().then(|| first.uri.clone())
     }
 
     pub fn write(&self) -> Result<Vec<u8>, OpcError> {
@@ -688,8 +721,13 @@ impl Package {
                 if !self.parts.contains_key(uri) {
                     return Err(OpcError::Missing(format!("core properties part {uri}")));
                 }
+                if self.core_orphan {
+                    let uri = uri.clone();
+                    self.link_property_part(&uri, CORE_REL)?;
+                    self.core_orphan = false;
+                }
             } else {
-                let bytes = write_core(&self.core, &self.core_unknown)?;
+                let bytes = self.render_core_part()?;
                 self.core_uri = Some(self.insert_property_part(
                     "docProps/core.xml",
                     CORE_CONTENT_TYPE,
@@ -703,8 +741,13 @@ impl Package {
                 if !self.parts.contains_key(uri) {
                     return Err(OpcError::Missing(format!("app properties part {uri}")));
                 }
+                if self.app_orphan {
+                    let uri = uri.clone();
+                    self.link_property_part(&uri, APP_REL)?;
+                    self.app_orphan = false;
+                }
             } else {
-                let bytes = write_app(&self.app, &self.app_unknown)?;
+                let bytes = self.render_app_part()?;
                 self.app_uri = Some(self.insert_property_part(
                     "docProps/app.xml",
                     APP_CONTENT_TYPE,
@@ -737,6 +780,11 @@ impl Package {
             )));
         }
         self.insert_part(uri.clone(), content_type, bytes)?;
+        self.link_property_part(&uri, rel_type)?;
+        Ok(uri)
+    }
+
+    fn link_property_part(&mut self, uri: &PartUri, rel_type: &str) -> Result<(), OpcError> {
         let base_id = if rel_type == CORE_REL {
             "rIdCoreProperties"
         } else {
@@ -748,8 +796,7 @@ impl Package {
             id = format!("{base_id}{suffix}");
             suffix = suffix.saturating_add(1);
         }
-        self.add_relationship(None, id, rel_type, path, TargetMode::Internal)?;
-        Ok(uri)
+        self.add_relationship(None, id, rel_type, uri.to_string(), TargetMode::Internal)
     }
 
     fn write_materialized(&self) -> Result<Vec<u8>, OpcError> {
@@ -768,7 +815,7 @@ impl Package {
             self.core_uri
                 .as_ref()
                 .and_then(|u| self.parts.get(u))
-                .map(|p| write_core(&self.core, &self.core_unknown).map(|b| (p.uri.to_string(), b)))
+                .map(|p| self.render_core_part().map(|b| (p.uri.to_string(), b)))
                 .transpose()?
         } else {
             None
@@ -777,7 +824,7 @@ impl Package {
             self.app_uri
                 .as_ref()
                 .and_then(|u| self.parts.get(u))
-                .map(|p| write_app(&self.app, &self.app_unknown).map(|b| (p.uri.to_string(), b)))
+                .map(|p| self.render_app_part().map(|b| (p.uri.to_string(), b)))
                 .transpose()?
         } else {
             None
