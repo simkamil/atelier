@@ -139,6 +139,9 @@ pub enum Confidence {
 pub struct Detection {
     pub encoding: Encoding,
     pub confidence: Confidence,
+    /// A UTF-32 BOM was seen. UTF-32 is not supported: `encoding` is only the
+    /// closest reading and `confidence` is `Uncertain`.
+    pub utf32_suspected: bool,
 }
 
 /// A resolved line-break style.
@@ -254,6 +257,8 @@ pub struct OpenedText {
     /// form feed are counted), and DEL. A high count suggests a binary file.
     pub control_chars: usize,
     pub confidence: Confidence,
+    /// See [`Detection::utf32_suspected`].
+    pub utf32_suspected: bool,
 }
 
 impl OpenedText {
@@ -351,29 +356,81 @@ fn utf16_pattern(bytes: &[u8]) -> Option<Encoding> {
 /// Detects the encoding: BOM (certain), then the UTF-16 null-byte pattern,
 /// then `atelier_unicode::detect_encoding` (valid UTF-8, else Windows-1252).
 pub fn detect(bytes: &[u8]) -> Detection {
+    // UTF-32 is not supported. Its BOMs start like (LE) or contain (BE) the
+    // UTF-16 ones, so they are tested first and never read in silence: the
+    // result is `Uncertain` with `utf32_suspected`, and the manual choice is
+    // proposed. `FF FE 00 00` is also a legitimate UTF-16 LE BOM followed by
+    // a NUL character; the two cannot be told apart, the rule is to ask.
+    if bytes.starts_with(&[0xFF, 0xFE, 0x00, 0x00]) {
+        return Detection {
+            encoding: Encoding::Utf16Le,
+            confidence: Confidence::Uncertain,
+            utf32_suspected: true,
+        };
+    }
+    if bytes.starts_with(&[0x00, 0x00, 0xFE, 0xFF]) {
+        return Detection {
+            encoding: Encoding::Utf16Be,
+            confidence: Confidence::Uncertain,
+            utf32_suspected: true,
+        };
+    }
+    let found = |encoding, confidence| Detection {
+        encoding,
+        confidence,
+        utf32_suspected: false,
+    };
     let base = detect_encoding(bytes);
     let has_bom = bytes.starts_with(bom_of(base));
     if has_bom && !bom_of(base).is_empty() {
-        return Detection {
-            encoding: base,
-            confidence: Confidence::Certain,
-        };
+        return found(base, Confidence::Certain);
     }
     if let Some(encoding) = utf16_pattern(bytes) {
-        return Detection {
-            encoding,
-            confidence: Confidence::Likely,
-        };
+        return found(encoding, Confidence::Likely);
     }
-    let confidence = match base {
-        Encoding::Utf8 if bytes.is_ascii() => Confidence::Indifferent,
-        Encoding::Utf8 => Confidence::Likely,
-        _ => Confidence::Uncertain,
-    };
-    Detection {
-        encoding: base,
-        confidence,
+    match base {
+        Encoding::Utf8 if bytes.is_ascii() => match ascii_control_suspicion(bytes) {
+            None => found(base, Confidence::Indifferent),
+            Some(candidate) => found(candidate.unwrap_or(base), Confidence::Uncertain),
+        },
+        Encoding::Utf8 => found(base, Confidence::Likely),
+        _ => found(base, Confidence::Uncertain),
     }
+}
+
+/// For bytes that are all ASCII: `Some(_)` when they hold an abnormal share of
+/// C0 controls (other than TAB, LF, CR), which plain text does not: at least
+/// two and more than 1/8 of the bytes. The inner option is a UTF-16 candidate
+/// when the controls sit on one byte parity, as the high bytes (0x00-0x1F)
+/// of Cyrillic, Greek or Hebrew text do (U+0410 is `10 04` in LE): at least
+/// 3/4 of the bytes of one parity are controls (TAB, LF, CR included). A form
+/// feed in normal text, or tabs in source code, never trigger this.
+fn ascii_control_suspicion(bytes: &[u8]) -> Option<Option<Encoding>> {
+    let controls = bytes
+        .iter()
+        .filter(|&&b| b < 0x20 && !matches!(b, b'\t' | b'\n' | b'\r'))
+        .count();
+    if controls < 2 || controls * 8 <= bytes.len() {
+        return None;
+    }
+    let (mut even, mut odd) = (0usize, 0usize);
+    for (i, &b) in bytes.iter().enumerate() {
+        if b < 0x20 {
+            if i % 2 == 0 {
+                even += 1;
+            } else {
+                odd += 1;
+            }
+        }
+    }
+    let (n_even, n_odd) = (bytes.len().div_ceil(2), bytes.len() / 2);
+    Some(if odd * 4 >= n_odd * 3 && even * 2 < n_even {
+        Some(Encoding::Utf16Le)
+    } else if even * 4 >= n_even * 3 && odd * 2 < n_odd {
+        Some(Encoding::Utf16Be)
+    } else {
+        None
+    })
 }
 
 /// For a single-byte encoding: which bytes decode to nothing (U+FFFD).
@@ -473,11 +530,11 @@ pub fn open_text(bytes: &[u8], options: &OpenOptions) -> Result<OpenedText, Text
             actual: bytes.len(),
         });
     }
-    let (encoding, confidence) = match options.encoding {
-        Some(encoding) => (encoding, Confidence::Chosen),
+    let (encoding, confidence, utf32_suspected) = match options.encoding {
+        Some(encoding) => (encoding, Confidence::Chosen, false),
         None => {
             let found = detect(bytes);
-            (found.encoding, found.confidence)
+            (found.encoding, found.confidence, found.utf32_suspected)
         }
     };
     let own_bom = bom_of(encoding);
@@ -501,6 +558,7 @@ pub fn open_text(bytes: &[u8], options: &OpenOptions) -> Result<OpenedText, Text
         invalid_sequences,
         control_chars,
         confidence,
+        utf32_suspected,
     })
 }
 

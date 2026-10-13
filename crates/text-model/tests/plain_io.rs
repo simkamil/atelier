@@ -86,8 +86,10 @@ fn detection_and_confidence() {
 fn utf16_pattern_needs_enough_evidence() {
     // One unit: too short to call it UTF-16.
     assert_eq!(open(b"a\0").encoding, Encoding::Utf8);
-    // Nulls on both sides: not UTF-16.
-    assert_eq!(open(b"\0\0\0\0\0\0").confidence, Confidence::Indifferent);
+    // Nulls on both sides: not UTF-16, and not ordinary text either.
+    let nulls = open(b"\0\0\0\0\0\0");
+    assert_eq!(nulls.encoding, Encoding::Utf8);
+    assert_eq!(nulls.confidence, Confidence::Uncertain);
     // Non-Latin UTF-16 without BOM has no null bytes: not recognised.
     let chinese = [0x2D, 0x4E, 0x87, 0x65]; // U+4E2D U+6587 little-endian
     assert_eq!(open(&chinese).encoding, Encoding::Windows1252);

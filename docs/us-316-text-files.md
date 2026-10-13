@@ -41,7 +41,9 @@ Ordre : BOM → motif UTF-16 sans BOM → `atelier_unicode::detect_encoding` (UT
 | BOM UTF-8 / UTF-16 | celui du BOM | `Certain` |
 | ≥ 2 unités UTF-16 dont ≥ 25 % ont l'octet de poids fort nul, et 16 fois moins de nuls de l'autre côté (64 Kio examinés) | UTF-16 LE ou BE | `Likely` |
 | UTF-8 valide avec caractères non ASCII | UTF-8 | `Likely` |
-| ASCII pur (ou vide) | UTF-8 | `Indifferent` (tous les encodages lisent la même chose) |
+| ASCII pur (ou vide), sans excès de contrôles | UTF-8 | `Indifferent` (tous les encodages lisent la même chose) |
+| ASCII dont plus d'1/8 des octets (et au moins 2) sont des contrôles C0 hors TAB/LF/CR (UTF-16 cyrillique, grec... sans BOM : octets `04`, `1F`...) | UTF-16 LE/BE si ≥ 3/4 des octets d'une parité sont des contrôles, sinon UTF-8 | `Uncertain` : choix manuel proposé, jamais `Certain` |
+| BOM UTF-32 (`FF FE 00 00`, `00 00 FE FF`), testés avant ceux d'UTF-16 | UTF-16 LE/BE (lecture la plus proche) | `Uncertain`, `utf32_suspected` ; UTF-32 n'est pas pris en charge, jamais lu en silence |
 | autre | Windows-1252 | `Uncertain` |
 | encodage imposé | celui de l'appelant | `Chosen` |
 
@@ -50,7 +52,8 @@ avec LF et CRLF) × 7 variantes (UTF-8, UTF-8 BOM, Windows-1252, UTF-16 LE/BE av
 décodés comme l'original. C'est un corpus favorable (texte latin, longueur de plusieurs mots), pas une garantie.
 Cas structurellement indécidables ou manqués (testés) :
 - un fichier Windows-1252 dont les octets forment par hasard de l'UTF-8 valide (`cafÃ©` écrit en 1252) est lu en UTF-8 ;
-- UTF-16 sans BOM non latin (chinois...) : aucun octet nul, lu comme Windows-1252 ; un seul caractère UTF-16 sans BOM : trop peu d'indices ;
+- UTF-16 sans BOM non latin (chinois...) : aucun octet nul, lu comme Windows-1252 (cyrillique et grec : détectés comme douteux, voir le tableau) ;
+- `FF FE 00 00` est aussi un BOM UTF-16 LE suivi d'un caractère NUL : indiscernable d'un BOM UTF-32 LE, la règle est de demander (`Uncertain`) ; un seul caractère UTF-16 sans BOM : trop peu d'indices ;
 - un texte UTF-8 sans BOM commençant par U+FEFF est relu comme un BOM (octets identiques).
 
 `suggest_manual_choice()` est vrai si la confiance est `Uncertain` ou si des séquences invalides ont été remplacées.
@@ -86,6 +89,9 @@ Caractère non représentable en Windows-1252 (ou autre mono-octet) : `Unmappabl
 - Chaque paragraphe des corps de section est une ligne ; un saut dans un paragraphe en fait deux.
 - Tableau (règle de Word, texte seul) : une ligne par rangée, cellules séparées par une tabulation ; une cellule de `n` colonnes est
   suivie de `n - 1` tabulations ; plusieurs paragraphes (ou un tableau imbriqué) dans une cellule sont joints par une espace.
+  Une case couverte par une fusion verticale est un champ vide : toutes les rangées ont le même nombre de tabulations. Le texte d'une cellule
+  fusionnée est écrit une fois, dans sa première rangée (règle de Word). Le modèle déplace les paragraphes des cellules absorbées dans la cellule
+  fusionnée : `r1c0 r2c0` vient de la fusion, pas de l'export.
 - Champs : résultat affiché conservé. Liens : texte conservé. Listes : numéros et puces non exportés (générés, non stockés).
 - Non exportés : objets ancrés, blocs opaques, signets, en-têtes et pieds.
 - `formatting_loss` renvoie `FormattingLoss` (comptes : `character_runs`, `formatted_paragraphs`, `styled_paragraphs`, `tables`, `objects`,

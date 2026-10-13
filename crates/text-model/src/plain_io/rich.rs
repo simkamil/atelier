@@ -8,9 +8,16 @@
 //!   the paragraph count;
 //! - a table gives one line per row, the cells separated by one TAB (the rule
 //!   of Word's "plain text" export); a cell spanning `n` columns is followed
-//!   by `n - 1` more TABs to keep the columns aligned; the paragraphs of a
-//!   cell, and the text of a table nested in it, are joined by one space and
-//!   inner breaks become spaces, so a row is always one line;
+//!   by `n - 1` more TABs to keep the columns aligned; a slot covered by a
+//!   cell spanning down from an earlier row is an empty field, so every row
+//!   has the same number of TABs; the text of a merged cell is written once,
+//!   in its first row (Word's rule). When cells are merged, the model moves
+//!   the covered cells' paragraphs into the merged cell, so it holds several
+//!   paragraphs: they are joined by one space (`r1c0 r2c0`), which comes from
+//!   the merge, not from the export;
+//!   the paragraphs of a cell, and the text of a table nested in it, are
+//!   joined by one space and inner breaks become spaces, so a row is always
+//!   one line;
 //! - fields give their displayed result, links their text;
 //! - list numbers and bullets are generated, not stored: they are not written;
 //! - anchored objects, opaque blocks, bookmarks, headers and footers are not
@@ -18,6 +25,9 @@
 
 use super::{TextIoError, push_with_breaks};
 use crate::rich::{Node, NodeId, Paragraph, RichDocument};
+
+/// Most columns of a table taken into account when flattening.
+const MAX_COLUMNS: usize = 1 << 12;
 
 /// An item met while walking blocks in document order.
 enum Item<'a> {
@@ -114,22 +124,45 @@ pub fn rich_to_text(doc: &RichDocument) -> String {
                     push_with_breaks(&mut out, &p.text, "\n");
                 }
                 Some(Node::Table(t)) => {
+                    // Grid slots still covered by a cell spanning down.
+                    let columns = t.columns.clamp(1, MAX_COLUMNS);
+                    let mut covered = vec![0usize; columns];
                     for row in &t.rows {
                         let Some(Node::Row(r)) = doc.node(*row) else {
                             continue;
                         };
                         start_line(&mut out);
-                        for (i, cell) in r.cells.iter().enumerate() {
-                            if i > 0 {
-                                out.push('\t');
-                            }
-                            out.push_str(&cell_text(doc, *cell));
-                            if let Some(Node::Cell(c)) = doc.node(*cell) {
-                                for _ in 1..c.col_span.min(1 << 12) {
-                                    out.push('\t');
+                        let mut fields: Vec<String> = Vec::new();
+                        let mut column = 0;
+                        let skip_covered =
+                            |column: &mut usize,
+                             fields: &mut Vec<String>,
+                             covered: &mut [usize]| {
+                                while *column < columns && covered[*column] > 0 {
+                                    covered[*column] -= 1;
+                                    fields.push(String::new());
+                                    *column += 1;
+                                }
+                            };
+                        for cell in &r.cells {
+                            skip_covered(&mut column, &mut fields, &mut covered);
+                            fields.push(cell_text(doc, *cell));
+                            let (col_span, row_span) = match doc.node(*cell) {
+                                Some(Node::Cell(c)) => (c.col_span.max(1), c.row_span.max(1)),
+                                _ => (1, 1),
+                            };
+                            for k in 0..col_span.min(columns.saturating_sub(column).max(1)) {
+                                if k > 0 {
+                                    fields.push(String::new());
+                                }
+                                if row_span > 1 && column + k < columns {
+                                    covered[column + k] = row_span - 1;
                                 }
                             }
+                            column += col_span.min(columns);
                         }
+                        skip_covered(&mut column, &mut fields, &mut covered);
+                        out.push_str(&fields.join("\t"));
                     }
                 }
                 _ => {}
