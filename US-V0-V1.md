@@ -1333,9 +1333,11 @@ Réf : §6.12 · Taille : M · Dépend de : US-051, US-052
 
 #### US-331 — Écrivain PDF
 *En tant que* développeur, *je veux* générer des fichiers PDF *afin d'exporter* les documents.
-- [ ] PDF 1.7 : table xref, flux compressés, pages, polices CIDFontType2 / CFF incorporées avec `ToUnicode`, images (JPEG tel quel, PNG en Flate avec masque alpha), chemins, couleurs RVB, transparence, clips.
-- [ ] Rendu depuis la liste d'affichage (US-080).
+- [x] PDF 1.7 : table xref, flux compressés, pages, polices CIDFontType2 / CFF incorporées avec `ToUnicode`, images (JPEG tel quel, PNG en Flate avec masque alpha), chemins, couleurs RVB, transparence, clips.
+- [x] Rendu depuis la liste d'affichage (US-080).
 - [ ] Les PDF s'ouvrent sans erreur dans Acrobat Reader, Edge et Firefox ; le texte est sélectionnable, copiable et cherchable (accents corrects).
+
+Avancement US-331 (2026-10-13) : écrivain livré dans `atelier-fmt-pdf`, relu par un agent indépendant (conforme) ; [contrat](docs/us-331-pdf-writer.md). Vérifié par PyMuPDF, poppler, fontTools, LibreOffice et un contrôle octet par octet du xref ; affichage constaté dans Firefox. Reste à constater à la main : ouverture dans Acrobat et Edge, sélection, copie et recherche de texte (procédure en fin de contrat).
 
 Réf : §6.12 · Taille : L · Dépend de : US-080, US-330, US-021
 
