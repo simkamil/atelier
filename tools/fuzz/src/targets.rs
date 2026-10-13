@@ -29,6 +29,7 @@ use atelier_render::{
     Color, Command, DisplayList, DisplayPath, FillRule, LineCap, LineJoin, PageInfo, PathElement,
     StrokeStyle,
 };
+use atelier_text_model::plain_io::{OpenOptions, SaveOptions, open_text, save_text};
 use atelier_unicode::{Encoding, decode, detect_encoding, encode};
 use atelier_xml::{Event, Reader};
 use atelier_zip::{Archive, Method, WriteOptions, Writer};
@@ -117,6 +118,11 @@ pub fn registry() -> Vec<Arc<dyn FuzzTarget>> {
             FnTarget::new("detect-protection", detect_protection_target)
                 .dictionary(CFB_TOKENS)
                 .seeds(detect_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("text-open", text_open_target)
+                .dictionary(ENCODING_TOKENS)
+                .seeds(encoding_seeds),
         ),
         Arc::new(
             FnTarget::new("odt-import", odt_import_target)
@@ -964,6 +970,32 @@ fn detect_seeds() -> Vec<Vec<u8>> {
         include_bytes!("../../../tests/encrypted-reference/encrypted.xls").to_vec(),
         include_bytes!("../../../tests/encrypted-reference/plain.doc").to_vec(),
     ]
+}
+
+// ------------------------------------------------------------ text file open
+fn text_open_target(input: &[u8]) -> Outcome {
+    let opened = match open_text(input, &OpenOptions::default()) {
+        Ok(opened) => opened,
+        Err(error) => return Outcome::rejected(&error),
+    };
+    // Saving "as opened" must give the bytes back whenever the module says so.
+    let exact = opened.round_trip_is_exact();
+    match save_text(&opened.text, &SaveOptions::as_opened(opened.format())) {
+        Ok(saved) => {
+            assert!(
+                !exact || saved.bytes == input,
+                "round trip announced exact but bytes differ"
+            );
+            Outcome::labelled(
+                if exact { "exact" } else { "lossy" },
+                saved.bytes.len() as u64,
+            )
+        }
+        Err(error) => {
+            assert!(!exact, "round trip announced exact but saving failed");
+            Outcome::rejected(&error)
+        }
+    }
 }
 
 // --------------------------------------------------------------- odt import

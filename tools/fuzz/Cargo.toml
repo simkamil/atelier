@@ -16,6 +16,7 @@ atelier-fmt-ooxml = { path = "../../crates/fmt-ooxml" }
 atelier-fmt-legacy = { path = "../../crates/fmt-legacy" }
 atelier-fmt-odf = { path = "../../crates/fmt-odf" }
 atelier-model = { path = "../../crates/model" }
+atelier-text-model = { path = "../../crates/text-model" }
 atelier-unicode = { path = "../../crates/unicode" }
 atelier-render = { path = "../../crates/render" }
 atelier-geom = { path = "../../crates/geom" }
