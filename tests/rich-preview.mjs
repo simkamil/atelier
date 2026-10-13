@@ -15,6 +15,42 @@ function a4Page() {
   return bytes;
 }
 
+function glyphPage(count, glyphId = 0, fontId = 0n) {
+  const bytes = new Uint8Array(73 + count * 36);
+  bytes.set(a4Page().subarray(0, 44));
+  const view = new DataView(bytes.buffer);
+  view.setUint32(40, 1, true);
+  bytes[44] = 3; // DrawGlyphRun
+  view.setBigUint64(45, fontId, true);
+  view.setFloat32(65, 1, true);
+  view.setUint32(69, count, true);
+  for (let index = 0; index < count; index += 1) view.setUint32(73 + index * 36, glyphId, true);
+  return bytes;
+}
+
+function glyphAtlas(x = 10) {
+  const points = [
+    [x, 10, 20], [x + 2, 11, 19],
+  ];
+  const contourElements = points.length * 4;
+  const bytes = new Uint8Array(44 + 22 + contourElements * 17 - points.length * 16);
+  bytes.set(a4Page().subarray(0, 44));
+  const view = new DataView(bytes.buffer);
+  view.setUint32(40, 1, true);
+  let at = 44;
+  bytes[at++] = 1; // FillPath
+  bytes[at++] = 0; // NonZero preserves counter contours.
+  view.setFloat32(at + 12, 1, true); at += 16; // Opaque black
+  view.setUint32(at, contourElements, true); at += 4;
+  for (const [left, right, bottom] of points) {
+    bytes[at++] = 0; view.setFloat64(at, left, true); view.setFloat64(at + 8, 10, true); at += 16;
+    bytes[at++] = 1; view.setFloat64(at, right, true); view.setFloat64(at + 8, 10, true); at += 16;
+    bytes[at++] = 1; view.setFloat64(at, right, true); view.setFloat64(at + 8, bottom, true); at += 16;
+    bytes[at++] = 4;
+  }
+  return bytes;
+}
+
 function mappedStackY(oldY, oldZoom, newZoom, pageHeights, pageGap = 16) {
   let oldTop = 0;
   let newTop = 0;
@@ -59,15 +95,28 @@ function canvasElement() {
   canvas.height = 0;
   canvas.getContext = () => canvas.context;
   canvas.fillRectCalls = [];
+  canvas.fillCount = 0;
+  canvas.lastFilledPath = null;
   canvas.context = {
     setTransform() {}, clearRect() {}, beginPath() {}, rect() {}, clip() {},
-    save() {}, restore() {}, fillRect(...args) { canvas.fillRectCalls.push(args); },
+    save() {}, restore() {}, fill(path) { canvas.fillCount += 1; canvas.lastFilledPath = path; },
+    fillRect(...args) { canvas.fillRectCalls.push(args); },
   };
   return canvas;
 }
 
 const savedGlobalAddEventListener = globalThis.addEventListener;
 const savedGlobalRemoveEventListener = globalThis.removeEventListener;
+const savedPath2D = globalThis.Path2D;
+class RecordingPath2D {
+  elements = [];
+  moveTo(x, y) { this.elements.push(["moveTo", x, y]); }
+  lineTo(x, y) { this.elements.push(["lineTo", x, y]); }
+  quadraticCurveTo(...args) { this.elements.push(["quadratic", ...args]); }
+  bezierCurveTo(...args) { this.elements.push(["cubic", ...args]); }
+  closePath() { this.elements.push(["close"]); }
+}
+globalThis.Path2D = RecordingPath2D;
 const globalListeners = new Map();
 globalThis.addEventListener = (type, listener) => {
   const listeners = globalListeners.get(type) ?? new Set();
@@ -143,6 +192,27 @@ assert.equal(mirror.textContent, text, "decoded objects cannot bypass byte limit
 
 assert.throws(() => preview.setDocument({ pages: [page], text: "x".repeat(128 * 1024 + 1), noticeCount: 0 }),
   error => error instanceof RichPreviewError && error.code === "RICH_PREVIEW_LIMIT");
+assert.deepEqual(preview.setDocument({ pages: [glyphPage(70_000)], glyphAtlas: glyphAtlas(),
+  text: "x".repeat(70_000), noticeCount: 0 }),
+  { pageCount: 1, noticeCount: 0 }, "browser preview accepts more than 65,536 glyphs");
+const previousOutline = canvas.lastFilledPath;
+preview.setDocument({ pages: [glyphPage(1)], glyphAtlas: glyphAtlas(30), text: "x", noticeCount: 0 });
+assert.notEqual(canvas.lastFilledPath, previousOutline, "changing documents clears cached glyph outlines");
+assert.equal(canvas.lastFilledPath.elements.filter(element => element[0] === "moveTo").length, 2,
+  "one atlas entry preserves multiple contours and counter paths");
+assert.deepEqual(preview.setDocument({ pages: [page], glyphAtlas: page, text: "   ", noticeCount: 0 }),
+  { pageCount: 1, noticeCount: 0 }, "an empty atlas supports text with no drawable glyph outlines");
+const invalidAtlas = glyphAtlas();
+invalidAtlas[45] = 1; // Atlas entries must use NonZero fill.
+assert.throws(() => preview.setDocument({ pages: [glyphPage(1)], glyphAtlas: invalidAtlas,
+  text: "x", noticeCount: 0 }),
+  error => error instanceof RichPreviewError && error.code === "RICH_PREVIEW_INVALID_ATLAS");
+assert.throws(() => preview.setDocument({ pages: [glyphPage(1, 1)], glyphAtlas: glyphAtlas(), text: "x", noticeCount: 0 }),
+  error => error instanceof RichPreviewError && error.code === "RICH_PREVIEW_INVALID_ATLAS",
+  "document without an atlas entry must reject the font-zero glyph reference");
+assert.throws(() => preview.setDocument({ pages: [glyphPage(131_073)], text: "x", noticeCount: 0 }),
+  error => error instanceof RichPreviewError && error.code === "RICH_PREVIEW_LIMIT");
+preview.setDocument(document);
 assert.throws(() => preview.setZoom(5.1), RangeError);
 scrollport.clientWidth = 320;
 scrollport.clientHeight = 800;
@@ -204,6 +274,8 @@ if (savedGlobalAddEventListener === undefined) delete globalThis.addEventListene
 else globalThis.addEventListener = savedGlobalAddEventListener;
 if (savedGlobalRemoveEventListener === undefined) delete globalThis.removeEventListener;
 else globalThis.removeEventListener = savedGlobalRemoveEventListener;
+if (savedPath2D === undefined) delete globalThis.Path2D;
+else globalThis.Path2D = savedPath2D;
 
 console.log(JSON.stringify({ status: "passed", checks: [
   "A4 multi-page layout and accessible literal-text mirror",

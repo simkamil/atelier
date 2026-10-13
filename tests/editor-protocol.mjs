@@ -18,6 +18,67 @@ function a4Page() {
   view.setUint32(40, 0, true);
   return bytes;
 }
+function glyphAtlas() {
+  const bytes = new Uint8Array(44 + 22 + 3 * 17 + 1);
+  bytes.set(a4Page());
+  const view = new DataView(bytes.buffer);
+  view.setUint32(40, 1, true);
+  let at = 44;
+  bytes[at++] = 1; // FillPath
+  bytes[at++] = 0; // NonZero
+  view.setFloat32(at + 12, 1, true); at += 16; // Opaque black
+  view.setUint32(at, 4, true); at += 4;
+  bytes[at++] = 0; // Outer contour
+  at += 16;
+  bytes[at++] = 1; at += 16;
+  bytes[at++] = 1; at += 16;
+  bytes[at++] = 4;
+  return bytes;
+}
+function glyphRunPage(glyphIds = [0], fontId = 0n) {
+  const bytes = new Uint8Array(73 + glyphIds.length * 36);
+  bytes.set(a4Page());
+  const view = new DataView(bytes.buffer);
+  view.setUint32(40, 1, true);
+  bytes[44] = 3; // DrawGlyphRun
+  view.setBigUint64(45, fontId, true);
+  view.setFloat32(65, 1, true);
+  view.setUint32(69, glyphIds.length, true);
+  glyphIds.forEach((glyphId, index) => view.setUint32(73 + index * 36, glyphId, true));
+  return bytes;
+}
+function previewV2Payload({ atlas = glyphAtlas(), page = glyphRunPage(), text = "x" } = {}) {
+  const textBytes = new TextEncoder().encode(text);
+  const bytes = new Uint8Array(20 + textBytes.length + 4 + atlas.length + 4 + page.length);
+  bytes.set([65, 84, 82, 80]);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(4, 2, true);
+  view.setUint32(8, 1, true);
+  view.setUint32(12, textBytes.length, true);
+  view.setUint32(16, 0, true);
+  let at = 20;
+  bytes.set(textBytes, at); at += textBytes.length;
+  view.setUint32(at, atlas.length, true); at += 4;
+  bytes.set(atlas, at); at += atlas.length;
+  view.setUint32(at, page.length, true); at += 4;
+  bytes.set(page, at);
+  return bytes;
+}
+function previewV1Payload({ page = glyphRunPage(), text = "x" } = {}) {
+  const textBytes = new TextEncoder().encode(text);
+  const bytes = new Uint8Array(20 + textBytes.length + 4 + page.length);
+  bytes.set([65, 84, 82, 80]);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(4, 1, true);
+  view.setUint32(8, 1, true);
+  view.setUint32(12, textBytes.length, true);
+  view.setUint32(16, 0, true);
+  let at = 20;
+  bytes.set(textBytes, at); at += textBytes.length;
+  view.setUint32(at, page.length, true); at += 4;
+  bytes.set(page, at);
+  return bytes;
+}
 function statePayload(textBytes = new TextEncoder().encode("hello"), { anchor = 0, focus = 0 } = {}) {
   const page = a4Page();
   const result = new Uint8Array(64 + textBytes.length + 4 + page.length + 36);
@@ -91,6 +152,36 @@ expectCode(() => decodeEditorResponse(MessageType.EditorResult, statePayload(new
 const trailing = Uint8Array.from(statePayload());
 const withTrailing = new Uint8Array(trailing.length + 1); withTrailing.set(trailing); withTrailing.at(-1);
 expectCode(() => decodeEditorResponse(MessageType.EditorResult, withTrailing), "TRAILING_BYTES");
+
+const previewV2 = previewV2Payload();
+const decodedPreviewV2 = decodeEditorResponse(MessageType.EditorResult, previewV2);
+assert.equal(decodedPreviewV2.kind, "preview");
+assert.equal(decodedPreviewV2.pages.length, 1);
+assert.ok(decodedPreviewV2.glyphAtlas instanceof Uint8Array);
+const decodedPreviewV1 = decodeEditorResponse(MessageType.EditorResult, previewV1Payload());
+assert.equal(decodedPreviewV1.kind, "preview", "legacy v1 previews remain accepted without an atlas");
+assert.equal("glyphAtlas" in decodedPreviewV1, false);
+const outlineFreePreview = decodeEditorResponse(MessageType.EditorResult,
+  previewV2Payload({ atlas: a4Page(), page: a4Page(), text: "   " }));
+assert.equal(outlineFreePreview.glyphAtlas.length, 44, "v2 accepts an empty atlas for text with no drawable outlines");
+const atlasLengthOffset = 21; // 20-byte header, then the one-byte text.
+let malformedPreview = previewV2.slice();
+new DataView(malformedPreview.buffer).setUint32(atlasLengthOffset, glyphAtlas().length + 1, true);
+expectCode(() => decodeEditorResponse(MessageType.EditorResult, malformedPreview), "INVALID_RESPONSE");
+malformedPreview = previewV2.slice();
+new DataView(malformedPreview.buffer).setUint32(atlasLengthOffset, 0, true);
+expectCode(() => decodeEditorResponse(MessageType.EditorResult, malformedPreview), "INVALID_RESPONSE");
+expectCode(() => decodeEditorResponse(MessageType.EditorResult,
+  previewV2Payload({ page: glyphRunPage([1]) })), "INVALID_RESPONSE");
+expectCode(() => decodeEditorResponse(MessageType.EditorResult,
+  previewV2Payload({ page: glyphRunPage([0], 1n) })), "INVALID_RESPONSE");
+const invalidAtlas = glyphAtlas(); invalidAtlas[44] = 3;
+expectCode(() => decodeEditorResponse(MessageType.EditorResult,
+  previewV2Payload({ atlas: invalidAtlas, page: a4Page() })), "INVALID_RESPONSE");
+malformedPreview = previewV2.slice();
+const pageLengthOffset = atlasLengthOffset + 4 + glyphAtlas().length;
+new DataView(malformedPreview.buffer).setUint32(pageLengthOffset, 26 * 1024 * 1024, true);
+expectCode(() => decodeEditorResponse(MessageType.EditorResult, malformedPreview), "INVALID_RESPONSE");
 
 const editorFrame = encodeMessage({ type: MessageType.Editor, requestId: 10n, payload: encodeEditorCommand(EditorOpcode.State) });
 assert.equal(decodeMessage(editorFrame, "command").type, MessageType.Editor);

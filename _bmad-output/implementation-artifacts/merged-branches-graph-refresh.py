@@ -456,6 +456,15 @@ for node in removed:
         assert (root/source).read_bytes().replace(b'\r\n',b'\n') == merged_source.replace(b'\r\n',b'\n')
         cleanup.append({'id':node['id'],'reason':'source symbol removed by merged US-313','baseline_commit':baseline_commit,'retirement_commit':retirement_commit,'source_file':source})
         continue
+    if node['id'] == 'crates_core_wasm_tests_rich_preview_glyph_budget_is_enforced_while_layout_is_built':
+        # The long-guide regression now verifies acceptance above the former
+        # ceiling rather than rejection there; preserve its located successor.
+        assert source == 'crates/core-wasm/tests/rich_preview.rs'
+        replacement = 'crates_core_wasm_tests_rich_preview_glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page'
+        assert replacement in g
+        current_source = (root/source).read_text(encoding='utf-8')
+        assert 'fn glyph_budget_is_enforced_while_layout_is_built(' not in current_source
+        assert 'fn glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page(' in current_source
     if not placeholder and replacement is None:
         raise RuntimeError(f'Refused to remove located graph node: {node["id"]}')
     cleanup.append({'id':node['id'],'reason':'unresolved AST placeholder' if placeholder else 'equivalent located node','replacement':replacement})

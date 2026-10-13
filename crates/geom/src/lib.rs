@@ -342,6 +342,24 @@ pub struct FlattenedSubpath {
     pub closed: bool,
 }
 
+/// One validated path command, exposed for inspection without exposing the
+/// path's mutable storage or segment invariants.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PathCommand {
+    MoveTo(Point),
+    LineTo(Point),
+    QuadraticTo {
+        control: Point,
+        to: Point,
+    },
+    CubicTo {
+        control1: Point,
+        control2: Point,
+        to: Point,
+    },
+    Close,
+}
+
 impl Path {
     pub fn new() -> Self {
         Self::default()
@@ -429,6 +447,35 @@ impl Path {
 
     pub fn is_empty(&self) -> bool {
         self.subpaths.is_empty()
+    }
+
+    /// Visits the exact commands in this path in order, using constant extra
+    /// memory. The callback cannot mutate the path's internal representation.
+    pub fn visit_commands(&self, mut visitor: impl FnMut(PathCommand)) {
+        for subpath in &self.subpaths {
+            visitor(PathCommand::MoveTo(subpath.start));
+            for segment in &subpath.segments {
+                match *segment {
+                    Segment::Line { to, .. } => visitor(PathCommand::LineTo(to)),
+                    Segment::Quadratic { control, to, .. } => {
+                        visitor(PathCommand::QuadraticTo { control, to })
+                    }
+                    Segment::Cubic {
+                        control1,
+                        control2,
+                        to,
+                        ..
+                    } => visitor(PathCommand::CubicTo {
+                        control1,
+                        control2,
+                        to,
+                    }),
+                }
+            }
+            if subpath.closed {
+                visitor(PathCommand::Close);
+            }
+        }
     }
 
     /// Returns tight bounds, including every move point and curve extremum.
@@ -834,6 +881,37 @@ mod tests {
                 points: vec![point],
                 closed: true,
             }]
+        );
+    }
+
+    #[test]
+    fn visit_commands_exposes_exact_curves_without_mutable_storage() {
+        let a = Point::try_new(1.0, 2.0).unwrap();
+        let b = Point::try_new(3.0, 4.0).unwrap();
+        let c = Point::try_new(5.0, 6.0).unwrap();
+        let d = Point::try_new(7.0, 8.0).unwrap();
+        let mut path = Path::new();
+        path.move_to(a);
+        path.line_to(b).unwrap();
+        path.quadratic_to(c, d).unwrap();
+        path.cubic_to(a, b, c).unwrap();
+        path.close().unwrap();
+
+        let mut commands = Vec::new();
+        path.visit_commands(|command| commands.push(command));
+        assert_eq!(
+            commands,
+            vec![
+                PathCommand::MoveTo(a),
+                PathCommand::LineTo(b),
+                PathCommand::QuadraticTo { control: c, to: d },
+                PathCommand::CubicTo {
+                    control1: a,
+                    control2: b,
+                    to: c
+                },
+                PathCommand::Close,
+            ]
         );
     }
 

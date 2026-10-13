@@ -27,6 +27,8 @@ export const EDITOR_LIMITS = Object.freeze({
 const MAX_U64 = (1n << 64n) - 1n;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+const MAX_PREVIEW_GLYPHS = 131_072;
+const MAX_PREVIEW_ATLAS_ENTRIES = 4096;
 const EDITOR_MAGIC = [0x41, 0x54, 0x45, 0x44];
 const STATE_MAGIC = [0x41, 0x54, 0x45, 0x53];
 const EXPORT_MAGIC = [0x41, 0x54, 0x45, 0x58];
@@ -42,6 +44,20 @@ export class EditorProtocolError extends Error {
 }
 
 function fail(code, message) { throw new EditorProtocolError(code, message); }
+
+function decodePreviewAtlas(bytes) {
+  let atlas;
+  try { atlas = decodeDisplayList(bytes); }
+  catch { fail("INVALID_RESPONSE", "Invalid preview glyph atlas."); }
+  const bounds = atlas.page.bounds;
+  if (Math.abs(bounds.width - 595.276) > 0.02 || Math.abs(bounds.height - 841.89) > 0.02
+      || atlas.commands.length > MAX_PREVIEW_ATLAS_ENTRIES
+      || atlas.commands.some(command => command.type !== "fillPath" || command.rule !== "nonZero"
+        || command.color.r !== 0 || command.color.g !== 0 || command.color.b !== 0 || command.color.a !== 1)) {
+    fail("INVALID_RESPONSE", "Invalid preview glyph atlas entries.");
+  }
+  return atlas.commands;
+}
 function isBytes(value) { return value instanceof Uint8Array; }
 function u64(value, name) {
   let n;
@@ -232,13 +248,26 @@ export function decodeEditorResponse(type, payload) {
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQT") return decodeStatisticsResponse(view, payload);
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQR") return decodeReplacementResponse(view, payload);
   if (ascii(payload.subarray(0, 4)) === "ATRP") {
-    if (payload.length < 20 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid preview header.");
+    if (payload.length < 20 || ![1, 2].includes(view.getUint16(4, true)) || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid preview header.");
+    const version = view.getUint16(4, true);
     const count = view.getUint32(8, true), textLength = view.getUint32(12, true), noticeCount = view.getUint32(16, true);
     if (count < 1 || count > EDITOR_LIMITS.maxPreviewPages || textLength > EDITOR_LIMITS.maxTextBytes || 20 + textLength > payload.length) fail("INVALID_RESPONSE", "Preview limits exceeded.");
     let text;
     try { text = decoder.decode(payload.subarray(20, 20 + textLength)); } catch { fail("INVALID_RESPONSE", "Invalid preview UTF-8."); }
-    let offset = 20 + textLength, total = 0;
+    let offset = 20 + textLength, total = 0, glyphAtlas = null, atlasEntries = null;
+    if (version === 2) {
+      if (offset + 4 > payload.length) fail("TRUNCATED", "Truncated preview glyph atlas length.");
+      const atlasLength = view.getUint32(offset, true); offset += 4;
+      total = atlasLength;
+      if (atlasLength === 0 || total > EDITOR_LIMITS.maxPreviewDisplayBytes || offset + atlasLength > payload.length) {
+        fail("INVALID_RESPONSE", "Invalid preview glyph atlas length.");
+      }
+      glyphAtlas = payload.slice(offset, offset + atlasLength);
+      atlasEntries = decodePreviewAtlas(glyphAtlas);
+      offset += atlasLength;
+    }
     const pages = [];
+    let totalGlyphs = 0;
     for (let i = 0; i < count; i += 1) {
       if (offset + 4 > payload.length) fail("TRUNCATED", "Truncated preview page.");
       const length = view.getUint32(offset, true); offset += 4; total += length;
@@ -246,10 +275,20 @@ export function decodeEditorResponse(type, payload) {
       const bytes = payload.slice(offset, offset + length);
       const page = decodeDisplayList(bytes);
       if (Math.abs(page.page.bounds.width - 595.276) > 0.02 || Math.abs(page.page.bounds.height - 841.89) > 0.02) fail("INVALID_RESPONSE", "Invalid preview page dimensions.");
+      if (version === 2) {
+        for (const command of page.commands) {
+          if (command.type !== "drawGlyphRun") continue;
+          totalGlyphs += command.glyphs.length;
+          if (totalGlyphs > MAX_PREVIEW_GLYPHS) fail("INVALID_RESPONSE", "Preview glyph limit exceeded.");
+          if (command.fontId !== 0n || command.glyphs.some(glyph => glyph.glyphId >= atlasEntries.length)) {
+            fail("INVALID_RESPONSE", "Preview page references a missing glyph atlas entry.");
+          }
+        }
+      }
       pages.push(bytes); offset += length;
     }
     if (offset !== payload.length) fail("INVALID_RESPONSE", "Trailing preview data.");
-    return { kind: "preview", pages, text, noticeCount };
+    return { kind: "preview", pages, text, noticeCount, ...(version === 2 ? { glyphAtlas } : {}) };
   }
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATPT") {
     if (payload.length !== 48 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) {

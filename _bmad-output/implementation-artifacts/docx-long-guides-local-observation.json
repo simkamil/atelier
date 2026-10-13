@@ -1,0 +1,42 @@
+{
+  "status": "passed",
+  "input_bytes": 490279,
+  "input_sha256": "993bf2dbec57028cc03af52c99028f5ae26309242dd37d67dfe3c0284111ac34",
+  "source_unchanged": true,
+  "native": "preview=ok pages=35 text_bytes=110286 notices=2014 elapsed_ms=22149",
+  "ui": {
+    "status": "passed",
+    "inputBytes": 490279,
+    "opened": "ok",
+    "previewActive": true,
+    "txtStatePreserved": true,
+    "previewVisible": true,
+    "textBytes": 110286,
+    "canvasWidth": 1164,
+    "canvasHeight": 410,
+    "pages": 35,
+    "inkPixels": 625,
+    "lastPageReached": true,
+    "returnedToTxt": true,
+    "environment": "real Edge UI + production Worker/WASM; native file reply simulated locally; no input text logged"
+  },
+  "scope": "Private DOCX tested locally only; actual Edge UI and production Worker/WASM, native file reply simulated on loopback. No source text or private path distributed.",
+  "previous_document_regression": {
+    "status": "passed",
+    "inputBytes": 2149773,
+    "opened": "ok",
+    "previewActive": true,
+    "txtStatePreserved": true,
+    "previewVisible": true,
+    "textBytes": 2296,
+    "canvasWidth": 1164,
+    "canvasHeight": 410,
+    "pages": 3,
+    "inkPixels": 1392,
+    "lastPageReached": true,
+    "returnedToTxt": true,
+    "environment": "real Edge UI + production Worker/WASM; native file reply simulated locally; no input text logged",
+    "input_sha256": "23d1eff7de995ad09eced89eefd3cb50d93dc466f53f4d1f01b45e833834f9bb",
+    "input_unchanged": true
+  }
+}

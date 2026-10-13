@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { CanvasRenderer } from "./canvas-renderer.mjs";
+import { CanvasRenderer, makePath } from "./canvas-renderer.mjs";
 import { decodeDisplayList } from "./display-list.mjs";
 import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
 import { visiblePage, pageScrollTop } from "./page-navigation.mjs";
@@ -9,9 +9,27 @@ const A4_HEIGHT = 841.89;
 const MAX_TEXT_BYTES = 128 * 1024;
 const MAX_PAGES = 256;
 const MAX_PARAGRAPHS = 1024;
-const MAX_GLYPHS = 65_536;
+const MAX_GLYPHS = 131_072;
+const MAX_GLYPH_ATLAS_ENTRIES = 4096;
 const MAX_DISPLAY_LIST_BYTES = 26 * 1024 * 1024;
 const encoder = new TextEncoder();
+
+function decodeGlyphAtlas(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) {
+    fail("RICH_PREVIEW_INVALID_ATLAS", "A version 2 preview needs a glyph atlas.");
+  }
+  let decoded;
+  try { decoded = decodeDisplayList(bytes); }
+  catch (error) { fail("RICH_PREVIEW_INVALID_ATLAS", error?.message || "Invalid glyph atlas."); }
+  const bounds = decoded.page.bounds;
+  if (Math.abs(bounds.width - A4_WIDTH) > 0.02 || Math.abs(bounds.height - A4_HEIGHT) > 0.02
+      || decoded.commands.length > MAX_GLYPH_ATLAS_ENTRIES
+      || decoded.commands.some(command => command.type !== "fillPath" || command.rule !== "nonZero"
+        || command.color.r !== 0 || command.color.g !== 0 || command.color.b !== 0 || command.color.a !== 1)) {
+    fail("RICH_PREVIEW_INVALID_ATLAS", "Glyph atlas must contain bounded black, nonzero contour paths.");
+  }
+  return decoded.commands;
+}
 
 export class RichPreviewError extends Error {
   constructor(code, message = code) {
@@ -39,7 +57,9 @@ function prepareDocument(document) {
     fail("RICH_PREVIEW_INVALID_DOCUMENT", "Preview notice count must be an unsigned 32-bit integer.");
   }
 
-  let totalBytes = 0;
+  const glyphAtlas = document.glyphAtlas === undefined ? null : decodeGlyphAtlas(document.glyphAtlas);
+  let totalBytes = document.glyphAtlas?.byteLength ?? 0;
+  if (totalBytes > MAX_DISPLAY_LIST_BYTES) fail("RICH_PREVIEW_LIMIT", "Preview atlas and display lists exceed 26 MiB.");
   let totalGlyphs = 0;
   const pages = document.pages.map(page => {
     let decoded;
@@ -58,12 +78,18 @@ function prepareDocument(document) {
       fail("RICH_PREVIEW_INVALID_ATDL", "Preview pages must use A4 portrait dimensions.");
     }
     for (const command of decoded.commands) {
-      if (command.type === "drawGlyphRun") totalGlyphs += command.glyphs.length;
+      if (command.type === "drawGlyphRun") {
+        totalGlyphs += command.glyphs.length;
+        if (glyphAtlas && (command.fontId !== 0n
+            || command.glyphs.some(glyph => glyph.glyphId >= glyphAtlas.length))) {
+          fail("RICH_PREVIEW_INVALID_ATLAS", "Preview page references a missing glyph atlas entry.");
+        }
+      }
       if (totalGlyphs > MAX_GLYPHS) fail("RICH_PREVIEW_LIMIT", "Preview contains too many glyphs.");
     }
     return decoded;
   });
-  return { pages, text: document.text, noticeCount: document.noticeCount };
+  return { pages, glyphAtlas, text: document.text, noticeCount: document.noticeCount };
 }
 
 /** A read-only, independently scrollable ATDL preview. It has no editor/model reference. */
@@ -78,7 +104,12 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
     throw new TypeError("Preview callbacks must be functions.");
   }
 
-  const renderer = new CanvasRenderer(canvas, { pageBackground: "#ffffff" });
+  let glyphAtlas = null;
+  const renderer = new CanvasRenderer(canvas, {
+    pageBackground: "#ffffff",
+    resolveGlyph: (fontId, glyphId) => fontId === 0n && glyphAtlas?.[glyphId]
+      ? { path: makePath(glyphAtlas[glyphId].path) } : null,
+  });
   let document = null;
   let opened = false;
   let disposed = false;
@@ -195,8 +226,10 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
 
     // All page and metadata checks have passed; publish the new document as one operation.
     document = prepared;
+    glyphAtlas = prepared.glyphAtlas;
     zoom = 1;
     zoomMode = "custom";
+    renderer.glyphCache.clear();
     renderer.setPages(prepared.pages);
     textRepresentation.textContent = prepared.text;
     scrollport.scrollTop = 0;

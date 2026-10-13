@@ -192,7 +192,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor.rs",
-    "source_location": "L1056",
+    "source_location": "L1067",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -303,6 +303,17 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/rich_preview.rs",
     "source_location": "L16",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_preview",
+    "target": "btreemap",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_preview.rs",
+    "source_location": "L17",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -3085,7 +3096,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/geom/src/lib.rs",
-    "source_location": "L696",
+    "source_location": "L743",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
