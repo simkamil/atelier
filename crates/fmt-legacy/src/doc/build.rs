@@ -635,6 +635,21 @@ fn build_segments(
     Ok(segs)
 }
 
+/// Paragraph ids below a section body (tables and cells included).
+fn collect_paragraphs(doc: &RichDocument, root: NodeId, out: &mut Vec<NodeId>) {
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        match doc.node(id) {
+            Some(Node::Paragraph(_)) => out.push(id),
+            Some(Node::Section(s)) => stack.extend(s.body.to_vec().into_iter().rev()),
+            Some(n @ (Node::Table(_) | Node::Row(_) | Node::Cell(_))) => {
+                stack.extend(n.children().into_iter().rev());
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Detached copy of the branch rooted at `root`, taken out of `nodes`.
 fn take_subtree(nodes: &mut BTreeMap<NodeId, Node>, root: NodeId) -> Subtree {
     let mut out = BTreeMap::new();
@@ -1060,15 +1075,12 @@ pub(super) fn import(cfb: &Compound, limits: &DocLimits) -> Result<ImportedDoc, 
             });
         }
     }
-    if order.is_empty() {
-        order = b.document.section_ids().first().map_or_else(Vec::new, |_| {
-            b.document
-                .block_ids(Some(section_ids[0]))
-                .unwrap_or_default()
-        });
+    // Body paragraphs in document order, read back from the model (cells
+    // absorbed by a vertical merge are gone, merged content has moved).
+    order.clear();
+    for sec in &section_ids {
+        collect_paragraphs(&b.document, *sec, &mut order);
     }
-    // Cells absorbed by a vertical merge no longer exist.
-    order.retain(|id| b.document.paragraph(*id).is_ok());
     b.document.validate().map_err(Builder::model_err)?;
 
     // Notices, in a stable order.

@@ -171,6 +171,10 @@ pub struct DocSpec {
     pub data: Option<Vec<u8>>,
     /// Use the `[0][cb2]` long form for every PAPX entry.
     pub long_papx: bool,
+    /// Section properties (grpprl) of each section, stored in `WordDocument`.
+    pub sepx: Vec<Vec<u8>>,
+    /// Extra table-stream structures: `(pair index, data, lcb override)`.
+    pub table_extra: Vec<(usize, Vec<u8>, Option<u32>)>,
 }
 
 impl DocSpec {
@@ -193,6 +197,8 @@ impl DocSpec {
             summary: None,
             data: None,
             long_papx: false,
+            sepx: Vec::new(),
+            table_extra: Vec::new(),
         }
     }
     pub fn ansi(text: &str) -> Self {
@@ -434,6 +440,13 @@ impl DocSpec {
             }
             plc
         };
+        let mut sepx_offsets = Vec::new();
+        for g in &self.sepx {
+            align(&mut word, 2);
+            sepx_offsets.push(word.len() as u32);
+            put16(&mut word, g.len() as u16);
+            word.extend_from_slice(g);
+        }
         let chpx_plc = bte(chpx_entries, false, &mut word);
         let papx_plc = bte(papx_entries, true, &mut word);
 
@@ -504,10 +517,18 @@ impl DocSpec {
             for e in &self.section_ends {
                 put32(&mut sed, *e);
             }
-            for _ in &self.section_ends {
-                sed.extend_from_slice(&[0u8; 12]);
+            for i in 0..self.section_ends.len() {
+                // Sed: fn (2), fcSepx (4), fnMpr (2), fcMpr (4).
+                put16(&mut sed, 0);
+                put32(&mut sed, sepx_offsets.get(i).copied().unwrap_or(0));
+                sed.extend_from_slice(&[0u8; 6]);
             }
             pairs[6] = place(&mut table, &sed);
+        }
+
+        for (i, data, lcb) in &self.table_extra {
+            let (fc, len) = place(&mut table, data);
+            pairs[*i] = (fc, lcb.unwrap_or(len));
         }
 
         // FIB.

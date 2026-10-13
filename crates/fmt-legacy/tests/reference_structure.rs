@@ -124,7 +124,11 @@ fn tables() {
             .collect();
         assert_eq!(table.grid.len(), grid.len());
         for (g, w) in table.grid.iter().zip(&grid) {
-            assert!(close(i64::from(g.unwrap()), *w), "{:?} vs {grid:?}", table.grid);
+            assert!(
+                close(i64::from(g.unwrap()), *w),
+                "{:?} vs {grid:?}",
+                table.grid
+            );
         }
         let mut got: Vec<(i64, i64, i64, i64, String)> = doc
             .tables
@@ -146,13 +150,24 @@ fn tables() {
             .iter()
             .map(|c| {
                 let a = c.arr();
-                (a[0].num(), a[1].num(), a[2].num(), a[3].num(), a[4].str().to_owned())
+                (
+                    a[0].num(),
+                    a[1].num(),
+                    a[2].num(),
+                    a[3].num(),
+                    a[4].str().to_owned(),
+                )
             })
             .collect();
         want.sort();
         assert_eq!(got, want);
         // The model cells agree with the companion structure.
-        for (cid, c) in doc.tables.cells.iter().filter(|(_, c)| c.table == Some(*tid)) {
+        for (cid, c) in doc
+            .tables
+            .cells
+            .iter()
+            .filter(|(_, c)| c.table == Some(*tid))
+        {
             let Some(Node::Cell(n)) = doc.document.node(*cid) else {
                 panic!("cell node")
             };
@@ -247,7 +262,13 @@ fn lists() {
         }
         let g = order.iter().position(|x| *x == item.list_id).unwrap();
         got.push((text(&doc, item.paragraph), g as i64, i64::from(item.level)));
-        let r = doc.document.paragraph(item.paragraph).unwrap().props.list.unwrap();
+        let r = doc
+            .document
+            .paragraph(item.paragraph)
+            .unwrap()
+            .props
+            .list
+            .unwrap();
         assert_eq!((r.list_id, r.level), (item.list_id, item.level));
     }
     let want: Vec<(String, i64, i64)> = model
@@ -264,12 +285,20 @@ fn lists() {
     for (g, levels) in model.get("groups").unwrap().arr().iter().enumerate() {
         let list = &doc.lists[order[g] as usize - 1];
         for (i, l) in levels.arr().iter().enumerate() {
-            let want: Vec<String> = l.arr().iter().map(|v| match v {
-                Json::Str(s) => s.clone(),
-                Json::Num(n) => (*n as i64).to_string(),
-                _ => unreachable!(),
-            }).collect();
-            assert_eq!(level_kind(&list.levels[i].kind), want, "group {g} level {i}");
+            let want: Vec<String> = l
+                .arr()
+                .iter()
+                .map(|v| match v {
+                    Json::Str(s) => s.clone(),
+                    Json::Num(n) => (*n as i64).to_string(),
+                    _ => unreachable!(),
+                })
+                .collect();
+            assert_eq!(
+                level_kind(&list.levels[i].kind),
+                want,
+                "group {g} level {i}"
+            );
         }
     }
     // Restarted numbering is a different list instance with its own start.
@@ -286,11 +315,22 @@ fn sections() {
         assert_eq!(s.section, doc.document.section_ids()[s.index]);
         let label = w.get("text").unwrap().str();
         assert_eq!(text(&doc, first_paragraph(&doc, s.section)), label);
-        assert_eq!(format!("{:?}", s.break_type), w.get("break").unwrap().str(), "{label}");
-        assert_eq!(i64::from(s.columns.count), w.get("columns").unwrap().num(), "{label}");
+        assert_eq!(
+            format!("{:?}", s.break_type),
+            w.get("break").unwrap().str(),
+            "{label}"
+        );
+        assert_eq!(
+            i64::from(s.columns.count),
+            w.get("columns").unwrap().num(),
+            "{label}"
+        );
         if let Some(v) = w.get("width") {
             assert!(close(i64::from(s.page.width.unwrap()), v.num()), "{label}");
-            assert!(close(i64::from(s.page.height.unwrap()), w.get("height").unwrap().num()));
+            assert!(close(
+                i64::from(s.page.height.unwrap()),
+                w.get("height").unwrap().num()
+            ));
             assert_eq!(
                 s.page.landscape,
                 matches!(w.get("landscape").unwrap(), Json::Bool(true))
@@ -310,7 +350,11 @@ fn sections() {
             assert!(close(i64::from(s.columns.spacing.unwrap()), v.num()));
         }
         if let Some(f) = w.get("format") {
-            assert_eq!(format!("{:?}", s.page_numbers.format.unwrap()), f.str(), "{label}");
+            assert_eq!(
+                format!("{:?}", s.page_numbers.format.unwrap()),
+                f.str(),
+                "{label}"
+            );
         }
         assert_eq!(
             s.page_numbers.restart,
@@ -324,7 +368,11 @@ fn sections() {
 }
 
 fn render(doc: &ImportedDoc, hf: NodeId) -> String {
-    let ids = doc.header_paragraphs.iter().find(|(h, _)| *h == hf).unwrap();
+    let ids = doc
+        .header_paragraphs
+        .iter()
+        .find(|(h, _)| *h == hf)
+        .unwrap();
     ids.1
         .iter()
         .map(|id| {
@@ -349,7 +397,10 @@ fn headers_and_footers() {
     let want = model.get("sections").unwrap().arr();
     assert_eq!(doc.sections.len(), want.len());
     for (s, w) in doc.sections.iter().zip(want) {
-        assert_eq!(s.title_page, matches!(w.get("title_page").unwrap(), Json::Bool(true)));
+        assert_eq!(
+            s.title_page,
+            matches!(w.get("title_page").unwrap(), Json::Bool(true))
+        );
         let mut got = Vec::new();
         for h in &s.headers_footers {
             if let HfState::Present(id) = h.state {
@@ -394,14 +445,25 @@ fn fields_links_and_bookmarks() {
         let p = doc.document.paragraph(*id).unwrap();
         for b in &p.bookmarks {
             let imported = doc.bookmarks.iter().find(|x| x.bookmark == b.id).unwrap();
-            bookmarks.push((b.name.clone(), p.text.clone(), b.start, b.end, imported.truncated));
+            bookmarks.push((
+                b.name.clone(),
+                p.text.clone(),
+                b.start,
+                b.end,
+                imported.truncated,
+            ));
         }
         for l in &p.links {
             let (kind, value) = match &l.target {
                 LinkTarget::External(u) => ("External", u.clone()),
                 LinkTarget::Bookmark(n) => ("Bookmark", n.clone()),
             };
-            links.push((p.text[l.start..l.end].to_owned(), kind, value, l.tooltip.clone()));
+            links.push((
+                p.text[l.start..l.end].to_owned(),
+                kind,
+                value,
+                l.tooltip.clone(),
+            ));
         }
         for f in &p.fields {
             fields.push(f.instruction.clone());
