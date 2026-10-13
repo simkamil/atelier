@@ -142,9 +142,7 @@ fn fixed_seed_property_over_sizes_and_contents() {
             3 => 131_073,
             _ => (r.next() % 500_000) as usize + 1,
         };
-        let period = [
-            1, 2, 3, 258, 32_767, 32_768, 32_769, 65_535, 65_536, 65_537,
-        ][case % 10];
+        let period = [1, 2, 3, 258, 32_767, 32_768, 32_769, 65_535, 65_536, 65_537][case % 10];
         let seed = r.next() | 1;
         check("periodic", &periodic(size, period, seed));
         check("random", &random(size.min(100_000), seed));

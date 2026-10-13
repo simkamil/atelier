@@ -1252,3 +1252,28 @@ impl<'a> BitWriter<'a> {
         self.written
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::make_lengths;
+
+    fn fibonacci(n: usize) -> Vec<u32> {
+        let mut freq = vec![1u32; n];
+        for i in 2..n {
+            freq[i] = freq[i - 1] + freq[i - 2];
+        }
+        freq
+    }
+
+    // Fibonacci frequencies give the deepest possible tree, so they force the
+    // length-limiting branch; the limited code must stay complete.
+    #[test]
+    fn limited_lengths_form_a_complete_code() {
+        for (symbols, max_bits) in [(11, 7), (19, 7), (19, 15), (40, 15)] {
+            let lens = make_lengths(&fibonacci(symbols), max_bits);
+            let kraft: u64 = lens.iter().map(|&l| 1u64 << (max_bits - l as usize)).sum();
+            assert!(lens.iter().all(|&l| l >= 1 && l as usize <= max_bits));
+            assert_eq!(kraft, 1 << max_bits, "{symbols} symbols, limit {max_bits}");
+        }
+    }
+}
