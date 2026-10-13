@@ -1092,6 +1092,8 @@ Réf : F-TXT-034 · Taille : M · Dépend de : US-113, US-200
 - [ ] Insérer, renommer, supprimer un signet, trier par nom ou position ; affichage facultatif des crochets de signet.
 - [ ] Dialogue Atteindre : page, section, ligne, signet, tableau, image ; valeurs relatives (+3).
 
+Avancement US-291 (2026-10-13) : bibliothèque livrée dans `atelier_text_model::navigation` (signets : insérer, déplacer, renommer avec mise à jour des liens, supprimer, trier ; Atteindre : page, section, ligne, signet, tableau, objet, titre, valeurs relatives, forme `p3s2`), relue par un agent indépendant et corrigée ; [contrat](docs/us-291-bookmarks-goto.md). Reste ouvert : dialogues Signet et Atteindre, crochets de signet, défilement de la vue, table des pages et des lignes fournie par la mise en page. Un signet ne peut pas couvrir plusieurs paragraphes (limite du modèle).
+
 Réf : F-TXT-034 · Taille : S · Dépend de : US-200
 
 ## E1.9 — Formats de fichiers
