@@ -5,5 +5,15 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[dependencies]
+atelier-compress = { path = "../compress" }
+atelier-font = { path = "../font" }
+atelier-geom = { path = "../geom" }
+atelier-image = { path = "../image" }
+atelier-render = { path = "../render" }
+
+[dev-dependencies]
+atelier-raster = { path = "../raster" }
+
 [lints]
 workspace = true
