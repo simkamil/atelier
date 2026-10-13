@@ -1,0 +1,546 @@
+$ cargo fmt --all --check
+$ cargo clippy -p atelier-desktop-win -p atelier-font -p atelier-shape -p atelier-core-wasm --all-targets --locked --offline -- -D warnings
+    Checking atelier-font v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\font)
+   Compiling atelier-desktop-win v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\desktop-win)
+    Checking atelier-shape v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\shape)
+    Checking atelier-fmt-ooxml v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\fmt-ooxml)
+    Checking atelier-text-layout v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\text-layout)
+    Checking atelier-render v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\render)
+    Checking atelier-core-wasm v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\core-wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.64s
+$ cargo test -p atelier-desktop-win -p atelier-font -p atelier-shape -p atelier-core-wasm --locked --offline
+
+running 12 tests
+test editor::navigation_tests::selecting_a_unit_starting_at_base_end_extends_forward ... ok
+test tests::zero_length_is_noop_and_never_enters_the_registry ... ok
+test protocol::tests::all_types_round_trip_and_header_is_little_endian ... ok
+test protocol::tests::copies_payload_and_enforces_size_limit ... ok
+test protocol::tests::rejects_invalid_fields_direction_ids_and_control_payloads ... ok
+test protocol::tests::rejects_oversized_encode_and_declared_payload_before_copying ... ok
+test tests::allocation_limits_are_checked_before_allocation ... ok
+test tests::exact_pointer_and_length_are_required_for_release ... ok
+test tests::in_flight_dispatch_input_remains_charged_until_replaced_or_released ... ok
+test editor_layout::tests::path_budget_rejects_before_adding_elements_or_bytes ... ok
+test protocol::tests::rejects_every_truncated_prefix_and_trailing_bytes ... ok
+test tests::exact_take_transfers_ownership_and_updates_totals ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test stale_or_malformed_commands_fail_without_publishing_state ... ok
+test external_drop_uses_source_zero_and_inserts_at_target ... ok
+test point_probe_returns_atpt_without_changing_selection_revision_or_undo_history ... ok
+test french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing ... ok
+test drop_move_before_after_and_copy_inside_are_single_reversible_transactions ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+
+running 17 tests
+test malformed_commands_and_invalid_utf8_are_rejected_without_publishing_candidate ... ok
+test atlm_editor_response_keeps_the_request_id_and_editor_types_are_registered ... ok
+test invalid_select_point_fails_through_wasm_without_mutating_the_session ... ok
+test select_point_character_extension_accepts_a_nonzero_anchor ... ok
+test empty_and_loaded_document_emit_real_carlito_paths_and_preserve_bom_crlf ... ok
+test selecting_only_an_explicit_newline_emits_a_thin_selection_rectangle ... ok
+test loading_identical_content_does_not_advance_content_revision ... ok
+test select_point_selects_word_and_crlf_terminated_paragraph ... ok
+test loading_short_text_rebuilds_pages_and_glyph_paths_after_a_long_document ... ok
+test crlf_is_removed_as_one_grapheme_and_selection_hit_testing_uses_page_slots ... ok
+test word_delete_is_one_undoable_edit_and_restores_a_reversed_utf8_selection ... ok
+test edit_undo_and_stale_save_preserve_revision_dirty_and_document_state ... ok
+test vertical_navigation_keeps_the_preferred_column_across_a_short_line ... ok
+test word_and_paragraph_navigation_respect_unicode_segments_and_crlf ... ok
+test paragraph_navigation_uses_logical_boundaries_and_resets_preferred_x ... ok
+test paragraph_navigation_clears_the_previous_vertical_column ... ok
+test navigation_is_safe_on_fresh_session_and_collapses_selections_by_direction ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 4 tests
+test malformed_search_frames_and_stale_revisions_are_rejected ... ok
+test unicode_search_uses_exact_ranges_and_cached_geometry_without_changing_state ... ok
+test statistics_reports_selection_counts_and_layout_totals_without_mutation ... ok
+test empty_and_capped_searches_have_bounded_envelopes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.33s
+
+
+running 1 test
+test exact_transport_limit_round_trips_and_oversized_input_is_rejected ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+
+running 4 tests
+test no_match_and_identical_replacement_keep_revision_and_history ... ok
+test selected_unicode_match_and_stale_selection_are_checked ... ok
+test stale_revision_invalid_frames_and_output_overflow_are_atomic ... ok
+test replace_all_processes_the_original_matches_once_and_undoes_as_one_edit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+
+running 8 tests
+test invalid_and_over_limit_docx_return_controlled_errors ... ok
+test inline_bold_italic_underline_and_size_reach_the_display_list ... ok
+test tab_control_keeps_its_advance_without_drawing_notdef ... ok
+test nonbreaking_hyphen_keeps_its_text_and_uses_the_hyphen_outline ... ok
+test paragraph_and_text_budgets_reject_oversized_models ... ok
+test reference_docx_renders_real_title_color_and_valid_page ... ok
+test generated_long_docx_paginates_without_losing_text_order ... ok
+test glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 34.84s
+
+
+running 2 tests
+test common_empty_paragraphs_can_be_previewed ... ok
+test preview_success_and_failure_preserve_txt_selection_history_dirty_and_revision ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 54 tests
+test build_date::tests::build_dates_follow_utc_and_reproducible_epoch ... ok
+test data::tests::executable_without_a_parent_is_reported_to_the_choice_callback ... ok
+test data::tests::relative_executable_is_reported_to_the_single_choice_callback ... ok
+test data::win32::tests::message_box_responses_match_the_french_prompt ... ok
+test file_bridge::tests::canonical_base64_round_trips_and_rejects_noncanonical_forms ... ok
+test file_bridge::tests::ingress_enforces_origin_format_replay_and_capacity ... ok
+test file_bridge::tests::open_docx_has_a_distinct_bounded_operation ... ok
+test file_bridge::tests::page_epoch_blocks_reload_after_initial_document ... ok
+test file_dialog::tests::filter_pattern_has_only_validated_wildcards ... ok
+test file_dialog::tests::validates_filters_before_any_native_call ... ok
+test file_dialog::tests::cancel_hresult_is_distinct_and_owned_interfaces_release_once ... ok
+test files::tests::bounded_reader_detects_growth_after_metadata_and_honors_exact_limit ... ok
+test webview::embedded_resources::tests::failed_navigation_and_new_window_uri_getters_still_refuse_by_default ... ok
+test resources::tests::attempt_log_is_bounded_and_redacts_query_and_fragment ... ok
+test resources::tests::local_resource_method_and_denial_matrix ... ok
+test webview::embedded_resources::tests::failed_resource_request_getter_installs_a_forbidden_response ... ok
+test webview::tests::debug_tools_expectation_tracks_build_profile ... ok
+test webview::tests::callback_state_survives_host_drop_until_final_com_release ... ok
+test webview::tests::missing_runtime_never_runs_cache_creation_and_ready_runtime_does ... ok
+test window::tests::state_round_trip_and_hostile_state_falls_back ... ok
+test window::tests::restores_negative_and_removed_monitor_geometry_at_target_dpi ... ok
+test window::tests::scales_default_and_minimum_geometry_at_192_dpi ... ok
+test webview::tests::runtime_missing_diagnostic_contains_copy_hint_and_official_url ... ok
+test webview::tests::late_controller_result_is_closed_without_host_context ... ok
+test webview::tests::query_interface_accepts_unknown_and_exact_callback_iid_only ... ok
+test window::tests::minimum_size_shrinks_to_fit_a_small_work_area ... ok
+test window::win32::tests::minimized_maximized_window_restores_its_normal_maximized_state ... ok
+test window::win32::tests::temporary_name_collision_preserves_the_existing_file ... ok
+test window::win32::tests::self_check_accepts_normal_absolute_workspace_target_path ... ok
+test data::tests::portable_paths_share_root_and_accessors_create_no_subdirectories ... ok
+test data::tests::relative_local_appdata_fails_without_creating_it ... ok
+test data::tests::local_choice_is_explicit_and_uses_one_local_root ... ok
+test data::tests::local_choice_without_local_appdata_fails_without_fallback ... ok
+test data::tests::probe_retries_collision_then_cleans_its_file_without_touching_existing_file ... ok
+test data::tests::probe_stops_after_sixteen_collisions_and_preserves_the_existing_file ... ok
+test data::tests::inaccessible_local_storage_is_final_and_does_not_retry_the_choice ... ok
+test data::tests::move_and_quit_never_create_or_inspect_local_path ... ok
+test window::win32::tests::common_file_route_returns_cancel_and_dialog_errors ... ok
+test files::tests::changed_or_directory_destination_is_refused_before_publication ... ok
+test files::tests::opened_substitute_handle_is_rejected_before_reading_bytes ... ok
+test files::tests::broker_reads_exact_binary_bytes_and_revokes_tickets ... ok
+test files::tests::wrong_right_invalid_paths_and_symlinks_are_rejected ... ok
+test files::tests::concurrent_new_destination_is_never_overwritten_and_temp_is_removed ... ok
+test window::tests::hidden_window_self_check_runs_beneath_target ... ok
+test files::tests::existing_destination_disappearing_or_becoming_a_directory_is_refused ... ok
+test files::tests::tickets_cannot_cross_broker_instances_for_read_or_write ... ok
+test file_bridge::tests::decoded_size_limit_is_enforced_at_exact_boundary ... ok
+test window::win32::tests::docx_route_selects_its_own_dialog_and_accepts_files_over_txt_limit ... ok
+test window::win32::tests::common_file_route_uses_distinct_dialogs_and_selected_paths ... ok
+test files::tests::every_prepublication_failure_preserves_old_bytes_and_cleans_own_temp ... ok
+test window::win32::tests::self_check_rejects_junction_before_creating_descendants ... ok
+test files::tests::existing_and_new_saves_publish_exact_bytes ... ok
+test file_bridge::tests::selected_paths_cover_success_cancellation_errors_and_revocation ... ok
+test files::tests::ticket_registry_is_bounded_and_revocation_frees_capacity_without_reusing_ids ... ok
+
+test result: ok. 54 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s
+
+
+running 1 test
+test tests::resolved_storage_controls_normal_startup_and_local_title ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 2 tests
+test resources::tests::local_resource_method_and_denial_matrix ... ok
+test resources::tests::attempt_log_is_bounded_and_redacts_query_and_fragment ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test native_dialog_cancel_is_not_reported_as_a_system_error ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 20 tests
+test layout::tests::coverage_and_class_def_formats_one_and_two_validate_and_resolve ... ok
+test layout::tests::gdef_version_headers_and_ignore_marks_class_definition_are_checked ... ok
+test layout::tests::ignore_marks_does_not_filter_the_current_glyph ... ok
+test layout::tests::legacy_kern_rejects_nonzero_subtable_version ... ok
+test layout::tests::gsub_single_substitution_formats_one_and_two_work ... ok
+test layout::tests::lookup_and_ligature_priority_use_first_match_in_lookup_list_order ... ok
+test tests::validates_name_utf16_and_format_one_language_records ... ok
+test tests::rejects_overflowing_table_ranges ... ok
+test layout::tests::validation_limit_accepts_exact_budget_and_rejects_one_less ... ok
+test layout::tests::pair_value_format_two_adjusts_second_glyph_and_advances_cursor ... ok
+test tests::reads_cmap_metrics_and_repeated_horizontal_advance ... ok
+test tests::rejects_short_and_invalid_inputs_without_panicking ... ok
+test tests::resolves_bmp_cmap_formats_four_and_six ... ok
+test tests::selects_and_bounds_ttc_faces ... ok
+test layout::tests::gpos_pair_class_matrix_format_two_applies_signed_value ... ok
+test tests::preferred_cmap_is_used_exclusively ... ok
+test layout::tests::required_feature_deduplicates_lookup_and_extension_recursion_is_rejected ... ok
+test layout::tests::runtime_searches_are_logarithmic_for_long_glyph_runs ... ok
+test tests::bounds_alias_amplification_in_format14 ... ok
+test layout::tests::single_substitution_coverage_ranges_are_budgeted_linearly ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+test cache_tokens_distinguish_managers_and_survive_moves ... ok
+test successful_mutations_renew_tokens_and_failures_preserve_them ... ok
+test concurrent_manager_creation_does_not_alias_tokens ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 38 tests
+test contour_without_drawing_is_dropped_and_empty_glyph_is_empty ... ok
+test moves_and_lines_close_contours_implicitly ... ok
+test dict_numbers_include_integers_and_reals ... ok
+test cff2_and_missing_outline_tables_are_reported ... ok
+test seac_nesting_and_budgets_are_bounded ... ok
+test cid_keyed_fonts_select_private_dicts_by_fdselect ... ok
+test curve_operators_match_the_specification ... ok
+test face_outline_dispatches_to_cff_without_the_caller_knowing ... ok
+test drawing_operators_validate_their_argument_counts ... ok
+test arithmetic_and_stack_operators ... ok
+test arithmetic_failures_are_typed ... ok
+test fd_font_matrices_are_composed_with_the_top_dict_matrix ... ok
+test headers_versions_and_indexes_are_validated ... ok
+test charsets_and_strings ... ok
+test invalid_font_matrices_are_typed_errors ... ok
+test invalid_cid_structures_are_rejected ... ok
+test optional_width_is_read_from_the_first_stack_clearing_operator ... ok
+test nested_seac_used_as_accent_keeps_the_parent_origin ... ok
+test rounded_reciprocal_matrices_match_their_em_without_distortion ... ok
+test seac_components_use_their_own_subroutines_and_nominal_width ... ok
+test predefined_charsets_are_resolved_from_their_tables ... ok
+test empty_charstring_is_an_empty_glyph_with_the_default_width ... ok
+test seac_failures_are_typed ... ok
+test stack_points_and_contour_budgets ... ok
+test standard_strings_and_glyph_names ... ok
+test endchar_with_four_arguments_composes_base_and_shifted_accent ... ok
+test hint_masks_skip_the_right_number_of_bytes ... ok
+test subroutines_nest_up_to_ten_levels_and_endchar_ends_the_glyph ... ok
+test font_matrix_reaches_faces_through_units_per_em ... ok
+test zero_units_per_em_is_rejected_for_both_font_matrix_kinds ... ok
+test structural_charstring_errors_are_typed ... ok
+test top_dict_font_matrix_is_applied_in_caller_units ... ok
+test synthetic_fonttools_oracle_matches_rust_decoder ... ok
+test local_and_global_subroutines_use_the_three_bias_ranges ... ok
+test subroutine_errors_and_budgets ... ok
+test random_seac_arguments_never_loop_or_panic ... ok
+test mutated_charstrings_never_loop_or_panic ... ok
+test seeded_mutation_and_truncation_campaign_never_panics ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+
+running 3 tests
+test catalog_has_each_family_weight_and_slant_once ... ok
+test each_catalog_entry_exposes_its_complete_license_notice ... ok
+test every_face_parses_and_matches_catalog_metadata ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+test absent_tables_are_identity_and_input_and_work_limits_are_checked ... ok
+test gpos_kern_feature_takes_precedence_over_legacy_kern ... ok
+test ligature_merges_components_and_ignore_marks_keeps_the_mark ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test all_embedded_faces_match_independent_harfbuzz_latin_references ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+
+running 12 tests
+test explicit_sources_have_stable_precedence_and_ttc_face_index_is_retained ... ok
+test empty_registry_and_invalid_requests_have_typed_errors ... ok
+test absent_generic_uses_best_style_and_weight_in_first_covering_family ... ok
+test english_windows_family_display_is_stable_when_name_records_are_reordered ... ok
+test request_inside_400_to_500_prefers_exact_then_searches_upward ... ok
+test rejected_registrations_are_atomic_and_removed_ids_are_not_reused ... ok
+test display_glyph_fallback_prefers_en_dash_and_is_limited_to_nonbreaking_hyphen ... ok
+test character_resolution_skips_noncovering_faces_and_reports_missing_glyph ... ok
+test css_weight_and_style_proximity_are_deterministic ... ok
+test default_manager_registers_all_twenty_embedded_faces_and_alias_variants ... ok
+test character_resolution_accepts_the_nonbreaking_hyphen_display_fallback ... ok
+test aliases_are_case_and_whitespace_insensitive_and_generic_fallback_works ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 4 tests
+test invalid_weight_and_face_index_fail_without_consuming_ids_or_bytes ... ok
+test oblique_metadata_requires_version_four_and_does_not_come_from_name ... ok
+test uncovered_family_falls_through_before_source_and_style_matching ... ok
+test css_search_uses_each_weight_interval_and_exact_match ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+test repeated_horizontal_advance_and_name_records_match_fixture_contract ... ok
+test parses_generated_ttc_faces_and_variation_sequences ... ok
+test parses_generated_sfnt_faces_and_cmap_formats ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 7 tests
+test invalid_glyph_and_resource_budgets_return_typed_errors ... ok
+test composites_fit_a_zero_component_budget_only_when_glyph_is_simple ... ok
+test corrupted_loca_and_composite_cycles_fail_cleanly ... ok
+test malformed_simple_flags_and_truncated_coordinates_return_typed_errors ... ok
+test contradictory_composite_transforms_return_typed_errors ... ok
+test nested_composite_budgets_accept_exact_totals_and_reject_one_less ... ok
+test every_glyph_in_embedded_faces_decodes_without_panicking_or_partial_output ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.69s
+
+
+running 1 test
+test embedded_outlines_match_fonttools_reference_geometry ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 10 tests
+test missing_os2_means_installable ... ok
+test glyph_out_of_range_is_a_typed_error ... ok
+test cyclic_and_out_of_range_composites_are_typed_errors ... ok
+test single_glyph_empty_set_and_duplicates ... ok
+test output_is_deterministic_and_describes_the_font ... ok
+test composite_components_are_added_to_the_subset ... ok
+test every_fs_type_pattern_follows_the_specification ... ok
+test seeded_mutation_and_truncation_campaign_never_panics ... ok
+test all_glyphs_subset_is_equivalent ... ok
+test embedded_fonts_subset_to_identical_outlines_and_metrics ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.85s
+
+
+running 14 tests
+test seac_with_a_missing_component_is_a_typed_error ... ok
+test name_keyed_subset_keeps_outlines_widths_and_names ... ok
+test hint_masks_are_walked_with_the_right_length ... ok
+test hostile_charstrings_are_bounded ... ok
+test deprecated_dotsection_is_accepted_like_the_outline_reader ... ok
+test unused_subroutines_are_pruned_and_nested_calls_survive ... ok
+test seac_components_are_kept ... ok
+test opentype_cff_uses_hmtx_advances_and_head_metrics ... ok
+test all_glyph_subset_roundtrips_and_is_deterministic ... ok
+test bias_is_preserved_when_trailing_subroutines_are_dropped ... ok
+test checked_in_fonttools_oracle_font_subsets_with_its_nested_seac ... ok
+test cid_keyed_subset_selects_font_dicts_and_keeps_cids ... ok
+test large_font_charset_and_index_formats ... ok
+test seeded_mutation_and_truncation_campaign_never_panics ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s
+
+
+running 1 test
+test ui_symbol_catalogue_matches_the_engine_font_cmap ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 1 test
+test tests::signed_half_ties_round_away_from_zero ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 8 tests
+test validates_options_ranges_ids_and_input_limit ... ok
+test fractional_size_and_non_default_scale_match_independent_rational_result ... ok
+test fractional_scaling_rounds_ties_away_from_zero ... ok
+test text_maps_scalars_and_reports_utf8_grapheme_boundaries ... ok
+test output_glyph_and_total_advance_overflow_are_reported ... ok
+test nonbreaking_hyphen_uses_display_fallback_without_rewriting_source_clusters ... ok
+test generic_glyphs_preserve_clusters_and_spacing_groups ... ok
+test spacing_is_added_between_graphemes_not_inside_combining_or_emoji_sequences ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+test generic_overlapping_and_unordered_ranges_keep_consecutive_spacing_groups ... ok
+test spacing_disables_optional_ligatures_on_all_faces ... ok
+test complete_harfbuzz_corpus_matches_shaper_at_fractional_size_and_scale ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling atelier-font v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\font)
+   Compiling atelier-desktop-win v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\desktop-win)
+   Compiling atelier-shape v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\shape)
+   Compiling atelier-core-wasm v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\core-wasm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.27s
+     Running unittests src\lib.rs (target\debug\deps\atelier_core_wasm-744c746f8b2e855d.exe)
+     Running tests\drag_spacing.rs (target\debug\deps\drag_spacing-94d9e539c0f35d51.exe)
+     Running tests\editor_engine.rs (target\debug\deps\editor_engine-26d7c9a7351f9a27.exe)
+     Running tests\navigation_queries.rs (target\debug\deps\navigation_queries-c00e3f49ba860513.exe)
+     Running tests\protocol_boundaries.rs (target\debug\deps\protocol_boundaries-c0fec606f5207156.exe)
+     Running tests\replacement.rs (target\debug\deps\replacement-a76f9fb1e834a1a7.exe)
+     Running tests\rich_preview.rs (target\debug\deps\rich_preview-0cc224e5232a4a99.exe)
+     Running tests\rich_preview_session.rs (target\debug\deps\rich_preview_session-37d51e5146b9ae47.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_desktop_win-a88c97b58a9d601b.exe)
+     Running unittests src\main.rs (target\debug\deps\atelier-3e2567a0658c2918.exe)
+     Running tests\resources.rs (target\debug\deps\resources-56856b8027890852.exe)
+     Running tests\us113_file_access.rs (target\debug\deps\us113_file_access-562ebe1e41760966.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_font-948dc3a4e7042c0c.exe)
+     Running tests\cache_revision.rs (target\debug\deps\cache_revision-0a445a3990849d89.exe)
+     Running tests\cff_outlines.rs (target\debug\deps\cff_outlines-2af6c19cbbd8c083.exe)
+     Running tests\embedded.rs (target\debug\deps\embedded-77747ec31c521052.exe)
+     Running tests\layout.rs (target\debug\deps\layout-6400920411892ad4.exe)
+     Running tests\layout_reference.rs (target\debug\deps\layout_reference-5a52b0d39dd4ad41.exe)
+     Running tests\manager.rs (target\debug\deps\manager-3e21b352fa595b97.exe)
+     Running tests\manager_reference.rs (target\debug\deps\manager_reference-a8ef2fce318da67a.exe)
+     Running tests\opentype_fixtures.rs (target\debug\deps\opentype_fixtures-acc0ace76a56f426.exe)
+     Running tests\outlines.rs (target\debug\deps\outlines-8a118903ebdd3e09.exe)
+     Running tests\outlines_reference.rs (target\debug\deps\outlines_reference-32d697c49ed44029.exe)
+     Running tests\subset.rs (target\debug\deps\subset-e2dc651326f0299a.exe)
+     Running tests\subset_cff.rs (target\debug\deps\subset_cff-28588bfc3a093278.exe)
+     Running tests\ui_symbol_coverage.rs (target\debug\deps\ui_symbol_coverage-7ea5cc2bc1cf3030.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_shape-623c6998ac0d0348.exe)
+     Running tests\latin.rs (target\debug\deps\latin-9e73bacfe001430f.exe)
+     Running tests\reference.rs (target\debug\deps\reference-bad48373bb7aac9a.exe)
+   Doc-tests atelier_core_wasm
+   Doc-tests atelier_desktop_win
+   Doc-tests atelier_font
+   Doc-tests atelier_shape
+$ cargo clippy -p atelier-font -p atelier-shape -p atelier-core-wasm --target wasm32-unknown-unknown --all-targets --locked --offline -- -D warnings
+    Checking atelier-font v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\font)
+    Checking atelier-shape v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\shape)
+    Checking atelier-fmt-ooxml v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\fmt-ooxml)
+    Checking atelier-text-layout v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\text-layout)
+    Checking atelier-render v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\render)
+    Checking atelier-core-wasm v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\core-wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.20s
+$ cargo run -p atelier-check-workspace --locked --offline -- .
+Cargo.lock contains only workspace packages.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running `target\debug\atelier-check-workspace.exe .`
+$ cargo run -p atelier-check-license --locked --offline -- .
+All Rust source files have the required SPDX header.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target\debug\atelier-check-license.exe .`
+$ py tools/package-editor-utilities.py --check
+{"symbols": 2107, "blocks": 36, "fonts": 3, "version": "0.1.0"}
+$ node tests/check-i18n.mjs --quiet
+i18n : 35 fichiers, 217 clés au catalogue, 209 utilisées.
+
+Écarts connus de la référence (80) :
+  duplicate-key : 4 (web/i18n/fr-FR.txt 4)
+  hardcoded : 60 (web/app.mjs 51, web/editor.mjs 1, web/index.html 7, web/text-input.mjs 1)
+  missing-key : 8 (web/app.mjs 8)
+  unused-key : 8 (web/i18n/fr-FR.txt 8)
+
+Clés dynamiques, invérifiables (informatif, sans effet sur le code de sortie) (13) :
+  web/app.mjs:105: [dynamic-key] clé dynamique, invérifiable
+  web/app.mjs:105: [dynamic-key] clé dynamique, invérifiable
+  web/app.mjs:163: [dynamic-key] clé dynamique, invérifiable
+  web/app.mjs:184: [dynamic-key] clé dynamique, invérifiable
+  web/app.mjs:283: [dynamic-key] clé dynamique, invérifiable
+  web/app.mjs:372: [dynamic-key] clé dynamique, invérifiable
+  web/app.mjs:380: [dynamic-key] clé dynamique, invérifiable
+  web/editor-shell.mjs:9: [dynamic-key] clé dynamique, invérifiable
+  web/editor-shell.mjs:11: [dynamic-key] clé dynamique, invérifiable
+  web/editor-shell.mjs:12: [dynamic-key] clé dynamique, invérifiable
+  web/editor-shell.mjs:24: [dynamic-key] clé dynamique, invérifiable
+  web/editor-shell.mjs:34: [dynamic-key] clé dynamique, invérifiable
+  web/i18n.mjs:582: [dynamic-key] clé dynamique, invérifiable
+
+Résumé par catégorie :
+  duplicate-key : 4 (web/i18n/fr-FR.txt 4)
+  hardcoded : 60 (web/app.mjs 51, web/editor.mjs 1, web/index.html 7, web/text-input.mjs 1)
+  missing-key : 8 (web/app.mjs 8)
+  unused-key : 8 (web/i18n/fr-FR.txt 8)
+
+OK : aucun nouvel écart.
+$ node --test tests/editor-utilities-data.mjs tests/rich-preview.mjs tests/rich-preview-protocol.mjs tests/editor-protocol.mjs tests/editor-abi.mjs tests/display-list.mjs
+{"status":"passed","checks":["Rust-produced all-opcode ATDL, valid close-following segments, and u64 identifiers","strict truncation/tag/version/trailing/UTF-8/opcode rejection","stack underflow/depth and composed-transform limits","coordinate/color validation and subview offsets"]}
+✔ tests\display-list.mjs (993.6731ms)
+Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, ProbePoint/DropText/ReplaceRange, DOCX preview and 11 atomic SelectPoint rejections passed.
+✔ tests\editor-abi.mjs (241.4257ms)
+editor protocol/host checks passed: strict ATED/ATES/ATEX bounds, double BOM, correlation, host open/save/cancel/dirty
+✔ tests\editor-protocol.mjs (52.8744ms)
+{"status":"passed","symbols":2107,"unicodeNamesMatched":2107,"completeLicenses":5,"version":"0.1.0"}
+✔ tests\editor-utilities-data.mjs (75.1729ms)
+✔ ATRP owns pages, preserves Unicode/notices and rejects corrupt envelopes (2.4994ms)
+✔ DOCX command has an independent 8 MiB limit, TXT retains its own limit (3.8336ms)
+✔ Native DOCX reads up to 8 MiB with bounded reservations, strict base64 and cancellation (666.4281ms)
+{"status":"passed","checks":["A4 multi-page layout and accessible literal-text mirror","keyboard focus, Escape close and focus restoration","atomic rejection of malformed ATDL, decoded objects and oversized text","spacer recalculation from hidden install through open and resize, including narrow horizontal scrolling","zoom bounds, disposal and listener cleanup"]}
+✔ tests\rich-preview.mjs (123.1457ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1000.1984
+$ node tests/check-embedded-engine.mjs --compare-artifact
+{"status":"passed","bytes":4225833,"sha256":"2bfadb10b97872bd25333654a50cd5370704070dafe5beaa72cd0dfd69c4e047","source_count":160,"resource_count":36,"local_packages":["atelier-compress","atelier-core-wasm","atelier-fmt-ooxml","atelier-font","atelier-geom","atelier-model","atelier-render","atelier-shape","atelier-text-layout","atelier-text-model","atelier-ucd-gen","atelier-unicode","atelier-xml","atelier-zip"],"exact_local_artifact":true,"dispatch":"legacy ABI echo; editor semantics verified by separate integration suite"}
+$ node tests/check-wasm-size.mjs data/engine/atelier_core_wasm.wasm
+4225833 bytes / 4271903 byte limit (10% growth allowed from 3883549 bytes).
+$ node tests/run-editor-utilities-browser.mjs
+{"status":"passed","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0","checks":["right-click opens an accessible menu and prevents the browser menu","opening preserves revision and the active selection","injected labels are rendered as text","undo, redo, cut, and copy reflect the opening snapshot and capabilities","native contextmenu paired with a keyboard open does not create a second popup","right-click immediately after closing a keyboard menu opens a fresh popup","each opening recalculates action availability from current state","an artificially activated disabled action never reaches the command callback","keyboard opening sends the captured revision with the action","asynchronous clipboard failure is reported without component mutation","the command receives the revision captured for its own menu opening","busy state disables all editor actions","ContextMenu key opens the menu on the focused editor surface","closing returns focus to the configured editor input","dispose removes the menu and keyboard listener","dialog opens on the information tab with an accessible initial focus","dialog remains inside the available viewport","version, build date, and source address are displayed exactly and remain selectable text","source address is displayed without creating navigation","each notice has a named tab connected to its panel","AGPL notice preserves every supplied character and has an accessible name","long license content scrolls inside its bounded panel","license text resembling markup stays literal and cannot execute","Tab moves from the selected notice tab into its scrollable text panel","Tab remains trapped inside the modal dialog","Carlito notice is fully available through its selected tab","Caladea notice is fully available through its selected tab","Liberation notice is fully available through its selected tab","Unicode notice preserves all supplied characters","arrow keys move focus and activate the adjacent tab","End selects and focuses the last notice tab","Escape closes the modal and restores the opener focus","the dialog can be opened again before disposal","the returned close method closes the modal and restores the opener","the dialog can be reopened after a normal close","disposal removes the dialog and tabs listeners and prevents reopening","creating, opening, and browsing notices performs no fetch","missing build metadata is rejected rather than invented","picker uses the isolated shell class","opening focuses the symbol search field","visible symbol page is capped at 256 cells","additional symbols expose an explicit next page","all-blocks option has its own injected label","gridcells are nested in accessible rows","grid row and column metadata matches the rendered grid layout","pagination reports the current page and total","no-results state is announced and cannot insert without a choice","name search is case-insensitive and respects the selected block","repainting after a symbol click restores focus by code point","choosing a scalar enables insertion","unprefixed hex-like English names are searched as names","Unicode name search is independent of locale-sensitive lowercase behavior","explicit codepoint search exposes the known non-breaking hyphen despite missing font cmap coverage","explicit queries do not expose arbitrary unsupported scalars","code-point search accepts non-BMP scalars","async refusal receives the exact multibyte scalar once","refused insertion keeps the choice and does not record a recent symbol","callback false announces insertion failure inside the dialog","choice remains enabled for retry after callback refusal","rejected callback announces failure and retains the selected choice without recording a recent","tabs support orientation-aware keyboard focus and automatic activation","special-grid vertical arrows use the rendered six-column layout","special tab preserves and labels the NBSP scalar","special insertion passes the actual non-breaking space","successful insertion records the recent scalar and closes","recent symbols are deduplicated with the newest occurrence first","recent-symbol insertion fixture 0 exists","recent-symbol insertion fixture 1 exists","recent-symbol insertion fixture 2 exists","recent-symbol insertion fixture 3 exists","recent-symbol insertion fixture 4 exists","recent-symbol insertion fixture 5 exists","recent-symbol insertion fixture 6 exists","recent-symbol insertion fixture 7 exists","recent-symbol insertion fixture 8 exists","recent-symbol insertion fixture 9 exists","recent-symbol insertion fixture 10 exists","recent-symbol insertion fixture 11 exists","recent-symbol insertion fixture 12 exists","recent-symbol insertion fixture 13 exists","recent-symbol insertion fixture 14 exists","recent-symbol insertion fixture 15 exists","recent-symbol insertion fixture 16 exists","recent-symbol insertion fixture 17 exists","session recents retain at most the newest sixteen symbols","recent-grid keyboard navigation uses its rendered columns","recent-grid active position does not leak into the results grid","reopening restores focus to the search field in the active symbols tab","reopening with the special tab active focuses a visible special-grid cell","Escape closes and restores opener focus","dispose removes the dialog and listeners","invalid surrogate codepoints are rejected at catalogue validation"],"executable":"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"}
+$ node tests/run-ui-browser.mjs
+{"status":"passed","checks":["native button has a name and activates once","disabled button does not dispatch its callback","toggle exposes and reports its pressed state","toggle setter updates aria-pressed","split button separates its action and labeled menu trigger","pointerdown and click on an open split trigger toggles it closed","split menu selection calls back and closes","dropdown exposes an expanded listbox relationship","dropdown opens on its selected enabled option","pointerdown and click on an open dropdown trigger toggles it closed","dropdown supports arrows and Enter selection","Escape closes a dropdown and restores trigger focus","Space activates the focused dropdown option","outside pointer dismissal closes a dropdown","font combo opens all suggestions from closed state without typing","font filtering clears the old active descendant","font list selection uses semantic dark theme foreground and background tokens","font combo suppresses filtering during IME composition","font combo filters results and previews each font","font combo tracks its active descendant","font combo commits a keyboard-selected family","font combo closes and clears its active descendant on outside input","font combo closes when focus leaves its root","color picker opens a named dialog","color swatches support arrow-key navigation","color picker reports a named theme color","color picker accepts custom colors","invalid colors leave state, native input and callbacks unchanged","color picker accepts caller-supplied palette values","number/unit rejects non-finite draft values","number/unit reports a finite bounded value and selected unit","out-of-range numeric drafts do not dispatch changes","number step validation uses fractional HTML min as its step base","number/unit rejects an unknown unit without changing state or select","modal dialog opens with an accessible title and initial focus","dialog Tab order includes editable content","dialog Tab order includes nested dropdown trigger","dialog trap skips descendants of its closed dropdown popup and keeps closed-details summary focusable","dialog Shift+Tab moves back from the summary","dialog trap includes options from an open nested dropdown","dialog trap skips the negative-tabindex option when cycling after nested popup focus","dialog trap keeps a summary in a closed details element focusable","modal close restores focus to its opener","context menu opens from Shift+F10 on its bound target","context menu opens with focus on its first command","context menu supports End/Enter and restores focus","context menu clamps its laid-out popup inside viewport edges","tabs synchronize roving focus, selected state and visible panel","tabs skip disabled entries during keyboard navigation","tabs connect labels and panels","tabs wrap ArrowLeft from the first enabled tab to the last","disposed tabs no longer handle keyboard navigation","all-disabled tab sets remain fully labeled and unavailable","vertical tabs wrap ArrowUp from the first tab to the last","tooltip description stays connected and hidden before its delay","tooltip becomes visible on focus","Escape hides a visible tooltip","tooltip remains visible while the pointer moves from trigger onto tooltip","tooltip placement clamps to the viewport","tooltip hides after both focus and hover leave","tooltip disposal removes its description and preserves caller DOM","tooltip disposal cancels a pending show timer","theme preference defaults to system","system uses the injected current preference","real DOM applies the Atelier light ink token","real DOM applies the light chrome surface token","dark preference resolves immediately","dark preference updates real DOM text immediately","dark palette updates shell surfaces","system preference follows a live media change","live media change restores the light system palette","theme stylesheet declares a forced-colors palette for the high-contrast run","theme changes do not recolor or filter document Canvas elements","theme changes leave Canvas document pixels byte-for-byte unchanged","ribbon exposes a named semantic tablist","ribbon renders the six declared tabs","initial tab is selected and synchronized","selected tab has one labeled visible panel","existing command element keeps its ID and identity without cloning","supplied details command stays in its declared group while status and preview control remain available","supplied command applies an explicit disabled=true spec","refresh applies disabled=false to re-enable a supplied command","right arrow selects the next tab","End selects the last tab","public tab selection reports success and rejects unknown IDs","Ctrl+F1 collapses the ribbon and updates the accessible state","public collapse control expands the ribbon","clicking a tab reveals its panel while the ribbon is collapsed","key-tip tab selection reveals a collapsed command panel","a command key tip activates after revealing the collapsed panel","AltGr-style modified input is not intercepted","composing input does not start key tips","active IME composition leaves bare Alt untouched","bare Alt opens the first key-tip level for all enabled tabs","first key-tip level selects a tab and displays its second level","second-level key tip activates the original command exactly once without routing it through onCommand","unsupported command is visibly disabled using native disabled semantics","disabled command key tip never dispatches a callback","internal command invokes exactly its own onCommand callback","details command key tip focuses and activates its summary","Escape closes key tips and restores the focus that preceded Alt","unrelated modified shortcuts pass through the ribbon listener","command groups wrap instead of clipping at narrow widths","ribbon stays within the narrow viewport without horizontal shell overflow","modal dialog keeps global ribbon shortcuts and command activation outside its scope","dispose restores the caller's original DOM nodes and order","dispose removes its class, preserves caller class updates, and restores explicitly overridden state and data","dispose preserves business-owned disabled changes when the spec left disabled undefined","dispose removes global keyboard handling and ribbon state","the original command listener still works after disposal","factor 1 displays 100 percent","fractional view factor displays its real percentage","percentage button names its current mode and real percentage","range accessible value reports the real factor when its step rounds","slider at 250 percent emits factor 2.5 in custom mode","custom input \"\" is rejected without closing or callback","custom input \"NaN\" is rejected without closing or callback","custom input \"12.5\" is rejected without closing or callback","custom input \"501\" is rejected without closing or callback","custom input \"9\" is rejected without closing or callback","custom boundary 10 percent is accepted","custom boundary 500 percent is accepted","fractional percentage is accepted for fit mode width","fractional percentage is accepted for fit mode page","fractional percentage is accepted for fit mode pages","Cancel closes without applying","Escape cancel closes without applying","shared dialog close button closes without applying","Tab from the last dialog control wraps to the first","Shift+Tab from the first dialog control wraps to the last","disabling while open keeps Cancel and shared close usable","Cancel remains functional while controls are disabled","shared close remains functional while controls are disabled","dispose removes control and modal DOM and clears listeners","open seeds the query, requests results, and focuses the named input","pane exposes four named search option controls","typed query is passed as text without interpreting markup","option changes issue a query with named option values","IME composition defers intermediate query changes","composition end submits the completed Unicode query","UTF-8 byte ranges create a bounded mark without splitting a multibyte scalar","excerpt byte offsets are relative to excerpt text and the button sits inside a list item","literal markup in excerpts stays inert text","Enter navigates forward from the query input","Shift+Enter navigates backward","Ctrl+Alt Enter is preserved for AltGr and unrelated editing","Escape closes and restores opener focus","status reports the current result, total list size, and truncation notice","same-reference result updates preserve button focus and refresh current state","the newly selected result is marked current","result list preserves exactly one roving Tab stop at the focused result","ArrowDown moves result focus without selecting or changing editor navigation","the Tab stop follows focus to the newly focused result","ArrowUp wraps to the previous result","Home focuses the first result","End focuses the last result","result buttons preserve native Enter activation","result buttons preserve native Space activation","result button selects its bounded list index","navigation is disabled when the result list is empty","navigation is disabled while a query is busy","disabled state blocks search actions while leaving close available","disabled query field does not dispatch work","wrap state is announced alongside the current count","Escape during IME composition does not close the pane","Escape with IME key code 229 does not close the pane","Escape from another pane control closes the panel after composition","dispose removes the pane and its listeners","initial pending state is explicit and polite","statistics table is described by the dialog's state explanation","missing snapshot is reported to status and table users instead of a successful zero","document word count appears in status and table","counts use the document language instead of the browser locale","unchanged live status does not generate a duplicate announcement","missing selection is shown as unavailable instead of a fabricated zero","selection changes update the selected/document word counts","opening uses the shared modal and asks the parent to refresh","snapshot updates do not steal focus while the dialog is open","reopening an already open dialog does not duplicate it or refresh twice","table headings clearly distinguish document and selection scopes","semantic count fields map into their matching table rows","notes/text boxes are visibly disabled with an explanation","loading explanation remains linked to the statistics table","error explanation remains linked to the table and does not become zero counts","disabled controls cannot reopen while an existing dialog stays dismissible","native modal cancellation closes and updates expanded state","a subsequent open requests a fresh snapshot","dispose removes status and modal and clears listeners","French labels are loaded from the app catalog","a late first search reply cannot replace or highlight over the second result","a reply after close cannot reopen the pane or add highlights","preview mode invalidates pending search results and highlights","late statistics for the previous selection are ignored","dispose cancels pending timers, clears highlights, removes views, and ignores late replies","component starts hidden and exposes a named two-row replacement textarea","an empty replacement is passed through without substitution or trimming","zero count is announced while state updates preserve the focused textarea and its literal multiline value","both callbacks receive the exact replacement string, including newline and markup characters","replacement result is exposed through a polite live status","one occurrence uses its dedicated localized count label","re-rendering an unchanged result does not create duplicate live-region announcements","multiple occurrences interpolate the count into the localized label","null count does not announce a result","busy state disables replacement actions while preserving textarea editing","disabled busy actions cannot dispatch callbacks","error state uses the localized error label without exposing internal details","disabled state blocks the textarea and replacement actions","each action follows its own match availability state","single replacement can be enabled independently of replace all","dispose removes the view and prevents late actions or focus changes","single-page lower and upper boundary remains navigable","status group has its localized accessible name","missing document language uses its localized unknown label","clean text documents show the saved state","page dialog opens modally with its labeled numeric input focused","native form submission applies the first page without a button click","last page boundary is shown without clamping","valid last page is passed to visual navigation","fractional page is rejected without navigating or closing the dialog","out-of-range page reports the current page limit","page zero is rejected at the lower boundary","cancel closes the page dialog without invoking navigation","reopening clears the prior validation message and invalid state","preview shows its view and read-only state","busy preview blocks page navigation controls","busy state prevents submission even when the modal remains open","clearing busy restores visual page navigation in preview mode","preview allows visual page navigation without a document mutation callback","rerender updates language and dirty state in place","duplicate renders reuse the existing field nodes","default target opens a named keyboard menu with checked visibility items","checked visibility choice has a visible checkmark and reserved indicator space","menu choice hides its field and synchronizes aria-checked","unchecked visibility choice removes the visible checkmark","visibility callback reports the field and new state","parent-owned word visibility is reported without rendering its slot","parent-owned zoom visibility is reported without rendering its slot","menu can be reopened from Shift+F10 after a selection","Escape closes the menu, restores focus, and emits no visibility callback","invalid layout state reports unavailable page and disables navigation","partial catalogs omit unlabeled menu actions and never expose raw keys","missing catalog produces no untranslated or unlabeled tools","provided target receives the named keyboard menu","disposing an open menu removes its listener without calling visibility handlers","disposing an open page dialog removes the widget without callbacks","Ctrl+H opens the search pane with replacement controls visible","Ctrl+H seeds search from the selected text","the selected match enables Replace and the query enables Replace all","Ctrl+H does not intercept IME, AltGraph, or Alt-modified input","Ctrl+H remains untouched while a modal dialog is open","Replace passes exact multiline text and the selected UTF-8 match range","a failed replacement does not leave Replace all busy-disabled","Replace all passes an empty replacement without trimming or substitution","a late result from the previous query is ignored and does not overwrite the replacement draft","closing the pane hides its replacement controls immediately","a late replacement result after close cannot reopen the pane","late result after close is not presented when the pane reopens","document replacement invalidates the prior document's late result","real packaged app follows live browser system-theme media changes","real packaged shell fits 1280px and 420px without horizontal overflow","real search pane and statistics dialog fit 1280px and 420px in light/dark themes","replacement, page dialog and six-field status menu fit 1280px and 420px in light/dark themes","missing or partial catalog keeps editing available and omits untranslated navigation tools"],"forcedColors":false,"userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0","executable":"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe","screenshots":false,"environment":"real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence"}
+$ node tests/run-ui-browser.mjs --forced-colors
+{"status":"passed","checks":["native button has a name and activates once","disabled button does not dispatch its callback","toggle exposes and reports its pressed state","toggle setter updates aria-pressed","split button separates its action and labeled menu trigger","pointerdown and click on an open split trigger toggles it closed","split menu selection calls back and closes","dropdown exposes an expanded listbox relationship","dropdown opens on its selected enabled option","pointerdown and click on an open dropdown trigger toggles it closed","dropdown supports arrows and Enter selection","Escape closes a dropdown and restores trigger focus","Space activates the focused dropdown option","outside pointer dismissal closes a dropdown","font combo opens all suggestions from closed state without typing","font filtering clears the old active descendant","font list selection uses forced-colors system foreground and background","font combo suppresses filtering during IME composition","font combo filters results and previews each font","font combo tracks its active descendant","font combo commits a keyboard-selected family","font combo closes and clears its active descendant on outside input","font combo closes when focus leaves its root","color picker opens a named dialog","color swatches support arrow-key navigation","color picker reports a named theme color","color picker accepts custom colors","invalid colors leave state, native input and callbacks unchanged","color picker accepts caller-supplied palette values","number/unit rejects non-finite draft values","number/unit reports a finite bounded value and selected unit","out-of-range numeric drafts do not dispatch changes","number step validation uses fractional HTML min as its step base","number/unit rejects an unknown unit without changing state or select","modal dialog opens with an accessible title and initial focus","dialog Tab order includes editable content","dialog Tab order includes nested dropdown trigger","dialog trap skips descendants of its closed dropdown popup and keeps closed-details summary focusable","dialog Shift+Tab moves back from the summary","dialog trap includes options from an open nested dropdown","dialog trap skips the negative-tabindex option when cycling after nested popup focus","dialog trap keeps a summary in a closed details element focusable","modal close restores focus to its opener","context menu opens from Shift+F10 on its bound target","context menu opens with focus on its first command","context menu supports End/Enter and restores focus","context menu clamps its laid-out popup inside viewport edges","tabs synchronize roving focus, selected state and visible panel","tabs skip disabled entries during keyboard navigation","tabs connect labels and panels","tabs wrap ArrowLeft from the first enabled tab to the last","disposed tabs no longer handle keyboard navigation","all-disabled tab sets remain fully labeled and unavailable","vertical tabs wrap ArrowUp from the first tab to the last","tooltip description stays connected and hidden before its delay","tooltip becomes visible on focus","Escape hides a visible tooltip","tooltip remains visible while the pointer moves from trigger onto tooltip","tooltip placement clamps to the viewport","tooltip hides after both focus and hover leave","tooltip disposal removes its description and preserves caller DOM","tooltip disposal cancels a pending show timer","theme preference defaults to system","system uses the injected current preference","forced-colors maps the light shell ink token to CanvasText","forced-colors maps the light shell surface token to Canvas","dark preference resolves immediately","forced-colors preserves system ink colors when dark is selected","system preference follows a live media change","live media change restores the light system palette","forced-colors maps shell ink to CanvasText","forced-colors maps the shell accent to Highlight","forced-colors overrides real DOM text colors","theme changes do not recolor or filter document Canvas elements","theme changes leave Canvas document pixels byte-for-byte unchanged","ribbon exposes a named semantic tablist","ribbon renders the six declared tabs","initial tab is selected and synchronized","selected tab has one labeled visible panel","existing command element keeps its ID and identity without cloning","supplied details command stays in its declared group while status and preview control remain available","supplied command applies an explicit disabled=true spec","refresh applies disabled=false to re-enable a supplied command","right arrow selects the next tab","End selects the last tab","public tab selection reports success and rejects unknown IDs","Ctrl+F1 collapses the ribbon and updates the accessible state","public collapse control expands the ribbon","clicking a tab reveals its panel while the ribbon is collapsed","key-tip tab selection reveals a collapsed command panel","a command key tip activates after revealing the collapsed panel","AltGr-style modified input is not intercepted","composing input does not start key tips","active IME composition leaves bare Alt untouched","bare Alt opens the first key-tip level for all enabled tabs","first key-tip level selects a tab and displays its second level","second-level key tip activates the original command exactly once without routing it through onCommand","unsupported command is visibly disabled using native disabled semantics","disabled command key tip never dispatches a callback","internal command invokes exactly its own onCommand callback","details command key tip focuses and activates its summary","Escape closes key tips and restores the focus that preceded Alt","unrelated modified shortcuts pass through the ribbon listener","command groups wrap instead of clipping at narrow widths","ribbon stays within the narrow viewport without horizontal shell overflow","modal dialog keeps global ribbon shortcuts and command activation outside its scope","dispose restores the caller's original DOM nodes and order","dispose removes its class, preserves caller class updates, and restores explicitly overridden state and data","dispose preserves business-owned disabled changes when the spec left disabled undefined","dispose removes global keyboard handling and ribbon state","the original command listener still works after disposal","factor 1 displays 100 percent","fractional view factor displays its real percentage","percentage button names its current mode and real percentage","range accessible value reports the real factor when its step rounds","slider at 250 percent emits factor 2.5 in custom mode","custom input \"\" is rejected without closing or callback","custom input \"NaN\" is rejected without closing or callback","custom input \"12.5\" is rejected without closing or callback","custom input \"501\" is rejected without closing or callback","custom input \"9\" is rejected without closing or callback","custom boundary 10 percent is accepted","custom boundary 500 percent is accepted","fractional percentage is accepted for fit mode width","fractional percentage is accepted for fit mode page","fractional percentage is accepted for fit mode pages","Cancel closes without applying","Escape cancel closes without applying","shared dialog close button closes without applying","Tab from the last dialog control wraps to the first","Shift+Tab from the first dialog control wraps to the last","disabling while open keeps Cancel and shared close usable","Cancel remains functional while controls are disabled","shared close remains functional while controls are disabled","apply button keeps a readable explicit forced-colors pair without automatic backplates","dispose removes control and modal DOM and clears listeners","open seeds the query, requests results, and focuses the named input","pane exposes four named search option controls","typed query is passed as text without interpreting markup","option changes issue a query with named option values","IME composition defers intermediate query changes","composition end submits the completed Unicode query","UTF-8 byte ranges create a bounded mark without splitting a multibyte scalar","excerpt byte offsets are relative to excerpt text and the button sits inside a list item","literal markup in excerpts stays inert text","Enter navigates forward from the query input","Shift+Enter navigates backward","Ctrl+Alt Enter is preserved for AltGr and unrelated editing","Escape closes and restores opener focus","status reports the current result, total list size, and truncation notice","same-reference result updates preserve button focus and refresh current state","the newly selected result is marked current","result list preserves exactly one roving Tab stop at the focused result","ArrowDown moves result focus without selecting or changing editor navigation","the Tab stop follows focus to the newly focused result","ArrowUp wraps to the previous result","Home focuses the first result","End focuses the last result","result buttons preserve native Enter activation","result buttons preserve native Space activation","result button selects its bounded list index","navigation is disabled when the result list is empty","navigation is disabled while a query is busy","disabled state blocks search actions while leaving close available","disabled query field does not dispatch work","wrap state is announced alongside the current count","Escape during IME composition does not close the pane","Escape with IME key code 229 does not close the pane","Escape from another pane control closes the panel after composition","dispose removes the pane and its listeners","initial pending state is explicit and polite","statistics table is described by the dialog's state explanation","missing snapshot is reported to status and table users instead of a successful zero","document word count appears in status and table","counts use the document language instead of the browser locale","unchanged live status does not generate a duplicate announcement","missing selection is shown as unavailable instead of a fabricated zero","selection changes update the selected/document word counts","opening uses the shared modal and asks the parent to refresh","snapshot updates do not steal focus while the dialog is open","reopening an already open dialog does not duplicate it or refresh twice","table headings clearly distinguish document and selection scopes","semantic count fields map into their matching table rows","notes/text boxes are visibly disabled with an explanation","loading explanation remains linked to the statistics table","error explanation remains linked to the table and does not become zero counts","disabled controls cannot reopen while an existing dialog stays dismissible","native modal cancellation closes and updates expanded state","a subsequent open requests a fresh snapshot","dispose removes status and modal and clears listeners","French labels are loaded from the app catalog","a late first search reply cannot replace or highlight over the second result","a reply after close cannot reopen the pane or add highlights","preview mode invalidates pending search results and highlights","late statistics for the previous selection are ignored","dispose cancels pending timers, clears highlights, removes views, and ignores late replies","component starts hidden and exposes a named two-row replacement textarea","an empty replacement is passed through without substitution or trimming","zero count is announced while state updates preserve the focused textarea and its literal multiline value","both callbacks receive the exact replacement string, including newline and markup characters","replacement result is exposed through a polite live status","one occurrence uses its dedicated localized count label","re-rendering an unchanged result does not create duplicate live-region announcements","multiple occurrences interpolate the count into the localized label","null count does not announce a result","busy state disables replacement actions while preserving textarea editing","disabled busy actions cannot dispatch callbacks","error state uses the localized error label without exposing internal details","disabled state blocks the textarea and replacement actions","each action follows its own match availability state","single replacement can be enabled independently of replace all","dispose removes the view and prevents late actions or focus changes","single-page lower and upper boundary remains navigable","status group has its localized accessible name","missing document language uses its localized unknown label","clean text documents show the saved state","page dialog opens modally with its labeled numeric input focused","native form submission applies the first page without a button click","last page boundary is shown without clamping","valid last page is passed to visual navigation","fractional page is rejected without navigating or closing the dialog","out-of-range page reports the current page limit","page zero is rejected at the lower boundary","cancel closes the page dialog without invoking navigation","reopening clears the prior validation message and invalid state","preview shows its view and read-only state","busy preview blocks page navigation controls","busy state prevents submission even when the modal remains open","clearing busy restores visual page navigation in preview mode","preview allows visual page navigation without a document mutation callback","rerender updates language and dirty state in place","duplicate renders reuse the existing field nodes","default target opens a named keyboard menu with checked visibility items","checked visibility choice has a visible checkmark and reserved indicator space","menu choice hides its field and synchronizes aria-checked","unchecked visibility choice removes the visible checkmark","visibility callback reports the field and new state","parent-owned word visibility is reported without rendering its slot","parent-owned zoom visibility is reported without rendering its slot","menu can be reopened from Shift+F10 after a selection","Escape closes the menu, restores focus, and emits no visibility callback","invalid layout state reports unavailable page and disables navigation","partial catalogs omit unlabeled menu actions and never expose raw keys","missing catalog produces no untranslated or unlabeled tools","provided target receives the named keyboard menu","disposing an open menu removes its listener without calling visibility handlers","disposing an open page dialog removes the widget without callbacks","Ctrl+H opens the search pane with replacement controls visible","Ctrl+H seeds search from the selected text","the selected match enables Replace and the query enables Replace all","Ctrl+H does not intercept IME, AltGraph, or Alt-modified input","Ctrl+H remains untouched while a modal dialog is open","Replace passes exact multiline text and the selected UTF-8 match range","a failed replacement does not leave Replace all busy-disabled","Replace all passes an empty replacement without trimming or substitution","a late result from the previous query is ignored and does not overwrite the replacement draft","closing the pane hides its replacement controls immediately","a late replacement result after close cannot reopen the pane","late result after close is not presented when the pane reopens","document replacement invalidates the prior document's late result","real packaged app follows live browser system-theme media changes","real packaged shell fits 1280px and 420px without horizontal overflow","real search pane and statistics dialog fit 1280px and 420px in light/dark themes","replacement, page dialog and six-field status menu fit 1280px and 420px in light/dark themes","missing or partial catalog keeps editing available and omits untranslated navigation tools","primary button and mark preserve readable forced-colors system pairs"],"forcedColors":true,"userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0","executable":"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe","screenshots":false,"environment":"real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence"}
+$ node tests/run-editor-browser.mjs
+{"status":"passed","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0","checks":["fresh optimized WASM available","legacy Ping echo remains exact","initial empty A4 state","input surface is hidden while Canvas remains the document view","editor Canvas exposes a grey area beside the A4 page","A4 page background is opaque white in the real Canvas pixels","area outside the A4 page composites to the grey document-scroll background","accessible text representation updates with accented document text","UTF-8 selection follows rapid multibyte typing","editor state contains ATDL pages","word selection uses UTF-8 boundaries and includes the separating space","real model selection copies exact text synchronously without mutation","failed clipboard write preserves the real model","cut writes before returning to the browser","one undo restores the cut text and its directed selection","plain paste replaces selection once and ignores HTML","Ctrl+A selects the real document rather than the hidden textarea","Escape returns to ordinary caret navigation","word deletion is undone as a single edit in real WASM","one undo restores the deleted word and original selection","double-click selects a whole accented word through engine unit selection","triple-click selects the logical paragraph including CRLF","rapid down/move/up preserves the final drag range while WASM is asynchronous","completed mouse drag restores hidden input focus","drag position probe preserves the selection revision and text","drop indicator is a visible two-pixel insertion line","drop clears insertion marker","one undo restores moved UTF-8 text and original directed selection","one redo reapplies the complete move","Ctrl copy is a single undoable edit","Escape cancels the complete drag without mutation or residual marker","text drop prevents browser default handling","external drop exports exact Unicode CRLF and literal markup without typography correction","one undo restores the original document and selection after external insertion","French correction keeps a UTF-8 caret after punctuation","immediate undo removes only automatic spacing and keeps raw punctuation","redo restores automatic spacing","subsequent typing stays outside substitution undo group","French spacing can be disabled for the current editor","French quote interiors use nonbreaking spaces","pasted punctuation and guillemets remain exact","composition punctuation stays exact with automatic spacing enabled","replacing a selection does not add an automatic transaction","native open cancellation returned to controller","open cancellation preserves document and dirty state","invalid open leaves the previous document intact","load preserves BOM metadata and CRLF content","accessible text representation exposes accents and line breaks after load","ATEX exports the exact loaded file bytes","document paginates across A4 pages (6 page(s), 2098 chars)","page stack creates a real scroll range","hidden input caret stays bounded on screen after scroll","editing navigation scrolls the caret into the visible Canvas viewport","IME preview text is temporarily underlined at the caret","composition mutates model only at commit","save cancellation retains dirty state","successful save marks exactly the exported revision clean","native host receives exact UTF-8/BOM/CRLF bytes","public undo is guarded while a native file operation is active","out-of-band revision change rejects stale save confirmation","stale save leaves the live document dirty and accessible","retry saves the current revision","dirty state reaches the host channel","Canvas hit-test restores hidden input focus","zoom preserves the reading point across fixed page gaps without returning to the caret (expected 2902, actual 2902.5, height 8499)","zoom preserves exact editor state object, selection and history","200 percent TXT creates a real horizontal page extent","TXT Canvas stays pinned while the right side of an enlarged page scrolls into view","ordinary wheel and AltGr wheel leave document zoom unchanged","Ctrl wheel zooms the actual editor and suppresses browser zoom","Ctrl wheel preserves the document point under the pointer on both axes","wheel is exercised on a visible browser viewport","invalid zoom is rejected atomically: NaN","invalid zoom is rejected atomically: 0.09","invalid zoom is rejected atomically: 5.01","10 percent is supported by real editor rendering","500 percent is supported by real editor rendering","two-page mode fits two vertically stacked A4 pages including their fixed gap","width mode uses the actual scrollport width","container resize refits document zoom","zoomed hit-testing retains UTF-8 model coordinates","undo restores text after zoom without changing its factor","product entry document available to the shortcut harness","real app entry initializes with fake native WebView","real app exposes all six ribbon tabs","real app marks unavailable formatting commands disabled","real app theme changes the visible shell palette without reloading","real app theme preserves exact TXT state and white document pixels","real app appearance command opens a named modal","appearance modal blocks editor new/open/save shortcuts behind the dialog","real app appearance modal can close and return to the ribbon","app initialization restores a saved disabled French-spacing preference","product viewport is at least 1280×800 for layout verification","product shell keeps the document scrollbar inside the normal viewport","Ctrl+N discards only after the app confirmation and creates a clean document","Ctrl+N does not request file access","real Worker search/statistics queries preserve exact TXT state, selection, dirty and undo history","Ctrl+F opens the actual named search pane and focuses its query","Unicode matches carry exact UTF-8 byte ranges and real cached-layout geometry","all current search hits produce visible warm Canvas highlight pixels","cancelled composition preserves current search highlights without waiting for caret blink","Enter selects and scrolls to a hit without stealing query focus or editing history","reverse search wrap is announced","rapid Enter presses advance successively through the asynchronous Worker","whole-word option excludes the caféine substring using Rust Unicode rules","case-sensitive search preserves exact original spelling","accent folding maps back to original UTF-8 bytes","full Unicode case folding finds Straße from strasse in the real engine","NBSP option distinguishes nonbreaking and ordinary spaces","actual search excerpts preserve literal markup as inert text","empty search results have a clear localized message","empty query removes all Canvas search highlights synchronously","search highlights remain correctly painted after zoom and scrolling back to hits","Escape closes the real pane, removes highlights and restores text input focus","statistics dialog maps real document and selected word counts plus actual lines/pages/paragraphs","statistics modal blocks Ctrl+F behind it","statistics and result selection do not interfere with edit undo","dense search remains bounded to 1000 hits and announces truncation","rapid query changes leave only the latest real Worker results","Ctrl+H opens and focuses the actual search and replacement pane","replacing the selected occurrence creates a dirty, undoable edit","identical replacement reports its occurrence without changing revision, dirty state, or undo history","zero matches report none and preserve revision, dirty state, text, and undo history","the UI keeps its 1000-result search bound while replacement uses the full source","Replace all makes one dirty undoable edit for all 1105 original occurrences","one Undo restores the entire multi-match transaction and clean state","one Redo reapplies all matches without creating per-match transactions","accent folding and whole-word boundaries agree with the real Rust searcher","matchCase Replace all applies the configured option and reports its exact occurrence count","wholeWord Replace all applies the configured option and reports its exact occurrence count","ignoreAccents Replace all applies the configured option and reports its exact occurrence count","matchNbsp Replace all applies the configured option and reports its exact occurrence count","empty strings and newline-containing replacements preserve surrounding blank and trailing lines","a stale match selection is rejected by Worker/WASM without publishing a partial edit","a replacement carrying an old revision is refused without changing the latest document","a result above 128 KiB fails atomically with the original revision, clean state, and history intact","real app exposes document status fields, page dialog, visibility menu and parent slots","multi-page TXT has a real scrollable viewport","document language remains undefined and is distinct from the French interface locale","a clean opened TXT document reports its saved state","an edited TXT document reports unsaved changes","invariance baseline includes a dirty document, undo history and a directed selection","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","real TXT zoom changes while the status page stays synchronized","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","words parent slot starts visible with its checked menu state","status menu exposes the words visibility control","words menu choice hides the parent-owned app slot","status menu exposes the words visibility control","words menu choice restores the parent-owned app slot","words visibility returns to its initial session state","zoom parent slot starts visible with its checked menu state","status menu exposes the zoom visibility control","zoom menu choice hides the parent-owned app slot","status menu exposes the zoom visibility control","zoom menu choice restores the parent-owned app slot","zoom visibility returns to its initial session state","integration test leaves the page dialog and visibility menu closed","Symbols command opens the searchable picker","selected multibyte UTF-8 text is replaced by the copyright scalar","one undo restores the complete pre-insertion text","one redo reapplies the complete symbol insertion","Ctrl+Shift+Space inserts a real non-breaking space","IME composition suppresses symbol and NBSP editor commands","right-click context menu preserves the editor selection","context menu enables copy and cut for a nonempty selection with clipboard support","ContextMenu key opens without changing selection anchors","Shift+F10 opens without changing selection anchors","context Undo runs the editor history command","context Redo runs the editor history command","rejected clipboard write leaves the selected document text unchanged","copy writes exact text without mutating the document","paste inserts the clipboard text through the editor transaction","async cut refuses its stale snapshot without deleting text","editor rejects editSelection after the selection changes from its snapshot","About command opens its modal dialog","the symbol picker stays closed while another modal is open","About displays the exact build version","About displays the exact source URL as selectable text without navigation","About displays the complete AGPL, font, and Unicode license texts exactly as bundled","About connects every license tab to a content panel","closing About restores the editable input focus","About consultation preserves ordinary text editing","multi-page document scrolls inside document-scroll","long document does not grow the product body or move toolbar/footer outside the viewport","Ctrl+O uses the native open path and surfaces cancellation","Ctrl+O cancellation preserves the current clean document","status zoom controls initialize from the real document view","status slider changes Canvas factor and displayed percentage together","zoom percentage opens a named modal with focused number field","invalid dialog percentage remains visible without changing the document","document wheel zoom is blocked behind a modal","valid dialog submission applies once and restores the trigger focus","dialog cancellation does not apply its uncommitted percentage","Affichage ribbon opens the same zoom dialog","whole-page dialogue mode follows the real Canvas viewport","fractional fit percentage can switch directly to the two-page mode","Ctrl+S marks the successfully saved revision clean","status bar reflects the native save confirmation","Ctrl+S forwards the exact current document bytes","French spacing option is an enabled native checkbox with visible label","French spacing option is keyboard focusable","French spacing preference is saved locally","enabled app option applies French spacing through real Worker WASM","independent DOCX fixture exercises a native response larger than the TXT limit","real app imports DOCX through native host and Worker/WASM","read-only DOCX workspace replaces only the visible TXT workspace","symbol insertion is disabled during DOCX preview","public symbol/clipboard insertion cannot edit the hidden TXT during preview","About remains consultable in read-only DOCX preview","search and statistics tools are explicitly unavailable in the simplified DOCX preview","accessible preview mirror contains actual imported text","rich preview Canvas has a real visible viewport","real DOCX preview paints the blue styled heading as visible Canvas pixels","DOCX preview has its own enabled zoom controls starting at 100 percent","preview zoom changes independently of the suspended TXT view","narrow DOCX preview exposes horizontal scrolling for the complete A4 page","preview Canvas remains pinned to viewport during horizontal page scrolling","preview leaves exact TXT state object untouched and freezes its input","status describes DOCX read-only view and replacement stays unavailable","preview page navigation uses its own viewport without touching TXT state","preview disables new-document","preview disables open-document","preview disables open-docx","preview disables save-document","preview disables undo","preview disables redo","preview disables french-spacing","preview announces read-only mode","preview primary identity and state badge describe DOCX rather than TXT save state","preview explicitly explains omitted content and Word page breaks","Ctrl+S in preview suppresses native/browser saving","Escape returns to exact TXT state and restores trigger focus","closing preview restores TXT identity and dirty badge","returning from DOCX restores the TXT session zoom in the status controls","TXT undo history remains available after preview","TXT redo restores exact content and dirty after preview","reopening preview for fitted TXT view","hiding a fitted TXT viewport does not refit it against zero dimensions","returning to a fitted TXT view preserves its mode and recomputes visible dimensions","cancelled native DOCX dialogue preserves TXT and releases controls","native DOCX read failure preserves TXT","invalid DOCX reports an error without partial preview or TXT mutation","late native response after close cannot reopen preview or mutate TXT","disposing app during DOCX dialogue removes native listener and ignores late response","fresh app initialization enables French spacing when no preference exists"],"executable":"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"}
+$ cargo build -p atelier-desktop-win --release --locked --offline
+   Compiling atelier-desktop-win v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\desktop-win)
+    Finished `release` profile [optimized] target(s) in 1.97s
+$ C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\target\release\atelier.exe --resources-self-check C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\target\editor-utilities-native-check
+embedded resources: assets=49; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts=64; rotated=50; callback objects 0->0
+$ git diff --check

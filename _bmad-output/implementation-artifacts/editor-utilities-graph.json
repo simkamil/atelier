@@ -1,0 +1,49 @@
+{
+  "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
+  "nodes": 9605,
+  "edges": 24497,
+  "stories": 158,
+  "done": 54,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 9605,
+  "html_node_limit": 10000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 1236,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 64,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "94df23fb037145d75542f54dbc0215d0daf929bc:graphify-out/GRAPH_REPORT.md",
+  "local_cost_meter_available": false,
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "replacement_story_status": null,
+  "zoom_story_status": null,
+  "navigation_story_status": null,
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "2f964cc65cc2a813c4d5d0f30f2c2381a8bd13a9baecf72c577516753eef8b77",
+    "graphify-out/graph.json": "7e3cf95463e49251e3a131fb0b60dbb27cbc483670115e2501f8ebe31659902b",
+    "graphify-out/graph.html": "5b7028ff9bd6eeea8d0a14acdd71338b742b6251e5ebea2e70c459b6f36110b5",
+    "graphify-out/story-dependencies.json": "9293f6f37182b557df1c5c8e8d4282c36eb3f97616555e457e9c90cbfd31aaf9",
+    "graphify-out/unresolved-structural-references.json": "ffdfd711d2440bfd5e74b0da0fb43397bfee5e8dd4df79290d2b81093e9ca228"
+  },
+  "graph_tools_sha256": {
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "d8622e89d785fa47ac0caf13c0d662fd7bf7973fd4ff555acbd1136eb8306a73",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "84841bc63debb81b3d4bd0ce9e78d8957e75dca53140e170f355d0987bbad19c"
+  }
+}

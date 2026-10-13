@@ -19,6 +19,10 @@ for (const candidate of browserCandidates) {
 }
 assert(executable, "An installed Edge/Chromium browser is required for this check.");
 const files = new Map([
+  ...["symbol-dialog", "symbol-catalogue", "editor-context-menu", "about-dialog", "about-licenses", "build-info"].flatMap(name =>
+    [`/${name}.mjs`, `/web/${name}.mjs`].map(url => [url, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]])),
+  ...["symbol-dialog", "about-dialog"].map(name => [`/${name}.css`, [`web/${name}.css`, "text/css; charset=utf-8"]]),
+  ["/tests/editor-utilities-integration-browser.mjs", ["tests/editor-utilities-integration-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/page-navigation.mjs", ["web/page-navigation.mjs", "text/javascript; charset=utf-8"]],
   ["/replace-controls.mjs", ["web/replace-controls.mjs", "text/javascript; charset=utf-8"]],
   ["/replace-controls.css", ["web/replace-controls.css", "text/css; charset=utf-8"]],

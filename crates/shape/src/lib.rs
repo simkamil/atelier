@@ -125,7 +125,7 @@ impl<'face, 'font> LatinShaper<'face, 'font> {
         let mut glyphs = Vec::with_capacity(scalar_count);
         for (index, &(_, ch)) in chars.iter().enumerate() {
             glyphs.push(GlyphCluster {
-                glyph_id: self.face.glyph_index(ch),
+                glyph_id: self.face.display_glyph_index(ch),
                 cluster: index..index + 1,
             });
         }

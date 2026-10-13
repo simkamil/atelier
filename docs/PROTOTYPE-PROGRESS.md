@@ -1,6 +1,6 @@
-# Préparation du démonstrateur — 2026-10-13
+# Préparation du démonstrateur — 2026-10-14
 
-Le backlog compte désormais **53 US terminées sur 158**. Le dernier lot raccorde
+Le backlog compte désormais **54 US terminées sur 158**. Le dernier lot raccorde
 le remplacement TXT et la barre d’état configurable (US-341/344 partielles), avec des agents GPT-6 Luna moyen.
 L’ouverture DOCX donne toujours un aperçu A4 en lecture seule.
 Le glisser-déposer TXT, les espaces françaises et le cache incrémental restent disponibles.
@@ -564,3 +564,11 @@ Le [reçu immuable](../_bmad-output/implementation-artifacts/replacement-status-
 Validation finale du lot : **21 contrôles**, **1 085 tests Rust**, **219 assertions éditeur**, **263/266 assertions UI normale/couleurs forcées**, sur **1 152 entrées immuables**. La sonde WebView2 vérifie 41 ressources, CSP/Worker et saisie/Undo/Redo, sans objet callback restant. WASM : **4 213 853 octets**, sous le plafond inchangé de 4 271 903. Le graphe complet conserve **9 320 nœuds / 23 878 arêtes**, 158 US et les concepts documentaires historiques.
 
 Correctif DOCX (2026-10-13) : noms de couleurs de thème Word acceptés et défaut de style de liste distingué du défaut de paragraphe. Le fichier réel signalé ouvre trois pages, sans modification de l’original. Voir [diagnostic et preuves](rich-docx-preview.md#compatibilité-word-corrigée--2026-10-13). Les budgets et le total de 53/158 US complètes ne changent pas.
+
+## Caractères spéciaux, menu contextuel et À propos — 2026-10-14
+
+Développés en parallèle avec trois agents GPT-6 Luna moyen, puis relus par trois agents indépendants et corrigés. [US-227](us-227-editor-utilities.md) propose les symboles et les onze caractères spéciaux dans le TXT ; [US-230](us-230-editor-utilities.md) raccorde le menu contextuel aux commandes et au presse-papiers texte ; [US-361](us-361-editor-utilities.md) est terminée avec les métadonnées et licences hors ligne. US-227/230 restent partielles pour les polices/objets riches. Le total atteint **54/158 US complètes**.
+
+Validation Windows du 2026-10-14 : 18 contrôles, 243 tests Rust des quatre paquets concernés, 1177 entrées immuables. Les suites Edge contrôlent les composants, le produit normal/contraste élevé et le vrai Worker/WASM ; Clippy hôte/WASM, fmt, licences, i18n sans nouvelle dérogation de référence, données générées, budget WASM inchangé et sonde WebView2 passent. La sonde vérifie 49 ressources et les textes de licence embarqués. Les événements clavier sont synthétiques ; aucun audit lecteur d’écran, essai matériel ou passage Linux distant n’est revendiqué.
+
+Le moteur conserve le correctif des guides DOCX longs. Les deux documents privés précédemment signalés ouvrent toujours 35 et 3 pages dans la vraie interface ; leurs fichiers sources restent inchangés. Livraison sur branche isolée, sans modifier le checkout principal occupé par les autres développements.

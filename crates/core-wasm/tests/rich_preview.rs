@@ -102,6 +102,25 @@ fn tab_control_keeps_its_advance_without_drawing_notdef() {
 }
 
 #[test]
+fn nonbreaking_hyphen_keeps_its_text_and_uses_the_hyphen_outline() {
+    let make = |text: &str| {
+        minimal_docx(&format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body></w:document>"#
+        ))
+    };
+    let nonbreaking = preview_docx(&make("A\u{2011}B")).unwrap();
+    let hyphen = preview_docx(&make("A-B")).unwrap();
+    assert_eq!(
+        nonbreaking.text, "A\u{2011}B",
+        "the source scalar stays nonbreaking"
+    );
+    assert_eq!(
+        nonbreaking.pages, hyphen.pages,
+        "the missing Carlito character uses a real hyphen outline rather than .notdef"
+    );
+}
+
+#[test]
 fn generated_long_docx_paginates_without_losing_text_order() {
     let text = "A long paragraph used to force line wrapping across multiple pages. ".repeat(4);
     let xml = format!(

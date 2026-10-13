@@ -155,6 +155,49 @@ fn character_resolution_skips_noncovering_faces_and_reports_missing_glyph() {
 }
 
 #[test]
+fn character_resolution_accepts_the_nonbreaking_hyphen_display_fallback() {
+    let manager = FontManager::new();
+    let request = FontRequest::new(["Carlito", "Caladea"], 400, FontStyle::Normal);
+    let selected = manager.resolve_for_char(&request, '\u{2011}').unwrap();
+    assert_eq!(selected.family, "Carlito");
+    assert_eq!(
+        selected.face.glyph_index('\u{2011}'),
+        0,
+        "strict cmap coverage remains missing"
+    );
+    assert_ne!(selected.face.display_glyph_index('\u{2011}'), 0);
+}
+
+#[test]
+fn display_glyph_fallback_prefers_en_dash_and_is_limited_to_nonbreaking_hyphen() {
+    let with_en_dash = EMBEDDED_FONTS
+        .iter()
+        .map(|font| FontFace::parse(font.data).unwrap())
+        .find(|face| face.glyph_index('\u{2011}') == 0 && face.glyph_index('\u{2010}') != 0)
+        .expect("an embedded face covers en dash but lacks non-breaking hyphen");
+    assert_eq!(
+        with_en_dash.display_glyph_index('\u{2011}'),
+        with_en_dash.glyph_index('\u{2010}')
+    );
+    let carlito = EMBEDDED_FONTS
+        .iter()
+        .find(|font| {
+            font.family == "Carlito"
+                && font.weight == 400
+                && font.style == atelier_font::embedded::EmbeddedFontStyle::Normal
+        })
+        .unwrap();
+    let face = FontFace::parse(carlito.data).unwrap();
+    assert_eq!(face.glyph_index('\u{2011}'), 0);
+    assert_eq!(face.glyph_index('\u{2010}'), 0);
+    assert_eq!(face.display_glyph_index('\u{2011}'), face.glyph_index('-'));
+    assert_eq!(
+        face.display_glyph_index('\u{2012}'),
+        face.glyph_index('\u{2012}')
+    );
+}
+
+#[test]
 fn aliases_are_case_and_whitespace_insensitive_and_generic_fallback_works() {
     let manager = FontManager::new();
     assert_eq!(

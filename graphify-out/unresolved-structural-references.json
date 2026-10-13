@@ -11,6 +11,17 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_desktop_win_build",
+    "target": "build_date",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/build.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_unicode_build",
     "target": "std",
     "relation": "imports_from",
@@ -385,6 +396,17 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_desktop_win_src_build_date",
+    "target": "build_date",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/build_date.rs",
+    "source_location": "L21",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_desktop_win_src_data",
     "target": "fmt",
     "relation": "imports_from",
@@ -676,7 +698,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/resources.rs",
-    "source_location": "L357",
+    "source_location": "L397",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -874,7 +896,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2162",
+    "source_location": "L2176",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -885,7 +907,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2167",
+    "source_location": "L2181",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -896,7 +918,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2170",
+    "source_location": "L2184",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -2799,7 +2821,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L1192",
+    "source_location": "L1209",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -3075,6 +3097,17 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/font/tests/subset_cff.rs",
     "source_location": "L30",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_font_tests_ui_symbol_coverage",
+    "target": "fontface",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/tests/ui_symbol_coverage.rs",
+    "source_location": "L2",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -7018,6 +7051,17 @@
     "_origin": "ast"
   },
   {
+    "source": "web_about_dialog",
+    "target": "ref_ui_components_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/about-dialog.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
     "source": "web_app",
     "target": "ref_engine_client_mjs",
     "relation": "imports_from",
@@ -7113,6 +7157,72 @@
     "confidence": "EXTRACTED",
     "source_file": "web/app.mjs",
     "source_location": "L10",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_symbol_dialog_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_symbol_catalogue_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L12",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_editor_context_menu_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L13",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_about_dialog_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L14",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_about_licenses_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L15",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_build_info_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L16",
     "weight": 1.0,
     "_origin": "ast"
   },
@@ -7344,6 +7454,28 @@
     "confidence": "EXTRACTED",
     "source_file": "tests/editor-protocol.mjs",
     "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_editor_utilities_data",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/editor-utilities-data.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_editor_utilities_data",
+    "target": "ref_node_fs_promises",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/editor-utilities-data.mjs",
+    "source_location": "L3",
     "weight": 1.0,
     "_origin": "ast"
   },
@@ -7621,6 +7753,83 @@
     "context": "import",
     "confidence": "EXTRACTED",
     "source_file": "tests/run-editor-browser.mjs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_child_process",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_http",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_fs_promises",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_os",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_path",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_url",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
     "source_location": "L8",
     "weight": 1.0,
     "_origin": "ast"
@@ -8439,6 +8648,72 @@
     "confidence": "EXTRACTED",
     "source_file": "tools/generate-odt-reference.py",
     "source_location": "L36",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "pathlib",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "bisect",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "re",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L6",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "struct",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L7",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "sys",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L8",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "tomllib",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L9",
     "weight": 1.0,
     "_origin": "ast"
   },

@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages, navigationAvailable = true, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
+export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, aboutAvailable = false, onSymbols = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -27,6 +27,9 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
   const searchCommand = toolCommand("search-command","searchTitle",onSearch);
   const replaceCommand = toolCommand("replace-command","replaceTitle",onReplace);
   const statisticsCommand = toolCommand("statistics-command","statisticsDialogTitle",onStatistics);
+  const symbolsCommand = toolCommand("symbols-command","symbolsTitle",onSymbols);
+  const aboutCommand = toolCommand("about-command","aboutTitle",onAbout);
+  aboutCommand.disabled = false;
   const localizedNavigation = navigationAvailable && ["searchTitle", "replaceTitle", "statisticsDialogTitle", "statisticsScopeDocument"]
     .every(key => typeof messages.get(key) === "string");
   const stateRow = doc.createElement("div");
@@ -59,13 +62,14 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
       command("open", "action-open", "O", byId("open-document")),
       command("open-docx", "action-open-docx", "D", byId("open-docx")),
       command("save", "action-save", "S", byId("save-document")),
+      ...(aboutAvailable ? [command("about", "aboutTitle", "P", aboutCommand)] : []),
     ] }] },
     { id: "home", label: t("ribbon-home"), keyTip: "A", groups: [
       { id: "history", label: t("ribbon-history-group"), commands: [command("undo", "action-undo", "U", byId("undo")), command("redo", "action-redo", "R", byId("redo"))] },
       { id: "editing", label: t("ribbon-editing-group"), commands: [command("options", "options-label", "E", options), ...(localizedNavigation ? [command("search", "searchTitle", "C", searchCommand), command("replace", "replaceTitle", "H", replaceCommand)] : [])] },
       { id: "format", label: t("ribbon-format-group"), commands: [future("font", "ribbon-font", "P"), future("paragraph", "ribbon-paragraph", "G")] },
     ] },
-    { id: "insert", label: t("ribbon-insert"), keyTip: "I", groups: [{ id: "objects", label: t("ribbon-objects-group"), commands: [future("table", "ribbon-table", "T"), future("image", "ribbon-image", "M")] }] },
+    { id: "insert", label: t("ribbon-insert"), keyTip: "I", groups: [{ id: "objects", label: t("ribbon-objects-group"), commands: [future("table", "ribbon-table", "T"), future("image", "ribbon-image", "M"), ...(symbolsAvailable ? [command("symbols", "symbolsTitle", "S", symbolsCommand)] : [])] }] },
     { id: "layout", label: t("ribbon-layout"), keyTip: "M", groups: [{ id: "page", label: t("ribbon-page-group"), commands: [future("margins", "ribbon-margins", "G"), future("orientation", "ribbon-orientation", "O")] }] },
     { id: "references", label: t("ribbon-references"), keyTip: "R", groups: [{ id: "references", label: t("ribbon-references-group"), commands: [future("fields", "ribbon-fields", "C"), future("bookmarks", "ribbon-bookmarks", "S")] }] },
     { id: "view", label: t("ribbon-view"), keyTip: "V", groups: [
@@ -88,7 +92,8 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
     theme, ribbon,
     setZoomEnabled(enabled) { zoomCommand.disabled = !enabled; ribbon.refresh(); },
     setNavigationEnabled(enabled) { searchCommand.disabled = !enabled; replaceCommand.disabled = !enabled; statisticsCommand.disabled = !enabled; ribbon.refresh(); },
+    setSymbolsEnabled(enabled) { symbolsCommand.disabled = !enabled; ribbon.refresh(); },
     refresh: () => ribbon.refresh(),
-    dispose() { searchCommand.removeEventListener("click",onSearch); replaceCommand.removeEventListener("click",onReplace); statisticsCommand.removeEventListener("click",onStatistics); zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
+    dispose() { symbolsCommand.removeEventListener("click",onSymbols); aboutCommand.removeEventListener("click",onAbout); searchCommand.removeEventListener("click",onSearch); replaceCommand.removeEventListener("click",onReplace); statisticsCommand.removeEventListener("click",onStatistics); zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
   });
 }

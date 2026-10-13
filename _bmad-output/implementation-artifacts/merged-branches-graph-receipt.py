@@ -14,7 +14,7 @@ from graphify.cargo_introspect import introspect_cargo
 from graphify.export import to_html
 from graphify.diagnostics import diagnose_extraction
 
-if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"], ["--finalize-navigation"], ["--finalize-replacement"], ["--finalize-docx"], ["--finalize-docx-merged"], ["--finalize-docx-long"]):
+if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"], ["--finalize-navigation"], ["--finalize-replacement"], ["--finalize-docx"], ["--finalize-docx-merged"], ["--finalize-docx-long"], ["--finalize-utilities"]):
     raise SystemExit("Usage: py ui-shell-graph-receipt.py --finalize (only after parent GO)")
 zoom_run = sys.argv[1:] == ["--finalize-zoom"]
 navigation_run = sys.argv[1:] == ["--finalize-navigation"]
@@ -22,6 +22,7 @@ replacement_run = sys.argv[1:] == ["--finalize-replacement"]
 docx_run = sys.argv[1:] == ["--finalize-docx"]
 docx_long_run = sys.argv[1:] == ["--finalize-docx-long"]
 docx_merged_run = sys.argv[1:] == ["--finalize-docx-merged"]
+utilities_run = sys.argv[1:] == ["--finalize-utilities"]
 
 ROOT = Path(__file__).resolve().parents[2]
 ART = Path(__file__).resolve().parent
@@ -145,13 +146,19 @@ assert {node['label'] for node in cargo['nodes']} == {package['name'] for packag
 
 missing_sources = [node['id'] for node in raw['nodes'] if node.get('source_file') and not (ROOT/node['source_file']).is_file()]
 assert not missing_sources, f"missing located sources: {missing_sources[:20]}"
-for url in ('/editor-shell.mjs', '/ui-components.mjs', '/ui-components.css', '/ribbon.mjs', '/ribbon.css', '/theme.mjs', '/theme.css') + (('/zoom.mjs', '/zoom-controls.mjs', '/zoom-controls.css') if zoom_run else ()) + (('/navigation-tools.mjs', '/search-pane.mjs', '/search-pane.css', '/statistics-controls.mjs', '/statistics-controls.css') if navigation_run else ()) + (('/page-navigation.mjs','/replace-controls.mjs','/replace-controls.css','/document-status.mjs','/document-status.css') if replacement_run else ()):
+for url in ('/editor-shell.mjs', '/ui-components.mjs', '/ui-components.css', '/ribbon.mjs', '/ribbon.css', '/theme.mjs', '/theme.css') + (('/zoom.mjs', '/zoom-controls.mjs', '/zoom-controls.css') if zoom_run else ()) + (('/navigation-tools.mjs', '/search-pane.mjs', '/search-pane.css', '/statistics-controls.mjs', '/statistics-controls.css') if navigation_run else ()) + (('/page-navigation.mjs','/replace-controls.mjs','/replace-controls.css','/document-status.mjs','/document-status.css') if replacement_run else ()) + (('/symbol-dialog.mjs','/symbol-dialog.css','/symbol-catalogue.mjs','/editor-context-menu.mjs','/about-dialog.mjs','/about-dialog.css','/about-licenses.mjs') if utilities_run else ()):
     route = 'http_route_' + re.sub(r'[^a-z0-9]+', '_', url.casefold()).strip('_')
     assert route in node_ids, f"missing UI route: {url}"
     # The simple graph merges multiple relations for one endpoint pair; the raw
     # extraction preserves both serves_embedded_bytes and serves_source_file.
     assert any(edge['source']==route and edge.get('relation')=='serves_embedded_bytes' for edge in extraction['edges'])
     assert any(route in (edge['source'],edge['target']) and edge.get('relation') in ('serves_embedded_bytes','serves_source_file') for edge in edges)
+
+if utilities_run:
+    assert 'http_route_build_info_mjs' in node_ids
+    assert 'embedded_generated_build_info_module' in node_ids
+    assert any(edge['source']=='http_route_build_info_mjs' and edge['target']=='embedded_generated_build_info_module' and edge.get('relation')=='serves_embedded_bytes' for edge in extraction['edges'])
+    assert not any(edge['source']=='http_route_build_info_mjs' and edge['target']=='embedded_web_page_navigation_mjs' for edge in extraction['edges'])
 
 for name in GRAPH_FILES:
     path = OUT / name
@@ -200,7 +207,7 @@ evidence = {
         for name in ("merged-branches-graph-refresh.py", "merged-branches-graph-receipt.py")
     },
 }
-(ART / ("docx-long-guides-graph.json" if docx_long_run else "docx-theme-merged-graph.json" if docx_merged_run else "docx-theme-graph.json" if docx_run else "replacement-status-graph.json" if replacement_run else "navigation-graph.json" if navigation_run else "zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
+(ART / ("editor-utilities-graph.json" if utilities_run else "docx-long-guides-graph.json" if docx_long_run else "docx-theme-merged-graph.json" if docx_merged_run else "docx-theme-graph.json" if docx_run else "replacement-status-graph.json" if replacement_run else "navigation-graph.json" if navigation_run else "zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
     json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
     newline="\n",
