@@ -192,7 +192,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor.rs",
-    "source_location": "L945",
+    "source_location": "L1056",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -665,7 +665,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/resources.rs",
-    "source_location": "L332",
+    "source_location": "L357",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -863,7 +863,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2159",
+    "source_location": "L2162",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -874,7 +874,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2164",
+    "source_location": "L2167",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -885,7 +885,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2167",
+    "source_location": "L2170",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -6930,6 +6930,17 @@
     "_origin": "ast"
   },
   {
+    "source": "web_app",
+    "target": "ref_document_status_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L10",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
     "source": "web_editor_shell",
     "target": "ref_ribbon_mjs",
     "relation": "imports_from",
@@ -7268,6 +7279,52 @@
     "confidence": "EXTRACTED",
     "source_file": "tests/navigation-tools-browser.mjs",
     "source_location": "L66",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_page_navigation",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/page-navigation.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_replace_controls_browser_run",
+    "target": "ref_replace_controls_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "deferred": true,
+    "confidence": "EXTRACTED",
+    "source_file": "tests/replace-controls-browser.mjs",
+    "source_location": "L13",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_replacement_controller_browser_run",
+    "target": "ref_navigation_tools_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "deferred": true,
+    "confidence": "EXTRACTED",
+    "source_file": "tests/replacement-controller-browser.mjs",
+    "source_location": "L72",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_replacement_protocol",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/replacement-protocol.mjs",
+    "source_location": "L2",
     "weight": 1.0,
     "_origin": "ast"
   },

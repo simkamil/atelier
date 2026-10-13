@@ -11,6 +11,88 @@ use atelier_text_model::{
 use atelier_unicode::segmentation::grapheme_boundaries;
 use core::ops::Range;
 
+/// Build the replacement text from the immutable source snapshot. The returned
+/// range is the smallest source span containing every match, so the caller can
+/// publish the whole operation as one isolated history entry.
+pub(crate) fn replacement_span(
+    text: &str,
+    query: &str,
+    replacement: &str,
+    options: SearchOptions,
+    only: Option<Range<usize>>,
+    max_text_bytes: usize,
+) -> Result<(usize, Option<Range<usize>>, String), EditorError> {
+    let source = TextLines(text);
+    let searcher = Searcher::new(&source, query, options);
+    let mut ranges = Vec::new();
+    ranges
+        .try_reserve(text.len().min(1024))
+        .map_err(|_| EditorError("EDITOR_LIMIT"))?;
+    for occurrence in searcher.iter() {
+        let start = occurrence
+            .paragraph
+            .0
+            .checked_add(occurrence.range.start)
+            .ok_or(EditorError("EDITOR_TEXT_LIMIT"))?;
+        let end = occurrence
+            .paragraph
+            .0
+            .checked_add(occurrence.range.end)
+            .ok_or(EditorError("EDITOR_TEXT_LIMIT"))?;
+        let range = start..end;
+        if only.as_ref().is_none_or(|wanted| *wanted == range) {
+            ranges
+                .try_reserve(1)
+                .map_err(|_| EditorError("EDITOR_LIMIT"))?;
+            ranges.push(range);
+            if only.is_some() {
+                break;
+            }
+        }
+    }
+    if ranges.is_empty() {
+        return Ok((0, None, String::new()));
+    }
+
+    let start = ranges.first().unwrap().start;
+    let end = ranges.last().unwrap().end;
+    let matched_bytes = ranges
+        .iter()
+        .try_fold(0usize, |sum, range| {
+            sum.checked_add(range.end - range.start)
+        })
+        .ok_or(EditorError("EDITOR_TEXT_LIMIT"))?;
+    let removed = end - start;
+    let inserted = replacement
+        .len()
+        .checked_mul(ranges.len())
+        .ok_or(EditorError("EDITOR_TEXT_LIMIT"))?;
+    let span_len = removed
+        .checked_sub(matched_bytes)
+        .and_then(|n| n.checked_add(inserted))
+        .ok_or(EditorError("EDITOR_TEXT_LIMIT"))?;
+    let result_len = text
+        .len()
+        .checked_sub(removed)
+        .and_then(|n| n.checked_add(span_len))
+        .ok_or(EditorError("EDITOR_TEXT_LIMIT"))?;
+    if result_len > max_text_bytes {
+        return Err(EditorError("EDITOR_TEXT_LIMIT"));
+    }
+    let mut output = String::new();
+    output
+        .try_reserve_exact(span_len)
+        .map_err(|_| EditorError("EDITOR_LIMIT"))?;
+    let mut cursor = start;
+    for range in &ranges {
+        output.push_str(&text[cursor..range.start]);
+        output.push_str(replacement);
+        cursor = range.end;
+    }
+    output.push_str(&text[cursor..end]);
+    Ok((ranges.len(), Some(start..end), output))
+}
+
 pub(crate) struct QueryLimits {
     pub max_results: usize,
     pub max_rects: usize,

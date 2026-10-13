@@ -1617,6 +1617,9 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
             ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
           ];
+          paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);
+          // Keep required log probes within the bounded request log.
+          paths.sort((a,b)=>Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(a[0]))-Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(b[0])));
           const assets={};
           for(const [path,mime] of paths){const r=await fetch(path,{cache:'no-store'});assets[path]={status:r.status,type:r.headers.get('content-type')||'',mime};}
           const root=await fetch('/',{cache:'no-store'});
@@ -1742,7 +1745,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
     // Startup plus explicit probes may rotate the bounded diagnostic log.
     // Every required probe above must still be present; report rotation honestly.
     Ok(format!(
-        "embedded resources: assets=36; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
+        "embedded resources: assets=41; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
         attempts.len(),
         view.dropped_resource_attempts()
     ))

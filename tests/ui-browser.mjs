@@ -4,7 +4,7 @@ const fixture = document.querySelector("#fixture");
 const assert = (condition, name) => { if (!condition) throw new Error(name); checks.push(name); };
 let report;
 try {
-  for (const name of ["ui-components", "theme", "ribbon", "zoom-controls", "search-pane", "statistics-controls", "navigation-tools"]) {
+  for (const name of ["ui-components", "theme", "ribbon", "zoom-controls", "search-pane", "statistics-controls", "navigation-tools", "replace-controls", "document-status", "replacement-controller"]) {
     const suite = await import(`/tests/${name}-browser.mjs`);
     await suite.run({ assert, fixture });
     fixture.replaceChildren();

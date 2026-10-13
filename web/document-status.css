@@ -1,0 +1,180 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.document-status {
+  position: relative;
+  min-width: 0;
+  color: var(--chrome-muted, var(--muted, #5f716d));
+  font: inherit;
+}
+
+.document-status:focus-visible {
+  outline: 2px solid var(--chrome-focus, var(--green, #236c57));
+  outline-offset: 2px;
+}
+
+.document-status-fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .25rem .45rem;
+  min-width: 0;
+}
+
+.document-status-field {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: .35rem;
+}
+
+.document-status-field + .document-status-field::before {
+  content: "";
+  width: 1px;
+  height: 1rem;
+  margin-inline-end: .45rem;
+  background: var(--chrome-border, var(--line, #dce5df));
+}
+
+.document-status-value {
+  max-width: 100%;
+  padding: .25rem .2rem;
+  overflow-wrap: anywhere;
+  color: inherit;
+  font: inherit;
+}
+
+.document-status-page {
+  border: 1px solid transparent;
+  border-radius: .35rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.document-status-page:hover:not(:disabled) {
+  color: var(--chrome-ink, var(--ink, #172a2a));
+  background: var(--chrome-control-hover, var(--chrome, #f8faf8));
+  border-color: var(--chrome-control-hover-border, var(--line, #dce5df));
+}
+
+.document-status-page:focus-visible,
+.document-status-goto-dialog :focus-visible {
+  outline: 2px solid var(--chrome-focus, var(--green, #236c57));
+  outline-offset: 2px;
+}
+
+.document-status-page:disabled {
+  color: inherit;
+  cursor: default;
+  opacity: .8;
+}
+
+.document-status-goto-dialog {
+  width: min(26rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  color: var(--chrome-ink, var(--ink, #172a2a));
+  background: var(--chrome-surface-raised, var(--paper, #fff));
+  border-color: var(--chrome-border, var(--line, #dce5df));
+}
+
+.document-status-goto-form {
+  display: grid;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.document-status-goto-form label {
+  display: grid;
+  gap: .35rem;
+}
+
+.document-status-goto-form input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: .45rem .6rem;
+  color: var(--chrome-ink, var(--ink, #172a2a));
+  background: var(--chrome-control, var(--paper, #fff));
+  border: 1px solid var(--chrome-control-border, var(--line, #dce5df));
+  border-radius: .35rem;
+  font: inherit;
+}
+
+.document-status-goto-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+
+.document-status-goto-actions button {
+  min-height: 2.25rem;
+  padding: .35rem .7rem;
+  color: var(--chrome-ink, var(--ink, #172a2a));
+  background: var(--chrome-control, var(--paper, #fff));
+  border: 1px solid var(--chrome-control-border, var(--line, #dce5df));
+  border-radius: .35rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.document-status-goto-actions button:disabled {
+  cursor: default;
+  opacity: .6;
+}
+
+.document-status-goto-error {
+  min-height: 1.25em;
+  margin: 0;
+  color: var(--chrome-danger, #a3312f);
+}
+
+.document-status [data-status-visibility-menu] [role="menuitemcheckbox"] {
+  position: relative;
+  padding-inline-start: 2rem;
+}
+
+.document-status [data-status-visibility-menu] [role="menuitemcheckbox"]::before {
+  position: absolute;
+  inset-inline-start: .55rem;
+  color: var(--chrome-ink, var(--ink, #172a2a));
+  font-weight: 700;
+  content: "";
+}
+
+.document-status [data-status-visibility-menu] [role="menuitemcheckbox"][aria-checked="true"]::before {
+  content: "✓";
+}
+
+@media (max-width: 560px) {
+  .document-status-fields {
+    align-items: flex-start;
+    column-gap: .2rem;
+  }
+
+  .document-status-field + .document-status-field::before {
+    margin-inline-end: .2rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .document-status-page,
+  .document-status-goto-form input,
+  .document-status-goto-actions button {
+    border-color: ButtonText;
+  }
+
+  .document-status-page:focus-visible,
+  .document-status-goto-dialog :focus-visible,
+  .document-status:focus-visible {
+    outline-color: Highlight;
+  }
+
+  .document-status-goto-error {
+    color: CanvasText;
+  }
+
+  .document-status [data-status-visibility-menu] [role="menuitemcheckbox"]::before {
+    color: ButtonText;
+  }
+}

@@ -1378,8 +1378,10 @@ Réf : F-COM-010 · Taille : M · Dépend de : US-013, US-200
 
 #### US-341 — Remplacer
 *En tant qu'*utilisateur, *je veux* remplacer du texte *afin de* corriger un document en une fois.
-- [ ] Ctrl+H : suivant, remplacer, remplacer tout (une seule transaction annulable, nombre de remplacements affiché).
+- [x] Ctrl+H : suivant, remplacer, remplacer tout (une seule transaction annulable, nombre de remplacements affiché).
 - [ ] Le texte de remplacement prend la mise en forme du texte trouvé.
+
+Avancement (2026-10-13) : Remplacement TXT intégré, quatre options Unicode, compte exact au-delà des 1 000 résultats affichés, transaction isolée Undo/Redo, refus atomique des plages/révisions périmées et dépassements. Édition et attributs riches restent ouverts ; [contrat et validation](docs/us-341-replacement.md).
 
 Réf : F-COM-010 · Taille : S · Dépend de : US-340
 
@@ -1404,7 +1406,9 @@ Réf : F-TXT-006 · Taille : S · Dépend de : US-011
 #### US-344 — Barre d'état
 *En tant qu'*utilisateur, *je veux* une barre d'état informative *afin de* connaître ma position et l'état du document.
 - [ ] Page X sur Y (clic → Atteindre), mots, langue, mode d'affichage, zoom, indicateur d'enregistrement.
-- [ ] Éléments affichés configurables (clic droit).
+- [x] Éléments affichés configurables (clic droit).
+
+Avancement (2026-10-13) : Pages visibles et dialogue Atteindre raccordés au TXT et à l’aperçu, sans modifier la sélection ; six champs masquables par clic droit/Maj+F10 pendant la session. La langue du TXT est explicitement non définie ; mots et métadonnées riches du DOCX restent indisponibles, donc premier critère partiel ; [contrat et validation](docs/us-344-status-bar.md).
 
 Réf : F-COM-018 · Taille : S · Dépend de : US-342, US-343
 

@@ -1,0 +1,52 @@
+{
+  "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
+  "nodes": 9320,
+  "edges": 23878,
+  "stories": 158,
+  "done": 53,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 9320,
+  "html_node_limit": 10000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 1194,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 63,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "94df23fb037145d75542f54dbc0215d0daf929bc:graphify-out/GRAPH_REPORT.md",
+  "local_cost_meter_available": false,
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "replacement_story_status": {
+    "341": "open",
+    "344": "open"
+  },
+  "zoom_story_status": null,
+  "navigation_story_status": null,
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "974049e6e5e909a7ca73e9e7180e718832310a923669c04b957b0917924e8483",
+    "graphify-out/graph.json": "a3ea3c1dd3f33d1871793bf6b944ca4d4eda2bf67393d55e5b412759c3cfe7a2",
+    "graphify-out/graph.html": "c2c71f152621feaacdd55172140df9471bc3a44a54b36c6431c8b93d7a7b827a",
+    "graphify-out/story-dependencies.json": "4bb16d04434510c65ed3ac200414574fee22ba934cb59dddf85a18eada8677f8",
+    "graphify-out/unresolved-structural-references.json": "f1b7683ace12f3911ac096b3f230780430a4afd82f1318742db1aed6fffd8050"
+  },
+  "graph_tools_sha256": {
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "4b4760411737e75e2e746f74027ec5d89a4b46975e3526379e87c02376ab3ea1",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "a819daf614e383c6e9a4ade4b19dcc62aaee4e30af9e457721cb49816685ac04"
+  }
+}

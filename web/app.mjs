@@ -7,6 +7,7 @@ import { createRichPreview } from "/rich-preview.mjs";
 import { createEditorShell } from "/editor-shell.mjs";
 import { createZoomControls } from "/zoom-controls.mjs";
 import { createNavigationTools } from "/navigation-tools.mjs";
+import { createDocumentStatus } from "/document-status.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -111,13 +112,18 @@ async function start() {
     "statusDocument", "statusSelection", "statisticsMetric", "statisticsDialogTitle", "statisticsClose", "statisticsScopeDocument",
     "statisticsScopeSelection", "statisticsFieldPages", "statisticsFieldWords", "statisticsFieldCharacters",
     "statisticsFieldCharactersWithSpaces", "statisticsFieldParagraphs", "statisticsFieldLines", "statisticsLoading",
-    "statisticsError", "statisticsUnavailableData", "statisticsNotesTextBoxes", "statisticsNotesUnavailable"];
+    "statisticsError", "statisticsUnavailableData", "statisticsNotesTextBoxes", "statisticsNotesUnavailable",
+    "replaceTitle", "replaceText", "replaceOne", "replaceAll", "replaceBusy", "replaceError", "replaceNone", "replaceCountOne", "replaceCountMany"];
   const toolsAvailable = toolKeys.every(key => messages.has(key));
+  const statusKeys = ["statusPageCount", "statusPageUnavailable", "statusLanguage", "statusLanguageUnknown", "statusViewText", "statusViewPreview",
+    "statusSaved", "statusUnsaved", "statusReadOnly", "statusConfigure", "statusShowPage", "statusShowWords", "statusShowLanguage", "statusShowView",
+    "statusShowZoom", "statusShowSaved", "statusGotoTitle", "statusGotoPage", "statusGotoApply", "statusGotoCancel", "statusGotoInvalid", "statusGotoRange", "statusGotoClose"];
   let zoomControls;
   let navigation;
+  let documentStatus;
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
     onZoom: () => zoomControls?.open({ returnFocusTo: document.activeElement }),
-    onSearch: () => navigation?.openSearch(), onStatistics: () => navigation?.openStatistics() });
+    onSearch: () => navigation?.openSearch(), onReplace: () => navigation?.openReplace(), onStatistics: () => navigation?.openStatistics() });
   let client;
   let host;
   let editor;
@@ -140,10 +146,30 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    navigation?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
+  function updateStatus() {
+    const view = previewActive ? preview : editor;
+    documentStatus?.setState({ ...view?.getViewportState(), language: null, mode: previewActive ? "preview" : "text",
+      dirty: previewActive ? null : editor?.state?.dirty ?? null, busy: !initialized || (previewActive ? !previewReady : busy) });
+  }
+  if (statusKeys.every(key => messages.has(key))) {
+    const footer = document.querySelector("footer");
+    footer.tabIndex = 0;
+    footer.setAttribute("aria-label", messages.get("statusConfigure"));
+    documentStatus = createDocumentStatus({ document, labels: Object.fromEntries(statusKeys.map(key => [key, messages.get(key)])), menuTarget: footer,
+      onGoToPage: page => {
+        if (disposed || !initialized || (previewActive ? !previewReady : busy)) return;
+        try { (previewActive ? preview : editor).goToPage(page); } catch (error) { onError(error); }
+      },
+      onVisibilityChange: ({ field, visible }) => {
+        if (field === "words") byId("statistics-slot").hidden = !visible;
+        if (field === "zoom") byId("document-zoom").hidden = !visible;
+      } });
+    byId("document-status-slot").append(documentStatus.element);
+  }
   const zoomLabels = Object.fromEntries(["group", "range", "percent", "title", "value", "custom", "width", "page", "pages", "apply", "cancel", "close", "invalid"]
     .map(key => [key, messages.get(`zoom-${key}`) ?? key]));
   zoomControls = createZoomControls({ document, labels: zoomLabels, onChange: ({ zoom, mode }) => {
@@ -158,6 +184,7 @@ async function start() {
     const disabled = !initialized || (previewActive ? !previewReady : busy);
     zoomControls.setState({ zoom: view?.getZoom() ?? 1, mode: view?.getZoomMode() ?? "custom", disabled });
     shell.setZoomEnabled(!disabled);
+    updateStatus();
   };
   updateZoom();
   window.addEventListener("pagehide", dispose, { once: true, signal: listeners.signal });
@@ -213,6 +240,7 @@ async function start() {
       frenchSpacing: nodes.frenchSpacing.checked,
       confirmDiscard: messages.get("confirm-discard"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
       onZoom: () => { if (!previewActive) updateZoom(); },
+      onViewport: () => { if (!previewActive) updateStatus(); },
     });
     function closePreview() {
       if (!previewActive || disposed) return;
@@ -226,7 +254,7 @@ async function start() {
     }
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
       spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
-      onZoom: () => { if (previewActive) updateZoom(); } });
+      onZoom: () => { if (previewActive) updateZoom(); }, onViewport: () => { if (previewActive) updateStatus(); } });
     if (toolsAvailable) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"),
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
     async function openDocx() {
@@ -318,6 +346,7 @@ async function start() {
       theme: shell.theme, ribbon: shell.ribbon,
       zoomControls,
       navigation,
+      documentStatus,
       openDocx, closePreview, dispose,
       get previewActive() { return previewActive; },
     });

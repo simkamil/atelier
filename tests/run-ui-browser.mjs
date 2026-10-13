@@ -132,6 +132,7 @@ async function captureShell() {
       }
       assert(await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2 && document.documentElement.scrollWidth<=innerWidth && document.body.scrollHeight<=innerHeight"), `${name} open search pane fits the real shell`);
       if (screenshots) {
+        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
         const shot=await send("Page.captureScreenshot",{format:"png"});
         await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-search.png`),Buffer.from(shot.data,"base64"));
       }
@@ -139,10 +140,36 @@ async function captureShell() {
       await new Promise(resolve=>setTimeout(resolve,180));
       assert(await evaluate("(()=>{const d=document.querySelector('[data-statistics-dialog]');const r=d.getBoundingClientRect();return d.open&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} statistics dialog stays inside the viewport`);
       if (screenshots) {
+        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
         const shot=await send("Page.captureScreenshot",{format:"png"});
         await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-statistics.png`),Buffer.from(shot.data,"base64"));
       }
       await evaluate("document.querySelector('[data-statistics-dialog] .ui-dialog-close').click()");
+      await evaluate("window.atelierScreenshotApp.navigation.openReplace();document.querySelector('[data-replace-text]').scrollIntoView({block:'nearest'})");
+      await new Promise(resolve=>setTimeout(resolve,180));
+      assert(await evaluate("(()=>{const c=document.querySelector('.replace-controls');const r=c.getBoundingClientRect();return !c.hidden&&r.left>=0&&r.right<=innerWidth&&document.documentElement.scrollWidth<=innerWidth&&document.body.scrollHeight<=innerHeight;})()"),`${name} replacement controls fit the actual viewport`);
+      if (screenshots) {
+        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+        const shot=await send("Page.captureScreenshot",{format:"png"});
+        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-replace.png`),Buffer.from(shot.data,"base64"));
+      }
+      await evaluate("document.querySelector('[data-search-close]').click();document.querySelector('.document-status-page').click()");
+      assert(await evaluate("(()=>{const d=document.querySelector('[data-status-goto-dialog]');const r=d.getBoundingClientRect();return d.open&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} page dialog fits the viewport`);
+      if (screenshots) {
+        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+        const shot=await send("Page.captureScreenshot",{format:"png"});
+        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-goto.png`),Buffer.from(shot.data,"base64"));
+      }
+      await evaluate("document.querySelector('[data-goto-cancel]').click();new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+      await evaluate("(()=>{const f=document.querySelector('footer');f.focus();f.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));})()");
+      assert(await evaluate("(()=>{const m=document.querySelector('[data-status-visibility-menu]');const r=m.getBoundingClientRect();return !m.hidden&&m.querySelectorAll('[role=menuitemcheckbox]').length===6&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} six-field status menu fits the viewport`);
+      if (screenshots) {
+        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+        const shot=await send("Page.captureScreenshot",{format:"png"});
+        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-status-menu.png`),Buffer.from(shot.data,"base64"));
+      }
+      await evaluate("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))");
+      assert(await evaluate("document.querySelector('[data-status-visibility-menu]').hidden"), "status menu closes before the next layout scenario");
     }
     for (const catalogFailure of ["unavailable", "partial"]) {
     unavailableCatalog = catalogFailure;
@@ -165,6 +192,7 @@ try {
   await captureShell();
   report.checks.push("real packaged app follows live browser system-theme media changes", "real packaged shell fits 1280px and 420px without horizontal overflow");
   report.checks.push("real search pane and statistics dialog fit 1280px and 420px in light/dark themes");
+  report.checks.push("replacement, page dialog and six-field status menu fit 1280px and 420px in light/dark themes");
   report.checks.push("missing or partial catalog keeps editing available and omits untranslated navigation tools");
   if (forcedColors) report.checks.push("primary button and mark preserve readable forced-colors system pairs");
   console.log(JSON.stringify({ ...report, executable, screenshots, environment: "real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence" }));

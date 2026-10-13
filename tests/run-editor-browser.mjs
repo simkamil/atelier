@@ -19,6 +19,16 @@ for (const candidate of browserCandidates) {
 }
 assert(executable, "An installed Edge/Chromium browser is required for this check.");
 const files = new Map([
+  ["/page-navigation.mjs", ["web/page-navigation.mjs", "text/javascript; charset=utf-8"]],
+  ["/replace-controls.mjs", ["web/replace-controls.mjs", "text/javascript; charset=utf-8"]],
+  ["/replace-controls.css", ["web/replace-controls.css", "text/css; charset=utf-8"]],
+  ["/document-status.mjs", ["web/document-status.mjs", "text/javascript; charset=utf-8"]],
+  ["/document-status.css", ["web/document-status.css", "text/css; charset=utf-8"]],
+  ["/web/page-navigation.mjs", ["web/page-navigation.mjs", "text/javascript; charset=utf-8"]],
+  ["/web/replace-controls.mjs", ["web/replace-controls.mjs", "text/javascript; charset=utf-8"]],
+  ["/web/document-status.mjs", ["web/document-status.mjs", "text/javascript; charset=utf-8"]],
+  ["/tests/replacement-browser.mjs", ["tests/replacement-browser.mjs", "text/javascript; charset=utf-8"]],
+  ["/tests/document-status-integration-browser.mjs", ["tests/document-status-integration-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser.html", ["tests/editor-browser.html", "text/html; charset=utf-8"]],
   ["/tests/editor-browser.mjs", ["tests/editor-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/zoom-browser.mjs", ["tests/zoom-browser.mjs", "text/javascript; charset=utf-8"]],

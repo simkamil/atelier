@@ -2,6 +2,7 @@
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeDisplayList } from "./display-list.mjs";
 import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
+import { visiblePage, pageScrollTop } from "./page-navigation.mjs";
 
 const A4_WIDTH = 595.276;
 const A4_HEIGHT = 841.89;
@@ -67,13 +68,13 @@ function prepareDocument(document) {
 
 /** A read-only, independently scrollable ATDL preview. It has no editor/model reference. */
 export function createRichPreview({ canvas, scrollport, spacer, textRepresentation,
-  onClose = () => {}, onError = () => {}, onZoom = () => {} } = {}) {
+  onClose = () => {}, onError = () => {}, onZoom = () => {}, onViewport = () => {} } = {}) {
   if (!canvas?.getContext || !canvas.style || !scrollport?.addEventListener || !scrollport.style
       || !spacer?.style || !textRepresentation || typeof textRepresentation !== "object"
       || typeof textRepresentation.textContent !== "string") {
     throw new TypeError("Canvas, scrollport, spacer and textRepresentation are required.");
   }
-  if (typeof onClose !== "function" || typeof onError !== "function" || typeof onZoom !== "function") {
+  if (![onClose, onError, onZoom, onViewport].every(callback => typeof callback === "function")) {
     throw new TypeError("Preview callbacks must be functions.");
   }
 
@@ -115,6 +116,11 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
       scrollY: scrollport.scrollTop,
       dpr: globalThis.devicePixelRatio || 1,
     });
+    try { onViewport(viewportState()); } catch { /* UI callbacks are isolated */ }
+  }
+
+  function viewportState() {
+    return visiblePage(document?.pages ?? [], { zoom, gap: renderer.pageGap, scrollTop: scrollport.scrollTop, height: scrollport.clientHeight });
   }
 
   function applyZoom(value, anchor = null, mode = "custom") {
@@ -260,5 +266,11 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
     },
     getZoom() { return zoom; },
     getZoomMode() { return zoomMode; },
+    getViewportState: viewportState,
+    goToPage(page) {
+      if (disposed || !opened || !document) throw new RichPreviewError("RICH_PREVIEW_NO_DOCUMENT");
+      scrollport.scrollTop = pageScrollTop(document.pages, page, zoom, renderer.pageGap);
+      updateViewport();
+    },
   });
 }

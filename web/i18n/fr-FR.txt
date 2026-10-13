@@ -141,3 +141,37 @@ i18n.pages-count={n, plural, one {# page} many {# de pages} other {# pages}}
 i18n.page-of=Page {page} sur {total}
 i18n.search-occurrences={n, plural, =0 {Aucune occurrence} one {# occurrence} other {# occurrences}}
 i18n.file-too-large=Le fichier ({size}) dépasse la taille maximale de {limit}.
+# US-341 Remplacement TXT
+replaceTitle=Remplacer
+replaceText=Remplacer par
+replaceOne=Remplacer l’occurrence
+replaceAll=Tout remplacer
+replaceBusy=Remplacement en cours…
+replaceError=Le remplacement n’a pas pu être effectué. Relancez la recherche.
+replaceNone=Aucune occurrence remplacée.
+replaceCountOne=1 occurrence remplacée.
+replaceCountMany={count} occurrences remplacées.
+# US-344 Barre d’état
+statusPageCount=Page {page} sur {total}
+statusPageUnavailable=Page indisponible
+statusLanguage=Langue : {language}
+statusLanguageUnknown=Langue : non définie
+statusViewText=Édition TXT
+statusViewPreview=Aperçu DOCX
+statusSaved=Enregistré
+statusUnsaved=Non enregistré
+statusReadOnly=Lecture seule
+statusConfigure=Configurer la barre d’état
+statusShowPage=Pages
+statusShowWords=Mots
+statusShowLanguage=Langue
+statusShowView=Mode d’affichage
+statusShowZoom=Zoom
+statusShowSaved=Enregistrement
+statusGotoTitle=Atteindre une page
+statusGotoPage=Numéro de page
+statusGotoApply=Atteindre
+statusGotoCancel=Annuler
+statusGotoInvalid=Saisissez un numéro de page entier.
+statusGotoRange=Saisissez un numéro de page entre 1 et {total}.
+statusGotoClose=Fermer

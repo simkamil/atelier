@@ -171,6 +171,89 @@ impl EditorSession {
                 crate::editor_queries::statistics_response(text, selection, layout, revision)?;
             return Ok((candidate, result));
         }
+        if opcode == 21 || opcode == 22 {
+            let mut r = Reader::new(body);
+            let revision = r.u64()?;
+            let now = r.u64()?;
+            let flags = r.u8()?;
+            if flags & !0x0f != 0 || r.u8()? != 0 || r.u16()? != 0 {
+                return Err(EditorError("EDITOR_INVALID_COMMAND"));
+            }
+            let query_len = r.u32()? as usize;
+            let replacement_len = r.u32()? as usize;
+            let selected = if opcode == 21 {
+                Some(r.u32()? as usize..r.u32()? as usize)
+            } else {
+                None
+            };
+            if revision != candidate.revision {
+                return Err(EditorError("EDITOR_STALE_QUERY"));
+            }
+            let query_bytes = r.take(query_len)?;
+            let replacement_bytes = r.take(replacement_len)?;
+            if r.remaining() != 0 {
+                return Err(EditorError("EDITOR_INVALID_COMMAND"));
+            }
+            let query = core::str::from_utf8(query_bytes)
+                .map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+            let replacement = core::str::from_utf8(replacement_bytes)
+                .map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+            if query.is_empty() {
+                return Err(EditorError("EDITOR_EMPTY_QUERY"));
+            }
+            let doc = candidate.ensure_document()?;
+            if let Some(range) = &selected {
+                let selection = doc.selection();
+                if range.start > range.end
+                    || selection.anchor.min(selection.focus) != range.start
+                    || selection.anchor.max(selection.focus) != range.end
+                {
+                    return Err(EditorError("EDITOR_STALE_MATCH"));
+                }
+            }
+            let source_text = doc.text();
+            let (count, span, replaced) = crate::editor_queries::replacement_span(
+                source_text,
+                query,
+                replacement,
+                atelier_text_model::search::SearchOptions {
+                    match_case: flags & 1 != 0,
+                    whole_word: flags & 2 != 0,
+                    ignore_accents: flags & 4 != 0,
+                    match_nbsp: flags & 8 != 0,
+                    context_graphemes: 0,
+                },
+                selected.clone(),
+                MAX_TEXT,
+            )?;
+            if selected.is_some() && count == 0 {
+                return Err(EditorError("EDITOR_STALE_MATCH"));
+            }
+            if let Some(range) = span {
+                if source_text.get(range.clone()) != Some(replaced.as_str()) {
+                    // The model records this isolated edit in one undo group. The
+                    // candidate session is published only after its final layout
+                    // and response have both been constructed successfully.
+                    doc.replace_range_isolated(range, &replaced, now)
+                        .map_err(map_text_error)?;
+                    candidate.bump_revision()?;
+                    candidate.preferred_x = None;
+                }
+            }
+            candidate.layout = None;
+            let state = candidate.state_response()?;
+            let capacity = 16usize
+                .checked_add(state.len())
+                .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?;
+            let mut out = Writer::with_capacity(capacity)?;
+            out.bytes(b"ATQR");
+            out.u16(1);
+            out.u16(0);
+            out.u32(u32_len(count)?);
+            out.u32(u32_len(state.len())?);
+            out.bytes(&state);
+            return Ok((candidate, out.finish(MAX_RESPONSE)?));
+        }
         match opcode {
             0 => {
                 candidate.ensure_document()?;
@@ -805,6 +888,8 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         18 if body.len() <= 8 * 1024 * 1024 => None,
         19 if (16..=16 + MAX_QUERY_BYTES).contains(&body.len()) => None,
         20 => Some(8),
+        21 if (36..=36 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
+        22 if (28..=28 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
         _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),
     };
     if expected.is_some_and(|len| len != body.len()) {
@@ -837,6 +922,32 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
             return Err(EditorError("EDITOR_INVALID_COMMAND"));
         }
         core::str::from_utf8(&body[16..]).map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+    }
+    if matches!(opcode, 21 | 22) && body.len() >= if opcode == 21 { 36 } else { 28 } {
+        let query_len_at = 20;
+        let query_len =
+            u32::from_le_bytes(body[query_len_at..query_len_at + 4].try_into().unwrap()) as usize;
+        let replacement_len =
+            u32::from_le_bytes(body[query_len_at + 4..query_len_at + 8].try_into().unwrap())
+                as usize;
+        let prefix: usize = if opcode == 21 { 36 } else { 28 };
+        if body[16] & !0x0f != 0
+            || body[17] != 0
+            || body[18] != 0
+            || body[19] != 0
+            || query_len > MAX_QUERY_BYTES
+            || replacement_len > MAX_TEXT
+            || prefix
+                .checked_add(query_len)
+                .and_then(|n| n.checked_add(replacement_len))
+                != Some(body.len())
+        {
+            return Err(EditorError("EDITOR_INVALID_COMMAND"));
+        }
+        core::str::from_utf8(&body[prefix..prefix + query_len])
+            .map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
+        core::str::from_utf8(&body[prefix + query_len..])
+            .map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?;
     }
     Ok((opcode, body))
 }

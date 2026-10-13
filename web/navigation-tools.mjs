@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createSearchPane } from "./search-pane.mjs";
 import { createStatisticsControls } from "./statistics-controls.mjs";
+import { createReplaceControls } from "./replace-controls.mjs";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -14,7 +15,7 @@ function querySeed(text) {
   return out;
 }
 
-/** Coordinates independent views with revisioned read-only Worker queries. */
+/** Coordinates revisioned search, replacement and statistics views. */
 export function createNavigationTools({ document: doc = globalThis.document, editor, paneSlot, statusSlot, labels }) {
   let disposed = false, enabled = false, opened = false;
   let currentState = null, query = "", options = {};
@@ -22,19 +23,26 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
   let statisticsGeneration = 0, statisticsTimer = 0;
   let selectionAbort = new AbortController();
   let navigationQueue = Promise.resolve();
+  let replaceVisible = false, replacePending = false, replaceCount = null, replaceError = null;
+  let replaceActionId = 0, documentEpoch = 0, searchPending = false;
   const enqueueNavigation = run => {
     const generation = searchGeneration;
     navigationQueue = navigationQueue.then(() => !disposed && generation === searchGeneration ? run() : undefined).catch(() => {});
   };
   const pane = createSearchPane({ document: doc, labels,
-    onQuery: change => { query = change.query; options = { ...change.options }; scheduleSearch(); },
+    onQuery: change => { query = change.query; options = { ...change.options }; resetReplacement(); scheduleSearch(); },
     onNavigate: direction => enqueueNavigation(() => navigate(direction)),
     onSelect: selected => enqueueNavigation(() => select(selected)),
     onClose: () => {
-      opened = false; paneSlot.hidden = true; invalidateSearch();
+      opened = false; replaceVisible = false; paneSlot.hidden = true; resetReplacement(); invalidateSearch(); paintReplacement();
     },
   });
   paneSlot.append(pane.element); paneSlot.hidden = true;
+  const replacement = createReplaceControls({ document: doc, labels,
+    onReplace: ({ replacement: value }) => enqueueNavigation(() => replaceMatches(false, value)),
+    onReplaceAll: ({ replacement: value }) => enqueueNavigation(() => replaceMatches(true, value)),
+  });
+  pane.replacementSlot.append(replacement.element);
   const statistics = createStatisticsControls({ document: doc, labels, onOpen: () => scheduleStatistics(0) });
   statusSlot.append(statistics.element);
 
@@ -45,8 +53,39 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
     editor.setSearchHighlights(null);
   }
   function paintSearch(extra = {}) {
+    searchPending = Boolean(extra.busy);
     pane.setState({ items: searchResult?.items ?? [], index, truncated: searchResult?.truncated ?? false,
-      disabled: !enabled, busy: false, error: null, wrapped: false, ...extra });
+      disabled: !enabled, error: null, wrapped: false, ...extra, busy: searchPending || replacePending });
+    paintReplacement();
+  }
+  function resetReplacement() { replaceActionId += 1; replaceCount = null; replaceError = null; }
+  function paintReplacement() {
+    const state = editor.state, item = searchResult?.items[index];
+    const selected = item && searchResult.revision === state?.revision
+      && item.start === Math.min(state.anchor,state.focus) && item.end === Math.max(state.anchor,state.focus);
+    replacement.setState({ visible: opened && replaceVisible, disabled: !enabled, busy: replacePending,
+      canReplace: Boolean(selected && !searchPending), canReplaceAll: Boolean(query && searchResult && !searchPending),
+      count: replaceCount, error: replaceError });
+  }
+  async function replaceMatches(all, value) {
+    if (disposed || !enabled || !opened || !replaceVisible || replacePending || searchPending || !searchResult || !query) return;
+    const item = searchResult.items[index];
+    if (!all && !item) return;
+    const action = ++replaceActionId, epoch = documentEpoch, sourceQuery = query;
+    const values = { revision: editor.state.revision, query, replacement: value, options: { ...options },
+      ...(all ? {} : { start: item.start, end: item.end }) };
+    replacePending = true; replaceCount = null; replaceError = null; paintSearch();
+    try {
+      const result = await editor[all ? "replaceAll" : "replaceCurrent"](values, { signal: selectionAbort.signal });
+      if (disposed || !opened || !enabled || action !== replaceActionId || epoch !== documentEpoch || query !== sourceQuery
+          || editor.state?.revision !== result.state.revision) return;
+      replaceCount = result.count;
+    } catch (error) {
+      if (!disposed && opened && enabled && action === replaceActionId && epoch === documentEpoch) replaceError = error.code ?? "REPLACE_FAILED";
+    } finally {
+      replacePending = false;
+      if (!disposed) paintSearch({ busy: searchPending });
+    }
   }
   function scheduleSearch(delay = 100) {
     invalidateSearch();
@@ -116,13 +155,13 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
       }
     },delay);
   }
-  function openSearch() {
+  function openSearch(showReplacement = false) {
     if (disposed || !enabled || doc.querySelector("dialog:modal")) return false;
     const state = editor.state;
     const selected = state && state.anchor !== state.focus
       ? decoder.decode(state.textBytes.subarray(Math.min(state.anchor,state.focus),Math.max(state.anchor,state.focus))) : "";
     if (selected) query = querySeed(selected);
-    opened = true; paneSlot.hidden = false;
+    opened = true; replaceVisible = showReplacement; paneSlot.hidden = false;
     pane.open({ query, returnFocusTo: editor.element });
     return true;
   }
@@ -131,18 +170,21 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
     return statistics.open({ returnFocusTo: doc.activeElement });
   }
   const onKeyDown = event => {
-    if (event.isComposing || event.altKey || event.getModifierState?.("AltGraph") || doc.querySelector("dialog:modal")) return;
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
-      event.preventDefault(); openSearch();
+    if (event.isComposing || event.keyCode === 229 || event.altKey || event.getModifierState?.("AltGraph") || doc.querySelector("dialog:modal")) return;
+    const action = event.key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && !event.shiftKey && ["f", "h"].includes(action)) {
+      event.preventDefault(); openSearch(action === "h");
     }
   };
   doc.addEventListener("keydown",onKeyDown);
   return Object.freeze({
-    openSearch, openStatistics,
+    openSearch: () => openSearch(false), openReplace: () => openSearch(true), openStatistics,
     get searchResult() { return searchResult; },
     update(state,{ documentReplaced = false } = {}) {
       if (disposed) return;
       const changed = documentReplaced || currentState?.revision !== state.revision;
+      if (documentReplaced) { documentEpoch += 1; resetReplacement(); }
+      else if (changed && !replacePending) resetReplacement();
       currentState = state;
       if (changed) scheduleSearch();
       else if (searchResult) {
@@ -155,14 +197,14 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
       if (disposed) return;
       const changed = enabled !== Boolean(value);
       enabled = Boolean(value);
-      if (!enabled) { invalidateSearch(); if (preview && opened) pane.close(); paintSearch(); }
+      if (!enabled) { resetReplacement(); invalidateSearch(); if (preview && opened) pane.close(); paintSearch(); }
       if (changed) { if (enabled) { paintSearch(); if (opened) scheduleSearch(); } scheduleStatistics(); }
     },
     dispose() {
       if (disposed) return;
       disposed = true; invalidateSearch(); statisticsGeneration += 1;
       clearTimeout(statisticsTimer); doc.removeEventListener("keydown",onKeyDown);
-      pane.dispose(); statistics.dispose(); paneSlot.hidden = true;
+      resetReplacement(); replacement.dispose(); pane.dispose(); statistics.dispose(); paneSlot.hidden = true;
     },
   });
 }

@@ -1,7 +1,7 @@
 # Préparation du démonstrateur — 2026-10-13
 
 Le backlog compte désormais **53 US terminées sur 158**. Le dernier lot raccorde
-la recherche et les statistiques au TXT (US-340/343 partielles), avec des agents GPT-6 Luna moyen.
+le remplacement TXT et la barre d’état configurable (US-341/344 partielles), avec des agents GPT-6 Luna moyen.
 L’ouverture DOCX donne toujours un aperçu A4 en lecture seule.
 Le glisser-déposer TXT, les espaces françaises et le cache incrémental restent disponibles.
 US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves Word.
@@ -552,3 +552,13 @@ Les [contrôles d’intégration](../_bmad-output/implementation-artifacts/navig
 La livraison US-315 de l’autre développeur (`a027af4`) est également fusionnée, en conservant la détection de protection et son corpus chiffré. La [passe complète finale](../_bmad-output/implementation-artifacts/navigation-merged-validation.json) réexécute **21 contrôles** et **1081 tests Rust** sur **1139 entrées figées** : aucun résultat du passage précédent n’est réutilisé. i18n, intégrité du corpus chiffré, éditeur, interface/contraste élevé, Clippy hôte/WASM, budget moteur et WebView2 passent. Le WASM reconstruit reste identique (4 209 895 octets).
 
 Le graphe conserve les 158 US et les concepts documentaires, y compris les corpus de référence et les symboles Python. Les libellés des US sont relus depuis le backlog UTF-8 pour éviter les caractères de remplacement hérités d’anciens caches. Le total reste **53/158 US complètes** ; les limites utilisateur de recherche/statistiques, internationalisation et détection des fichiers chiffrés restent celles de leurs contrats. US-306 reste séparée.
+
+## Remplacement TXT et barre d’état configurable — 2026-10-13
+
+Trois agents GPT-6 Luna moyen ont développé des périmètres séparés : moteur/codec, contrôles Remplacer et barre d’état. Le parent a intégré les fichiers partagés ; trois agents indépendants ont relu le diff. Les lacunes de vérification retenues sont corrigées dans les tests.
+
+[US-341](us-341-replacement.md) : Ctrl+H, suivant, remplacement courant ou global, compte et une transaction Undo/Redo ; toutes les occurrences originales sont traitées, même au-delà de la liste affichée. [US-344](us-344-status-bar.md) : page visible, accès visuel à une page, langue explicite, vue/enregistrement et six champs configurables au clavier ou par clic droit. La navigation de page préserve le document et sa sélection.
+
+Le [reçu immuable](../_bmad-output/implementation-artifacts/replacement-status-validation.json), la [revue triée](../_bmad-output/implementation-artifacts/spec-us341-us344.md) et le [graphe](../_bmad-output/implementation-artifacts/replacement-status-graph.json) conservent les preuves. Le budget WASM reste inchangé. Le total reste **53/158 US complètes** : héritage des attributs de remplacement et métadonnées/mesures riches restent ouverts. Les branches externes 291/306/316 restent séparées.
+
+Validation finale du lot : **21 contrôles**, **1 085 tests Rust**, **219 assertions éditeur**, **263/266 assertions UI normale/couleurs forcées**, sur **1 152 entrées immuables**. La sonde WebView2 vérifie 41 ressources, CSP/Worker et saisie/Undo/Redo, sans objet callback restant. WASM : **4 213 853 octets**, sous le plafond inchangé de 4 271 903. Le graphe complet conserve **9 320 nœuds / 23 878 arêtes**, 158 US et les concepts documentaires historiques.

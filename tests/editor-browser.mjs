@@ -5,6 +5,8 @@ import { encodeEditorCommand, EditorOpcode } from "../web/editor-protocol.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
 import { checkEditorZoom, checkAppZoom } from "./zoom-browser.mjs";
 import { checkNavigation } from "./navigation-browser.mjs";
+import { run as checkReplacement } from "./replacement-browser.mjs";
+import { checkDocumentStatus } from "./document-status-integration-browser.mjs";
 
 const checks = [];
 function assert(value, name) {
@@ -515,13 +517,16 @@ try {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "o", ctrlKey: true, bubbles: true, cancelable: true }));
   await waitFor(() => app.getState()?.text === appLargeText, "Ctrl+O loads the multi-page app fixture");
   const productScrollport = document.querySelector("#document-scroll");
-  await checkNavigation({ app, assert, waitFor, key, inputText, openText: async text => {
+  const openAppText = async text => {
     const bytes = new TextEncoder().encode(text);
     let binary = "";
     for (let i=0;i<bytes.length;i+=0x8000) binary+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
     nextAppOpen = {status:"ok",payload:btoa(binary)};
     await app.editor.openDocument();
-  } });
+  };
+  await checkNavigation({ app, assert, waitFor, key, inputText, openText: openAppText });
+  await checkReplacement({ app, assert, openText: openAppText });
+  await checkDocumentStatus({ app, assert, waitFor, key, inputText, openText: openAppText });
   nextAppOpen = {status:"ok",payload:btoa(appLargeText)};
   await app.editor.openDocument();
   assert(productScrollport.scrollHeight > productScrollport.clientHeight, "multi-page document scrolls inside document-scroll");
@@ -543,6 +548,7 @@ try {
   await waitFor(() => nativeCalls.some(message => message.includes("|save|")), "Ctrl+S sends a save request to the native host");
   await waitFor(() => !app.getState()?.dirty, "Ctrl+S marks the successfully saved revision clean");
   assert(!app.getState().dirty, "Ctrl+S marks the successfully saved revision clean");
+  assert(document.querySelector('[data-status-field="saved"]').textContent.includes("Enregistré"), "status bar reflects the native save confirmation");
   const saveMessage = nativeCalls.find(message => message.includes("|save|"));
   assert(atob(saveMessage.split("|")[4]) === "S", "Ctrl+S forwards the exact current document bytes");
   const option = document.querySelector("#french-spacing");
@@ -604,6 +610,17 @@ try {
   richScroll.style.width = ""; richScroll.scrollLeft = 0; window.dispatchEvent(new Event("resize"));
   assert(app.getState() === beforePreview && app.editor.busy && app.editor.element.disabled,
     "preview leaves exact TXT state object untouched and freezes its input");
+  assert(document.querySelector('[data-status-field="view"]').textContent.includes("DOCX")
+      && document.querySelector('[data-status-field="saved"]').textContent.includes("Lecture seule")
+      && document.querySelector("#replace-command").disabled && !app.navigation.openReplace(),
+    "status describes DOCX read-only view and replacement stays unavailable");
+  document.querySelector(".document-status-page").click();
+  const previewPageInput = document.querySelector("[data-goto-page]");
+  previewPageInput.value = "1";
+  document.querySelector("[data-goto-apply]").click();
+  assert(app.getState() === beforePreview && richScroll.scrollTop === 0
+      && !document.querySelector("[data-status-goto-dialog]").open,
+    "preview page navigation uses its own viewport without touching TXT state");
   for (const id of ["new-document","open-document","open-docx","save-document","undo","redo","french-spacing"]) assert(document.getElementById(id).disabled, `preview disables ${id}`);
   assert(document.querySelector("#editor-status").textContent.includes("lecture seule"), "preview announces read-only mode");
   assert(document.querySelector("#page-title").textContent.includes("DOCX") && document.title.includes("DOCX") && document.querySelector("#document-state").textContent === "Lecture seule",

@@ -6,6 +6,7 @@ export const EditorOpcode = Object.freeze({
   Undo: 5, Redo: 6, SetSelection: 7, Move: 8, HitTest: 9, Export: 10, MarkSaved: 11,
   DeleteWordBackward: 12, DeleteWordForward: 13, SelectPoint: 14,
   ProbePoint: 15, DropText: 16, ReplaceRange: 17, PreviewDocx: 18, Search: 19, Statistics: 20,
+  Replace: 21, ReplaceAll: 22,
 });
 
 export const EDITOR_LIMITS = Object.freeze({
@@ -20,6 +21,7 @@ export const EDITOR_LIMITS = Object.freeze({
   maxQueryResults: 1000,
   maxQueryRects: 8192,
   maxExcerptBytes: 128 * 1024,
+  maxReplacementCount: 128 * 1024,
 });
 
 const MAX_U64 = (1n << 64n) - 1n;
@@ -73,7 +75,7 @@ function boolByte(value, name) {
 
 /** Encode an ATED v1 command payload as defined by the shared editor contract. */
 export function encodeEditorCommand(opcode, values = {}) {
-  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 20 || values === null || typeof values !== "object") {
+  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 22 || values === null || typeof values !== "object") {
     fail("INVALID_ARGUMENT", "Invalid editor opcode or arguments.");
   }
   let body;
@@ -91,6 +93,33 @@ export function encodeEditorCommand(opcode, values = {}) {
       if (options[key] !== undefined) flags |= boolByte(options[key], key) << bit;
     }
     view.setUint8(8, flags); view.setUint32(12, query.byteLength, true); body.set(query, 16);
+  } else if (opcode === EditorOpcode.Replace || opcode === EditorOpcode.ReplaceAll) {
+    if (typeof values.query !== "string" || typeof values.replacement !== "string") fail("INVALID_ARGUMENT", "Replacement query and text must be strings.");
+    const query = encoder.encode(values.query), replacement = encoder.encode(values.replacement);
+    if (query.byteLength === 0) fail("INVALID_ARGUMENT", "Replacement query must not be empty.");
+    if (query.byteLength > EDITOR_LIMITS.maxQueryBytes || replacement.byteLength > EDITOR_LIMITS.maxTextBytes) fail("MESSAGE_TOO_LARGE", "Replacement text exceeds the editor limit.");
+    const selected = opcode === EditorOpcode.Replace;
+    if (selected && values.start > values.end) fail("INVALID_ARGUMENT", "Reversed replacement range.");
+    const prefix = selected ? 36 : 28;
+    body = new Uint8Array(prefix + query.byteLength + replacement.byteLength);
+    const view = new DataView(body.buffer);
+    view.setBigUint64(0, u64(values.revision, "revision"), true);
+    view.setBigUint64(8, u64(values.nowMs, "nowMs"), true);
+    let flags = 0;
+    const options = values.options ?? {};
+    if (options === null || typeof options !== "object" || Array.isArray(options)) fail("INVALID_ARGUMENT", "Search options must be an object.");
+    const optionBits = new Map([["matchCase", 0], ["wholeWord", 1], ["ignoreAccents", 2], ["matchNbsp", 3]]);
+    for (const key of Object.keys(options)) if (!optionBits.has(key)) fail("INVALID_ARGUMENT", "Unknown search option.");
+    for (const [key, bit] of optionBits) if (options[key] !== undefined) flags |= boolByte(options[key], key) << bit;
+    view.setUint8(16, flags);
+    view.setUint32(20, query.byteLength, true);
+    view.setUint32(24, replacement.byteLength, true);
+    if (selected) {
+      view.setUint32(28, u32(values.start, "start"), true);
+      view.setUint32(32, u32(values.end, "end"), true);
+    }
+    body.set(query, prefix);
+    body.set(replacement, prefix + query.byteLength);
   } else if (opcode === EditorOpcode.Statistics) {
     body = new Uint8Array(8);
     new DataView(body.buffer).setBigUint64(0, u64(values.revision, "revision"), true);
@@ -201,6 +230,7 @@ export function decodeEditorResponse(type, payload) {
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQF") return decodeSearchResponse(view, payload);
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQT") return decodeStatisticsResponse(view, payload);
+  if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQR") return decodeReplacementResponse(view, payload);
   if (ascii(payload.subarray(0, 4)) === "ATRP") {
     if (payload.length < 20 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid preview header.");
     const count = view.getUint32(8, true), textLength = view.getUint32(12, true), noticeCount = view.getUint32(16, true);
@@ -307,6 +337,17 @@ export function decodeEditorResponse(type, payload) {
     canUndo: Boolean(flags & 1), canRedo: Boolean(flags & 2), dirty: Boolean(flags & 4), bom: Boolean(flags & 8),
     anchor, focus, text, textBytes: textBytes.slice(), pages, caret: { page: caretPage, x: caretX, y: caretY, height: caretHeight }, selectionRects,
   };
+}
+
+function decodeReplacementResponse(view, payload) {
+  if (payload.byteLength < 16 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid replacement response header.");
+  const count = view.getUint32(8, true), stateLength = view.getUint32(12, true);
+  if (count > EDITOR_LIMITS.maxReplacementCount || stateLength > EDITOR_LIMITS.maxStateBytes || stateLength !== payload.byteLength - 16) fail("INVALID_RESPONSE", "Replacement response limits exceeded.");
+  let state;
+  try { state = decodeEditorResponse(0x8020, payload.slice(16)); }
+  catch { fail("INVALID_RESPONSE", "Invalid nested editor state in replacement response."); }
+  if (state.kind !== "state") fail("INVALID_RESPONSE", "Replacement response must contain editor state.");
+  return { kind: "replacement", count, state };
 }
 
 function decodeSearchResponse(view, payload) {

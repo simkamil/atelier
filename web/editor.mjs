@@ -8,6 +8,7 @@ import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
 import { decodeEditorResponse, EditorOpcode, encodeEditorCommand } from "./editor-protocol.mjs";
 import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
+import { visiblePage, pageScrollTop } from "./page-navigation.mjs";
 
 export class EditorError extends Error {
   constructor(code, message = code) { super(message); this.name = "EditorError"; this.code = code; }
@@ -22,14 +23,14 @@ function pageTop(renderer, pageIndex) {
 }
 
 /** Connects the editor protocol, ATDL renderer, hidden native text input and file host. */
-export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {} } = {}) {
+export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {} } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.open !== "function"
       || typeof host.save !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
   if (!canvas?.getBoundingClientRect || !scrollport?.addEventListener || !spacer?.style) throw new TypeError("Canvas, scrollport and spacer are required.");
   if (textRepresentation !== null && (typeof textRepresentation !== "object" || typeof textRepresentation.textContent !== "string")) {
     throw new TypeError("textRepresentation must be a text-capable DOM element.");
   }
-  if (![onState, onError, onBusy, onZoom].every(callback => typeof callback === "function")) throw new TypeError("Editor callbacks must be functions.");
+  if (![onState, onError, onBusy, onZoom, onViewport].every(callback => typeof callback === "function")) throw new TypeError("Editor callbacks must be functions.");
 
   const renderer = new CanvasRenderer(canvas, { pageBackground: "#ffffff" });
   const compositionPreview = document.createElement("span");
@@ -167,6 +168,11 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       dpr: globalThis.devicePixelRatio || 1,
     });
     repaintOverlay();
+    try { onViewport(viewportState()); } catch { /* UI callbacks are isolated */ }
+  }
+
+  function viewportState() {
+    return visiblePage(decodedPages, { zoom: pageZoom, gap: renderer.pageGap, scrollTop: scrollport.scrollTop, height: scrollport.clientHeight });
   }
 
   let viewportFrame = 0;
@@ -282,18 +288,19 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       const response = decodeEditorResponse(message.type, message.payload);
       if (response.kind === "failed") throw new EditorError(response.code);
     if ([EditorOpcode.Load, EditorOpcode.InsertText, EditorOpcode.DropText, EditorOpcode.ReplaceRange, EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward,
-        EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo].includes(opcode)) extensionMode = false;
+         EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo, EditorOpcode.Replace, EditorOpcode.ReplaceAll].includes(opcode)) extensionMode = false;
       if (opcode === EditorOpcode.ProbePoint && response.kind !== "point") throw new EditorError("EDITOR_INVALID_RESPONSE");
        if (opcode === EditorOpcode.PreviewDocx && response.kind !== "preview") throw new EditorError("EDITOR_INVALID_RESPONSE");
        if (opcode === EditorOpcode.Search && response.kind !== "search") throw new EditorError("EDITOR_INVALID_RESPONSE");
-       if (opcode === EditorOpcode.Statistics && response.kind !== "statistics") throw new EditorError("EDITOR_INVALID_RESPONSE");
+        if (opcode === EditorOpcode.Statistics && response.kind !== "statistics") throw new EditorError("EDITOR_INVALID_RESPONSE");
+        if ([EditorOpcode.Replace, EditorOpcode.ReplaceAll].includes(opcode) && response.kind !== "replacement") throw new EditorError("EDITOR_INVALID_RESPONSE");
        if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx, EditorOpcode.Search, EditorOpcode.Statistics].includes(opcode)) {
         if (opcode === EditorOpcode.Load || opcode === EditorOpcode.State && !state) {
           pageZoom = 1;
           zoomMode = "custom";
           try { onZoom({ zoom: pageZoom, mode: zoomMode }); } catch { /* UI callbacks are isolated */ }
         }
-        publish(response, { documentReplaced: opcode === EditorOpcode.Load });
+         publish(response.kind === "replacement" ? response.state : response, { documentReplaced: opcode === EditorOpcode.Load });
       }
       return response;
   }
@@ -310,6 +317,16 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     return enqueueTask(() => {
       if (!state || busy || disposed) throw new EditorError(disposed ? "EDITOR_CLOSED" : "EDITOR_BUSY");
       return dispatch(opcode, { ...values, revision: state.revision });
+    });
+  }
+
+  function replace(opcode, values, signal) {
+    return enqueueTask(() => {
+      if (signal?.aborted || !state || values.revision !== state.revision) throw new EditorError("EDITOR_STALE_QUERY");
+      if (busy || disposed || compositionStart) throw new EditorError(disposed ? "EDITOR_CLOSED" : "EDITOR_BUSY");
+      // Mutations are only cancelled before dispatch; cancelling an in-flight
+      // Worker edit could leave its model ahead of the last published UI state.
+      return dispatch(opcode, { ...values, nowMs: nowMs() });
     });
   }
 
@@ -481,10 +498,18 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     },
     getZoom() { return pageZoom; },
     getZoomMode() { return zoomMode; },
+    getViewportState: viewportState,
+    goToPage(page) {
+      if (disposed || busy || !state || compositionStart) throw new EditorError("EDITOR_BUSY");
+      scrollport.scrollTop = pageScrollTop(decodedPages, page, pageZoom, renderer.pageGap);
+      updateViewport();
+    },
     async initialize() { return enqueue(EditorOpcode.State); },
     getState() { return state; },
     search(queryText, options = {}) { return query(EditorOpcode.Search, { query: queryText, options }); },
     statistics() { return query(EditorOpcode.Statistics); },
+    replaceCurrent(values, { signal } = {}) { return replace(EditorOpcode.Replace, values, signal); },
+    replaceAll(values, { signal } = {}) { return replace(EditorOpcode.ReplaceAll, values, signal); },
     setSearchHighlights(result, index = -1) {
       if (disposed) return false;
       if (result === null) { searchHighlights = null; searchIndex = -1; repaintOverlay(); return true; }

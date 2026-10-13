@@ -104,7 +104,8 @@ export function createSearchPane({ document: doc = globalThis.document, labels, 
   results.className = "search-pane-results";
   results.setAttribute("role", "list");
   results.setAttribute("aria-label", label(labels, "searchResults"));
-  root.append(headingRow, query, optionsNode, status, navigation, results);
+  const replacementSlot = doc.createElement("div");
+  root.append(headingRow, query, optionsNode, status, navigation, replacementSlot, results);
 
   let state = { items: [], index: -1, truncated: false, busy: false, error: null, disabled: false, wrapped: false };
   let returnFocus = null;
@@ -248,6 +249,7 @@ export function createSearchPane({ document: doc = globalThis.document, labels, 
   render();
   return Object.freeze({
     element: root,
+    replacementSlot,
     open,
     close,
     setState(nextState = {}) {

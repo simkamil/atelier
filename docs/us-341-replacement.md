@@ -1,0 +1,11 @@
+# US-341 — Remplacer dans le TXT
+
+Ctrl+H ou **Accueil → Remplacer** ouvre le volet de recherche avec le texte de remplacement. **Suivant** sélectionne une occurrence ; **Remplacer l’occurrence** traite cette sélection exacte. **Tout remplacer** traite toutes les occurrences originales, y compris celles au-delà des 1 000 résultats affichés. Le compte est annoncé dans le volet. Une requête réintroduite par le remplacement ne déclenche pas de remplacement récursif.
+
+Les quatre options utilisent le même Searcher Unicode Rust que Ctrl+F : casse, mot entier, accents et espaces insécables. Le remplacement peut être vide ou contenir des retours à la ligne. Requête : 1 024 octets UTF-8 maximum ; remplacement et résultat TXT : 128 Kio maximum. Le moteur refuse les dépassements et les plages/révisions périmées avant publication. Chaque opération effective forme une transaction isolée : un Undo restaure tout le texte et la sélection initiale ; Redo réapplique. Un remplacement identique rapporte les occurrences traitées sans modifier révision, état enregistré ni historique.
+
+Les opcodes 21/22 produisent un résultat ATQR contenant le compte et un état ATES strict ; voir le [contrat binaire](../_bmad-output/implementation-artifacts/replacement-wire-contract.md). Le contrôleur sérialise navigation et remplacement, invalide les générations à la fermeture/changement de requête/document et n’annule les mutations qu’avant leur envoi au Worker. Une mutation déjà envoyée doit publier son état pour conserver la synchronisation du moteur.
+
+Le [lot partagé](../_bmad-output/implementation-artifacts/spec-us341-us344.md) décrit les responsabilités, la revue et les limites. La [validation reproductible](../_bmad-output/implementation-artifacts/validate-replacement-status.py) vérifie Rust, codec, vrais Worker/WASM, annulation, dépassement, réponses tardives, navigateurs et ressources natives ; son [reçu](../_bmad-output/implementation-artifacts/replacement-status-validation.json) consigne les entrées exactes.
+
+L’édition DOCX et l’héritage des attributs riches restent ouverts : **US-341 est partielle**. Le raccourci et les commandes de remplacement sont indisponibles dans l’aperçu DOCX. Les essais utilisent des événements clavier synthétiques ; ils ne certifient pas un clavier physique ou un lecteur d’écran.
