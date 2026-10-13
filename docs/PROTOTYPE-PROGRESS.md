@@ -1,7 +1,8 @@
-# Préparation du démonstrateur — 2026-10-12
+# Préparation du démonstrateur — 2026-10-13
 
-Le backlog compte désormais **48 US terminées sur 158**. Le dernier lot raccorde
-l’ouverture DOCX à un aperçu A4 en lecture seule, avec des agents GPT-6 Luna moyen.
+Le backlog compte désormais **51 US terminées sur 158**. Le dernier lot valide
+les composants accessibles, les thèmes et le ruban (US-104/105/106), avec des agents GPT-6 Luna moyen.
+L’ouverture DOCX donne toujours un aperçu A4 en lecture seule.
 Le glisser-déposer TXT, les espaces françaises et le cache incrémental restent disponibles.
 US-004 reste partielle pour la mémoire réelle; US-210/211/212 pour les preuves Word.
 
@@ -36,6 +37,18 @@ critères de cache et de fluidité matériels ; US-103 conserve les essais de cl
 US-113 conserve SharedBuffer, polices/URL et les essais de dialogues. US-111
 conserve son échec strict de handles. US-092 reste ouverte pour l’annulation
 métier : le dispatch WASM synchrone n’est pas préemptible. US-114 est validée.
+
+## Composants, thèmes et ruban — 2026-10-13
+
+**US-104, US-105 et US-106 sont validées.** Le [contrat et le parcours de test](us-104-105-106-interface.md) décrivent les onze composants, les six onglets, les info-touches Alt, Ctrl+F1 et Affichage → Apparence. Les commandes TXT/DOCX existantes sont conservées; les commandes futures sont désactivées. Les palettes ne changent pas les pixels du document. US-102 reste attribuée à l’autre développeur; les libellés sont injectés depuis le catalogue existant.
+
+Trois agents GPT-6 Luna moyen ont développé des fichiers distincts; trois autres ont effectué des revues indépendantes. Les défauts confirmés ont été corrigés, notamment focus, réactivation, menus, valeurs et contraste élevé. Le parent a intégré le lot, vérifié les captures et finalisé la cartographie après la limite d’usage de l’agent chargé du graphe. Aucun défaut confirmé de ce lot n’est reporté.
+
+Le [reçu local](../_bmad-output/implementation-artifacts/ui-shell-validation.json) passe **17 contrôles**, avec **930 tests Rust réussis** (2 essais optionnels ignorés), **112 assertions UI normales**, **114 en contraste élevé**, **118 assertions éditeur** et **36 Canvas/saisie**. La dernière correction touchait uniquement CSS/harness : les résultats Rust sont conservés après comparaison de 964 entrées identiques, avec une nouvelle passe des tests natifs de ressources. La passe finale fige 1 042 entrées sans modification pendant les contrôles. Clippy, formatage, licences, garde Cargo, package WASM et build release passent.
+
+La sonde réelle WebView2 sert les **28 ressources**, exerce Worker/WASM et saisie/undo/redo, vérifie les refus/CSP et libère ses callbacks (`0→0`). Le journal reste borné à 64 entrées; les 8 rotations du démarrage/probes sont rapportées, avec toutes les sondes obligatoires conservées. Le WASM emballé reflète aussi les imports déjà fusionnés avant ce lot : **3 977 451 octets**, SHA-256 `1da13e999f36c37f56bf6446122b5c618d07678826a3000d6ea4ec7093d0423a`, sous le seuil existant; aucune nouvelle référence de taille n’est fixée.
+
+Les vues claire/sombre/étroite et contraste élevé ont été inspectées. Les essais physiques AZERTY/IME, NVDA/Narrator et les mesures matérielles restent distincts de ces tests automatiques. Le lot est publié sur une branche isolée pour la fusion avec les travaux parallèles; les résultats locaux ne valent pas résultat de CI distante.
 
 ## Aperçu DOCX intégré — 2026-10-12
 

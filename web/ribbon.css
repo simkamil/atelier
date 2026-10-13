@@ -1,0 +1,244 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+.ribbon-root,
+.ribbon-root.toolbar {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  overflow: visible;
+  color: var(--ink, #172a2a);
+  background: var(--paper, #fff);
+}
+
+.ribbon-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "navigation utility" "body body";
+  align-items: start;
+  gap: 0 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ribbon-navigation {
+  grid-area: navigation;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-bottom: 1px solid var(--line, #dce5df);
+}
+
+.ribbon-tabs {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ribbon-root .ribbon-tab,
+.ribbon-root .ribbon-collapse {
+  position: relative;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  padding: 6px 12px;
+  color: var(--ink, #172a2a);
+  background: transparent;
+  font: 600 14px Carlito, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.ribbon-root .ribbon-tab:hover:not(:disabled),
+.ribbon-root .ribbon-collapse:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--green, #236c57) 8%, var(--paper, #fff));
+}
+
+.ribbon-root .ribbon-tab[aria-selected="true"] {
+  border-color: var(--line, #dce5df);
+  border-bottom-color: var(--paper, #fff);
+  margin-bottom: -1px;
+  color: var(--green, #236c57);
+  background: var(--paper, #fff);
+}
+
+.ribbon-root .ribbon-tab:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.ribbon-root .ribbon-collapse {
+  flex: 0 0 auto;
+  min-width: 36px;
+  margin-left: auto;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.ribbon-utility {
+  grid-area: utility;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 0;
+}
+
+.ribbon-utility .editor-status {
+  max-width: min(32vw, 22rem);
+}
+
+.ribbon-body {
+  grid-area: body;
+  min-width: 0;
+  width: 100%;
+  container: ribbon / inline-size;
+}
+
+.ribbon-panel {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+  padding: 8px 0 6px;
+}
+
+.ribbon-group {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 12px 2px;
+  border-right: 1px solid var(--line, #dce5df);
+}
+
+.ribbon-group:last-child { border-right: 0; }
+
+.ribbon-group-label {
+  position: relative;
+  align-self: center;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--muted, #5f716d);
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.ribbon-commands {
+  display: flex;
+  align-items: center;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ribbon-root .ribbon-command {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 34px;
+  height: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--line, #dce5df);
+  border-radius: 6px;
+  color: var(--ink, #172a2a);
+  background: var(--paper, #fff);
+  font: 600 13px Carlito, "Segoe UI", sans-serif;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.ribbon-root .ribbon-command:hover:not(:disabled) {
+  border-color: var(--green, #236c57);
+  background: color-mix(in srgb, var(--green, #236c57) 7%, var(--paper, #fff));
+}
+
+.ribbon-root .ribbon-command:disabled,
+.ribbon-root [aria-disabled="true"] {
+  opacity: .5;
+  cursor: default;
+}
+
+.ribbon-root .ribbon-tab:focus-visible,
+.ribbon-root .ribbon-collapse:focus-visible,
+.ribbon-root .ribbon-command:focus-visible,
+.ribbon-root .ribbon-utility :focus-visible {
+  outline: 2px solid var(--green, #236c57);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.ribbon-keytip-target { position: relative !important; }
+.ribbon-keytip {
+  position: absolute;
+  z-index: 10;
+  top: -7px;
+  right: -3px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 1px 4px;
+  border: 1px solid #8a6212;
+  border-radius: 4px;
+  color: #3c2b08;
+  background: #fff0be;
+  box-shadow: 0 1px 3px #172a2a35;
+  font: 700 11px/1 Carlito, "Segoe UI", sans-serif;
+  pointer-events: none;
+}
+
+.ribbon-root[data-ribbon-collapsed="true"] .ribbon-body { display: none; }
+
+@container ribbon (max-width: 680px) {
+  .ribbon-group { flex-basis: 9rem; padding-inline: 8px; }
+  .ribbon-commands { gap: 5px; }
+  .ribbon-root .ribbon-command { flex: 1 1 5.5rem; padding-inline: 7px; }
+}
+
+@container ribbon (max-width: 420px) {
+  .ribbon-group { flex-basis: 7.5rem; gap: 4px; padding-inline: 5px; }
+  .ribbon-commands { align-items: stretch; gap: 4px; }
+  .ribbon-root .ribbon-command { flex-basis: 100%; min-height: 30px; font-size: 12px; }
+}
+
+@media (max-width: 600px) {
+  .ribbon-shell { grid-template-columns: minmax(0, 1fr); grid-template-areas: "navigation" "body" "utility"; gap: 4px; }
+  .ribbon-utility { justify-content: flex-start; }
+  .ribbon-utility .editor-status { max-width: 100%; }
+  .ribbon-root .ribbon-tab { flex: 1 1 auto; padding-inline: 8px; }
+}
+
+@media (forced-colors: active) {
+  .ribbon-root,
+  .ribbon-root .ribbon-navigation,
+  .ribbon-root .ribbon-panel,
+  .ribbon-root .ribbon-group,
+  .ribbon-root .ribbon-tab,
+  .ribbon-root .ribbon-collapse,
+  .ribbon-root .ribbon-command {
+    forced-color-adjust: auto;
+    color: ButtonText;
+    background: Canvas;
+    border-color: ButtonText;
+  }
+  .ribbon-root .ribbon-tab[aria-selected="true"] { color: Highlight; border-color: Highlight; }
+  .ribbon-root .ribbon-tab:focus-visible,
+  .ribbon-root .ribbon-collapse:focus-visible,
+  .ribbon-root .ribbon-command:focus-visible,
+  .ribbon-root .ribbon-utility :focus-visible { outline-color: Highlight; }
+  .ribbon-keytip { color: CanvasText; background: Canvas; border-color: Highlight; }
+}

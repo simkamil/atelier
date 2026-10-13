@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { createRibbon } from "/ribbon.mjs";
+import { createThemeController } from "/theme.mjs";
+import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
+
+/** Reuses the existing command nodes: their state and business listeners stay authoritative. */
+export function createEditorShell({ toolbar, messages }) {
+  const doc = toolbar.ownerDocument;
+  const t = key => messages.get(key) ?? key;
+  const byId = id => doc.getElementById(id);
+  const command = (id, label, keyTip, element) => ({ id, label: t(label), keyTip, element });
+  const future = (id, label, keyTip) => ({ id, label: t(label), keyTip, disabled: true });
+  const status = byId("editor-status");
+  const back = byId("close-preview");
+  const options = toolbar.querySelector(".editor-options");
+  const stateRow = doc.createElement("div");
+  stateRow.className = "editor-command-status";
+  stateRow.append(back, status);
+  back.classList.add("ui-button");
+  toolbar.after(stateRow);
+
+  const preferenceContent = doc.createElement("div");
+  preferenceContent.className = "shell-preferences";
+  const theme = createThemeController({ root: doc.documentElement });
+  const choice = createDropdown({
+    label: t("theme-label"), value: theme.getTheme(),
+    options: ["light", "dark", "system"].map(value => ({ value, label: t(`theme-${value}`) })),
+    onChange: value => theme.setTheme(value),
+  });
+  const choiceLabel = doc.createElement("p");
+  choiceLabel.className = "preference-label";
+  choiceLabel.textContent = t("theme-label");
+  preferenceContent.append(choiceLabel, choice.element);
+  const keyboardHelp = doc.createElement("p");
+  keyboardHelp.textContent = t("ribbon-keyboard-help");
+  preferenceContent.append(keyboardHelp);
+  const preferences = createDialog({ label: t("appearance-title"), content: preferenceContent, closeLabel: t("action-close") });
+  doc.body.append(preferences.element);
+
+  const tabs = [
+    { id: "file", label: t("ribbon-file"), keyTip: "F", groups: [{ id: "files", label: t("ribbon-files-group"), commands: [
+      command("new", "action-new", "N", byId("new-document")),
+      command("open", "action-open", "O", byId("open-document")),
+      command("open-docx", "action-open-docx", "D", byId("open-docx")),
+      command("save", "action-save", "S", byId("save-document")),
+    ] }] },
+    { id: "home", label: t("ribbon-home"), keyTip: "A", groups: [
+      { id: "history", label: t("ribbon-history-group"), commands: [command("undo", "action-undo", "U", byId("undo")), command("redo", "action-redo", "R", byId("redo"))] },
+      { id: "editing", label: t("ribbon-editing-group"), commands: [command("options", "options-label", "E", options)] },
+      { id: "format", label: t("ribbon-format-group"), commands: [future("font", "ribbon-font", "P"), future("paragraph", "ribbon-paragraph", "G")] },
+    ] },
+    { id: "insert", label: t("ribbon-insert"), keyTip: "I", groups: [{ id: "objects", label: t("ribbon-objects-group"), commands: [future("table", "ribbon-table", "T"), future("image", "ribbon-image", "M")] }] },
+    { id: "layout", label: t("ribbon-layout"), keyTip: "M", groups: [{ id: "page", label: t("ribbon-page-group"), commands: [future("margins", "ribbon-margins", "G"), future("orientation", "ribbon-orientation", "O")] }] },
+    { id: "references", label: t("ribbon-references"), keyTip: "R", groups: [{ id: "references", label: t("ribbon-references-group"), commands: [future("fields", "ribbon-fields", "C"), future("bookmarks", "ribbon-bookmarks", "S")] }] },
+    { id: "view", label: t("ribbon-view"), keyTip: "V", groups: [{ id: "appearance", label: t("ribbon-appearance-group"), commands: [{ id: "appearance", label: t("appearance-title"), keyTip: "T" }] }] },
+  ];
+  toolbar.id = "ribbon";
+  const ribbon = createRibbon({ root: toolbar, tabs, initialTab: "file",
+    labels: { collapse: t("ribbon-collapse"), expand: t("ribbon-expand"), navigation: t("toolbar-label") },
+    onCommand: id => { if (id === "appearance") preferences.open({ returnFocusTo: doc.activeElement }); },
+  });
+  for (const button of toolbar.querySelectorAll("button:disabled")) {
+    if (button.id) continue;
+    button.title = t("command-unavailable");
+  }
+  const help = createTooltip({ trigger: toolbar.querySelector('[role="tab"]'), text: t("ribbon-keyboard-help"), delay: 500 });
+  return Object.freeze({
+    theme, ribbon,
+    refresh: () => ribbon.refresh(),
+    dispose() { help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
+  });
+}

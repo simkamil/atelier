@@ -1,0 +1,41 @@
+{
+  "baseline_commit": "72874af6736729c52b715103108b77cab26ba215",
+  "nodes": 7763,
+  "edges": 20220,
+  "stories": 158,
+  "done": 51,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 7763,
+  "html_node_limit": 8000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 887,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 56,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "72874af6736729c52b715103108b77cab26ba215:graphify-out/GRAPH_REPORT.md; ignored cost.json unavailable in this worktree",
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "9402ecc53befc57a7940c7bd5cd4b89bb55001db7c197813da05bd95207cc95e",
+    "graphify-out/graph.json": "b3b1f789938602ac564833e8bd9fb49e4e3c6265c9170563009a7abb87802453",
+    "graphify-out/graph.html": "d1801580b513fa88028ce4259324804b15f2cf5effb04811ac7bcc34a9211d99",
+    "graphify-out/story-dependencies.json": "e97d8d1037a4a0c3eb1f38fc5846d883e1ceffad2afee6251256ef9f78abedc2",
+    "graphify-out/unresolved-structural-references.json": "e8e12597e6c753ee7dbb9959e14280fa6cb4fbd08dcaee18226e101927ef26a6"
+  }
+}
