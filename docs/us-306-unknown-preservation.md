@@ -17,9 +17,11 @@ parent (`Level`), s'il est **interprété** (`Known`), **traversé** (`Transpare
 `w:hyperlink`, `w:ins`, `w:moveTo`, `w:smartTag`, `w:customXml`, `w:sdt` +
 `w:sdtContent`, `w:fldSimple`, `w:dir`, `w:bdo`, selon le niveau) ou **capturé**.
 Les éléments capturés sont copiés par `Reader::capture_opaque` pendant
-`parse_xml` (`XmlNode::opaque`) avec leurs espaces de noms effectifs ; leurs
-descendants restent dans l'arbre analysé (pour les avis) mais ne sont jamais
-interprétés. La liste `preserve::interpreted()` (exposée par
+`parse_xml` (`XmlNode::opaque`) ; leurs descendants restent dans l'arbre analysé
+(pour les avis) mais ne sont jamais interprétés. Une copie ne porte que les
+déclarations d'espaces de noms qu'elle introduit ou change : celles de la racine
+de sa partie sont rangées une fois (`PreservedPart::declarations`), voir « Contexte
+d'espaces de noms ». La liste `preserve::interpreted()` (exposée par
 `interpreted_elements()`) est la déclaration de ce que l'import lit ; les tests
 la comparent aux bras `match` de `parse_char_attrs`, `parse_para_props` et
 `parse_paragraph` : ajouter un élément géré sans le déclarer, ou l'inverse, fait
@@ -67,12 +69,39 @@ Copies redondantes : un élément lu **avec perte** est aussi capturé en entier
 ## Conteneurs (`w:sdt`, `w:customXml`, `w:ins`…)
 
 Choix : **contenu importé et enveloppe mémorisée**. Les paragraphes, tableaux et
-runs qu'ils contiennent sont dans le modèle (le texte visible n'est jamais perdu) ;
+runs qu'ils contiennent sont dans le modèle (leur texte visible est importé) ;
 l'enveloppe (nom, attributs, propriétés opaques) est un `PreservedElement` du
 squelette qui contient les `Block`/runs. Un conteneur inconnu qui n'est pas dans
 la liste ci-dessus est capturé en bloc : son contenu n'est pas importé (changement
 par rapport à l'import antérieur, qui descendait dans tout élément WordprocessingML
 inconnu ; cela ne concerne que des documents invalides).
+
+**Le texte visible n'est pas toujours importé.** Les enveloppes ci-dessus et le texte
+des runs le sont ; deux cas, inchangés par rapport à l'import d'avant US-306, ne le
+sont pas :
+
+* le texte d'une zone de texte : `w:txbxContent` dans un `w:drawing`, un `w:pict` ou
+  un `mc:AlternateContent` au niveau d'un run ;
+* le texte de base (`w:rubyBase`) et le texte annoté (`w:rt`) d'un `w:ruby`.
+
+Ces éléments sont capturés (donc préservés pour l'écrivain) mais n'apparaissent pas
+dans le texte du modèle. Ils le signalent par `ImportNotice::UnsupportedElement`
+(`local_name` = `txbxContent` ou `ruby`, déjà émis par `collect_unsupported` pour tout
+élément WordprocessingML non interprété) ; aucune variante n'a été ajoutée. Le test
+`visible_text_kept_only_in_a_copy_is_reported` le vérifie.
+
+## Commentaires XML et instructions de traitement
+
+**Non préservés** dans la structure interprétée : un commentaire (`<!-- -->`) ou une
+instruction de traitement (`<? ?>`) qui est enfant d'un élément lu ou traversé par
+l'import (`w:body`, `w:p`, `w:r`, `w:pPr`, `w:tbl`, `w:sdt`, styles, réglages…, partout
+et pas seulement dans `tcPr`/`tblPr`) est ignoré, car l'arbre analysé ne les
+représente pas et le squelette n'a pas d'emplacement pour eux. Word n'en écrit pas
+dans ces parties. À l'intérieur d'un élément **capturé** ils font partie de la copie
+(`capture_opaque` les garde). L'inventaire de complétude (`parse` dans les tests) les
+ignore aussi : il ne prétend rien sur eux ; le test
+`comments_and_instructions_in_the_interpreted_structure_are_not_preserved` fixe ce
+comportement. L'écrivain (US-307) ne peut donc pas les restituer.
 
 ## Suivi des modifications
 
@@ -102,6 +131,13 @@ les plages de texte et doit être régénérée ou abandonnée (décision d'US-3
   `shadow = true`. L'écrivain réémet l'objet opaque et **ignore** les éléments `shadow`
   tant que ce contenu n'est pas modifié. Au niveau d'un run (`w:drawing`/`w:pict`),
   la branche n'est pas interprétée (US-305).
+  **Écart avec Word** : la branche importée est le `mc:Fallback` dès que le `Requires`
+  du `mc:Choice` cite un espace de noms que l'import ne déclare pas comprendre, alors
+  que Word prendrait le `Choice` (par exemple `w14`, `wps`, `wp14`, `w15`, `m`, `a`,
+  `pic`). Les espaces de noms **compris** sont ceux de la constante
+  `UNDERSTOOD` : `w` (transitional et strict), `mc`, `r` et `xml`. Le texte visible
+  importé peut donc être celui du repli ; la source (les deux branches) reste intacte
+  dans l'objet opaque.
 * `mc:MustUnderstand` avec un espace de noms inconnu : `UnsupportedProperty`
   (`local_name = "MustUnderstand"`), jamais un échec.
 
@@ -116,10 +152,30 @@ le modèle ou le paquet. Aucune variante n'a été ajoutée à `ImportNotice`.
 `max_opaque_bytes` 128 Mio et `max_opaque_items` 8 000 000 (tous les `parse_xml`
 de la partie, erreurs `Limit("opaque capture bytes")` / `Limit("opaque capture
 count")`), `max_preserved_nodes` 32 000 000 (`Limit("preserved nodes")`). La profondeur
-est celle des limites XML (256). Coût linéaire : une capture par élément inconnu
-de plus haut niveau, un second passage sur chaque capture pour garder l'arbre
-analysé. Le squelette conserve des noms qualifiés par nœud (mémoire de l'ordre de
-l'arbre XML).
+est celle des limites XML (256). Coût : une capture par élément inconnu de plus haut
+niveau, relue une fois pour garder l'arbre analysé. Une copie pèse ce que pèse son
+XML (une trentaine d'octets pour un `w:proofErr`), pas la taille de son contexte :
+200 000 copies de ce genre occupent 6 Mo sur les 128 Mio autorisés. Le squelette
+conserve des noms qualifiés par nœud (mémoire de l'ordre de l'arbre XML).
+
+## Contexte d'espaces de noms
+
+Avant ce correctif chaque copie recopiait toutes les déclarations `xmlns` en portée
+(26 pour un fichier Word : 1,6 Ko pour un `<w:proofErr/>`, 33 fois la taille de la
+source), et chaque insertion de bloc, qui est une transaction du modèle, copiait le
+document entier avec ces octets. Désormais la table des déclarations de la racine de
+chaque partie est rangée une fois (`PreservedPart::declarations`) et une copie ne
+garde que les déclarations qu'elle introduit ou qui diffèrent de ce contexte.
+`PreservedPart::standalone(copie)` remet les déclarations de la partie qui manquent
+sur l'élément racine de la copie : le résultat est autonome et résout les préfixes vers
+les mêmes espaces de noms que la source. Ce qui est vrai pour `Preserved`
+(`PreservedChild::Opaque`) l'est aussi pour `AnchoredObject::data` et `Node::Opaque`
+du modèle : leurs octets ne sont autonomes qu'après `standalone` de la partie
+d'origine (`Preserved::document`, `styles` ou `settings`). Les emplacements `opaque`
+des tables (`tblPr`, `trPr`, `tcPr`…) sont des sérialisations de l'arbre analysé qui
+portent leurs propres déclarations.
+
+Les insertions de blocs du corps sont groupées par 512 par transaction (`INSERT_BATCH`).
 
 ## Ce que l'écrivain (US-307) devra faire
 
@@ -130,7 +186,15 @@ l'arbre XML).
 2. Un paragraphe modifié : régénérer runs et texte depuis le modèle, réémettre
    attributs (`attrs`) et propriétés dans l'ordre mémorisé, objets ancrés à leur
    décalage courant.
-3. Déclarer sur la racine toutes les `declarations` et réécrire `mc:Ignorable`.
+3. Déclarer sur la racine toutes les `declarations` et réécrire `mc:Ignorable`. Les
+   copies (`Opaque`, objets ancrés, blocs opaques) sont réémises **telles quelles
+   sous cette racine** : leurs déclarations manquantes sont celles de la racine, il
+   ne faut pas appeler `standalone` pour les réinsérer dans leur partie (seulement
+   pour les lire hors de leur partie).
+3 bis. Rang des propriétés ajoutées : `rpr_rank` pour le `w:rPr` d'un run ou d'un
+   style ; **`para_mark_rpr_rank` pour le `w:rPr` d'une marque de paragraphe**
+   (`w:pPr/w:rPr`, CT_ParaRPr) où `w:ins`, `w:del`, `w:moveFrom` et `w:moveTo`
+   viennent en premier. Les éléments de la source gardent leur ordre.
 4. Ne pas réécrire `slot = true` depuis le squelette : prendre le `opaque` du nœud.
 5. Rappel : `w:p`/`w:r` perdent leurs enveloppes de suivi si leur texte est édité.
 
@@ -145,7 +209,7 @@ nœuds de groupe.
 
 ## Preuves
 
-`crates/fmt-ooxml/tests/docx_preserve.rs`, 12 tests : décalages exacts des objets
+`crates/fmt-ooxml/tests/docx_preserve.rs`, 15 tests : décalages exacts des objets
 ancrés ; graphèmes ; ordre des propriétés et attributs ; blocs opaques ; tables ;
 styles/réglages ; `mc:` ; parties non interprétées identiques octet pour octet
 (commentaires, notes, glossaire, customXml, VBA, webSettings, fontTable, thème,
@@ -153,10 +217,14 @@ médias, miniature, propriétés personnalisées, relations) ; déclaration `int
 contre le code ; limites typées ; campagne de mutations/troncatures à graine fixe.
 **Inventaire** : un parcours indépendant (`Reader`) liste éléments et attributs de
 chaque partie interprétée, puis vérifie l'égalité (multi-ensemble) avec ce que
-retrouve le squelette et les captures ; sur 6 documents (`basic.docx`, un docx
-LibreOffice, 4 construits) : 506 éléments, 342 attributs, 0 orphelin. Une
+retrouve le squelette et les captures ; sur 7 documents (`basic.docx`, un docx
+LibreOffice, 5 construits) : 522 éléments, 347 attributs, 0 orphelin (éléments et
+attributs seulement : ni commentaires ni instructions de traitement). Une
 **reconstruction** de chaque partie à partir du modèle et des captures est comparée
 à la source normalisée (préfiguration de l'écrivain).
+
+Coût : `crates/fmt-ooxml/tests/docx_preserve_perf.rs` (taille des copies, bornes de temps larges,
+limites sur document hostile, contexte d'espaces de noms ; bancs `#[ignore]`).
 
 Provenance : `basic.docx` est synthétique ; `tests/docx-reference/libreoffice/rich.docx`
 vient de LibreOffice 26.8 ; les autres sont construits à la main. **Aucun fichier
