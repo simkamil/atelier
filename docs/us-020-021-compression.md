@@ -94,3 +94,18 @@ qu'après réussite de cette validation indépendante.
 
 La compression n'ajoute aucune dépendance. Le lot ajoute séparément la
 dépendance locale `atelier-render → atelier-geom` dans `Cargo.lock`.
+
+## Correctif : limitation des longueurs de code Huffman
+
+`make_lengths` ramenait les codes à 15 bits (7 pour l'arbre des longueurs) en
+reprenant le décompte de débordement de zlib, qui suppose que les ancêtres
+d'une feuille trop profonde sont aussi tronqués. Ici les profondeurs étaient
+vraies : dès qu'une feuille se trouvait à plus d'un niveau sous la limite, le
+code devenait sur-souscrit (somme de Kraft supérieure à 1) et le flux, écrit
+sans erreur, était rejeté par tout décodeur (`InvalidDeflate` côté ZIP, et
+« invalid literal/lengths set » côté `zlib`). Cela survenait sur de grandes
+entrées très répétitives (environ 2,5 Mo de XML WordprocessingML), dont les
+fréquences de symboles sont très inégales. La somme de Kraft est désormais
+mesurée à partir des effectifs par longueur, puis réparée (allongement des
+codes les plus profonds possibles, puis raccourcissement pour rester complet).
+Tests : `crates/compress/tests/large_inputs.rs`, `crates/zip/tests/large_entries.rs`.
