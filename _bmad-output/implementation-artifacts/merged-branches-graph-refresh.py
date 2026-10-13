@@ -82,6 +82,7 @@ prototype_docs.extend(['docs/us-340-343-navigation-ui.md','web/navigation-tools.
 prototype_docs.extend(['docs/us-102-i18n.md','web/i18n.mjs','tests/i18n.mjs','tests/check-i18n.mjs','tests/i18n-baseline.txt'])
 prototype_docs.extend(['docs/us-315-encrypted-detection.md','tests/encrypted-reference/README.md'])
 prototype_docs.extend(['docs/us-341-replacement.md','docs/us-344-status-bar.md','web/page-navigation.mjs','web/replace-controls.mjs','web/replace-controls.css','web/document-status.mjs','web/document-status.css','tests/page-navigation.mjs','tests/replacement-protocol.mjs','tests/replacement-browser.mjs','tests/replace-controls-browser.mjs','tests/replacement-controller-browser.mjs','tests/document-status-browser.mjs','tests/document-status-integration-browser.mjs'])
+prototype_docs.append('docs/us-316-text-files.md')
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.

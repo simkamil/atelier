@@ -1,0 +1,49 @@
+{
+  "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
+  "nodes": 9465,
+  "edges": 24228,
+  "stories": 158,
+  "done": 53,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 9465,
+  "html_node_limit": 10000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 1214,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 64,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "94df23fb037145d75542f54dbc0215d0daf929bc:graphify-out/GRAPH_REPORT.md",
+  "local_cost_meter_available": false,
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "replacement_story_status": null,
+  "zoom_story_status": null,
+  "navigation_story_status": null,
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "a8ed566c23c1635ed534a45cf7eefd7ac43621dc1e41bce0c7e577c9202f3e21",
+    "graphify-out/graph.json": "18c3cefcf1fac0cb95de74a78ef1a827faabf4efa54c35c558aae92bdc85c67a",
+    "graphify-out/graph.html": "4c973e9faab64650111fc5a7766dfab1ffbb06cb07948dab2eed1487d7be0ebc",
+    "graphify-out/story-dependencies.json": "12fb7f3d7a25e9de21ba4ad2d6767e7d4abe03bfc2dadac7362fb60a2ac166bc",
+    "graphify-out/unresolved-structural-references.json": "0f4b9244d46ba64c1d039e4eb2305341db0bc9c719008607e676c44550f4c1a3"
+  },
+  "graph_tools_sha256": {
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "3d99d5b7d909a4c729f054efeb3a9b47bcf1774f93cf5524273522d38838d685",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "5753abd5662724c6be0089fefd1190f1e31e84ad51a356642c694bac99d96634"
+  }
+}

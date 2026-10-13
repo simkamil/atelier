@@ -1,5 +1,5 @@
 ---
-title: 'DOCX — Accepter les noms Word des couleurs de thème'
+title: 'DOCX — Couleurs de thème et styles par défaut Word'
 type: bugfix
 created: '2026-10-13'
 status: done
@@ -37,3 +37,7 @@ Une revue indépendante Luna moyen a pu s’exécuter après la reprise. L’age
 | Slot de thème absent | low | Comportement préexistant du résolveur : style → MissingThemeColor, couleur directe → absence. Les alias utilisent les mêmes slots et n’ajoutent pas de politique ; aucun garde ou changement de repli ajouté hors de ce correctif. |
 
 Validation finale : 13 contrôles ciblés, 109 tests Rust OOXML/core-WASM et 219 assertions éditeur réussis ; 1152 sources immuables. Clippy hôte/WASM, fmt, budget et package exact, sonde WebView2 passent. WASM 4 214 052 octets, sous le plafond inchangé 4 271 903. Le document privé exact ouvre 3 pages ; son empreinte est identique avant/après et aucun contenu personnel n’est distribué. Les deux remarques de couverture retenues sont corrigées ; aucune régression de ce correctif n’est différée.
+
+Intégration parallèle : main a avancé vers `4162b1bf8bd9574a6bebd096cee59c80c1da0dad` avec US-316 pendant le correctif. Fusion conservant les deux apports, conflits uniquement dans le WASM/manifest résolus par reconstruction depuis les sources réunies. Nouvelle validation ciblée après intégration dans docx-theme-merged-validation.json ; le premier reçu reste la preuve de la version isolée. Le test local du document exact a de nouveau réussi avec ce moteur réuni. Les fusions US-291/306 ont ensuite continué sur main : le correctif est livré sur codex/docx-theme-aliases avec un binaire distinct ; aucun remplacement des commits parallèles sur main.
+
+Validation après intégration US-316 : 13 contrôles, 264 tests Rust des trois paquets concernés passent, avec 1158 entrées immuables. WASM reconstruit : 4 214 304 octets, SHA-256 `33876ba217103f50bafdfcefb91d908d9f40f151720a9c8dcb16ee1eceef0090` ; plafond inchangé. Les parcours éditeur, ressources natives sont revalidés. La tentative workspace complète a dépassé 300 secondes et n’est pas déclarée réussie ; son reçu incomplet reste séparé. Aucun résultat de la passe isolée n’est substitué à ces contrôles ciblés après fusion.

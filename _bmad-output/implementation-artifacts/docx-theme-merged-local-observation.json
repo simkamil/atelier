@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "inputBytes": 2149773,
+  "opened": "ok",
+  "previewActive": true,
+  "txtStatePreserved": true,
+  "previewVisible": true,
+  "textBytes": 2296,
+  "canvasWidth": 1164,
+  "canvasHeight": 410,
+  "returnedToTxt": true,
+  "environment": "real Edge UI + production Worker/WASM; native file reply simulated locally; no input text logged",
+  "input_sha256": "23d1eff7de995ad09eced89eefd3cb50d93dc466f53f4d1f01b45e833834f9bb",
+  "input_unchanged": true,
+  "engine_sha256": "33876ba217103f50bafdfcefb91d908d9f40f151720a9c8dcb16ee1eceef0090",
+  "private_input_distributed": false,
+  "native_preview_pages": 3
+}
