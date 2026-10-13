@@ -88,7 +88,7 @@ export function getLocaleData(tag) {
   return LOCALES.get(tag);
 }
 
-const PROBES = [0, 0.5, 1, 1.5, 1.99, 2, 2.5, 3, 10, 21, 100, 999999, 1000000, 1000001, 1500000, 2000000, 3000000, 10000000, 1000000000];
+const PROBES = [1000000000000, 1000000000000000, 0, 0.5, 1, 1.5, 1.99, 2, 2.5, 3, 10, 21, 100, 999999, 1000000, 1000001, 1500000, 2000000, 3000000, 10000000, 1000000000];
 
 /**
  * Compares `Intl.PluralRules` with the reference rules of the locale on probe values (and their
@@ -128,7 +128,11 @@ export function pluralSelector(tag) {
     const data = LOCALES.get(tag);
     const check = verifyPluralRules(tag);
     if (data && (!check.available || !check.ok)) select = data.plural;
-    else if (check.available) { const rules = new Intl.PluralRules(tag); select = n => rules.select(n); }
+    else if (check.available) {
+      const rules = new Intl.PluralRules(tag);
+      // Intl disagrees with CLDR for huge values (1e20 and above): the reference rules are authoritative there.
+      select = n => (data && Math.abs(n) >= 2 ** 53 ? data.plural(n) : rules.select(n));
+    }
     else select = n => (n === 1 ? "one" : "other");
     pluralCache.set(tag, select);
   }
@@ -450,9 +454,24 @@ export function createI18n(options = {}) {
     return joinParts(numberFormat({ style: "percent", ...fractionOptions(opts) }).formatToParts(fraction), true);
   }
 
-  const dateParts = (date, extra) => new Intl.DateTimeFormat(locale, { timeZone: extra.timeZone, ...extra.fields }).formatToParts(date);
+  /**
+   * Without `timeZone` the machine time zone is used (right for a local application; pass `timeZone` for a
+   * reproducible result). An invalid zone throws I18nError("invalid-timezone") in development; in production
+   * it is reported and the machine time zone is used.
+   */
+  const dateParts = (date, extra) => {
+    try {
+      return new Intl.DateTimeFormat(locale, { timeZone: extra.timeZone, ...extra.fields }).formatToParts(date);
+    } catch (error) {
+      if (!(error instanceof RangeError) || extra.timeZone === undefined) throw error;
+      const message = `invalid time zone ${String(extra.timeZone)}`;
+      report({ code: "invalid-timezone", message });
+      if (dev) throw new I18nError("invalid-timezone", message);
+      return new Intl.DateTimeFormat(locale, extra.fields).formatToParts(date);
+    }
+  };
 
-  /** @param {Date | number} value @param {{ style?: "long" | "short", timeZone?: string }} [opts] */
+  /** Without `timeZone` the machine time zone is used; an invalid zone is an I18nError (dev) or falls back to the machine zone (production). @param {Date | number} value @param {{ style?: "long" | "short", timeZone?: string }} [opts] */
   function formatDate(value, opts = {}) {
     const date = toDate(value);
     if ((opts.style ?? "long") === "short") {
@@ -465,13 +484,13 @@ export function createI18n(options = {}) {
     return `${day} ${pick("month")} ${pick("year")}`;
   }
 
-  /** 24-hour clock "14:30". @param {Date | number} value @param {{ timeZone?: string }} [opts] */
+  /** Without `timeZone` the machine time zone is used; an invalid zone is an I18nError (dev) or falls back to the machine zone (production). 24-hour clock "14:30". @param {Date | number} value @param {{ timeZone?: string }} [opts] */
   function formatTime(value, opts = {}) {
     return dateParts(toDate(value), { timeZone: opts.timeZone, fields: { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } })
       .map(part => part.value).join("");
   }
 
-  /** @param {Date | number} value @param {{ style?: "long" | "short", timeZone?: string }} [opts] */
+  /** Without `timeZone` the machine time zone is used; an invalid zone is an I18nError (dev) or falls back to the machine zone (production). @param {Date | number} value @param {{ style?: "long" | "short", timeZone?: string }} [opts] */
   function formatDateTime(value, opts = {}) {
     return formatDate(value, opts) + (data?.dateTimeJoiner ?? " ") + formatTime(value, opts);
   }
@@ -502,10 +521,11 @@ export function createI18n(options = {}) {
     const base = opts.binary ? 1024 : 1000;
     const names = data ? (opts.binary ? data.byteUnits.binary : data.byteUnits.decimal) : ["KB", "MB", "GB", "TB"];
     if (bytes < base) {
-      const word = data ? data.byte[select(bytes) === "one" ? "one" : "other"] : "B";
-      return `${formatNumber(bytes, { maxDecimals: 0 })}${data?.unitSpace ?? " "}${word}`;
+      const whole = Math.round(bytes); // fractional byte counts are rounded half up
+      const word = data ? data.byte[select(whole) === "one" ? "one" : "other"] : "B";
+      return `${formatNumber(whole, { maxDecimals: 0 })}${data?.unitSpace ?? " "}${word}`;
     }
-    const round = value => Number(value.toFixed(value < 10 ? 1 : 0));
+    const round = value => (value < 10 ? Math.round(Number((value * 10).toPrecision(12))) / 10 : Math.round(Number(value.toPrecision(12))));
     let index = 0;
     let scaled = bytes / base;
     // Pick the unit after rounding: 999 999 bytes must read "1 Mo", not "1000 Ko".
@@ -545,7 +565,7 @@ export function createI18n(options = {}) {
       if (typeof count !== "number" || !Number.isFinite(count)) {
         report({ code: "invalid-param", key, message: `plural parameter ${node.name} should be a finite number` });
         if (dev) throw new I18nError("invalid-param", `plural parameter ${node.name} should be a finite number (message ${key})`);
-        out += render(node.cases.get("other"), params, 0, key);
+        out += `{${node.name}}`; // never display an invented number
         continue;
       }
       const branch = node.cases.get(`=${count}`) ?? node.cases.get(select(count)) ?? node.cases.get("other");

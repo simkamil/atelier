@@ -68,6 +68,7 @@ const MAX_DETAIL = 90;
 // ---------------------------------------------------------------------------------------------
 
 const KEYWORDS_BEFORE_REGEX = new Set(["return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "instanceof", "yield", "await"]);
+const CONDITION_KEYWORDS = new Set(["if", "while", "for", "with"]);
 const PUNCTUATORS = [">>>=", "...", "===", "!==", "**=", "<<=", ">>=", ">>>", "&&=", "||=", "??=", "=>", "==", "!=", "<=", ">=", "&&", "||", "??", "?.", "++", "--", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "**"];
 const NUMBER = /^(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|(?:\d[\d_]*\.?[\d_]*|\.\d[\d_]*)(?:[eE][+-]?\d+)?)n?/;
 const IDENT_START = /[\p{ID_Start}$_]/u;
@@ -104,6 +105,7 @@ export function tokenize(source) {
   };
   /** Pile des accolades ouvertes et des gabarits dont une expression `${` est en cours. */
   const stack = [];
+  const parens = []; // vrai quand la parenthèse ouverte suit if / while / for / with
   let previous = null;
   let position = 0;
 
@@ -162,7 +164,8 @@ export function tokenize(source) {
     if (!previous) return true;
     if (previous.type === "number" || previous.type === "string" || previous.type === "template" || previous.type === "regex") return false;
     if (previous.type === "ident") return KEYWORDS_BEFORE_REGEX.has(previous.value);
-    return !(previous.value === ")" || previous.value === "]" || previous.value === "++" || previous.value === "--");
+    if (previous.value === ")") return previous.condition === true; // « if (x) /re/ » : la parenthèse ferme une condition
+    return !(previous.value === "]" || previous.value === "++" || previous.value === "--");
   };
 
   while (position < source.length) {
@@ -237,7 +240,9 @@ export function tokenize(source) {
       continue;
     }
     const punctuator = PUNCTUATORS.find(candidate => source.startsWith(candidate, position)) ?? char;
-    emit(make("punct", punctuator, position, position + punctuator.length));
+    if (punctuator === "(") parens.push(previous?.type === "ident" && CONDITION_KEYWORDS.has(previous.value));
+    const closed = punctuator === ")" ? parens.pop() : undefined;
+    emit(make("punct", punctuator, position, position + punctuator.length, closed ? { condition: true } : {}));
     position += punctuator.length;
   }
   return { tokens, comments };
@@ -311,7 +316,8 @@ export function analyzeScript(source, file, options = {}) {
   /** @type {Finding[]} */
   const findings = [];
   const uses = []; // { key, line, kind: "call" | "selector" | "literal" }
-  const prefixes = []; // préfixes dynamiques `theme-${…}`
+  const prefixes = []; // préfixes dynamiques `theme-${…}` ou "theme-" + x
+  const dynamics = []; // clés indécidables : t(variable)
   const calls = []; // appels t(...) vérifiables
   const tokenLines = new Set(tokens.map(token => token.line));
   const ignored = exemptions(comments, tokenLines, file, findings);
@@ -388,6 +394,7 @@ export function analyzeScript(source, file, options = {}) {
     return null;
   }
 
+  const isKeyCallee = calleePath => KEY_CALLEES.some(path => calleePath.length >= path.length && path.every((part, offsetIndex) => calleePath.at(-path.length + offsetIndex) === part));
   const frames = [];
   const nearestCall = () => {
     for (let index = frames.length - 1; index >= 0; index -= 1) {
@@ -405,7 +412,7 @@ export function analyzeScript(source, file, options = {}) {
       } else if (token.value === "[" || token.value === "{") frames.push({ kind: "bracket", open: index });
       else if (token.value === ")" || token.value === "]" || token.value === "}") {
         const frame = frames.pop();
-        if (frame?.kind === "call" && token.value === ")") collectCall(frame, index);
+        if (frame?.kind === "call" && token.value === ")") { collectCall(frame, index); checkDynamic(frame, index); }
       } else if (token.value === "," && frames.at(-1)?.kind === "call") frames.at(-1).argIndex += 1;
       return;
     }
@@ -415,9 +422,10 @@ export function analyzeScript(source, file, options = {}) {
     const call = nearestCall();
 
     // 1. Utilisations de clés.
-    if (call && call.argIndex === 0 && KEY_CALLEES.some(path => call.callee.path.length >= path.length && path.every((part, offsetIndex) => call.callee.path.at(-path.length + offsetIndex) === part))
+    if (call && call.argIndex === 0 && isKeyCallee(call.callee.path)
       && previous?.type === "punct" && KEY_POSITION.has(previous.value)) {
-      if (token.type === "string" || token.exprCount === 0) uses.push({ key: staticText(token), line: token.line + offset, kind: "call" });
+      if (isPunct(next, "+") && token.type === "string") prefixes.push(token.value); // "status-" + state
+      else if (token.type === "string" || token.exprCount === 0) uses.push({ key: staticText(token), line: token.line + offset, kind: "call" });
       else if (token.quasis[0]) prefixes.push(token.quasis[0]);
     }
     for (const match of staticText(token).matchAll(/\[data-i18n(?:-[a-z-]+)?=["']?([^"'\]]+)["']?\]/g)) uses.push({ key: match[1], line: token.line + offset, kind: "selector" });
@@ -449,6 +457,16 @@ export function analyzeScript(source, file, options = {}) {
     if (looksHuman(text, relaxed)) findings.push({ category: "hardcoded", file, line: token.line + offset, detail: clip(JSON.stringify(text.replaceAll("\u0001", "${…}"))), message: `chaîne en dur ${clip(JSON.stringify(text.replaceAll("\u0001", "${…}")))}` });
   });
 
+  /** Une clé sans aucun littéral (variable, appel) ne peut pas être vérifiée statiquement. */
+  function checkDynamic(frame, closeIndex) {
+    if (!isKeyCallee(frame.callee.path)) return;
+    const first = argumentsOf(frame.open, closeIndex)[0];
+    if (!first) return;
+    let literal = false;
+    for (let index = first[0]; index < first[1]; index += 1) if (at(index).type === "string" || at(index).type === "template") literal = true;
+    if (!literal) dynamics.push({ line: at(frame.open).line + offset });
+  }
+
   /** Paramètres de t("clé", { … }) quand la forme est statique. */
   function collectCall(frame, closeIndex) {
     const path = frame.callee.path;
@@ -466,7 +484,7 @@ export function analyzeScript(source, file, options = {}) {
     calls.push({ key: staticText(keyToken), line: keyToken.line + offset, given });
   }
 
-  return { findings, uses, prefixes, calls };
+  return { findings, uses, prefixes, calls, dynamics };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -569,6 +587,7 @@ export function analyzeHtml(source, file) {
     findings: findings.concat(scriptResults.flatMap(result => result.findings)),
     uses: uses.concat(scriptResults.flatMap(result => result.uses)),
     prefixes: scriptResults.flatMap(result => result.prefixes),
+    dynamics: scriptResults.flatMap(result => result.dynamics),
     calls: scriptResults.flatMap(result => result.calls),
   };
 }
@@ -599,6 +618,7 @@ export function checkRepository({ root }) {
   const uses = [];
   const prefixes = [];
   const calls = [];
+  const info = [];
   const scanned = [];
 
   const catalogDir = join(webDir, "i18n");
@@ -637,6 +657,7 @@ export function checkRepository({ root }) {
     for (const finding of result.findings) findings.push(finding);
     for (const use of result.uses) uses.push({ ...use, file });
     for (const prefix of result.prefixes) prefixes.push(prefix);
+    for (const dynamic of result.dynamics) info.push({ category: "dynamic-key", file, line: dynamic.line, detail: "dynamic-key", message: "clé dynamique, invérifiable" });
     for (const call of result.calls) calls.push({ ...call, file });
   }
 
@@ -665,9 +686,9 @@ export function checkRepository({ root }) {
         if (!declared.has(name)) findings.push({ category: "param-extra", file: call.file, line: call.line, detail: `${call.key}:${name}`, message: `l'appel fournit ${name} que ${call.key} ne déclare pas` });
       }
     }
-    return { findings, scanned, catalogKeys: keys.size, usedKeys: used.size };
+    return { findings, info, scanned, catalogKeys: keys.size, usedKeys: used.size };
   }
-  return { findings, scanned, catalogKeys: 0, usedKeys: 0 };
+  return { findings, info, scanned, catalogKeys: 0, usedKeys: 0 };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -773,6 +794,11 @@ export function main(argv, io = {}) {
   if (resolved.length) {
     write(`\nÉcarts de la référence corrigés depuis (${resolved.length}) ; régénérer la référence pour les retirer :`);
     for (const entry of resolved) write(`  ${entry.replaceAll("\t", " | ")}`);
+  }
+  if (result.info.length) {
+    write(`
+Clés dynamiques, invérifiables (informatif, sans effet sur le code de sortie) (${result.info.length}) :`);
+    for (const finding of order(result.info)) write(`  ${line(finding)}`);
   }
   write("\nRésumé par catégorie :");
   for (const text of summary(findings)) write(text);

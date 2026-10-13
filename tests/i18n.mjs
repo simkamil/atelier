@@ -421,6 +421,60 @@ test("locale is a parameter: other locales work through Intl and registerLocale"
   assert.equal(Object.isFrozen(fr), true);
 });
 
+test("fix: a non-numeric plural parameter never shows an invented number", () => {
+  const seen = [];
+  const i18n = make("p={n, plural, one {# page} other {# pages}}", { onIssue: issue => seen.push(issue.code) });
+  for (const bad of [NaN, "abc", true, Infinity, {}, ""]) assert.equal(i18n.t("p", { n: bad }), "{n}", String(bad));
+  assert.equal(seen.every(code => code === "invalid-param"), true);
+  assert.ok(seen.length >= 1);
+  assert.equal(i18n.t("p", { n: "3" }), "3 pages", "a valid numeric string is accepted");
+  throwsCode(() => make("p={n, plural, other {#}}", { dev: true, onIssue() {} }).t("p", { n: NaN }), "invalid-param");
+});
+
+test("fix: dates without timeZone follow the machine, an invalid zone is an I18nError or a documented fallback", () => {
+  const moment = Date.UTC(2026, 9, 1, 23, 30);
+  assert.equal(fr.formatDate(moment, { timeZone: "UTC" }), "1er octobre 2026");
+  assert.equal(fr.formatDate(moment, PARIS), "2 octobre 2026");
+  const local = new Date(moment);
+  assert.equal(fr.formatTime(moment), String(local.getHours()).padStart(2, "0") + ":" + String(local.getMinutes()).padStart(2, "0"), "machine zone");
+  const seen = [];
+  const lenient = createI18n({ onIssue: issue => seen.push(issue.code) });
+  assert.equal(lenient.formatDateTime(moment, { timeZone: "Mars/Olympus" }), lenient.formatDateTime(moment));
+  assert.deepEqual(seen, ["invalid-timezone"]);
+  throwsCode(() => createI18n({ dev: true, onIssue() {} }).formatDate(moment, { timeZone: "Mars/Olympus" }), "invalid-timezone");
+});
+
+test("fix: file sizes round half up and agree in number, fractions are rounded", () => {
+  assert.equal(fr.formatFileSize(9950), `10${NN}Ko`);
+  assert.equal(fr.formatFileSize(9949), `9,9${NN}Ko`);
+  assert.equal(fr.formatFileSize(99950), `100${NN}Ko`);
+  assert.equal(fr.formatFileSize(1.5), `2${NN}octets`);
+  assert.equal(fr.formatFileSize(1.4), `1${NN}octet`);
+  assert.equal(fr.formatFileSize(0.4), `0${NN}octet`);
+});
+
+test("fix: plural rules stay French for huge values (Intl disagrees from 1e20)", () => {
+  for (const [value, category] of [[1e12, "many"], [1e15, "many"], [1e20, "many"], [1e21, "many"], [2 ** 53, "other"], [-1e20, "many"]]) {
+    assert.equal(pluralCategory(value, "fr-FR"), category, String(value));
+  }
+  assert.equal(verifyPluralRules("fr-FR").ok, true);
+});
+
+test("fix: a backslash outside the known escapes makes the message invalid", () => {
+  assert.equal(make(String.raw`a=C:\temp`).t("a"), "⟦a⟧");
+  assert.equal(make(String.raw`a=50\%`).t("a"), "⟦a⟧");
+  assert.equal(make(String.raw`a=C:\\temp`).t("a"), String.raw`C:\temp`);
+});
+
+test("fix: regex after a condition parenthesis, division after an expression", () => {
+  const strings = source => tokenize(source).tokens.filter(token => token.type === "string").map(token => token.value);
+  assert.deepEqual(strings('if (x) /ab"c/.test(z); const w = "Après…"'), ["Après…"]);
+  assert.deepEqual(strings('while (x) /"/.exec(y); k("a b")'), ["a b"]);
+  assert.deepEqual(strings('for (;;) /"/g.test(y); k("a b")'), ["a b"]);
+  assert.deepEqual(tokenize("(a + b) / 2 / c").tokens.map(token => token.type), ["punct", "ident", "punct", "ident", "punct", "punct", "number", "punct", "ident"]);
+  assert.deepEqual(tokenize("f(x) / 2").tokens.map(token => token.type + ":" + token.value), ["ident:f", "punct:(", "ident:x", "punct:)", "punct:/", "number:2"]);
+});
+
 // ---------------------------------------------------------------------------------------------
 // Outil de contrôle : analyseur de jetons
 // ---------------------------------------------------------------------------------------------
@@ -681,6 +735,33 @@ try {
     ].sort());
   });
 
+  const cli = (base, ...args) => {
+    try {
+      return { code: 0, out: execFileSync(process.execPath, [join(root, "tests/check-i18n.mjs"), `--root=${base}`, ...args], { encoding: "utf8" }) };
+    } catch (error) { return { code: error.status, out: String(error.stdout) }; }
+  };
+
+  test("fix: concatenated keys register a prefix, undecidable keys are informative only", () => {
+    const base = repo({
+      "web/i18n/fr-FR.txt": "status-open=Ouvert\nstatus-closed=Fermé\nother=Autre\n",
+      "web/app.mjs": 't("status-" + etat);\nt("other");\nt(name);\nmessages.get(compute());\nt(ok ? "other" : name);\n',
+    });
+    const result = checkRepository({ root: base });
+    assert.deepEqual(result.findings, []);
+    assert.deepEqual(result.info.map(item => item.category + ":" + item.line), ["dynamic-key:3", "dynamic-key:4"]);
+    const run = cli(base);
+    assert.equal(run.code, 0);
+    assert.match(run.out, /^Clés dynamiques, invérifiables \(informatif/m);
+    assert.match(run.out, /^  web\/app\.mjs:3: \[dynamic-key\] clé dynamique, invérifiable$/m);
+    assert.equal(cli(base, "--strict").code, 0, "informative even in strict mode");
+  });
+
+  test("fix: an unknown backslash in the catalogue is reported as an invalid message with its line", () => {
+    const BS = String.fromCharCode(92);
+    const base = repo({ "web/i18n/fr-FR.txt": ["ok=1", "chemin=C:" + BS + "temp", "rate=50" + BS + "%", ""].join("\n"), "web/app.mjs": 't("ok"); t("chemin"); t("rate");' });
+    assert.deepEqual(summarize(checkRepository({ root: base })), ["message-syntax|web/i18n/fr-FR.txt:2|chemin", "message-syntax|web/i18n/fr-FR.txt:3|rate"]);
+  });
+
   test("repository: no catalogue at all is an error, not a crash", () => {
     const result = checkRepository({ root: repo({ "web/app.mjs": 'x.textContent = "Bonjour le monde";' }) });
     assert.deepEqual(result.findings.map(finding => finding.category).sort(), ["hardcoded", "no-catalog"]);
@@ -703,11 +784,6 @@ try {
     assert.equal(compareToBaseline([finding(1, "autre", "hardcoded")], baseline).fresh.length, 1);
   });
 
-  const cli = (base, ...args) => {
-    try {
-      return { code: 0, out: execFileSync(process.execPath, [join(root, "tests/check-i18n.mjs"), `--root=${base}`, ...args], { encoding: "utf8" }) };
-    } catch (error) { return { code: error.status, out: String(error.stdout) }; }
-  };
 
   test("cli: strict failure, baseline adoption, new findings fail, fixed findings are listed", () => {
     const base = repo({
