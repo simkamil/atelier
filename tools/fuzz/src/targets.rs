@@ -9,6 +9,7 @@
 use crate::target::{FnTarget, FuzzTarget, Outcome};
 use atelier_cfb::{Compound as CfbCompound, Limits as CfbLimits};
 use atelier_compress::{Format, InflateState, Level, Status, compress_with_format};
+use atelier_fmt_legacy::detect::detect_protection;
 use atelier_fmt_legacy::doc::import_doc;
 use atelier_fmt_odf::odt::import_odt;
 use atelier_fmt_ooxml::{Package, PartUri, TargetMode, import_docx};
@@ -111,6 +112,11 @@ pub fn registry() -> Vec<Arc<dyn FuzzTarget>> {
             FnTarget::new("doc-import", doc_import_target)
                 .dictionary(CFB_TOKENS)
                 .seeds(doc_seeds),
+        ),
+        Arc::new(
+            FnTarget::new("detect-protection", detect_protection_target)
+                .dictionary(CFB_TOKENS)
+                .seeds(detect_seeds),
         ),
         Arc::new(
             FnTarget::new("odt-import", odt_import_target)
@@ -935,6 +941,28 @@ fn doc_seeds() -> Vec<Vec<u8>> {
         include_bytes!("../../../tests/doc-reference/para-formatting.doc").to_vec(),
         include_bytes!("../../../tests/doc-reference/styles.doc").to_vec(),
         include_bytes!("../../../tests/doc-reference/underlines.doc").to_vec(),
+    ]
+}
+
+// -------------------------------------------------------- protection detection
+fn detect_protection_target(input: &[u8]) -> Outcome {
+    let detection = detect_protection(input);
+    Outcome::labelled(
+        if detection.is_protected() {
+            "protected"
+        } else {
+            "clear"
+        },
+        input.len() as u64,
+    )
+}
+
+fn detect_seeds() -> Vec<Vec<u8>> {
+    vec![
+        include_bytes!("../../../tests/encrypted-reference/encrypted.docx").to_vec(),
+        include_bytes!("../../../tests/encrypted-reference/encrypted.doc").to_vec(),
+        include_bytes!("../../../tests/encrypted-reference/encrypted.xls").to_vec(),
+        include_bytes!("../../../tests/encrypted-reference/plain.doc").to_vec(),
     ]
 }
 

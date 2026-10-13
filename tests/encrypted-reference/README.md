@@ -1,0 +1,23 @@
+# Référence de documents chiffrés (US-315)
+
+Dix petits fichiers produits par **LibreOffice** (pas par Microsoft Word, non installé) à partir du même contenu : deux lignes de texte pour Word, trois cellules par deux lignes pour Excel. Les quatre fichiers `encrypted.*` sont enregistrés avec le mot de passe de test **`test`** ; les quatre `plain.*` sont les mêmes documents sans mot de passe.
+
+| Fichier | Filtre LibreOffice | Contenu |
+|---|---|---|
+| `encrypted.docx`, `encrypted.xlsx` | `MS Word 2007 XML`, `Calc MS Excel 2007 XML` | conteneur CFB `EncryptionInfo` + `EncryptedPackage` (chiffrement standard) |
+| `encrypted.doc` | `MS Word 97` | FIB avec `fEncrypted` |
+| `encrypted.xls` | `MS Excel 97` | flux `Workbook` avec enregistrement `FILEPASS` |
+| `plain.docx`, `plain.xlsx` | idem | paquet ZIP ordinaire |
+| `plain.doc`, `plain.xls` | idem | conteneur CFB ordinaire |
+
+Production : une instance `soffice --headless` pilotée par le Python fourni avec LibreOffice (UNO), `storeToURL` avec le filtre ci-dessus et la propriété de support `Password` = `test`. (Le paramètre de filtre JSON de `--convert-to` n'a pas chiffré les fichiers.) Les octets ne sont pas reproductibles (horodatages, sels aléatoires) : les sommes de contrôle de `SHA256SUMS` figent les fichiers stockés.
+
+Utilisés par `crates/fmt-legacy/tests/detect.rs`. Détails : [docs/us-315-encrypted-detection.md](../../docs/us-315-encrypted-detection.md).
+
+## Classeurs protégés sans mot de passe d'ouverture
+
+`doc-protected.xls` (structure du classeur protégée) et `sheet-protected.xls` (une feuille protégée), tous deux enregistrés sans mot de passe d'ouverture. Observé : LibreOffice écrit un `FILEPASS` RC4 pour le premier (chiffrement avec le mot de passe par défaut d'Excel) et aucun pour le second.
+
+## Régénération
+
+`py tools/generate-encrypted-reference.py` (LibreOffice requis ; `--soffice` ou `SOFFICE` désigne l'exécutable) réécrit tous les fichiers et `SHA256SUMS`, via le Python fourni avec LibreOffice (UNO). Les octets ne sont pas reproductibles (horodatages, sels aléatoires) : régénérer change les fichiers ; les sommes de contrôle figent les fichiers stockés. `py tools/generate-encrypted-reference.py --check` vérifie les fichiers versionnés contre `SHA256SUMS` sans LibreOffice et sans rien régénérer.

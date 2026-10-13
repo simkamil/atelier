@@ -1220,8 +1220,10 @@ Réf : D2, [MS-DOC] · Taille : M · Dépend de : US-313, US-270
 
 #### US-315 — Documents chiffrés
 *En tant qu'*utilisateur, *je veux* un message clair à l'ouverture d'un document protégé par mot de passe *afin de* comprendre pourquoi il ne s'ouvre pas.
-- [ ] Détection des docx chiffrés (conteneur CFB `EncryptionInfo`) et des doc chiffrés.
+- [x] Détection des docx chiffrés (conteneur CFB `EncryptionInfo`) et des doc chiffrés.
 - [ ] Message : « Les documents protégés par mot de passe seront pris en charge dans une prochaine version. »
+
+Avancement US-315 (2026-10-13) : détection livrée dans `atelier_fmt_legacy::detect`, relue par un agent indépendant et corrigée ; [contrat](docs/us-315-encrypted-detection.md), corpus de fichiers chiffrés produits par LibreOffice. Reste ouvert : afficher le message (clé proposée `encrypted-document`) en appelant la détection avant l'import docx. Aucun fichier chiffré par Microsoft Office n'a été testé.
 
 Réf : F-TXT-065 · Taille : S · Dépend de : US-311
 
