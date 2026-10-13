@@ -10,15 +10,14 @@ use super::sprm::{Grpprl, Prl, Stats};
 use super::{DocError, DocLimits, rd_u16, rd_u32};
 use atelier_text_model::rich::{HfKind, HfVariant, NodeId};
 
-// Section sprms. 0x301D, 0xB01F..0xB022, 0x9023, 0x9024, 0xB017, 0xB018, 0x5032,
-// 0x9031, 0x300E and 0x300A are written by LibreOffice; the rest come from
+// Section sprms. 0x301D, 0xB01F..0xB022, 0x9023, 0x9024, 0xB017, 0xB018, 0x500B,
+// 0x900C, 0x3005, 0x3009, 0x3011, 0x3019, 0x501C, 0x300E and 0x300A are written by
+// LibreOffice (0x5032 and 0x9031 are written too but are not column sprms); the rest come from
 // [MS-DOC] only.
 const SPRM_S_BKC: u16 = 0x3009;
 const SPRM_S_FTITLEPAGE: u16 = 0x300A;
 const SPRM_S_CCOLUMNS: u16 = 0x500B;
-const SPRM_S_CCOLUMNS97: u16 = 0x5032;
 const SPRM_S_DXACOLUMNS: u16 = 0x900C;
-const SPRM_S_DXACOLUMNS97: u16 = 0x9031;
 const SPRM_S_FEVENLYSPACED: u16 = 0x3005;
 const SPRM_S_LBETWEEN: u16 = 0x3019;
 const SPRM_S_DXACOLWIDTH: u16 = 0xF203;
@@ -39,8 +38,8 @@ const SPRM_S_DYAHDRTOP: u16 = 0xB017;
 const SPRM_S_DYAHDRBOTTOM: u16 = 0xB018;
 /// Known and ignored without notice (printer trays, line numbers,
 /// text-flow, revision ids, bidi...).
-const S_SILENT: [u16; 12] = [
-    0x303C, 0x5040, 0x5042, 0x7030, 0x5033, 0x3228, 0x3006, 0x5007, 0x5008, 0x302A, 0x3012, 0x301A,
+const S_SILENT: [u16; 14] = [
+    0x5032, 0x9031, 0x303C, 0x5040, 0x5042, 0x7030, 0x5033, 0x3228, 0x3006, 0x5007, 0x5008, 0x302A, 0x3012, 0x301A,
 ];
 
 /// Type of section break (`sprmSBkc`).
@@ -160,10 +159,10 @@ impl Sepx {
         match p.op {
             SPRM_S_BKC => self.bkc = p.byte(),
             SPRM_S_FTITLEPAGE => self.title_page = p.byte().is_some_and(|b| b & 1 != 0),
-            SPRM_S_CCOLUMNS | SPRM_S_CCOLUMNS97 => {
+            SPRM_S_CCOLUMNS => {
                 self.columns.count = p.u16().map_or(1, |c| u32::from(c).saturating_add(1));
             }
-            SPRM_S_DXACOLUMNS | SPRM_S_DXACOLUMNS97 => self.columns.spacing = s16(p),
+            SPRM_S_DXACOLUMNS => self.columns.spacing = s16(p),
             SPRM_S_FEVENLYSPACED => {
                 self.columns.evenly_spaced = p.byte().is_some_and(|b| b & 1 != 0)
             }

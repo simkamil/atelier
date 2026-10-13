@@ -554,5 +554,1629 @@
         }
       ]
     }
+  },
+  "structure": {
+    "struct-tables.doc": {
+      "size": 12288,
+      "sha256": "3601615caf524cb90798dea22aea7ec50025405786292ddf06e02310e21aa42c",
+      "producer": "LibreOffice",
+      "expect": {
+        "file": {
+          "rows": [
+            {
+              "itap": 1,
+              "cells": [
+                [
+                  "A1-2",
+                  4536,
+                  null,
+                  0
+                ],
+                [
+                  "A3",
+                  2268,
+                  null,
+                  0
+                ]
+              ]
+            },
+            {
+              "itap": 1,
+              "cells": [
+                [
+                  "B1",
+                  2268,
+                  "restart",
+                  0
+                ],
+                [
+                  "B2",
+                  2268,
+                  null,
+                  0
+                ],
+                [
+                  "B3",
+                  2268,
+                  null,
+                  0
+                ]
+              ]
+            },
+            {
+              "itap": 1,
+              "cells": [
+                [
+                  "",
+                  2268,
+                  "cont",
+                  0
+                ],
+                [
+                  "C2",
+                  2268,
+                  null,
+                  0
+                ],
+                [
+                  "C3",
+                  2268,
+                  null,
+                  0
+                ]
+              ]
+            },
+            {
+              "itap": 1,
+              "cells": [
+                [
+                  "H1",
+                  3402,
+                  null,
+                  1
+                ],
+                [
+                  "H2",
+                  3402,
+                  null,
+                  2
+                ]
+              ],
+              "header": true,
+              "height": -850,
+              "cant_split": true,
+              "jc": 1
+            },
+            {
+              "itap": 2,
+              "cells": [
+                [
+                  "In a",
+                  1701,
+                  null,
+                  0
+                ],
+                [
+                  "In b",
+                  1701,
+                  null,
+                  0
+                ]
+              ]
+            },
+            {
+              "itap": 1,
+              "cells": [
+                [
+                  "Ext 1\nApres interne",
+                  3402,
+                  null,
+                  0
+                ],
+                [
+                  "Ext 2",
+                  3402,
+                  null,
+                  0
+                ]
+              ],
+              "height": 567,
+              "jc": 1
+            }
+          ],
+          "borders": {
+            "H1": {
+              "top": [
+                "double",
+                "FF0000"
+              ],
+              "left": [
+                "dotted",
+                "00FF00"
+              ],
+              "bottom": [
+                "dashed",
+                "0000FF"
+              ]
+            }
+          },
+          "shading": {
+            "H1": "FFFF00"
+          }
+        },
+        "model": {
+          "tables": [
+            {
+              "depth": 0,
+              "columns": 3,
+              "grid": [
+                2268,
+                2268,
+                2268
+              ],
+              "cells": [
+                [
+                  0,
+                  0,
+                  1,
+                  2,
+                  "A1-2"
+                ],
+                [
+                  0,
+                  2,
+                  1,
+                  1,
+                  "A3"
+                ],
+                [
+                  1,
+                  0,
+                  2,
+                  1,
+                  "B1"
+                ],
+                [
+                  1,
+                  1,
+                  1,
+                  1,
+                  "B2"
+                ],
+                [
+                  1,
+                  2,
+                  1,
+                  1,
+                  "B3"
+                ],
+                [
+                  2,
+                  1,
+                  1,
+                  1,
+                  "C2"
+                ],
+                [
+                  2,
+                  2,
+                  1,
+                  1,
+                  "C3"
+                ]
+              ]
+            },
+            {
+              "depth": 0,
+              "columns": 2,
+              "grid": [
+                3402,
+                3402
+              ],
+              "align": "center",
+              "cells": [
+                [
+                  0,
+                  0,
+                  1,
+                  1,
+                  "H1"
+                ],
+                [
+                  0,
+                  1,
+                  1,
+                  1,
+                  "H2"
+                ],
+                [
+                  1,
+                  0,
+                  1,
+                  1,
+                  "Ext 1"
+                ],
+                [
+                  1,
+                  1,
+                  1,
+                  1,
+                  "Ext 2"
+                ]
+              ],
+              "rows": [
+                {
+                  "header": true,
+                  "height": [
+                    850,
+                    "exact"
+                  ],
+                  "cant_split": true
+                },
+                {
+                  "header": null,
+                  "height": [
+                    567,
+                    "at_least"
+                  ],
+                  "cant_split": false
+                }
+              ],
+              "cell_props": {
+                "H1": {
+                  "valign": "center",
+                  "fill": "FFFF00",
+                  "top": [
+                    "double",
+                    "FF0000"
+                  ],
+                  "left": [
+                    "dotted",
+                    "00FF00"
+                  ],
+                  "bottom": [
+                    "dashed",
+                    "0000FF"
+                  ]
+                },
+                "H2": {
+                  "valign": "bottom"
+                }
+              }
+            },
+            {
+              "depth": 1,
+              "columns": 2,
+              "grid": [
+                1701,
+                1701
+              ],
+              "cells": [
+                [
+                  0,
+                  0,
+                  1,
+                  1,
+                  "In a"
+                ],
+                [
+                  0,
+                  1,
+                  1,
+                  1,
+                  "In b"
+                ]
+              ]
+            }
+          ],
+          "body_texts": [
+            "Avant",
+            "A1-2",
+            "A3",
+            "B1",
+            "B2",
+            "B3",
+            "",
+            "C2",
+            "C3",
+            "Entre",
+            "H1",
+            "H2",
+            "Ext 1",
+            "In a",
+            "In b",
+            "Apres interne",
+            "Ext 2",
+            "Fin"
+          ]
+        }
+      },
+      "observed": {
+        "tables": [
+          {
+            "itap": 1,
+            "cells": [
+              [
+                "A1-2",
+                4534,
+                null,
+                0
+              ],
+              [
+                "A3",
+                2269,
+                null,
+                0
+              ]
+            ]
+          },
+          {
+            "itap": 1,
+            "cells": [
+              [
+                "B1",
+                2267,
+                "restart",
+                0
+              ],
+              [
+                "B2",
+                2267,
+                null,
+                0
+              ],
+              [
+                "B3",
+                2269,
+                null,
+                0
+              ]
+            ]
+          },
+          {
+            "itap": 1,
+            "cells": [
+              [
+                "",
+                2267,
+                "cont",
+                0
+              ],
+              [
+                "C2",
+                2267,
+                null,
+                0
+              ],
+              [
+                "C3",
+                2269,
+                null,
+                0
+              ]
+            ]
+          },
+          {
+            "itap": 1,
+            "cells": [
+              [
+                "H1",
+                3401,
+                null,
+                1
+              ],
+              [
+                "H2",
+                3402,
+                null,
+                2
+              ]
+            ],
+            "header": true,
+            "height": -850,
+            "cant_split": true,
+            "jc": 1
+          },
+          {
+            "itap": 2,
+            "cells": [
+              [
+                "In a",
+                1700,
+                null,
+                0
+              ],
+              [
+                "In b",
+                1701,
+                null,
+                0
+              ]
+            ]
+          },
+          {
+            "itap": 1,
+            "cells": [
+              [
+                "Ext 1\nApres interne",
+                3401,
+                null,
+                0
+              ],
+              [
+                "Ext 2",
+                3402,
+                null,
+                0
+              ]
+            ],
+            "height": 567,
+            "jc": 1
+          }
+        ],
+        "lists": {
+          "paragraphs": [],
+          "levels": []
+        },
+        "sections": [
+          {
+            "text": "Avant",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1134,
+              1134,
+              1134,
+              1134
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          }
+        ],
+        "headers": [],
+        "fields": {
+          "fields": [],
+          "bookmarks": []
+        }
+      }
+    },
+    "struct-lists.doc": {
+      "size": 12288,
+      "sha256": "effd6e936934cae91230216ea008c5707c5fcfbae4d39682aad25cba9dde18ee",
+      "producer": "LibreOffice",
+      "expect": {
+        "file": {
+          "paragraphs": [
+            [
+              "Puce 1",
+              0,
+              0
+            ],
+            [
+              "Sous-puce",
+              0,
+              1
+            ],
+            [
+              "Puce 2",
+              0,
+              0
+            ],
+            [
+              "Num 1",
+              1,
+              0
+            ],
+            [
+              "Sous a",
+              1,
+              1
+            ],
+            [
+              "Sous i",
+              1,
+              2
+            ],
+            [
+              "Num 2",
+              1,
+              0
+            ],
+            [
+              "Romain",
+              2,
+              0
+            ],
+            [
+              "Lettre",
+              2,
+              1
+            ],
+            [
+              "Redemarre 5",
+              3,
+              0
+            ]
+          ],
+          "groups": [
+            [
+              [
+                23,
+                ""
+              ],
+              [
+                23,
+                "◦"
+              ]
+            ],
+            [
+              [
+                0,
+                "%1.",
+                1
+              ],
+              [
+                4,
+                "%2)",
+                1
+              ],
+              [
+                2,
+                "%3.",
+                1
+              ]
+            ],
+            [
+              [
+                1,
+                "%1.",
+                1
+              ],
+              [
+                3,
+                "%2)",
+                1
+              ]
+            ],
+            [
+              [
+                0,
+                "%1.",
+                5
+              ],
+              [
+                4,
+                "%2)",
+                1
+              ],
+              [
+                2,
+                "%3.",
+                1
+              ]
+            ]
+          ]
+        },
+        "model": {
+          "paragraphs": [
+            [
+              "Puce 1",
+              0,
+              0
+            ],
+            [
+              "Sous-puce",
+              0,
+              1
+            ],
+            [
+              "Puce 2",
+              0,
+              0
+            ],
+            [
+              "Num 1",
+              1,
+              0
+            ],
+            [
+              "Sous a",
+              1,
+              1
+            ],
+            [
+              "Sous i",
+              1,
+              2
+            ],
+            [
+              "Num 2",
+              1,
+              0
+            ],
+            [
+              "Romain",
+              2,
+              0
+            ],
+            [
+              "Lettre",
+              2,
+              1
+            ],
+            [
+              "Redemarre 5",
+              3,
+              0
+            ]
+          ],
+          "groups": [
+            [
+              [
+                "bullet",
+                ""
+              ],
+              [
+                "bullet",
+                "◦"
+              ]
+            ],
+            [
+              [
+                "Decimal",
+                "%1.",
+                1
+              ],
+              [
+                "LowerLetter",
+                "%2)",
+                1
+              ],
+              [
+                "LowerRoman",
+                "%3.",
+                1
+              ]
+            ],
+            [
+              [
+                "UpperRoman",
+                "%1.",
+                1
+              ],
+              [
+                "UpperLetter",
+                "%2)",
+                1
+              ]
+            ],
+            [
+              [
+                "Decimal",
+                "%1.",
+                5
+              ],
+              [
+                "LowerLetter",
+                "%2)",
+                1
+              ],
+              [
+                "LowerRoman",
+                "%3.",
+                1
+              ]
+            ]
+          ]
+        }
+      },
+      "observed": {
+        "tables": [],
+        "lists": {
+          "paragraphs": [
+            [
+              "Puce 1",
+              0,
+              0
+            ],
+            [
+              "Sous-puce",
+              0,
+              1
+            ],
+            [
+              "Puce 2",
+              0,
+              0
+            ],
+            [
+              "Num 1",
+              1,
+              0
+            ],
+            [
+              "Sous a",
+              1,
+              1
+            ],
+            [
+              "Sous i",
+              1,
+              2
+            ],
+            [
+              "Num 2",
+              1,
+              0
+            ],
+            [
+              "Romain",
+              2,
+              0
+            ],
+            [
+              "Lettre",
+              2,
+              1
+            ],
+            [
+              "Redemarre 5",
+              3,
+              0
+            ]
+          ],
+          "levels": [
+            [
+              {
+                "nfc": 23,
+                "start": 1,
+                "text": "",
+                "follow": 0
+              },
+              {
+                "nfc": 23,
+                "start": 1,
+                "text": "◦",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%3.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%4.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%5.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%6.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%7.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%8.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%9.",
+                "follow": 0
+              }
+            ],
+            [
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%1.",
+                "follow": 0
+              },
+              {
+                "nfc": 4,
+                "start": 1,
+                "text": "%2)",
+                "follow": 0
+              },
+              {
+                "nfc": 2,
+                "start": 1,
+                "text": "%3.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%4.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%5.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%6.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%7.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%8.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%9.",
+                "follow": 0
+              }
+            ],
+            [
+              {
+                "nfc": 1,
+                "start": 1,
+                "text": "%1.",
+                "follow": 0
+              },
+              {
+                "nfc": 3,
+                "start": 1,
+                "text": "%2)",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%3.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%4.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%5.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%6.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%7.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%8.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%9.",
+                "follow": 0
+              }
+            ],
+            [
+              {
+                "nfc": 0,
+                "start": 5,
+                "text": "%1.",
+                "follow": 0
+              },
+              {
+                "nfc": 4,
+                "start": 1,
+                "text": "%2)",
+                "follow": 0
+              },
+              {
+                "nfc": 2,
+                "start": 1,
+                "text": "%3.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%4.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%5.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%6.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%7.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%8.",
+                "follow": 0
+              },
+              {
+                "nfc": 0,
+                "start": 1,
+                "text": "%9.",
+                "follow": 0
+              }
+            ]
+          ]
+        },
+        "sections": [
+          {
+            "text": "Puce 1",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1134,
+              1134,
+              1134,
+              1134
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          }
+        ],
+        "headers": [],
+        "fields": {
+          "fields": [],
+          "bookmarks": []
+        }
+      }
+    },
+    "struct-sections.doc": {
+      "size": 9728,
+      "sha256": "deacd414f1ad2016c2745462af7aa92aa7055cc03ab5ebe21a9e336fa7282d04",
+      "producer": "LibreOffice",
+      "expect": {
+        "file": {
+          "sections": [
+            {
+              "text": "Portrait",
+              "width": 11906,
+              "height": 16838,
+              "landscape": false,
+              "margins": [
+                1417,
+                1417,
+                1134,
+                1134
+              ],
+              "columns": 1,
+              "bkc": 2,
+              "nfc": 0
+            },
+            {
+              "text": "Paysage",
+              "width": 16838,
+              "height": 11906,
+              "landscape": true,
+              "margins": [
+                1701,
+                1701,
+                850,
+                850
+              ],
+              "columns": 1,
+              "bkc": 2,
+              "nfc": 0
+            },
+            {
+              "text": "Romain",
+              "width": 11906,
+              "height": 16838,
+              "landscape": false,
+              "margins": [
+                1134,
+                1134,
+                1134,
+                1134
+              ],
+              "columns": 1,
+              "bkc": 2,
+              "nfc": 2,
+              "restart": true,
+              "start": 5
+            },
+            {
+              "text": "Deux colonnes",
+              "columns": 2,
+              "column_spacing": 567,
+              "bkc": 0
+            },
+            {
+              "text": "Apres",
+              "columns": 1,
+              "bkc": 0,
+              "nfc": 2
+            }
+          ]
+        },
+        "model": {
+          "sections": [
+            {
+              "text": "Portrait",
+              "width": 11906,
+              "height": 16838,
+              "landscape": false,
+              "margins": [
+                1417,
+                1417,
+                1134,
+                1134
+              ],
+              "columns": 1,
+              "break": "NewPage",
+              "format": "Decimal"
+            },
+            {
+              "text": "Paysage",
+              "width": 16838,
+              "height": 11906,
+              "landscape": true,
+              "margins": [
+                1701,
+                1701,
+                850,
+                850
+              ],
+              "columns": 1,
+              "break": "NewPage",
+              "format": "Decimal"
+            },
+            {
+              "text": "Romain",
+              "width": 11906,
+              "height": 16838,
+              "landscape": false,
+              "margins": [
+                1134,
+                1134,
+                1134,
+                1134
+              ],
+              "columns": 1,
+              "break": "NewPage",
+              "format": "LowerRoman",
+              "restart": true,
+              "start": 5
+            },
+            {
+              "text": "Deux colonnes",
+              "columns": 2,
+              "column_spacing": 567,
+              "break": "Continuous"
+            },
+            {
+              "text": "Apres",
+              "columns": 1,
+              "break": "Continuous",
+              "format": "LowerRoman"
+            }
+          ]
+        }
+      },
+      "observed": {
+        "tables": [],
+        "lists": {
+          "paragraphs": [],
+          "levels": []
+        },
+        "sections": [
+          {
+            "text": "Portrait",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1417,
+              1417,
+              1134,
+              1134
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          },
+          {
+            "text": "Paysage",
+            "width": 16838,
+            "height": 11906,
+            "landscape": true,
+            "margins": [
+              1701,
+              1701,
+              850,
+              850
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          },
+          {
+            "text": "Romain",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1134,
+              1134,
+              1134,
+              1134
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 2,
+            "restart": true,
+            "start": 5,
+            "title_page": false
+          },
+          {
+            "text": "Deux colonnes",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1134,
+              1134,
+              1134,
+              1134
+            ],
+            "columns": 2,
+            "column_spacing": 566,
+            "bkc": 0,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          },
+          {
+            "text": "Apres",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1134,
+              1134,
+              1134,
+              1134
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 0,
+            "nfc": 2,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          }
+        ],
+        "headers": [],
+        "fields": {
+          "fields": [],
+          "bookmarks": []
+        }
+      }
+    },
+    "struct-headers.doc": {
+      "size": 10752,
+      "sha256": "d5088caeffefd2024904cbab95e11efcc00184bc75975fe142527b83037b34ee",
+      "producer": "LibreOffice",
+      "expect": {
+        "file": {
+          "stories": [
+            [
+              0,
+              1,
+              "Entete {PAGE}"
+            ],
+            [
+              0,
+              3,
+              "Pied {NUMPAGES}"
+            ],
+            [
+              0,
+              4,
+              "Premiere entete"
+            ],
+            [
+              1,
+              1,
+              "Entete deux"
+            ],
+            [
+              1,
+              3,
+              "Pied deux"
+            ]
+          ],
+          "title_page": [
+            true,
+            false
+          ]
+        },
+        "model": {
+          "sections": [
+            {
+              "title_page": true,
+              "slots": [
+                [
+                  "Header",
+                  "Default",
+                  "Entete {PAGE}"
+                ],
+                [
+                  "Footer",
+                  "Default",
+                  "Pied {NUMPAGES}"
+                ],
+                [
+                  "Header",
+                  "First",
+                  "Premiere entete"
+                ]
+              ]
+            },
+            {
+              "title_page": false,
+              "slots": [
+                [
+                  "Header",
+                  "Default",
+                  "Entete deux"
+                ],
+                [
+                  "Footer",
+                  "Default",
+                  "Pied deux"
+                ]
+              ]
+            }
+          ]
+        }
+      },
+      "observed": {
+        "tables": [],
+        "lists": {
+          "paragraphs": [],
+          "levels": []
+        },
+        "sections": [
+          {
+            "text": "Page un",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1417,
+              1417,
+              1417,
+              1417
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": true
+          },
+          {
+            "text": "Section deux",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1417,
+              1417,
+              1580,
+              1580
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          }
+        ],
+        "headers": [
+          [
+            0,
+            1,
+            "Entete {PAGE}"
+          ],
+          [
+            0,
+            3,
+            "Pied {NUMPAGES}"
+          ],
+          [
+            0,
+            4,
+            "Premiere entete"
+          ],
+          [
+            1,
+            1,
+            "Entete deux"
+          ],
+          [
+            1,
+            3,
+            "Pied deux"
+          ]
+        ],
+        "fields": {
+          "fields": [],
+          "bookmarks": []
+        }
+      }
+    },
+    "struct-fields.doc": {
+      "size": 10752,
+      "sha256": "75de212e720b8176e2540c0f5ff693e8c0aac72da4681844131d3fd7f3de762f",
+      "producer": "LibreOffice",
+      "expect": {
+        "file": {
+          "bookmarks": [
+            [
+              "Point",
+              ""
+            ],
+            [
+              "Plage",
+              "avec plage"
+            ],
+            [
+              "Deux",
+              "de plage\rsuite"
+            ]
+          ],
+          "fields": [
+            [
+              "HYPERLINK",
+              "externe"
+            ],
+            [
+              "HYPERLINK",
+              "interne"
+            ],
+            [
+              "DATE",
+              null
+            ],
+            [
+              "TIME",
+              null
+            ],
+            [
+              "PAGE",
+              null
+            ],
+            [
+              "NUMPAGES",
+              null
+            ]
+          ],
+          "hyperlinks": [
+            [
+              "http://example.com/x?a=1",
+              null
+            ],
+            [
+              null,
+              "Point"
+            ]
+          ]
+        },
+        "model": {
+          "bookmarks": [
+            [
+              "Point",
+              "Un texte avec plage fin",
+              3,
+              3,
+              false
+            ],
+            [
+              "Plage",
+              "Un texte avec plage fin",
+              9,
+              19,
+              false
+            ],
+            [
+              "Deux",
+              "Debut de plage",
+              6,
+              14,
+              true
+            ]
+          ],
+          "links": [
+            [
+              "externe",
+              "External",
+              "http://example.com/x?a=1",
+              "Infobulle"
+            ],
+            [
+              "interne",
+              "Bookmark",
+              "Point",
+              null
+            ]
+          ],
+          "fields": [
+            "DATE",
+            "TIME",
+            "PAGE",
+            "NUMPAGES"
+          ]
+        }
+      },
+      "observed": {
+        "tables": [],
+        "lists": {
+          "paragraphs": [],
+          "levels": []
+        },
+        "sections": [
+          {
+            "text": "Un texte avec plage fin",
+            "width": 11906,
+            "height": 16838,
+            "landscape": false,
+            "margins": [
+              1134,
+              1134,
+              1134,
+              1134
+            ],
+            "columns": 1,
+            "column_spacing": null,
+            "bkc": 2,
+            "nfc": 0,
+            "restart": false,
+            "start": null,
+            "title_page": false
+          }
+        ],
+        "headers": [],
+        "fields": {
+          "fields": [
+            {
+              "cp": 59,
+              "code": "HYPERLINK \"http://example.com/x?a=1\"",
+              "result": "externe",
+              "sep": true,
+              "flt": 88
+            },
+            {
+              "cp": 111,
+              "code": "HYPERLINK  \\l \"Point\"",
+              "result": "interne",
+              "sep": true,
+              "flt": 88
+            },
+            {
+              "cp": 150,
+              "code": "DATE \\@\"dd/MM/yyyy\"",
+              "result": "13/10/2026",
+              "sep": true,
+              "flt": 31
+            },
+            {
+              "cp": 191,
+              "code": "TIME \\@\"HH:mm:ss\"",
+              "result": "08:30:20",
+              "sep": true,
+              "flt": 32
+            },
+            {
+              "cp": 227,
+              "code": "PAGE",
+              "result": "1",
+              "sep": true,
+              "flt": 33
+            },
+            {
+              "cp": 242,
+              "code": "NUMPAGES",
+              "result": "1",
+              "sep": true,
+              "flt": 26
+            }
+          ],
+          "bookmarks": [
+            [
+              "Point",
+              ""
+            ],
+            [
+              "Plage",
+              "avec plage"
+            ],
+            [
+              "Deux",
+              "de plage\rsuite"
+            ]
+          ]
+        }
+      }
+    }
   }
 }
