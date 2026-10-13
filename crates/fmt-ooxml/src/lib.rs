@@ -10,13 +10,14 @@ pub mod docx;
 mod properties;
 pub use docx::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
-    DocxError, DocxLimits, DocxSettings, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice,
+    DocxError, DocxLimits, DocxSettings, DocxVariant, DocxWriteOptions, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice,
     ImportedBreak, ImportedCell, ImportedDocx, ImportedRow, ImportedRunStyle, ImportedSymbol,
     ImportedTable, ImportedTables, LatentStyleInfo, MC_NS, Preserved, PreservedAttr,
     PreservedChild, PreservedElement, PreservedPart, ResolvedCell, RowHeight, RowProps, Shading,
     TableAlign, TableColor, TableLayout, TableLook, TableProps, TableStyleDef, TableWidth, VMerge,
     import_docx, import_docx_with_limits, interpreted_elements, para_mark_rpr_rank, ppr_rank,
-    rpr_rank, sect_pr_rank,
+    rpr_rank, sect_pr_rank, NewDocument, PageSetup, StyleDecl, WriteError, WriteNotice, WrittenDocx,
+    write_docx, write_new_docx,
 };
 
 pub use properties::{
