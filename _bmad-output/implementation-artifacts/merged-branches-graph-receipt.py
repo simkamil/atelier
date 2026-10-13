@@ -14,8 +14,9 @@ from graphify.cargo_introspect import introspect_cargo
 from graphify.export import to_html
 from graphify.diagnostics import diagnose_extraction
 
-if sys.argv[1:] != ["--finalize"]:
+if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"]):
     raise SystemExit("Usage: py ui-shell-graph-receipt.py --finalize (only after parent GO)")
+zoom_run = sys.argv[1:] == ["--finalize-zoom"]
 
 ROOT = Path(__file__).resolve().parents[2]
 ART = Path(__file__).resolve().parent
@@ -139,7 +140,7 @@ assert {node['label'] for node in cargo['nodes']} == {package['name'] for packag
 
 missing_sources = [node['id'] for node in raw['nodes'] if node.get('source_file') and not (ROOT/node['source_file']).is_file()]
 assert not missing_sources, f"missing located sources: {missing_sources[:20]}"
-for url in ('/editor-shell.mjs', '/ui-components.mjs', '/ui-components.css', '/ribbon.mjs', '/ribbon.css', '/theme.mjs', '/theme.css'):
+for url in ('/editor-shell.mjs', '/ui-components.mjs', '/ui-components.css', '/ribbon.mjs', '/ribbon.css', '/theme.mjs', '/theme.css') + (('/zoom.mjs', '/zoom-controls.mjs', '/zoom-controls.css') if zoom_run else ()):
     route = 'http_route_' + re.sub(r'[^a-z0-9]+', '_', url.casefold()).strip('_')
     assert route in node_ids, f"missing UI route: {url}"
     # The simple graph merges multiple relations for one endpoint pair; the raw
@@ -152,7 +153,8 @@ for name in GRAPH_FILES:
     path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
 cost_path = OUT / 'cost.json'
 cost = json.loads(cost_path.read_text(encoding='utf-8')) if cost_path.is_file() else None
-baseline_report = subprocess.run(['git', 'show', f'{BASELINE}:graphify-out/GRAPH_REPORT.md'], cwd=ROOT, check=True, capture_output=True, text=True, encoding='utf-8').stdout
+COST_BASELINE = "94df23fb037145d75542f54dbc0215d0daf929bc"
+baseline_report = subprocess.run(['git', 'show', f'{COST_BASELINE}:graphify-out/GRAPH_REPORT.md'], cwd=ROOT, check=True, capture_output=True, text=True, encoding='utf-8').stdout
 historical = re.search(r'Coût CLI cumulé enregistré : (\d+) tokens en entrée et (\d+) en sortie', baseline_report)
 evidence = {
     "baseline_commit": BASELINE,
@@ -173,20 +175,25 @@ evidence = {
     "cli_refreshed": True,
     "recorded_cumulative_semantic_tokens": {"input": cost['total_input_tokens'], "output": cost['total_output_tokens']} if cost else None,
     "historical_baseline_reported_tokens": {"input": int(historical[1]), "output": int(historical[2])} if historical else None,
-    "historical_token_provenance": f"{BASELINE}:graphify-out/GRAPH_REPORT.md",
+    "historical_token_provenance": f"{COST_BASELINE}:graphify-out/GRAPH_REPORT.md",
     "local_cost_meter_available": cost is not None,
     "this_final_cli_refresh_llm_tokens": 0,
     "unreported_semantic_runs": len(cost.get("unreported_runs", [])) if cost else None,
     "api_report_llm_tokens": 0,
     "ui_stories": {key: stories['us_v0_v1_us_'+key].get('status') for key in ('104', '105', '106')},
+    "zoom_story_status": stories['us_v0_v1_us_342'].get('status') if zoom_run else None,
     "missing_located_sources": len(missing_sources),
     "ui_latency_certified": False,
     "graph_sha256": {
         f"graphify-out/{name}": hashlib.sha256((OUT / name).read_bytes()).hexdigest()
         for name in GRAPH_FILES
     },
+    "graph_tools_sha256": {
+        f"_bmad-output/implementation-artifacts/{name}": hashlib.sha256((ART / name).read_bytes()).hexdigest()
+        for name in ("merged-branches-graph-refresh.py", "merged-branches-graph-receipt.py")
+    },
 }
-(ART / "merged-branches-graph.json").write_text(
+(ART / ("zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
     json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
     newline="\n",

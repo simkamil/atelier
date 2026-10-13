@@ -1,0 +1,209 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  min-width: 0;
+  color: var(--chrome-ink);
+  font: inherit;
+}
+
+.zoom-controls-range {
+  width: clamp(5.5rem, 12vw, 9rem);
+  min-width: 4.75rem;
+  accent-color: var(--chrome-accent);
+}
+
+.zoom-controls-percent,
+.zoom-dialog button {
+  min-height: 2rem;
+  border: 1px solid var(--chrome-control-border);
+  border-radius: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  color: var(--chrome-ink);
+  background: var(--chrome-control);
+  font: inherit;
+  cursor: pointer;
+}
+
+.zoom-controls-percent:hover,
+.zoom-dialog button:hover:not(:disabled) {
+  border-color: var(--chrome-control-hover-border);
+  background: var(--chrome-control-hover);
+}
+
+.zoom-controls-percent:focus-visible,
+.zoom-controls-range:focus-visible,
+.zoom-dialog :focus-visible {
+  outline: 2px solid var(--chrome-focus);
+  outline-offset: 2px;
+}
+
+.zoom-controls :disabled,
+.zoom-dialog :disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.zoom-dialog {
+  width: min(22rem, calc(100vw - 2rem));
+  max-width: none;
+  max-height: min(90vh, 38rem);
+  overflow: auto;
+  border: 1px solid var(--chrome-border);
+  border-radius: 0.55rem;
+  padding: 1rem;
+  color: var(--chrome-ink);
+  background: var(--chrome-surface-raised);
+  box-shadow: 0 0.75rem 2.5rem rgb(0 0 0 / 24%);
+  font: inherit;
+}
+
+.zoom-dialog::backdrop {
+  background: rgb(0 0 0 / 42%);
+}
+
+.zoom-dialog-title {
+  margin: 0 2rem 0.9rem 0;
+  font-size: 1.1rem;
+}
+
+.zoom-dialog-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.zoom-dialog-value-label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--chrome-muted);
+}
+
+.zoom-dialog-value {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid var(--chrome-control-border);
+  border-radius: 0.3rem;
+  padding: 0.4rem 0.55rem;
+  color: var(--chrome-ink);
+  background: var(--chrome-control);
+  font: inherit;
+}
+
+.zoom-dialog-error {
+  margin: -0.65rem 0 0;
+  color: var(--chrome-danger);
+  font-size: 0.9rem;
+}
+
+.zoom-dialog-modes {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 0.35rem;
+  padding: 0.6rem;
+}
+
+.zoom-dialog-modes legend {
+  padding: 0 0.25rem;
+  color: var(--chrome-muted);
+}
+
+.zoom-dialog-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.8rem;
+}
+
+.zoom-dialog-mode input {
+  accent-color: var(--chrome-accent);
+}
+
+.zoom-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.zoom-dialog-apply {
+  border-color: var(--chrome-accent) !important;
+  color: var(--chrome-accent-ink) !important;
+  background: var(--chrome-accent) !important;
+}
+
+.zoom-dialog-apply:hover:not(:disabled) {
+  background: var(--chrome-accent-hover) !important;
+}
+
+.zoom-dialog-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  min-width: 2rem;
+  padding-inline: 0.4rem !important;
+}
+
+@media (max-width: 420px) {
+  .zoom-controls {
+    gap: 0.3rem;
+  }
+
+  .zoom-controls-range {
+    width: 5.5rem;
+  }
+
+  .zoom-controls-percent {
+    padding-inline: 0.4rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .zoom-controls-percent,
+  .zoom-dialog button,
+  .zoom-dialog-value,
+  .zoom-dialog-modes {
+    border-color: ButtonBorder;
+  }
+
+  .zoom-controls-percent,
+  .zoom-dialog button,
+  .zoom-dialog-value {
+    color: ButtonText;
+    background: ButtonFace;
+  }
+
+  .zoom-dialog {
+    border-color: ButtonBorder;
+    color: CanvasText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .zoom-dialog::backdrop {
+    background: Canvas;
+    opacity: 0.7;
+  }
+
+  .zoom-controls-percent:focus-visible,
+  .zoom-controls-range:focus-visible,
+  .zoom-dialog :focus-visible {
+    outline-color: Highlight;
+  }
+
+  .zoom-dialog-apply {
+    forced-color-adjust: none;
+    border-color: Highlight !important;
+    color: HighlightText !important;
+    background: Highlight !important;
+  }
+
+  .zoom-dialog-error {
+    color: LinkText;
+  }
+}

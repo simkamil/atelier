@@ -77,6 +77,7 @@ prototype_docs.extend(['web/editor-shell.mjs','tests/ui-browser.mjs','tests/ui-b
 prototype_docs.extend(['docs/us-224-text-drag-drop.md','docs/us-228-french-spacing.md'])
 prototype_docs.extend(['docs/us-003-image-reference-tests.md','docs/us-330-font-subsetting.md','docs/us-303-docx-tables.md','docs/us-310-odt-import.md','docs/us-312-doc-import.md','docs/us-340-search.md','docs/us-343-statistics.md','tests/odt-reference/README.md','tests/doc-reference/README.md'])
 prototype_docs.extend(['docs/rich-docx-preview.md','docs/SUBAGENT-WORKFLOW.md'])
+prototype_docs.extend(['docs/us-313-doc-structure.md','docs/us-331-pdf-writer.md','docs/us-342-zoom.md','web/zoom.mjs','web/zoom-controls.mjs','web/zoom-controls.css','tests/zoom.mjs','tests/zoom-browser.mjs','tests/zoom-controls-browser.mjs'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.
@@ -366,6 +367,16 @@ verified_symbol_replacements={
     # runs after duplicate classification. Both replacement functions exist.
     'crates_zip_src_lib_size_limit':'crates_zip_src_lib_entry_size_limit',
 }
+# US-313 replaced the flat assembler and its fixed field-depth constant. These
+# symbols were deleted, rather than moved: do not leave obsolete nodes located
+# at unrelated lines in the current source. Verify both Git snapshots before
+# allowing these exact retirements; retain their provenance in diagnostics.
+verified_retirements = {
+    'crates_fmt_legacy_src_doc_build_builder_flush': r'\bfn\s+flush\s*\(',
+    'crates_fmt_legacy_src_doc_build_max_field_depth': r'\bconst\s+MAX_FIELD_DEPTH\b',
+    'crates_fmt_legacy_src_doc_build_section_marks': r'\bfn\s+section_marks\s*\(',
+}
+retirement_commit = '94df23fb037145d75542f54dbc0215d0daf929bc'
 for node in removed:
     key=source_key(node)
     replacement=located.get(key) if key and node.get('type')=='package' else None
@@ -408,6 +419,15 @@ for node in removed:
         replacement='document_data_webview2_readme_md'
     if node['id']=='sil_ofl_1_1' and not source:
         replacement='document_data_fonts_readme_md'
+    if node['id'] in verified_retirements:
+        pattern = verified_retirements[node['id']]
+        before_source = subprocess.check_output(['git','show',f'{baseline_commit}:{source}'],cwd=root).decode('utf-8')
+        merged_source = subprocess.check_output(['git','show',f'{retirement_commit}:{source}'],cwd=root)
+        assert re.search(pattern,before_source), node['id']
+        assert not re.search(pattern,merged_source.decode('utf-8')), node['id']
+        assert (root/source).read_bytes().replace(b'\r\n',b'\n') == merged_source.replace(b'\r\n',b'\n')
+        cleanup.append({'id':node['id'],'reason':'source symbol removed by merged US-313','baseline_commit':baseline_commit,'retirement_commit':retirement_commit,'source_file':source})
+        continue
     if not placeholder and replacement is None:
         raise RuntimeError(f'Refused to remove located graph node: {node["id"]}')
     cleanup.append({'id':node['id'],'reason':'unresolved AST placeholder' if placeholder else 'equivalent located node','replacement':replacement})
@@ -427,10 +447,11 @@ if cost_path.is_file():
     if cost.get('unreported_runs'):
         report += f'\nTentatives CLI dont les tokens ne sont pas rapportés : {len(cost["unreported_runs"])}. Les compteurs ci-dessus couvrent uniquement les usages observés ; aucune estimation inventée n’est ajoutée.\n'
 else:
-    baseline_report=subprocess.run(['git','show',f'{baseline_commit}:graphify-out/GRAPH_REPORT.md'],cwd=root,check=True,capture_output=True,text=True,encoding='utf-8').stdout
+    cost_baseline_commit='94df23fb037145d75542f54dbc0215d0daf929bc'
+    baseline_report=subprocess.run(['git','show',f'{cost_baseline_commit}:graphify-out/GRAPH_REPORT.md'],cwd=root,check=True,capture_output=True,text=True,encoding='utf-8').stdout
     historical=re.search(r'Coût CLI cumulé enregistré : (\d+) tokens en entrée et (\d+) en sortie',baseline_report)
     if historical:
-        report += f'\nHistorique conservé depuis GRAPH_REPORT.md au commit {baseline_commit} : {historical[1]} tokens en entrée, {historical[2]} en sortie. Le compteur cost.json ignoré n’est pas présent dans ce worktree ; aucune nouvelle mesure cumulée n’est prétendue. Cette mise à jour AST/API utilise 0 token LLM.\n'
+        report += f'\nHistorique conservé depuis GRAPH_REPORT.md au commit {cost_baseline_commit} : {historical[1]} tokens en entrée, {historical[2]} en sortie. Le compteur cost.json ignoré n’est pas présent dans ce worktree ; aucune nouvelle mesure cumulée n’est prétendue. Cette mise à jour AST/API utilise 0 token LLM.\n'
 report += f'\n## Périmètre de cette mise à jour\n\nLa carte combine les dépendances documentaires déclarées (158 US), l’AST des sources Rust/JavaScript et les métadonnées Cargo réellement présentes. Les crates vides ne représentent pas des fonctionnalités implémentées. La commande `py -m graphify . --code-only --no-cluster --no-viz` a rafraîchi les sources dans une sortie de contrôle ignorée ; les API locales régénèrent la carte canonique en préservant les concepts documentaires du commit {baseline_commit}. Les URLs des imports web et leurs routes natives sont reliées aux sources réellement servies. Cargo.toml est couvert par les métadonnées de ses {len(cargo["nodes"])} paquets, même si son extraction AST produit zéro nœud. Cette génération locale par API n’utilise pas de LLM ; les coûts historiques restent dans cost.json.\n'
 (out/'GRAPH_REPORT.md').write_text(report,encoding='utf-8')
 (out/'story-dependencies.json').write_text(json.dumps(doc,ensure_ascii=False,indent=2),encoding='utf-8')

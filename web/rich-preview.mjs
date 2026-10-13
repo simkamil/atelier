@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeDisplayList } from "./display-list.mjs";
+import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
 
 const A4_WIDTH = 595.276;
 const A4_HEIGHT = 841.89;
@@ -66,13 +67,13 @@ function prepareDocument(document) {
 
 /** A read-only, independently scrollable ATDL preview. It has no editor/model reference. */
 export function createRichPreview({ canvas, scrollport, spacer, textRepresentation,
-  onClose = () => {}, onError = () => {} } = {}) {
+  onClose = () => {}, onError = () => {}, onZoom = () => {} } = {}) {
   if (!canvas?.getContext || !canvas.style || !scrollport?.addEventListener || !scrollport.style
       || !spacer?.style || !textRepresentation || typeof textRepresentation !== "object"
       || typeof textRepresentation.textContent !== "string") {
     throw new TypeError("Canvas, scrollport, spacer and textRepresentation are required.");
   }
-  if (typeof onClose !== "function" || typeof onError !== "function") {
+  if (typeof onClose !== "function" || typeof onError !== "function" || typeof onZoom !== "function") {
     throw new TypeError("Preview callbacks must be functions.");
   }
 
@@ -82,6 +83,7 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
   let disposed = false;
   let returnFocusTo = null;
   let zoom = 1;
+  let zoomMode = "custom";
 
   function reportError(error) {
     try { onError(error); } catch { /* UI callbacks cannot interrupt cleanup. */ }
@@ -95,8 +97,12 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
     canvas.style.width = `${viewportWidth}px`;
     canvas.style.height = `${Math.max(220, scrollport.clientHeight)}px`;
     const pageWidth = document ? A4_WIDTH * zoom : viewportWidth;
-    if (canvas.parentElement?.style) canvas.parentElement.style.minWidth = `${pageWidth}px`;
+    if (canvas.parentElement?.style) {
+      canvas.parentElement.style.minWidth = `${pageWidth}px`;
+      canvas.parentElement.style.overflowAnchor = "none";
+    }
     spacer.style.width = `${Math.max(viewportWidth, pageWidth)}px`;
+    spacer.style.overflowAnchor = "none";
     if (document) {
       const totalHeight = document.pages.reduce((height, page) => height + page.page.bounds.height * zoom + renderer.pageGap, 0);
       spacer.style.height = `${Math.max(0, totalHeight - scrollport.clientHeight)}px`;
@@ -111,17 +117,68 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
     });
   }
 
+  function applyZoom(value, anchor = null, mode = "custom") {
+    const next = clampZoom(value);
+    if (next === zoom && mode === zoomMode) return;
+    const oldZoom = zoom;
+    const rect = scrollport.getBoundingClientRect?.() ?? { left: 0, top: 0 };
+    const oldClientLeft = scrollport.clientLeft || 0;
+    const oldClientTop = scrollport.clientTop || 0;
+    const clientX = anchor?.x ?? rect.left + oldClientLeft + scrollport.clientWidth / 2;
+    const clientY = anchor?.y ?? rect.top + oldClientTop + scrollport.clientHeight / 2;
+    const oldScrollLeft = scrollport.scrollLeft;
+    const oldScrollTop = scrollport.scrollTop;
+    zoom = next;
+    zoomMode = mode;
+    updateViewport();
+    const newRect = scrollport.getBoundingClientRect?.() ?? rect;
+    const newClientLeft = scrollport.clientLeft || 0;
+    const newClientTop = scrollport.clientTop || 0;
+    const newClientX = anchor?.x ?? newRect.left + newClientLeft + scrollport.clientWidth / 2;
+    const newClientY = anchor?.y ?? newRect.top + newClientTop + scrollport.clientHeight / 2;
+    const position = zoomScrollPosition({ oldZoom, newZoom: next, scrollLeft: oldScrollLeft,
+      scrollTop: oldScrollTop, viewportLeft: rect.left, viewportTop: rect.top, clientX, clientY,
+      newClientX, newClientY, oldClientLeft, oldClientTop, newClientLeft, newClientTop,
+      pageHeights: document?.pages.map(page => page.page.bounds.height), pageGap: renderer.pageGap });
+    scrollport.scrollLeft = position.left;
+    scrollport.scrollTop = position.top;
+    updateViewport();
+    try { onZoom({ zoom, mode: zoomMode }); } catch { /* UI callbacks are isolated */ }
+  }
+
+  function refitZoom(mode = zoomMode) {
+    if (mode === "custom" || !document) return;
+    if (!scrollport.clientWidth || !scrollport.clientHeight) return;
+    const next = calculateFitZoom(mode, A4_WIDTH, A4_HEIGHT, scrollport.clientWidth,
+      scrollport.clientHeight, renderer.pageGap);
+    applyZoom(next, null, mode);
+  }
+
   function handleKeyDown(event) {
     if (event.key === "Escape" && opened) {
       event.preventDefault();
       close();
     }
   }
-  function handleResize() { updateViewport(); }
+  function handleResize() { updateViewport(); refitZoom(); }
+
+  function handleWheel(event) {
+    wheelZoom(event, { active: opened && !scrollport.hidden && !scrollport.closest?.("[hidden]"),
+      modalOpen: isZoomModalOpen(globalThis.document), getZoom: () => zoom,
+      setZoom: (value, point) => applyZoom(value, point), scrollport });
+  }
 
   scrollport.addEventListener("scroll", updateViewport, { passive: true });
+  scrollport.addEventListener("wheel", handleWheel, { passive: false });
   scrollport.addEventListener("keydown", handleKeyDown);
   globalThis.addEventListener?.("resize", handleResize);
+  let resizeFrame = 0;
+  const scheduleResize = () => {
+    if (resizeFrame || disposed) return;
+    resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; handleResize(); });
+  };
+  const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleResize);
+  resizeObserver?.observe(scrollport);
   if (typeof scrollport.tabIndex === "number" && scrollport.tabIndex < 0) scrollport.tabIndex = 0;
 
   function setDocument(nextDocument) {
@@ -132,11 +189,14 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
 
     // All page and metadata checks have passed; publish the new document as one operation.
     document = prepared;
+    zoom = 1;
+    zoomMode = "custom";
     renderer.setPages(prepared.pages);
     textRepresentation.textContent = prepared.text;
     scrollport.scrollTop = 0;
     scrollport.scrollLeft = 0;
     updateViewport();
+    try { onZoom({ zoom, mode: zoomMode }); } catch { /* UI callbacks are isolated */ }
     return { pageCount: prepared.pages.length, noticeCount: prepared.noticeCount };
   }
 
@@ -171,6 +231,9 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
     scrollport.removeEventListener("scroll", updateViewport);
     scrollport.removeEventListener("keydown", handleKeyDown);
     globalThis.removeEventListener?.("resize", handleResize);
+    resizeObserver?.disconnect();
+    if (resizeFrame) cancelAnimationFrame(resizeFrame);
+    scrollport.removeEventListener("wheel", handleWheel);
     renderer.destroy();
     const target = returnFocusTo;
     returnFocusTo = null;
@@ -187,9 +250,15 @@ export function createRichPreview({ canvas, scrollport, spacer, textRepresentati
     dispose,
     setZoom(value) {
       if (disposed) throw new RichPreviewError("RICH_PREVIEW_CLOSED");
-      if (!Number.isFinite(value) || value < 0.5 || value > 2) throw new RangeError("zoom is outside the supported range");
-      zoom = value;
-      updateViewport();
+      applyZoom(value);
     },
+    fitZoom(mode) {
+      if (disposed) throw new RichPreviewError("RICH_PREVIEW_CLOSED");
+      if (!document) throw new RichPreviewError("RICH_PREVIEW_NO_DOCUMENT");
+      if (!["width", "page", "pages"].includes(mode)) throw new TypeError("invalid zoom fit mode");
+      refitZoom(mode);
+    },
+    getZoom() { return zoom; },
+    getZoomMode() { return zoomMode; },
   });
 }

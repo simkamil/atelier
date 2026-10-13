@@ -1,0 +1,42 @@
+{
+  "status": "passed",
+  "immutable_inputs": 1107,
+  "graph_files": 5,
+  "gates": 17,
+  "graph_nodes": 8791,
+  "graph_edges": 22857,
+  "browser_checks": [
+    {
+      "command": [
+        "node",
+        "tests/run-frontend-browser.mjs"
+      ],
+      "assertions": null
+    },
+    {
+      "command": [
+        "node",
+        "tests/run-editor-browser.mjs"
+      ],
+      "assertions": 152
+    },
+    {
+      "command": [
+        "node",
+        "tests/run-ui-browser.mjs",
+        "--screenshots"
+      ],
+      "assertions": 136
+    },
+    {
+      "command": [
+        "node",
+        "tests/run-ui-browser.mjs",
+        "--forced-colors",
+        "--screenshots"
+      ],
+      "assertions": 139
+    }
+  ],
+  "staged_input_mismatches": 0
+}

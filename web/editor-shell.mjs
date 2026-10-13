@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages }) {
+export function createEditorShell({ toolbar, messages, onZoom = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -13,6 +13,12 @@ export function createEditorShell({ toolbar, messages }) {
   const status = byId("editor-status");
   const back = byId("close-preview");
   const options = toolbar.querySelector(".editor-options");
+  const zoomCommand = doc.createElement("button");
+  zoomCommand.type = "button";
+  zoomCommand.id = "zoom-command";
+  zoomCommand.textContent = t("zoom-title");
+  zoomCommand.disabled = true;
+  zoomCommand.addEventListener("click", onZoom);
   const stateRow = doc.createElement("div");
   stateRow.className = "editor-command-status";
   stateRow.append(back, status);
@@ -52,7 +58,10 @@ export function createEditorShell({ toolbar, messages }) {
     { id: "insert", label: t("ribbon-insert"), keyTip: "I", groups: [{ id: "objects", label: t("ribbon-objects-group"), commands: [future("table", "ribbon-table", "T"), future("image", "ribbon-image", "M")] }] },
     { id: "layout", label: t("ribbon-layout"), keyTip: "M", groups: [{ id: "page", label: t("ribbon-page-group"), commands: [future("margins", "ribbon-margins", "G"), future("orientation", "ribbon-orientation", "O")] }] },
     { id: "references", label: t("ribbon-references"), keyTip: "R", groups: [{ id: "references", label: t("ribbon-references-group"), commands: [future("fields", "ribbon-fields", "C"), future("bookmarks", "ribbon-bookmarks", "S")] }] },
-    { id: "view", label: t("ribbon-view"), keyTip: "V", groups: [{ id: "appearance", label: t("ribbon-appearance-group"), commands: [{ id: "appearance", label: t("appearance-title"), keyTip: "T" }] }] },
+    { id: "view", label: t("ribbon-view"), keyTip: "V", groups: [
+      { id: "appearance", label: t("ribbon-appearance-group"), commands: [{ id: "appearance", label: t("appearance-title"), keyTip: "T" }] },
+      { id: "zoom", label: t("zoom-group"), commands: [command("zoom", "zoom-title", "Z", zoomCommand)] },
+    ] },
   ];
   toolbar.id = "ribbon";
   const ribbon = createRibbon({ root: toolbar, tabs, initialTab: "file",
@@ -66,7 +75,8 @@ export function createEditorShell({ toolbar, messages }) {
   const help = createTooltip({ trigger: toolbar.querySelector('[role="tab"]'), text: t("ribbon-keyboard-help"), delay: 500 });
   return Object.freeze({
     theme, ribbon,
+    setZoomEnabled(enabled) { zoomCommand.disabled = !enabled; ribbon.refresh(); },
     refresh: () => ribbon.refresh(),
-    dispose() { help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
+    dispose() { zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
   });
 }

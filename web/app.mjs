@@ -5,6 +5,7 @@ import { createEditor, EditorError } from "/editor.mjs";
 import { createNativeHost } from "/native-host.mjs";
 import { createRichPreview } from "/rich-preview.mjs";
 import { createEditorShell } from "/editor-shell.mjs";
+import { createZoomControls } from "/zoom-controls.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -41,6 +42,11 @@ const FALLBACK = new Map(Object.entries({
   "status-preview-notices": "Aperçu DOCX en lecture seule. Certains éléments ne sont pas affichés.",
   "status-preview-error": "L’aperçu DOCX n’a pas pu être ouvert. Document invalide, non pris en charge ou trop volumineux (8 Mio maximum).",
   "preview-title": "Aperçu DOCX", "preview-eyebrow": "DOCUMENT WORD · LECTURE SEULE", "preview-state": "Lecture seule", "preview-footer": "Atelier · aperçu DOCX",
+  "zoom-group": "Zoom du document", "zoom-range": "Facteur de zoom", "zoom-percent": "Régler le zoom",
+  "zoom-title": "Zoom…", "zoom-value": "Pourcentage (10 à 500)", "zoom-custom": "Pourcentage personnalisé",
+  "zoom-width": "Largeur de page", "zoom-page": "Page entière", "zoom-pages": "Deux pages",
+  "zoom-apply": "Appliquer", "zoom-cancel": "Annuler", "zoom-close": "Fermer",
+  "zoom-invalid": "Saisissez un pourcentage entier entre 10 et 500.",
 }));
 
 document.addEventListener("securitypolicyviolation", event => {
@@ -98,12 +104,15 @@ function showEditorMessage(text, isError = false) {
 
 async function start() {
   const messages = await loadCatalog();
-  const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages });
+  let zoomControls;
+  const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages,
+    onZoom: () => zoomControls?.open({ returnFocusTo: document.activeElement }) });
   let client;
   let host;
   let editor;
   let preview;
   let previewActive = false;
+  let previewReady = false;
   let previewGeneration = 0;
   let previewAbort;
   let disposed = false;
@@ -120,10 +129,26 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
+  const zoomLabels = Object.fromEntries(["group", "range", "percent", "title", "value", "custom", "width", "page", "pages", "apply", "cancel", "close", "invalid"]
+    .map(key => [key, messages.get(`zoom-${key}`) ?? key]));
+  zoomControls = createZoomControls({ document, labels: zoomLabels, onChange: ({ zoom, mode }) => {
+    if (disposed || !initialized || (previewActive ? !previewReady : busy)) return;
+    const view = previewActive ? preview : editor;
+    if (mode === "custom") view.setZoom(zoom);
+    else view.fitZoom(mode);
+  } });
+  byId("document-zoom").append(zoomControls.element);
+  const updateZoom = () => {
+    const view = previewActive ? preview : editor;
+    const disabled = !initialized || (previewActive ? !previewReady : busy);
+    zoomControls.setState({ zoom: view?.getZoom() ?? 1, mode: view?.getZoomMode() ?? "custom", disabled });
+    shell.setZoomEnabled(!disabled);
+  };
+  updateZoom();
   window.addEventListener("pagehide", dispose, { once: true, signal: listeners.signal });
   const updateControls = state => {
     const blocked = !initialized || busy;
@@ -131,6 +156,7 @@ async function start() {
     nodes.undo.disabled = blocked || !state?.canUndo; nodes.redo.disabled = blocked || !state?.canRedo;
     nodes.frenchSpacing.disabled = blocked;
     nodes.openDocx.disabled = blocked;
+    updateZoom();
     shell.refresh();
   };
   const onBusy = value => { busy = value; updateControls(editor?.state); };
@@ -171,24 +197,27 @@ async function start() {
       client, host, canvas: nodes.canvas, scrollport: nodes.scrollport, spacer: nodes.spacer,
       frenchSpacing: nodes.frenchSpacing.checked,
       confirmDiscard: messages.get("confirm-discard"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
+      onZoom: () => { if (!previewActive) updateZoom(); },
     });
     function closePreview() {
       if (!previewActive || disposed) return;
       previewGeneration += 1; previewAbort?.abort(); previewAbort = null;
       previewActive = false;
+      previewReady = false;
       nodes.richWorkspace.hidden = true; nodes.textWorkspace.hidden = false; nodes.closePreview.hidden = true;
       editor.setSuspended(false); preview.close(); shell.ribbon.selectTab("file"); shell.ribbon.setCollapsed(false); nodes.openDocx.focus();
       setPreviewIdentity(false);
       showEditorMessage(messages.get("status-ready"));
     }
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
-      spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError });
+      spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
+      onZoom: () => { if (previewActive) updateZoom(); } });
     async function openDocx() {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
       const generation = ++previewGeneration;
       previewAbort = new AbortController();
       const signal = previewAbort.signal;
-      previewActive = true; editor.setSuspended(true); nodes.closePreview.hidden = false;
+      previewActive = true; previewReady = false; editor.setSuspended(true); nodes.closePreview.hidden = false;
       setPreviewIdentity(true);
       showEditorMessage(messages.get("status-preview-loading"));
       const current = () => !disposed && generation === previewGeneration;
@@ -205,6 +234,7 @@ async function start() {
         preview.setDocument(document);
         nodes.textWorkspace.hidden = true; nodes.richWorkspace.hidden = false;
         preview.open({ returnFocusTo: nodes.openDocx });
+        previewReady = true; updateZoom();
         showEditorMessage(messages.get(document.noticeCount ? "status-preview-notices" : "status-preview-ready"));
         return { kind: "ok" };
       } catch (error) {
@@ -269,6 +299,7 @@ async function start() {
       exportDocument: () => editor.exportDocument(),
       editor,
       theme: shell.theme, ribbon: shell.ribbon,
+      zoomControls,
       openDocx, closePreview, dispose,
       get previewActive() { return previewActive; },
     });

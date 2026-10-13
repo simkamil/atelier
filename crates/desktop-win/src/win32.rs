@@ -1605,6 +1605,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/engine-client.mjs','text/javascript'], ['/wasm-loader.mjs','text/javascript'],
             ['/editor-protocol.mjs','text/javascript'], ['/editor.mjs','text/javascript'],
             ['/native-host.mjs','text/javascript'], ['/display-list.mjs','text/javascript'],
+            ['/zoom.mjs','text/javascript'], ['/zoom-controls.mjs','text/javascript'], ['/zoom-controls.css','text/css'],
             ['/canvas-renderer.mjs','text/javascript'], ['/text-input.mjs','text/javascript'],
             ['/mouse-selection.mjs','text/javascript'],
             ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
@@ -1737,7 +1738,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
     // Startup plus explicit probes may rotate the bounded diagnostic log.
     // Every required probe above must still be present; report rotation honestly.
     Ok(format!(
-        "embedded resources: assets=28; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
+        "embedded resources: assets=31; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
         attempts.len(),
         view.dropped_resource_attempts()
     ))

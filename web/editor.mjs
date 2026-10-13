@@ -7,6 +7,7 @@ import { decodeDisplayList } from "./display-list.mjs";
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
 import { decodeEditorResponse, EditorOpcode, encodeEditorCommand } from "./editor-protocol.mjs";
+import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
 
 export class EditorError extends Error {
   constructor(code, message = code) { super(message); this.name = "EditorError"; this.code = code; }
@@ -21,14 +22,14 @@ function pageTop(renderer, pageIndex) {
 }
 
 /** Connects the editor protocol, ATDL renderer, hidden native text input and file host. */
-export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {} } = {}) {
+export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {} } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.open !== "function"
       || typeof host.save !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
   if (!canvas?.getBoundingClientRect || !scrollport?.addEventListener || !spacer?.style) throw new TypeError("Canvas, scrollport and spacer are required.");
   if (textRepresentation !== null && (typeof textRepresentation !== "object" || typeof textRepresentation.textContent !== "string")) {
     throw new TypeError("textRepresentation must be a text-capable DOM element.");
   }
-  if (![onState, onError, onBusy].every(callback => typeof callback === "function")) throw new TypeError("Editor callbacks must be functions.");
+  if (![onState, onError, onBusy, onZoom].every(callback => typeof callback === "function")) throw new TypeError("Editor callbacks must be functions.");
 
   const renderer = new CanvasRenderer(canvas, { pageBackground: "#ffffff" });
   const compositionPreview = document.createElement("span");
@@ -56,6 +57,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   let caretVisible = true;
   let lastHostDirty;
   let pageZoom = 1;
+  let zoomMode = "custom";
   let pendingTasks = 0;
   let extensionMode = false;
   let mouseSelection;
@@ -133,7 +135,15 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
 
   function updateViewport() {
     if (disposed) return;
+    const viewportWidth = scrollport.clientWidth;
+    canvas.style.position = "sticky";
+    canvas.style.left = "0px";
+    canvas.style.width = `${viewportWidth}px`;
     canvas.style.height = `${Math.max(220, scrollport.clientHeight)}px`;
+    const pageWidth = decodedPages.reduce((width, page) => Math.max(width, page.page.bounds.width * pageZoom), 0);
+    const contentWidth = Math.max(pageWidth, viewportWidth);
+    if (canvas.parentElement?.style) canvas.parentElement.style.minWidth = `${contentWidth}px`;
+    spacer.style.width = `${contentWidth}px`;
     renderer.setViewport({
       width: canvas.clientWidth,
       height: scrollport.clientHeight,
@@ -166,8 +176,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     decodedPages = pages;
     if (textRepresentation) textRepresentation.textContent = nextState.text;
     renderer.setPages(pages);
-    const totalHeight = pages.reduce((height, page) => height + page.page.bounds.height * pageZoom + renderer.pageGap, 0);
-    spacer.style.height = `${Math.max(0, totalHeight - scrollport.clientHeight)}px`;
+    updatePageLayout();
     const caret = viewportRect({ x: nextState.caret.x, y: nextState.caret.y, width: 1, height: nextState.caret.height }, nextState.caret.page);
     const pad = 24;
     const caretContentY = caret.y + scrollport.scrollTop;
@@ -184,6 +193,63 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       }).catch(reportError);
     }
     return nextState;
+  }
+
+  function updatePageLayout() {
+    if (disposed) return;
+    const width = decodedPages.reduce((max, page) => Math.max(max, page.page.bounds.width * pageZoom), 0);
+    const viewportWidth = scrollport.clientWidth;
+    const contentWidth = Math.max(width, viewportWidth);
+    spacer.style.width = `${contentWidth}px`;
+    if (canvas.parentElement?.style) {
+      canvas.parentElement.style.minWidth = `${contentWidth}px`;
+      canvas.parentElement.style.overflowAnchor = "none";
+    }
+    spacer.style.overflowAnchor = "none";
+    const viewportHeight = scrollport.clientHeight;
+    const totalHeight = decodedPages.reduce((height, page) => height + page.page.bounds.height * pageZoom + renderer.pageGap, 0);
+    spacer.style.height = `${Math.max(0, totalHeight - viewportHeight)}px`;
+  }
+
+  function applyZoom(value, anchor = null, mode = "custom") {
+    const next = clampZoom(value);
+    if (next === pageZoom && mode === zoomMode) return;
+    const oldZoom = pageZoom;
+    const rect = scrollport.getBoundingClientRect?.() ?? { left: 0, top: 0 };
+    const oldClientLeft = scrollport.clientLeft || 0;
+    const oldClientTop = scrollport.clientTop || 0;
+    const clientX = anchor?.x ?? rect.left + oldClientLeft + scrollport.clientWidth / 2;
+    const clientY = anchor?.y ?? rect.top + oldClientTop + scrollport.clientHeight / 2;
+    const oldScrollLeft = scrollport.scrollLeft;
+    const oldScrollTop = scrollport.scrollTop;
+    pageZoom = next;
+    zoomMode = mode;
+    updatePageLayout();
+    updateViewport();
+    // Read client dimensions after layout: a zoom can add or remove a scrollbar.
+    const newRect = scrollport.getBoundingClientRect?.() ?? rect;
+    const newClientLeft = scrollport.clientLeft || 0;
+    const newClientTop = scrollport.clientTop || 0;
+    const newClientX = anchor?.x ?? newRect.left + newClientLeft + scrollport.clientWidth / 2;
+    const newClientY = anchor?.y ?? newRect.top + newClientTop + scrollport.clientHeight / 2;
+    const position = zoomScrollPosition({ oldZoom, newZoom: next,
+      scrollLeft: oldScrollLeft, scrollTop: oldScrollTop, viewportLeft: rect.left, viewportTop: rect.top,
+      clientX, clientY, newClientX, newClientY, oldClientLeft, oldClientTop, newClientLeft, newClientTop,
+      pageHeights: decodedPages.map(page => page.page.bounds.height), pageGap: renderer.pageGap });
+    scrollport.scrollLeft = position.left;
+    scrollport.scrollTop = position.top;
+    updateViewport();
+    repaintOverlay();
+    try { onZoom({ zoom: pageZoom, mode: zoomMode }); } catch { /* UI callbacks are isolated */ }
+  }
+
+  function refitZoom(mode = zoomMode) {
+    if (mode === "custom" || !decodedPages.length) return;
+    if (!scrollport.clientWidth || !scrollport.clientHeight) return;
+    const bounds = decodedPages[0].page.bounds;
+    const next = calculateFitZoom(mode, bounds.width, bounds.height, scrollport.clientWidth,
+      scrollport.clientHeight, renderer.pageGap);
+    applyZoom(next, null, mode);
   }
 
   async function dispatch(opcode, values = {}, signal) {
@@ -204,7 +270,14 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
         EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo].includes(opcode)) extensionMode = false;
       if (opcode === EditorOpcode.ProbePoint && response.kind !== "point") throw new EditorError("EDITOR_INVALID_RESPONSE");
        if (opcode === EditorOpcode.PreviewDocx && response.kind !== "preview") throw new EditorError("EDITOR_INVALID_RESPONSE");
-       if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx].includes(opcode)) publish(response);
+      if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx].includes(opcode)) {
+        if (opcode === EditorOpcode.Load || opcode === EditorOpcode.State && !state) {
+          pageZoom = 1;
+          zoomMode = "custom";
+          try { onZoom({ zoom: pageZoom, mode: zoomMode }); } catch { /* UI callbacks are isolated */ }
+        }
+        publish(response);
+      }
       return response;
   }
 
@@ -347,7 +420,20 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     onError: reportError,
   });
   scrollport.addEventListener("scroll", updateViewport, { passive: true });
+  const onWheel = event => wheelZoom(event, { active: Boolean(state && !busy && !disposed && !compositionStart
+      && !scrollport.hidden && !scrollport.closest?.("[hidden]")),
+    modalOpen: isZoomModalOpen(globalThis.document), getZoom: () => pageZoom,
+    setZoom: (value, point) => applyZoom(value, point), scrollport });
+  scrollport.addEventListener("wheel", onWheel, { passive: false });
   globalThis.addEventListener?.("resize", scheduleViewport);
+  let fitResizeFrame = 0;
+  const scheduleRefit = () => {
+    if (fitResizeFrame || disposed) return;
+    fitResizeFrame = requestAnimationFrame(() => { fitResizeFrame = 0; refitZoom(); });
+  };
+  const fitResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleRefit);
+  fitResizeObserver?.observe(scrollport);
+  globalThis.addEventListener?.("resize", scheduleRefit);
   const blink = setInterval(() => { caretVisible = !caretVisible; repaintOverlay(); }, 530);
 
   return Object.freeze({
@@ -360,7 +446,18 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     previewDocx(bytes, { signal } = {}) {
       return enqueueTask(() => dispatch(EditorOpcode.PreviewDocx, { bytes }, signal));
     },
-    setZoom(zoom) { if (!Number.isFinite(zoom) || zoom < 0.5 || zoom > 2) throw new RangeError("zoom is outside the supported range"); pageZoom = zoom; if (state) publish(state); },
+    setZoom(zoom) {
+      if (disposed) throw new EditorError("EDITOR_CLOSED");
+      applyZoom(zoom);
+    },
+    fitZoom(mode) {
+      if (disposed) throw new EditorError("EDITOR_CLOSED");
+      if (!decodedPages.length) throw new EditorError("EDITOR_INVALID_STATE");
+      if (!["width", "page", "pages"].includes(mode)) throw new TypeError("invalid zoom fit mode");
+      refitZoom(mode);
+    },
+    getZoom() { return pageZoom; },
+    getZoomMode() { return zoomMode; },
     async initialize() { return enqueue(EditorOpcode.State); },
     getState() { return state; },
     async exportDocument() {
@@ -412,9 +509,13 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       clearInterval(blink);
       if (viewportFrame) cancelAnimationFrame(viewportFrame);
       scrollport.removeEventListener("scroll", updateViewport);
+      scrollport.removeEventListener("wheel", onWheel);
       mouseSelection.dispose();
       textDragDrop.dispose();
       globalThis.removeEventListener?.("resize", scheduleViewport);
+      fitResizeObserver?.disconnect();
+      globalThis.removeEventListener?.("resize", scheduleRefit);
+      if (fitResizeFrame) cancelAnimationFrame(fitResizeFrame);
       input.dispose(); renderer.destroy();
       compositionPreview.remove();
       dropMarker.remove();

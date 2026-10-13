@@ -21,6 +21,7 @@ assert(executable, "An installed Edge/Chromium browser is required for this chec
 const files = new Map([
   ["/tests/editor-browser.html", ["tests/editor-browser.html", "text/html; charset=utf-8"]],
   ["/tests/editor-browser.mjs", ["tests/editor-browser.mjs", "text/javascript; charset=utf-8"]],
+  ["/tests/zoom-browser.mjs", ["tests/zoom-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser-watchdog.mjs", ["tests/editor-browser-watchdog.mjs", "text/javascript; charset=utf-8"]],
   ["/web/app.css", ["web/app.css", "text/css; charset=utf-8"]],
   ["/index.html", ["web/index.html", "text/html; charset=utf-8"]],
@@ -29,13 +30,14 @@ const files = new Map([
   ["/ui-components.css", ["web/ui-components.css", "text/css; charset=utf-8"]],
   ["/ribbon.css", ["web/ribbon.css", "text/css; charset=utf-8"]],
   ["/theme.css", ["web/theme.css", "text/css; charset=utf-8"]],
+  ["/zoom-controls.css", ["web/zoom-controls.css", "text/css; charset=utf-8"]],
 
   ["/i18n/fr-FR.txt", ["web/i18n/fr-FR.txt", "text/plain; charset=utf-8"]],
   ["/atelier_core_wasm.wasm", ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
   ["/tests/docx-reference/basic.docx", ["tests/docx-reference/basic.docx", "application/octet-stream"]],
-  ...["editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "native-host", "rich-preview", "editor-shell", "ui-components", "ribbon", "theme"].map(name =>
+  ...["zoom", "zoom-controls", "editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "native-host", "rich-preview", "editor-shell", "ui-components", "ribbon", "theme"].map(name =>
     [`/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),
-  ...["editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list"].map(name =>
+  ...["zoom", "zoom-controls", "editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list"].map(name =>
     [`/web/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),
   ["/target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
 ]);

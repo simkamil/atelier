@@ -1197,7 +1197,7 @@
       "label": "US-314 — Ouvrir un .doc : images",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1211",
+      "source_location": "1213",
       "story_id": "US-314",
       "status": "open"
     },
@@ -1206,7 +1206,7 @@
       "label": "US-315 — Documents chiffrés",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1217",
+      "source_location": "1219",
       "story_id": "US-315",
       "status": "open"
     },
@@ -1215,7 +1215,7 @@
       "label": "US-316 — Fichiers texte",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1224",
+      "source_location": "1226",
       "story_id": "US-316",
       "status": "open"
     },
@@ -1224,7 +1224,7 @@
       "label": "US-317 — Fichiers endommagés",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1231",
+      "source_location": "1233",
       "story_id": "US-317",
       "status": "open"
     },
@@ -1233,7 +1233,7 @@
       "label": "US-320 — Onglet Fichier et accueil",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1240",
+      "source_location": "1242",
       "story_id": "US-320",
       "status": "open"
     },
@@ -1242,7 +1242,7 @@
       "label": "US-321 — Ouvrir un document",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1248",
+      "source_location": "1250",
       "story_id": "US-321",
       "status": "open"
     },
@@ -1251,7 +1251,7 @@
       "label": "US-322 — Enregistrer un document",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1256",
+      "source_location": "1258",
       "story_id": "US-322",
       "status": "open"
     },
@@ -1260,7 +1260,7 @@
       "label": "US-323 — Enregistrement atomique",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1265",
+      "source_location": "1267",
       "story_id": "US-323",
       "status": "open"
     },
@@ -1269,7 +1269,7 @@
       "label": "US-324 — Fichier verrou",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1273",
+      "source_location": "1275",
       "story_id": "US-324",
       "status": "open"
     },
@@ -1278,7 +1278,7 @@
       "label": "US-325 — Récupération automatique",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1281",
+      "source_location": "1283",
       "story_id": "US-325",
       "status": "open"
     },
@@ -1287,7 +1287,7 @@
       "label": "US-326 — Modification externe",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1291",
+      "source_location": "1293",
       "story_id": "US-326",
       "status": "open"
     },
@@ -1296,7 +1296,7 @@
       "label": "US-327 — Plusieurs documents",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1298",
+      "source_location": "1300",
       "story_id": "US-327",
       "status": "open"
     },
@@ -1305,7 +1305,7 @@
       "label": "US-328 — Propriétés du document",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1306",
+      "source_location": "1308",
       "story_id": "US-328",
       "status": "open"
     },
@@ -1314,7 +1314,7 @@
       "label": "US-329 — Options",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1313",
+      "source_location": "1315",
       "story_id": "US-329",
       "status": "open"
     },
@@ -1323,7 +1323,7 @@
       "label": "US-330 — Sous-ensemble de polices",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1325",
+      "source_location": "1327",
       "story_id": "US-330",
       "status": "done"
     },
@@ -1332,7 +1332,7 @@
       "label": "US-331 — Écrivain PDF",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1334",
+      "source_location": "1336",
       "story_id": "US-331",
       "status": "open"
     },
@@ -1341,7 +1341,7 @@
       "label": "US-332 — Exporter en PDF",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1342",
+      "source_location": "1346",
       "story_id": "US-332",
       "status": "open"
     },
@@ -1350,7 +1350,7 @@
       "label": "US-333 — Imprimer",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1351",
+      "source_location": "1355",
       "story_id": "US-333",
       "status": "open"
     },
@@ -1359,7 +1359,7 @@
       "label": "US-340 — Rechercher",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1361",
+      "source_location": "1365",
       "story_id": "US-340",
       "status": "open"
     },
@@ -1368,7 +1368,7 @@
       "label": "US-341 — Remplacer",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1371",
+      "source_location": "1375",
       "story_id": "US-341",
       "status": "open"
     },
@@ -1377,7 +1377,7 @@
       "label": "US-342 — Zoom",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1378",
+      "source_location": "1382",
       "story_id": "US-342",
       "status": "open"
     },
@@ -1386,7 +1386,7 @@
       "label": "US-343 — Statistiques",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1385",
+      "source_location": "1391",
       "story_id": "US-343",
       "status": "open"
     },
@@ -1395,7 +1395,7 @@
       "label": "US-344 — Barre d'état",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1394",
+      "source_location": "1400",
       "story_id": "US-344",
       "status": "open"
     },
@@ -1404,7 +1404,7 @@
       "label": "US-350 — Lire et parcourir le document avec un lecteur d'écran",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1403",
+      "source_location": "1409",
       "story_id": "US-350",
       "status": "open"
     },
@@ -1413,7 +1413,7 @@
       "label": "US-351 — Annonces de mise en forme et de contexte",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1411",
+      "source_location": "1417",
       "story_id": "US-351",
       "status": "open"
     },
@@ -1422,7 +1422,7 @@
       "label": "US-352 — Interface entièrement au clavier",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1418",
+      "source_location": "1424",
       "story_id": "US-352",
       "status": "open"
     },
@@ -1431,7 +1431,7 @@
       "label": "US-353 — Contraste et agrandissement",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1426",
+      "source_location": "1432",
       "story_id": "US-353",
       "status": "open"
     },
@@ -1440,7 +1440,7 @@
       "label": "US-354 — Audit RGAA de la V1",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1433",
+      "source_location": "1439",
       "story_id": "US-354",
       "status": "open"
     },
@@ -1449,7 +1449,7 @@
       "label": "US-360 — Build de release portable",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1442",
+      "source_location": "1448",
       "story_id": "US-360",
       "status": "open"
     },
@@ -1458,7 +1458,7 @@
       "label": "US-361 — À propos",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1450",
+      "source_location": "1456",
       "story_id": "US-361",
       "status": "open"
     },
@@ -1467,7 +1467,7 @@
       "label": "US-362 — Validation des performances",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1456",
+      "source_location": "1462",
       "story_id": "US-362",
       "status": "open"
     },
@@ -1476,7 +1476,7 @@
       "label": "US-363 — Gestion des plantages",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1463",
+      "source_location": "1469",
       "story_id": "US-363",
       "status": "open"
     },
@@ -1485,7 +1485,7 @@
       "label": "US-364 — Garantie « aucun appel réseau »",
       "file_type": "concept",
       "source_file": "US-V0-V1.md",
-      "source_location": "1471",
+      "source_location": "1477",
       "story_id": "US-364",
       "status": "open"
     },
@@ -4445,6 +4445,69 @@
       "label": "docs/SUBAGENT-WORKFLOW.md",
       "file_type": "document",
       "source_file": "docs/SUBAGENT-WORKFLOW.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-313-doc-structure_md",
+      "label": "docs/us-313-doc-structure.md",
+      "file_type": "document",
+      "source_file": "docs/us-313-doc-structure.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-331-pdf-writer_md",
+      "label": "docs/us-331-pdf-writer.md",
+      "file_type": "document",
+      "source_file": "docs/us-331-pdf-writer.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_docs_us-342-zoom_md",
+      "label": "docs/us-342-zoom.md",
+      "file_type": "document",
+      "source_file": "docs/us-342-zoom.md",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_zoom_mjs",
+      "label": "web/zoom.mjs",
+      "file_type": "document",
+      "source_file": "web/zoom.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_zoom-controls_mjs",
+      "label": "web/zoom-controls.mjs",
+      "file_type": "document",
+      "source_file": "web/zoom-controls.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_web_zoom-controls_css",
+      "label": "web/zoom-controls.css",
+      "file_type": "document",
+      "source_file": "web/zoom-controls.css",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_zoom_mjs",
+      "label": "tests/zoom.mjs",
+      "file_type": "document",
+      "source_file": "tests/zoom.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_zoom-browser_mjs",
+      "label": "tests/zoom-browser.mjs",
+      "file_type": "document",
+      "source_file": "tests/zoom-browser.mjs",
+      "source_location": "1"
+    },
+    {
+      "id": "document_tests_zoom-controls-browser_mjs",
+      "label": "tests/zoom-controls-browser.mjs",
+      "file_type": "document",
+      "source_file": "tests/zoom-controls-browser.mjs",
       "source_location": "1"
     },
     {
@@ -8657,7 +8720,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1209",
+      "source_location": "1211",
       "weight": 1.0
     },
     {
@@ -8667,7 +8730,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1209",
+      "source_location": "1211",
       "weight": 1.0
     },
     {
@@ -8677,7 +8740,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1215",
+      "source_location": "1217",
       "weight": 1.0
     },
     {
@@ -8687,7 +8750,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1215",
+      "source_location": "1217",
       "weight": 1.0
     },
     {
@@ -8697,7 +8760,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1215",
+      "source_location": "1217",
       "weight": 1.0
     },
     {
@@ -8707,7 +8770,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1222",
+      "source_location": "1224",
       "weight": 1.0
     },
     {
@@ -8727,7 +8790,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1222",
+      "source_location": "1224",
       "weight": 1.0
     },
     {
@@ -8737,7 +8800,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1229",
+      "source_location": "1231",
       "weight": 1.0
     },
     {
@@ -8747,7 +8810,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1229",
+      "source_location": "1231",
       "weight": 1.0
     },
     {
@@ -8757,7 +8820,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1229",
+      "source_location": "1231",
       "weight": 1.0
     },
     {
@@ -8767,7 +8830,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1236",
+      "source_location": "1238",
       "weight": 1.0
     },
     {
@@ -8777,7 +8840,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1236",
+      "source_location": "1238",
       "weight": 1.0
     },
     {
@@ -8787,7 +8850,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1236",
+      "source_location": "1238",
       "weight": 1.0
     },
     {
@@ -8797,7 +8860,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1236",
+      "source_location": "1238",
       "weight": 1.0
     },
     {
@@ -8807,7 +8870,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1236",
+      "source_location": "1238",
       "weight": 1.0
     },
     {
@@ -8817,7 +8880,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1246",
+      "source_location": "1248",
       "weight": 1.0
     },
     {
@@ -8827,7 +8890,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1246",
+      "source_location": "1248",
       "weight": 1.0
     },
     {
@@ -8847,7 +8910,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1246",
+      "source_location": "1248",
       "weight": 1.0
     },
     {
@@ -8867,7 +8930,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1246",
+      "source_location": "1248",
       "weight": 1.0
     },
     {
@@ -8877,7 +8940,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1254",
+      "source_location": "1256",
       "weight": 1.0
     },
     {
@@ -8887,7 +8950,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1254",
+      "source_location": "1256",
       "weight": 1.0
     },
     {
@@ -8897,7 +8960,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1254",
+      "source_location": "1256",
       "weight": 1.0
     },
     {
@@ -8907,7 +8970,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1254",
+      "source_location": "1256",
       "weight": 1.0
     },
     {
@@ -8917,7 +8980,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1263",
+      "source_location": "1265",
       "weight": 1.0
     },
     {
@@ -8927,7 +8990,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1263",
+      "source_location": "1265",
       "weight": 1.0
     },
     {
@@ -8937,7 +9000,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1263",
+      "source_location": "1265",
       "weight": 1.0
     },
     {
@@ -8947,7 +9010,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1271",
+      "source_location": "1273",
       "weight": 1.0
     },
     {
@@ -8967,7 +9030,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1271",
+      "source_location": "1273",
       "weight": 1.0
     },
     {
@@ -8977,7 +9040,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1271",
+      "source_location": "1273",
       "weight": 1.0
     },
     {
@@ -8987,7 +9050,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1279",
+      "source_location": "1281",
       "weight": 1.0
     },
     {
@@ -9007,7 +9070,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1279",
+      "source_location": "1281",
       "weight": 1.0
     },
     {
@@ -9017,7 +9080,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1289",
+      "source_location": "1291",
       "weight": 1.0
     },
     {
@@ -9027,7 +9090,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1289",
+      "source_location": "1291",
       "weight": 1.0
     },
     {
@@ -9037,7 +9100,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1289",
+      "source_location": "1291",
       "weight": 1.0
     },
     {
@@ -9047,7 +9110,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1296",
+      "source_location": "1298",
       "weight": 1.0
     },
     {
@@ -9067,7 +9130,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1296",
+      "source_location": "1298",
       "weight": 1.0
     },
     {
@@ -9077,7 +9140,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1304",
+      "source_location": "1306",
       "weight": 1.0
     },
     {
@@ -9087,7 +9150,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1304",
+      "source_location": "1306",
       "weight": 1.0
     },
     {
@@ -9107,7 +9170,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1304",
+      "source_location": "1306",
       "weight": 1.0
     },
     {
@@ -9117,7 +9180,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1311",
+      "source_location": "1313",
       "weight": 1.0
     },
     {
@@ -9137,7 +9200,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1311",
+      "source_location": "1313",
       "weight": 1.0
     },
     {
@@ -9147,7 +9210,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1321",
+      "source_location": "1323",
       "weight": 1.0
     },
     {
@@ -9157,7 +9220,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1321",
+      "source_location": "1323",
       "weight": 1.0
     },
     {
@@ -9177,7 +9240,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1321",
+      "source_location": "1323",
       "weight": 1.0
     },
     {
@@ -9187,7 +9250,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1332",
+      "source_location": "1334",
       "weight": 1.0
     },
     {
@@ -9197,7 +9260,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1332",
+      "source_location": "1334",
       "weight": 1.0
     },
     {
@@ -9217,7 +9280,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1332",
+      "source_location": "1334",
       "weight": 1.0
     },
     {
@@ -9227,7 +9290,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1340",
+      "source_location": "1344",
       "weight": 1.0
     },
     {
@@ -9237,7 +9300,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1340",
+      "source_location": "1344",
       "weight": 1.0
     },
     {
@@ -9247,7 +9310,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1340",
+      "source_location": "1344",
       "weight": 1.0
     },
     {
@@ -9257,7 +9320,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1340",
+      "source_location": "1344",
       "weight": 1.0
     },
     {
@@ -9267,7 +9330,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1349",
+      "source_location": "1353",
       "weight": 1.0
     },
     {
@@ -9277,7 +9340,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1349",
+      "source_location": "1353",
       "weight": 1.0
     },
     {
@@ -9297,7 +9360,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1349",
+      "source_location": "1353",
       "weight": 1.0
     },
     {
@@ -9307,7 +9370,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1357",
+      "source_location": "1361",
       "weight": 1.0
     },
     {
@@ -9317,7 +9380,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1357",
+      "source_location": "1361",
       "weight": 1.0
     },
     {
@@ -9337,7 +9400,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1357",
+      "source_location": "1361",
       "weight": 1.0
     },
     {
@@ -9347,7 +9410,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1369",
+      "source_location": "1373",
       "weight": 1.0
     },
     {
@@ -9357,7 +9420,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1369",
+      "source_location": "1373",
       "weight": 1.0
     },
     {
@@ -9377,7 +9440,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1369",
+      "source_location": "1373",
       "weight": 1.0
     },
     {
@@ -9387,7 +9450,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1376",
+      "source_location": "1380",
       "weight": 1.0
     },
     {
@@ -9397,7 +9460,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1376",
+      "source_location": "1380",
       "weight": 1.0
     },
     {
@@ -9407,7 +9470,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1383",
+      "source_location": "1389",
       "weight": 1.0
     },
     {
@@ -9427,7 +9490,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1383",
+      "source_location": "1389",
       "weight": 1.0
     },
     {
@@ -9437,7 +9500,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1392",
+      "source_location": "1398",
       "weight": 1.0
     },
     {
@@ -9457,7 +9520,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1392",
+      "source_location": "1398",
       "weight": 1.0
     },
     {
@@ -9467,7 +9530,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1399",
+      "source_location": "1405",
       "weight": 1.0
     },
     {
@@ -9477,7 +9540,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1399",
+      "source_location": "1405",
       "weight": 1.0
     },
     {
@@ -9487,7 +9550,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1399",
+      "source_location": "1405",
       "weight": 1.0
     },
     {
@@ -9497,7 +9560,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1409",
+      "source_location": "1415",
       "weight": 1.0
     },
     {
@@ -9507,7 +9570,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1409",
+      "source_location": "1415",
       "weight": 1.0
     },
     {
@@ -9527,7 +9590,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1409",
+      "source_location": "1415",
       "weight": 1.0
     },
     {
@@ -9537,7 +9600,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1409",
+      "source_location": "1415",
       "weight": 1.0
     },
     {
@@ -9547,7 +9610,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1416",
+      "source_location": "1422",
       "weight": 1.0
     },
     {
@@ -9557,7 +9620,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1416",
+      "source_location": "1422",
       "weight": 1.0
     },
     {
@@ -9567,7 +9630,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1416",
+      "source_location": "1422",
       "weight": 1.0
     },
     {
@@ -9577,7 +9640,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1424",
+      "source_location": "1430",
       "weight": 1.0
     },
     {
@@ -9587,7 +9650,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1424",
+      "source_location": "1430",
       "weight": 1.0
     },
     {
@@ -9597,7 +9660,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1424",
+      "source_location": "1430",
       "weight": 1.0
     },
     {
@@ -9607,7 +9670,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1431",
+      "source_location": "1437",
       "weight": 1.0
     },
     {
@@ -9617,7 +9680,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1431",
+      "source_location": "1437",
       "weight": 1.0
     },
     {
@@ -9627,7 +9690,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1431",
+      "source_location": "1437",
       "weight": 1.0
     },
     {
@@ -9637,7 +9700,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1438",
+      "source_location": "1444",
       "weight": 1.0
     },
     {
@@ -9647,7 +9710,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1438",
+      "source_location": "1444",
       "weight": 1.0
     },
     {
@@ -9657,7 +9720,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1438",
+      "source_location": "1444",
       "weight": 1.0
     },
     {
@@ -9667,7 +9730,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1438",
+      "source_location": "1444",
       "weight": 1.0
     },
     {
@@ -9677,7 +9740,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1438",
+      "source_location": "1444",
       "weight": 1.0
     },
     {
@@ -9687,7 +9750,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1438",
+      "source_location": "1444",
       "weight": 1.0
     },
     {
@@ -9697,7 +9760,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1438",
+      "source_location": "1444",
       "weight": 1.0
     },
     {
@@ -9707,7 +9770,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1448",
+      "source_location": "1454",
       "weight": 1.0
     },
     {
@@ -9717,7 +9780,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1448",
+      "source_location": "1454",
       "weight": 1.0
     },
     {
@@ -9727,7 +9790,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1448",
+      "source_location": "1454",
       "weight": 1.0
     },
     {
@@ -9737,7 +9800,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1448",
+      "source_location": "1454",
       "weight": 1.0
     },
     {
@@ -9747,7 +9810,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1454",
+      "source_location": "1460",
       "weight": 1.0
     },
     {
@@ -9757,7 +9820,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1454",
+      "source_location": "1460",
       "weight": 1.0
     },
     {
@@ -9767,7 +9830,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1461",
+      "source_location": "1467",
       "weight": 1.0
     },
     {
@@ -9777,7 +9840,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1461",
+      "source_location": "1467",
       "weight": 1.0
     },
     {
@@ -9787,7 +9850,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1461",
+      "source_location": "1467",
       "weight": 1.0
     },
     {
@@ -9797,7 +9860,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1461",
+      "source_location": "1467",
       "weight": 1.0
     },
     {
@@ -9807,7 +9870,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1469",
+      "source_location": "1475",
       "weight": 1.0
     },
     {
@@ -9827,7 +9890,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1469",
+      "source_location": "1475",
       "weight": 1.0
     },
     {
@@ -9837,7 +9900,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1469",
+      "source_location": "1475",
       "weight": 1.0
     },
     {
@@ -9847,7 +9910,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1477",
+      "source_location": "1483",
       "weight": 1.0
     },
     {
@@ -9857,7 +9920,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1477",
+      "source_location": "1483",
       "weight": 1.0
     },
     {
@@ -9867,7 +9930,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "C:\\mon-bureau\\US-V0-V1.md",
-      "source_location": "1477",
+      "source_location": "1483",
       "weight": 1.0
     },
     {
@@ -11293,12 +11356,96 @@
       "weight": 1.0
     },
     {
+      "source": "crates_fmt_pdf_src_content",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/fmt-pdf/src/content.rs",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_fmt_pdf_src_lib",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/fmt-pdf/src/lib.rs",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_fmt_pdf_tests_campaign",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/fmt-pdf/tests/campaign.rs",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_fmt_pdf_tests_common_mod",
+      "target": "atelier_geom",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/fmt-pdf/tests/common/mod.rs",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_fmt_pdf_tests_common_mod",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/fmt-pdf/tests/common/mod.rs",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_fmt_pdf_tests_document",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/fmt-pdf/tests/document.rs",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "crates_fmt_pdf_tests_features",
+      "target": "atelier_render",
+      "relation": "imports_from",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "context": "import",
+      "source_file": "crates/fmt-pdf/tests/features.rs",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
       "source": "document_readme_md",
       "target": "spec_document",
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "C:\\mon-bureau\\README.md",
+      "source_file": "C:\\Users\\simka\\.codex\\worktrees\\ui-components-ribbon\\mon-bureau\\README.md",
       "source_location": "3"
     },
     {
@@ -11307,7 +11454,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
-      "source_file": "C:\\mon-bureau\\docs\\DEVELOPMENT.md",
+      "source_file": "C:\\Users\\simka\\.codex\\worktrees\\ui-components-ribbon\\mon-bureau\\docs\\DEVELOPMENT.md",
       "source_location": "499"
     }
   ],

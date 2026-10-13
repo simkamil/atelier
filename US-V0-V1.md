@@ -1381,8 +1381,10 @@ Réf : F-COM-010 · Taille : S · Dépend de : US-340
 
 #### US-342 — Zoom
 *En tant qu'*utilisateur, *je veux* zoomer *afin de* lire confortablement.
-- [ ] Curseur et pourcentage dans la barre d'état, Ctrl+molette, dialogue (10–500 %, largeur de page, page entière, plusieurs pages).
+- [x] Curseur et pourcentage dans la barre d'état, Ctrl+molette, dialogue (10–500 %, largeur de page, page entière, plusieurs pages).
 - [ ] Le zoom conserve la position de lecture ; mémorisé par document pendant la session.
+
+Avancement (2026-10-13) : Zoom intégré au texte et à l’aperçu DOCX, avec deux pages verticales, ancrage de lecture et modes ajustés au conteneur. La vue texte garde son zoom pendant un aller-retour DOCX. Mémorisation après fermeture/réouverture d’un fichier encore ouverte : identité absente du pont natif ; [contrat et validation](docs/us-342-zoom.md).
 
 Réf : F-COM-012 · Taille : S · Dépend de : US-101
 

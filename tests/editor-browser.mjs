@@ -3,6 +3,7 @@ import { createEditor } from "../web/editor.mjs";
 import { createEngineClient } from "../web/engine-client.mjs";
 import { encodeEditorCommand, EditorOpcode } from "../web/editor-protocol.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
+import { checkEditorZoom, checkAppZoom } from "./zoom-browser.mjs";
 
 const checks = [];
 function assert(value, name) {
@@ -431,6 +432,7 @@ try {
   assert(document.activeElement === editor.element, "Canvas hit-test restores hidden input focus");
 
   // Exercise the actual app-level shortcut listener against an inert copy of the product page.
+  await checkEditorZoom({ editor, scrollport, canvas, openText, assert, waitFor, key, inputText, pointer });
   editor.dispose(); editor = null;
   client.close(); client = null;
   const productResponse = await fetch("/index.html");
@@ -522,6 +524,7 @@ try {
   assert(nativeCalls.some(message => message.includes("|open|"))
     && document.querySelector("#editor-status").textContent.includes("annul"), "Ctrl+O uses the native open path and surfaces cancellation");
   assert(app.getState().text === appLargeText && !app.getState().dirty, "Ctrl+O cancellation preserves the current clean document");
+  await checkAppZoom({ app, scrollport: productScrollport, assert, waitFor });
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "n", ctrlKey: true, bubbles: true, cancelable: true }));
   await waitFor(() => app.getState()?.text === "", "Ctrl+N clears the opened document before save shortcut check");
   inputText(app.editor.element, "S");
@@ -557,6 +560,7 @@ try {
   const docxBase64 = btoa(docxBinary);
   assert(docxBytes.length > 131075 && docxBytes.length < 8*1024*1024, "independent DOCX fixture exercises a native response larger than the TXT limit");
   const beforePreview = app.getState();
+  app.editor.setZoom(1.5);
   app.ribbon.selectTab("file");
   nextDocxOpen = {status:"ok",payload:docxBase64};
   assert((await app.openDocx()).kind === "ok", "real app imports DOCX through native host and Worker/WASM");
@@ -571,6 +575,13 @@ try {
   for (let i=0; i<pixels.length; i+=4) if (pixels[i+3] > 0 && pixels[i+2] > pixels[i] + 30 && pixels[i+2] > pixels[i+1]) bluePixels += 1;
   assert(bluePixels > 20, "real DOCX preview paints the blue styled heading as visible Canvas pixels");
   const richScroll = document.querySelector("#rich-scroll");
+  const previewZoomRange = document.querySelector("[data-zoom-range]");
+  assert(!previewZoomRange.disabled && document.querySelector("[data-zoom-percent]").textContent === "100%",
+    "DOCX preview has its own enabled zoom controls starting at 100 percent");
+  previewZoomRange.value = "200"; previewZoomRange.dispatchEvent(new Event("input", { bubbles: true }));
+  assert(document.querySelector("[data-zoom-percent]").textContent === "200%" && app.editor.getZoom() === 1.5,
+    "preview zoom changes independently of the suspended TXT view");
+  previewZoomRange.value = "100"; previewZoomRange.dispatchEvent(new Event("input", { bubbles: true }));
   richScroll.style.width = "360px"; window.dispatchEvent(new Event("resize"));
   await new Promise(resolve => requestAnimationFrame(resolve));
   assert(richScroll.scrollWidth > richScroll.clientWidth, "narrow DOCX preview exposes horizontal scrolling for the complete A4 page");
@@ -595,8 +606,21 @@ try {
     "Escape returns to exact TXT state and restores trigger focus");
   assert(document.querySelector("#page-title").textContent === "Document texte" && document.querySelector("#document-state").textContent.includes("non enregistrées"),
     "closing preview restores TXT identity and dirty badge");
+  assert(app.editor.getZoom() === 1.5 && document.querySelector("[data-zoom-percent]").textContent === "150%",
+    "returning from DOCX restores the TXT session zoom in the status controls");
   await app.editor.undo(); assert(app.getState().text !== beforePreview.text, "TXT undo history remains available after preview");
   await app.editor.redo(); assert(app.getState().text === beforePreview.text && app.getState().dirty === beforePreview.dirty, "TXT redo restores exact content and dirty after preview");
+  app.editor.fitZoom("width");
+  const fittedTextZoom = app.editor.getZoom();
+  assert((await app.openDocx()).kind === "ok", "reopening preview for fitted TXT view");
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  assert(app.editor.getZoom() === fittedTextZoom && app.editor.getZoomMode() === "width",
+    "hiding a fitted TXT viewport does not refit it against zero dimensions");
+  app.closePreview();
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  assert(app.editor.getZoomMode() === "width" && Math.abs(app.editor.getZoom() * 595.276 - productScrollport.clientWidth) < 2,
+    "returning to a fitted TXT view preserves its mode and recomputes visible dimensions");
+  app.editor.setZoom(1.5);
   const beforeFailure=app.getState();
   nextDocxOpen={status:"cancelled",payload:""}; await app.openDocx();
   assert(app.getState()===beforeFailure && !app.previewActive && !app.editor.busy, "cancelled native DOCX dialogue preserves TXT and releases controls");

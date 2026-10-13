@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/ui-components.css">
     <link rel="stylesheet" href="/ribbon.css">
     <link rel="stylesheet" href="/theme.css">
+    <link rel="stylesheet" href="/zoom-controls.css">
     <script type="module" src="/app.mjs"></script>
   </head>
   <body>
@@ -59,7 +60,7 @@
           </div>
         </div>
       </section>
-      <footer><span data-i18n="footer">Atelier · démonstrateur de texte brut</span><span data-i18n="page-format">Page A4 · Carlito 11 pt</span></footer>
+      <footer><span data-i18n="footer">Atelier · démonstrateur de texte brut</span><div id="document-zoom"></div></footer>
     </main>
     <div class="diagnostics" hidden aria-hidden="true">
       <h2 id="status-title">En attente</h2><p id="status-detail">Initialisation</p>

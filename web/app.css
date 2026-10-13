@@ -16,3 +16,5 @@
 .editor-command-status .ui-button{flex:0 0 auto}.shell-preferences{min-width:min(280px,65vw);padding:4px 0 14px}.shell-preferences p{font-size:14px;line-height:1.5;max-width:42ch;color:var(--muted)}.shell-preferences .preference-label{font-weight:600;color:var(--ink)}
 .ribbon-root .ribbon-command.primary{background:var(--green);color:var(--chrome-accent-ink);border-color:var(--green)}
 @media(forced-colors:active){.page-stack canvas{forced-color-adjust:none}.editor-command-status{background:Canvas;color:CanvasText;border-color:ButtonBorder}}
+footer{height:auto;min-height:42px;gap:12px;flex-wrap:wrap;flex-basis:auto;padding-top:4px;padding-bottom:4px}#document-zoom{margin-left:auto;min-width:0;max-width:100%}
+@media(max-width:540px){footer>span{display:none}#document-zoom{margin-left:auto;margin-right:auto}}

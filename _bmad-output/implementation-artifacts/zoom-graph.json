@@ -1,0 +1,47 @@
+{
+  "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
+  "nodes": 8791,
+  "edges": 22857,
+  "stories": 158,
+  "done": 53,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 8791,
+  "html_node_limit": 9000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 1027,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 63,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "94df23fb037145d75542f54dbc0215d0daf929bc:graphify-out/GRAPH_REPORT.md",
+  "local_cost_meter_available": false,
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "zoom_story_status": "open",
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "01569022633e45d808f4cc7c1bc230129039c4ddfcca6b2d5a9b962ba6b1bba3",
+    "graphify-out/graph.json": "d770af324421fa7304164aa3bc142ec07a721c394daca8fc087698bedf6f5cea",
+    "graphify-out/graph.html": "cf803b178921a05029240dfaed9b03adc58029b85d350d44af6dce5a9272498a",
+    "graphify-out/story-dependencies.json": "44bfd9887f9bf011b553b95d1b6e5d587ba4eca230d5a32a23311eca51f025dc",
+    "graphify-out/unresolved-structural-references.json": "6f0624e8179b3701df076d0c8a2a0ac0c5e7be6fe034f266358bafbd53f68112"
+  },
+  "graph_tools_sha256": {
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "eb697347c812406dfe609a9c8ab8b37ff3d06298a3a287712d1c337756804a10",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "a6472ea449be8de4a5c23d63e8da165f10a34de33fe01dd9ec1421e019b1607d"
+  }
+}
