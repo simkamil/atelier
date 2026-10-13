@@ -177,12 +177,14 @@ fn items(node: &C, path: &str, out: &mut Vec<String>) {
 
 struct Walk<'a> {
     imp: &'a ImportedDocx,
+    /// The part the copies come from: they are stored without its root declarations.
+    part: &'a PreservedPart,
     interpreted: BTreeSet<&'static str>,
     out: Vec<String>,
 }
 impl Walk<'_> {
     fn bytes(&mut self, bytes: &[u8], path: &str) {
-        items(&parse(bytes), path, &mut self.out);
+        items(&parse(&self.part.standalone(bytes)), path, &mut self.out);
     }
     fn element(
         &mut self,
@@ -328,6 +330,7 @@ fn inventory(bytes: &[u8]) -> (usize, usize) {
         items(&parse(&source), "", &mut expected);
         let mut walk = Walk {
             imp: &imp,
+            part,
             interpreted: interpreted_set(),
             out: Vec::new(),
         };
@@ -375,6 +378,7 @@ fn diff(a: &[String], b: &[String]) -> Vec<String> {
 fn rebuild(imp: &ImportedDocx, part: &PreservedPart) -> C {
     fn elem(
         imp: &ImportedDocx,
+        part: &PreservedPart,
         e: &PreservedElement,
         para: Option<NodeId>,
         owner: Option<NodeId>,
@@ -388,10 +392,11 @@ fn rebuild(imp: &ImportedDocx, part: &PreservedPart) -> C {
         if e.slot {
             let w = Walk {
                 imp,
+                part,
                 interpreted: BTreeSet::new(),
                 out: Vec::new(),
             };
-            return parse(&w.slot(owner.unwrap(), local(&e.name)));
+            return parse(&part.standalone(&w.slot(owner.unwrap(), local(&e.name))));
         }
         let mut attrs: Vec<_> = e
             .attrs
@@ -415,20 +420,26 @@ fn rebuild(imp: &ImportedDocx, part: &PreservedPart) -> C {
         for c in &e.children {
             match c {
                 PreservedChild::Element(x) if x.shadow => {}
-                PreservedChild::Element(x) => kids.push(elem(imp, x, para, owner)),
-                PreservedChild::Opaque(b) => kids.push(parse(b)),
+                PreservedChild::Element(x) => kids.push(elem(imp, part, x, para, owner)),
+                PreservedChild::Opaque(b) => kids.push(parse(&part.standalone(b))),
                 PreservedChild::Anchored(id) => {
                     let p = imp.document.paragraph(para.unwrap()).unwrap();
-                    kids.push(parse(
+                    kids.push(parse(&part.standalone(
                         &p.anchored.iter().find(|a| a.id == *id).unwrap().data,
-                    ));
+                    )));
                 }
                 PreservedChild::Block(id) => match imp.document.node(*id).unwrap() {
-                    Node::Opaque(o) => kids.push(parse(&o.data)),
+                    Node::Opaque(o) => kids.push(parse(&part.standalone(&o.data))),
                     Node::Paragraph(_) => {
-                        kids.push(elem(imp, &imp.preserved.paragraphs[id], Some(*id), None));
+                        kids.push(elem(
+                            imp,
+                            part,
+                            &imp.preserved.paragraphs[id],
+                            Some(*id),
+                            None,
+                        ));
                     }
-                    _ => kids.push(elem(imp, &imp.preserved.tables[id], para, None)),
+                    _ => kids.push(elem(imp, part, &imp.preserved.tables[id], para, None)),
                 },
             }
         }
@@ -438,7 +449,7 @@ fn rebuild(imp: &ImportedDocx, part: &PreservedPart) -> C {
             kids,
         )
     }
-    elem(imp, &part.root, None, None)
+    elem(imp, part, &part.root, None, None)
 }
 
 // ---- Documents ------------------------------------------------------------

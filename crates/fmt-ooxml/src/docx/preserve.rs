@@ -458,6 +458,8 @@ pub(super) struct CaptureBudget {
     max_items: usize,
     pub bytes: usize,
     pub items: usize,
+    /// Root declarations of the part being parsed (see [`strip_context`]).
+    pub context: Vec<(String, String)>,
 }
 impl CaptureBudget {
     pub fn new(limits: &DocxLimits, spent: &Preserved) -> Self {
@@ -466,6 +468,7 @@ impl CaptureBudget {
             max_items: limits.max_opaque_items,
             bytes: spent.opaque_bytes,
             items: spent.opaque_items,
+            context: Vec::new(),
         }
     }
     pub fn charge(&mut self, bytes: usize) -> Result<(), DocxError> {
@@ -794,6 +797,174 @@ pub(super) fn markup_notices(
     walk(root, part, &mut seen, notices);
 }
 
+// ---------------------------------------------------------------------------
+// Namespace context shared by the copies of a part
+// ---------------------------------------------------------------------------
+
+/// The attributes of the first start tag of `xml` that are namespace
+/// declarations: `(start, end, prefix, uri)` where `start..end` covers the
+/// leading whitespace and the declaration. Also returns the end of the name.
+fn root_tag_declarations(xml: &[u8]) -> (usize, Vec<(usize, usize, String, String)>) {
+    let mut found = Vec::new();
+    if xml.first() != Some(&b'<') {
+        return (0, found);
+    }
+    let mut i = 1;
+    while i < xml.len() && !xml[i].is_ascii_whitespace() && xml[i] != b'>' && xml[i] != b'/' {
+        i += 1;
+    }
+    let name_end = i;
+    loop {
+        let start = i;
+        while i < xml.len() && xml[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= xml.len() || xml[i] == b'>' || xml[i] == b'/' {
+            break;
+        }
+        let key_start = i;
+        while i < xml.len() && xml[i] != b'=' && !xml[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let key = &xml[key_start..i];
+        while i < xml.len() && (xml[i] == b'=' || xml[i].is_ascii_whitespace()) {
+            i += 1;
+        }
+        let Some(&quote) = xml.get(i).filter(|c| **c == b'"' || **c == b'\'') else {
+            break;
+        };
+        i += 1;
+        let value_start = i;
+        while i < xml.len() && xml[i] != quote {
+            i += 1;
+        }
+        let value = String::from_utf8_lossy(&xml[value_start..i.min(xml.len())]).into_owned();
+        i += 1;
+        if key == b"xmlns" {
+            found.push((start, i, String::new(), unescape(&value)));
+        } else if let Some(prefix) = key.strip_prefix(b"xmlns:") {
+            found.push((
+                start,
+                i,
+                String::from_utf8_lossy(prefix).into_owned(),
+                unescape(&value),
+            ));
+        }
+    }
+    (name_end, found)
+}
+
+/// Removes from the root start tag of a captured copy the namespace
+/// declarations the part root already makes with the same value (`context`,
+/// see [`root_declarations`]), so that a copy only carries what it introduces
+/// or changes. [`PreservedPart::standalone`] puts them back.
+pub(super) fn strip_context(xml: Vec<u8>, context: &[(String, String)]) -> Vec<u8> {
+    let (_, declared) = root_tag_declarations(&xml);
+    let has_default = context.iter().any(|(p, _)| p.is_empty());
+    let redundant = |prefix: &str, uri: &str| {
+        if prefix.is_empty() && uri.is_empty() {
+            !has_default
+        } else {
+            namespace_of(context, prefix) == Some(uri)
+        }
+    };
+    if !declared.iter().any(|(_, _, p, u)| redundant(p, u)) {
+        return xml;
+    }
+    let mut out = Vec::with_capacity(xml.len());
+    let mut at = 0;
+    for (start, end, prefix, uri) in &declared {
+        if redundant(prefix, uri) {
+            out.extend_from_slice(&xml[at..*start]);
+            at = *end;
+        }
+    }
+    out.extend_from_slice(&xml[at..]);
+    out
+}
+
+fn escape_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Input for re-parsing a stripped copy: the copy under a wrapper element that
+/// declares the context prefixes the copy mentions, so that the parse does not
+/// pay for the whole declaration table on each copy.
+pub(super) fn reparse_input(copy: &[u8], context: &[(String, String)]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(copy.len() + 64);
+    out.extend_from_slice(b"<c");
+    let mut seen: Vec<&str> = Vec::new();
+    for (prefix, _) in context {
+        if seen.contains(&prefix.as_str()) {
+            continue;
+        }
+        seen.push(prefix);
+        let uri = namespace_of(context, prefix).unwrap_or("");
+        let needed = if prefix.is_empty() {
+            true
+        } else {
+            let pattern = format!("{prefix}:");
+            copy.windows(pattern.len()).any(|w| w == pattern.as_bytes())
+        };
+        if needed {
+            if prefix.is_empty() {
+                out.extend_from_slice(b" xmlns=\"");
+            } else {
+                out.extend_from_slice(format!(" xmlns:{prefix}=\"").as_bytes());
+            }
+            out.extend_from_slice(escape_attr(uri).as_bytes());
+            out.push(b'"');
+        }
+    }
+    out.push(b'>');
+    out.extend_from_slice(copy);
+    out.extend_from_slice(b"</c>");
+    out
+}
+
+impl PreservedPart {
+    /// A copy of this part (`Opaque` bytes, anchored object or opaque block
+    /// data) made self-contained: the namespace declarations of the part root
+    /// that the copy does not declare itself are put back on its root element.
+    /// Copies are stored without them, since every copy of a part shares the
+    /// same root declarations ([`PreservedPart::declarations`]).
+    pub fn standalone(&self, fragment: &[u8]) -> Vec<u8> {
+        let (name_end, declared) = root_tag_declarations(fragment);
+        if name_end == 0 {
+            return fragment.to_vec();
+        }
+        let mut add = String::new();
+        for (prefix, uri) in &self.declarations {
+            if declared.iter().any(|(_, _, p, _)| p == prefix) {
+                continue;
+            }
+            // The last declaration of a prefix wins.
+            if self.declarations.iter().rev().find(|(p, _)| p == prefix)
+                != Some(&(prefix.clone(), uri.clone()))
+            {
+                continue;
+            }
+            if prefix.is_empty() {
+                add.push_str(" xmlns=\"");
+            } else {
+                add.push_str(" xmlns:");
+                add.push_str(prefix);
+                add.push_str("=\"");
+            }
+            add.push_str(&escape_attr(uri));
+            add.push('"');
+        }
+        let mut out = Vec::with_capacity(fragment.len() + add.len());
+        out.extend_from_slice(&fragment[..name_end]);
+        out.extend_from_slice(add.as_bytes());
+        out.extend_from_slice(&fragment[name_end..]);
+        out
+    }
+}
 // ---------------------------------------------------------------------------
 // Schema order (for the writer)
 // ---------------------------------------------------------------------------

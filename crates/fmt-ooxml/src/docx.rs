@@ -576,18 +576,8 @@ pub fn import_docx_with_limits(
     let mut body_tree = preserve::TreeBuilder::new(sink.pres.shell(body)?);
     let mut position = 0usize;
     let mut initial_used = false;
+    let mut pending: Vec<RichOp> = Vec::new();
     for event in &events {
-        let insert = |document: &mut RichDocument, subtree, position| -> Result<(), DocxError> {
-            let op = RichOp::InsertBlock {
-                parent: Some(section),
-                position,
-                subtree,
-            };
-            document
-                .apply(&Transaction::new(vec![op]).map_err(|e| DocxError::Model(e.to_string()))?)
-                .map_err(model_error)?;
-            Ok(())
-        };
         match event {
             preserve::Ev::Open(node, shadow) => {
                 let mut element = sink.pres.shell(node)?;
@@ -606,7 +596,7 @@ pub fn import_docx_with_limits(
                     .new_opaque(&node.name.qualified(), &preserve::xml_of(node))
                     .map_err(model_error)?;
                 body_tree.push(PreservedChild::Block(subtree.root));
-                insert(&mut document, subtree, position)?;
+                insert_block(&mut document, &mut pending, section, subtree, position)?;
                 position += 1;
             }
             preserve::Ev::Known(xml_table) if is_w(xml_table, "tbl") => {
@@ -614,7 +604,7 @@ pub fn import_docx_with_limits(
                     table_builder.build_table(&mut document, &mut sink, xml_table)?
                 {
                     body_tree.push(PreservedChild::Block(subtree.root));
-                    insert(&mut document, subtree, position)?;
+                    insert_block(&mut document, &mut pending, section, subtree, position)?;
                     position += 1;
                 }
             }
@@ -629,7 +619,7 @@ pub fn import_docx_with_limits(
                     if let Some(Node::Paragraph(p)) = subtree.nodes.get_mut(&id) {
                         *p = paragraph.clone();
                     }
-                    insert(&mut document, subtree, position)?;
+                    insert_block(&mut document, &mut pending, section, subtree, position)?;
                     id
                 };
                 // Set text and source formatting in a single transaction. All run
@@ -675,6 +665,7 @@ pub fn import_docx_with_limits(
             }
         }
     }
+    flush_blocks(&mut document, &mut pending)?;
     let body_element = body_tree.finish();
     {
         let root = sink.pres.shell(&main_xml)?;
@@ -781,6 +772,39 @@ impl XmlNode {
         }
     }
 }
+/// Blocks inserted per transaction. A transaction takes a checkpoint of the
+/// whole document, so one transaction per block copies the document (and every
+/// captured byte in it) once per block: quadratic in the number of blocks.
+const INSERT_BATCH: usize = 512;
+
+fn insert_block(
+    document: &mut RichDocument,
+    pending: &mut Vec<RichOp>,
+    section: NodeId,
+    subtree: atelier_text_model::rich::Subtree,
+    position: usize,
+) -> Result<(), DocxError> {
+    pending.push(RichOp::InsertBlock {
+        parent: Some(section),
+        position,
+        subtree,
+    });
+    if pending.len() >= INSERT_BATCH {
+        flush_blocks(document, pending)?;
+    }
+    Ok(())
+}
+
+fn flush_blocks(document: &mut RichDocument, pending: &mut Vec<RichOp>) -> Result<(), DocxError> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let ops = std::mem::take(pending);
+    document
+        .apply(&Transaction::new(ops).map_err(|e| DocxError::Model(e.to_string()))?)
+        .map_err(model_error)?;
+    Ok(())
+}
 fn parse_xml(part: &Part, limits: &XmlLimits) -> Result<XmlNode, DocxError> {
     if part.bytes.len() > 16 * 1024 * 1024 {
         return Err(DocxError::Limit("XML part bytes"));
@@ -797,6 +821,7 @@ fn parse_xml_captured(
     if part.bytes.len() > 16 * 1024 * 1024 {
         return Err(DocxError::Limit("XML part bytes"));
     }
+    budget.context = preserve::root_declarations(&part.bytes);
     parse_xml_bytes(&part.bytes, &part.uri, limits, Some(budget))
 }
 fn parse_xml_bytes(
@@ -826,8 +851,18 @@ fn parse_xml_bytes(
                     if captured {
                         let subtree = reader.capture_opaque().map_err(xml_error)?;
                         let xml = preserve::subtree_bytes(&subtree)?;
+                        // The root declarations are kept once per part, not in
+                        // every copy (see `PreservedPart::standalone`).
+                        let xml = preserve::strip_context(xml, &budget.context);
                         budget.charge(xml.len())?;
-                        let mut node = parse_xml_bytes(&xml, uri, limits, None)?;
+                        let wrapped = preserve::reparse_input(&xml, &budget.context);
+                        let mut node = parse_xml_bytes(&wrapped, uri, limits, None)?
+                            .children
+                            .pop()
+                            .ok_or(DocxError::InvalidStructure {
+                                part: uri.to_string(),
+                                detail: "empty opaque capture",
+                            })?;
                         node.opaque = Some(xml);
                         attach_node(node, &mut stack, &mut root, uri)?;
                         continue;
