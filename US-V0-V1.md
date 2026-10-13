@@ -1206,6 +1206,8 @@ Réf : D2, [MS-DOC] · Taille : L · Dépend de : US-311, US-014, US-200
 *En tant qu'*utilisateur, *je veux* que la structure de mes anciens documents soit conservée *afin de* ne pas avoir à la refaire.
 - [ ] Listes (LST, LFO), tableaux (TAP, fusions), sections (SEPX), en-têtes et pieds, champs, liens, signets.
 
+Avancement US-313 (2026-10-13) : structure livrée dans `atelier-fmt-legacy`, relue par un agent indépendant et corrigée ; [contrat](docs/us-313-doc-structure.md), corpus LibreOffice de cinq fichiers de structure. Reste ouvert : fusion horizontale, sauts de section particuliers et en-têtes pairs prouvés seulement sur fixtures construites ; aucun fichier Word contenant un tableau n'a été testé ; un signet sur plusieurs paragraphes est tronqué.
+
 Réf : D2, [MS-DOC] · Taille : L · Dépend de : US-312
 
 #### US-314 — Ouvrir un .doc : images
