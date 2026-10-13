@@ -97,3 +97,9 @@ zoom-apply=Appliquer
 zoom-cancel=Annuler
 zoom-close=Fermer
 zoom-invalid=Saisissez un pourcentage entier entre 10 et 500.
+# US-102 : exemples de paramètres nommés et de pluriels (voir docs/us-102-i18n.md), à brancher par l'intégrateur
+i18n.words-count={n, plural, one {# mot} other {# mots}}
+i18n.pages-count={n, plural, one {# page} many {# de pages} other {# pages}}
+i18n.page-of=Page {page} sur {total}
+i18n.search-occurrences={n, plural, =0 {Aucune occurrence} one {# occurrence} other {# occurrences}}
+i18n.file-too-large=Le fichier ({size}) dépasse la taille maximale de {limit}.

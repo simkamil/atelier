@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Écarts i18n connus, comparés par tests/check-i18n.mjs : tout écart absent de ce fichier fait échouer le contrôle.
+# Format : nombre<TAB>catégorie<TAB>fichier<TAB>détail. Les numéros de ligne ne comptent pas.
+# Régénérer avec : node tests/check-i18n.mjs --update-baseline (après avoir corrigé des écarts, jamais pour en masquer).
+1	duplicate-key	web/i18n/fr-FR.txt	canvas-label
+1	duplicate-key	web/i18n/fr-FR.txt	pages-label
+1	duplicate-key	web/i18n/fr-FR.txt	toolbar-label
+1	duplicate-key	web/i18n/fr-FR.txt	workspace-label
+1	hardcoded	web/app.mjs	"Actions du document"
+1	hardcoded	web/app.mjs	"Aperçu DOCX en lecture seule. Certains éléments ne sont pas affichés."
+1	hardcoded	web/app.mjs	"Aperçu DOCX en lecture seule. Mise en page simplifiée."
+1	hardcoded	web/app.mjs	"Aperçu DOCX"
+1	hardcoded	web/app.mjs	"Atelier · aperçu DOCX"
+1	hardcoded	web/app.mjs	"Cette commande de saisie n’est pas disponible."
+1	hardcoded	web/app.mjs	"DOCUMENT WORD · LECTURE SEULE"
+1	hardcoded	web/app.mjs	"Document enregistré."
+1	hardcoded	web/app.mjs	"Document ouvert."
+1	hardcoded	web/app.mjs	"Document prêt."
+1	hardcoded	web/app.mjs	"Document texte"
+1	hardcoded	web/app.mjs	"Document vierge créé."
+1	hardcoded	web/app.mjs	"Enregistré"
+1	hardcoded	web/app.mjs	"Espaces françaises automatiques"
+1	hardcoded	web/app.mjs	"Initialisation du document…"
+1	hardcoded	web/app.mjs	"Le contrôle du moteur a échoué."
+1	hardcoded	web/app.mjs	"Le contrôle local n’a pas abouti."
+1	hardcoded	web/app.mjs	"Le dialogue de fichiers est indisponible."
+1	hardcoded	web/app.mjs	"Le document a changé pendant l’enregistrement. Enregistrez-le à nouveau."
+1	hardcoded	web/app.mjs	"Le document contient des modifications. Continuer sans les enregistrer ?"
+1	hardcoded	web/app.mjs	"Le document n’a pas pu être enregistré."
+1	hardcoded	web/app.mjs	"Le document n’a pas pu être ouvert."
+1	hardcoded	web/app.mjs	"Le document ou sa mise en page est invalide."
+1	hardcoded	web/app.mjs	"Le fichier dépasse la taille maximale de 128 Kio."
+1	hardcoded	web/app.mjs	"Le fichier ne contient pas de texte UTF-8 valide."
+1	hardcoded	web/app.mjs	"Le moteur a renvoyé l’écho Ping."
+1	hardcoded	web/app.mjs	"Lecture seule"
+1	hardcoded	web/app.mjs	"L’aperçu DOCX n’a pas pu être ouvert. Document invalide, non pris en charge ou trop volu…
+1	hardcoded	web/app.mjs	"L’opération n’a pas pu être effectuée."
+1	hardcoded	web/app.mjs	"Modifications non enregistrées"
+1	hardcoded	web/app.mjs	"Opération annulée."
+1	hardcoded	web/app.mjs	"Ouverture de l’aperçu DOCX…"
+1	hardcoded	web/app.mjs	"Ouvrir DOCX…"
+1	hardcoded	web/app.mjs	"Pages du document texte brut"
+1	hardcoded	web/app.mjs	"Pages du document"
+1	hardcoded	web/app.mjs	"Retour au texte"
+1	hardcoded	web/app.mjs	"Texte du document"
+1	hardcoded	web/app.mjs	"Transport vérifié"
+1	hardcoded	web/app.mjs	"Une autre opération sur les fichiers est en cours."
+1	hardcoded	web/app.mjs	"Worker WebAssembly : transport vérifié, écho Ping reçu."
+1	hardcoded	web/app.mjs	"Échec"
+1	hardcoded	web/app.mjs	"Écho confirmé"
+1	hardcoded	web/app.mjs	"Éditeur de texte"
+1	hardcoded	web/editor.mjs	"Le document contient des modifications. Continuer sans les enregistrer ?"
+1	hardcoded	web/index.html	"Aperçu DOCX en lecture seule"
+1	hardcoded	web/index.html	"Atelier — Document texte"
+1	hardcoded	web/index.html	"En attente"
+1	hardcoded	web/index.html	"Initialisation"
+1	hardcoded	web/index.html	"Texte de l’aperçu DOCX"
+1	hardcoded	web/text-input.mjs	"Saisie du texte du document"
+1	missing-key	web/app.mjs	engine-error
+1	missing-key	web/app.mjs	engine-ready
+1	missing-key	web/app.mjs	status-a11y-failed
+1	missing-key	web/app.mjs	status-a11y-ok
+1	missing-key	web/app.mjs	status-failed
+1	missing-key	web/app.mjs	status-failure-detail
+1	missing-key	web/app.mjs	status-ok
+1	missing-key	web/app.mjs	status-success-detail
+1	unused-key	web/i18n/fr-FR.txt	files.error.invalid_text
+1	unused-key	web/i18n/fr-FR.txt	files.error.too_large
+1	unused-key	web/i18n/fr-FR.txt	i18n.file-too-large
+1	unused-key	web/i18n/fr-FR.txt	i18n.page-of
+1	unused-key	web/i18n/fr-FR.txt	i18n.pages-count
+1	unused-key	web/i18n/fr-FR.txt	i18n.search-occurrences
+1	unused-key	web/i18n/fr-FR.txt	i18n.words-count
+2	hardcoded	web/index.html	"Pages de l’aperçu DOCX"
