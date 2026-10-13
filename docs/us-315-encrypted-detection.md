@@ -45,7 +45,10 @@ corpus : [tests/encrypted-reference/README.md](../tests/encrypted-reference/READ
   0,02 ms pour un petit conteneur et 5 ms pour 96 Mio, en profil de test non optimisé.
 - Un ZIP (docx/xlsx non chiffré, ODT) n'est jamais signalé : l'ODT se détecte par
   `OdtError::PasswordProtected` dans `atelier-fmt-odf`.
-- Le mot de passe d'ouverture seul est détecté ; les protections « en écriture » ou de structure ne le sont pas.
+- Seuls le chiffrement et l'obscurcissement à l'ouverture sont détectés ; la protection d'une feuille ou en écriture, sans `FILEPASS`, ne l'est pas (`sheet-protected.xls` : `None`).
+- **Faux positif connu (classeurs Excel 97-2003).** Un classeur dont seule la structure est protégée, sans mot de passe d'ouverture, est enregistré avec un `FILEPASS` : le contenu est chiffré avec le mot de passe par défaut `VelvetSweatshop`, et Excel l'ouvre sans rien demander. La détection le signale `Encrypted(Rc4)` et `is_protected()` est vrai, car vérifier ce mot de passe demanderait RC4 et MD5 (hors lot). `Detection::may_be_default_password()` est vrai pour tout classeur `FILEPASS` (non vérifié) : l'appelant peut nuancer son message. **Prouvé sur un fichier réel** : `doc-protected.xls`, produit par LibreOffice (structure du classeur protégée sans mot de passe), contient un `FILEPASS` RC4 ; `sheet-protected.xls` (feuille protégée) n'en contient pas. Le comportement d'Excel lui-même (mot de passe `VelvetSweatshop`) est décrit de mémoire, non testé. Les classeurs ne sont pas ouverts en V1 : la conséquence pratique est nulle aujourd'hui.
+- `FILEPASS` peut suivre `INTERFACEHDR` ou `WRITEPROT` : la lecture parcourt jusqu'à 64 enregistrements (4 Kio) et ne s'arrête qu'aux enregistrements du corps (`FONT`, `XF`, `BOUNDSHEET`, `SST`, `EOF`...).
+- Le corpus se régénère avec `tools/generate-encrypted-reference.py` (`--check` vérifie les sommes de contrôle).
 
 ## Pour l'intégrateur
 
