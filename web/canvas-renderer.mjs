@@ -179,7 +179,7 @@ export class CanvasRenderer {
     this.editorOverlay = {
       selectionRects: rects(selectionRects, "selection"),
       searchRects: rects(searchRects, "search"),
-      activeSearchRects: rects(activeSearchRects, "active search"),
+      activeSearchRects: rects(activeSearchRects, "activeSearch"),
       caret: normalizedCaret,
       compositionRects: rects(compositionRects, "composition"),
       caretVisible,

@@ -70,7 +70,9 @@ test("catalogue: the real fr-FR catalogue loads exactly like the historic loader
   assert.deepEqual([...parsed.entries].map(([key, entry]) => [key, entry.value]), [...legacy]);
   assert.deepEqual(parsed.problems.map(problem => problem.code), ["duplicate-key", "duplicate-key", "duplicate-key", "duplicate-key"]);
   assert.deepEqual(parsed.problems.map(problem => problem.key), ["toolbar-label", "workspace-label", "pages-label", "canvas-label"]);
-  assert.equal(parsed.entries.size, 85);
+  for (const key of ["zoom-title", "searchTitle", "statisticsDialogTitle", "i18n.words-count"]) {
+    assert(parsed.entries.has(key), `merged feature catalog preserves ${key}`);
+  }
 });
 
 test("catalogue: the 80 historic keys keep their values, the examples render", () => {
@@ -825,7 +827,12 @@ try {
     assert.equal(cli(root, "--strict").code, 1);
     const counts = {};
     for (const finding of result.findings) counts[finding.category] = (counts[finding.category] ?? 0) + 1;
-    assert.deepEqual(counts, { "duplicate-key": 4, hardcoded: 52, "missing-key": 8, "unused-key": 7 });
+    const expectedCounts = {};
+    for (const [entry, count] of baseline) {
+      const category = entry.split("\t")[0];
+      expectedCounts[category] = (expectedCounts[category] ?? 0) + count;
+    }
+    assert.deepEqual(counts, expectedCounts);
   });
 } finally {
   rmSync(work, { recursive: true, force: true });

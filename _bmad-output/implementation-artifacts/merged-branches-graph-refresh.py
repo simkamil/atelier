@@ -79,6 +79,7 @@ prototype_docs.extend(['docs/us-003-image-reference-tests.md','docs/us-330-font-
 prototype_docs.extend(['docs/rich-docx-preview.md','docs/SUBAGENT-WORKFLOW.md'])
 prototype_docs.extend(['docs/us-313-doc-structure.md','docs/us-331-pdf-writer.md','docs/us-342-zoom.md','web/zoom.mjs','web/zoom-controls.mjs','web/zoom-controls.css','tests/zoom.mjs','tests/zoom-browser.mjs','tests/zoom-controls-browser.mjs'])
 prototype_docs.extend(['docs/us-340-343-navigation-ui.md','web/navigation-tools.mjs','web/search-pane.mjs','web/search-pane.css','web/statistics-controls.mjs','web/statistics-controls.css','tests/navigation-browser.mjs','tests/navigation-query-protocol.mjs','tests/navigation-tools-browser.mjs','tests/search-pane-browser.mjs','tests/statistics-controls-browser.mjs'])
+prototype_docs.extend(['docs/us-102-i18n.md','web/i18n.mjs','tests/i18n.mjs','tests/check-i18n.mjs','tests/i18n-baseline.txt'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.
