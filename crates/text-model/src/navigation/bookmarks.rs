@@ -5,7 +5,9 @@
 //! case-insensitive uniqueness of Word is enforced here, on top of it.
 
 use super::Reading;
-use super::name::{NameError, NameMode, is_hidden_name, name_key, validate_bookmark_name};
+use super::name::{
+    NameError, NameMode, is_hidden_name, name_key, normalize_name, validate_bookmark_name,
+};
 use crate::rich::{Bookmark, Inline, Link, LinkTarget, NodeId, RichDocument, RichError, RichOp};
 use crate::search::Zone;
 use atelier_model::Transaction;
@@ -15,6 +17,7 @@ use atelier_unicode::normalization::nfd;
 use atelier_unicode::properties::general_category;
 use atelier_unicode::segmentation::grapheme_boundaries;
 use core::fmt;
+use std::collections::BTreeMap;
 
 /// A bookmark and where it sits.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,6 +60,9 @@ pub struct BookmarkEdit {
     /// Rename: the internal links the transaction retargets. Delete: the
     /// internal links left as they are, now pointing nowhere. Empty otherwise.
     pub links: Vec<LinkRef>,
+    /// The bookmark was found only up to case among several (see
+    /// [`BookmarkMatch::ambiguous`]): the first in reading order was used.
+    pub ambiguous: bool,
 }
 
 /// Why a bookmark change was refused.
@@ -157,26 +163,93 @@ pub(crate) fn list_with(
     all
 }
 
-/// The bookmark with this name, case ignored; hidden ones included.
+/// A name lookup result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BookmarkMatch {
+    pub info: BookmarkInfo,
+    /// No bookmark has exactly this name and several differ only by case
+    /// (possible in an imported document): the first in reading order was taken.
+    pub ambiguous: bool,
+}
+
+/// The bookmark with this name: the exact name if one exists, else the first
+/// in reading order equal up to case (`ambiguous` tells when several are).
+/// Hidden bookmarks included.
+pub fn lookup_bookmark(doc: &RichDocument, name: &str) -> Option<BookmarkMatch> {
+    let all = collect(doc, &Reading::new(doc));
+    let (i, ambiguous) = Resolver::new(&all).resolve(name)?;
+    Some(BookmarkMatch {
+        info: all.into_iter().nth(i)?,
+        ambiguous,
+    })
+}
+
+/// [`lookup_bookmark`] without the ambiguity flag.
 pub fn find_bookmark(doc: &RichDocument, name: &str) -> Option<BookmarkInfo> {
-    let key = name_key(name);
-    collect(doc, &Reading::new(doc))
-        .into_iter()
-        .find(|b| name_key(&b.name) == key)
+    lookup_bookmark(doc, name).map(|m| m.info)
 }
 
-fn transaction(ops: Vec<RichOp>, links: Vec<LinkRef>) -> Result<BookmarkEdit, BookmarkError> {
+fn transaction(
+    ops: Vec<RichOp>,
+    links: Vec<LinkRef>,
+    ambiguous: bool,
+) -> Result<BookmarkEdit, BookmarkError> {
     let transaction = Transaction::new(ops).map_err(|_| BookmarkError::TooLarge)?;
-    Ok(BookmarkEdit { transaction, links })
+    Ok(BookmarkEdit {
+        transaction,
+        links,
+        ambiguous,
+    })
 }
 
-/// Internal links (and the paragraph they sit in) aimed at the name `key`.
-fn links_to(doc: &RichDocument, reading: &Reading, key: &str) -> Vec<(LinkRef, Link)> {
+/// Name lookup shared by every command: the **exact** name wins; without an
+/// exact one, the case-insensitive match (first in reading order).
+pub(crate) struct Resolver {
+    exact: BTreeMap<String, usize>,
+    keyed: BTreeMap<String, (usize, usize)>,
+}
+
+impl Resolver {
+    pub(crate) fn new(all: &[BookmarkInfo]) -> Self {
+        let mut exact = BTreeMap::new();
+        let mut keyed: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+        for (i, b) in all.iter().enumerate() {
+            exact.entry(b.name.clone()).or_insert(i);
+            keyed.entry(name_key(&b.name)).or_insert((i, 0)).1 += 1;
+        }
+        Self { exact, keyed }
+    }
+
+    /// Index in `all` and whether the choice is ambiguous (no exact match and
+    /// several bookmarks equal up to case).
+    pub(crate) fn resolve(&self, name: &str) -> Option<(usize, bool)> {
+        if let Some(i) = self.exact.get(name) {
+            return Some((*i, false));
+        }
+        let composed = normalize_name(name);
+        if let Some(i) = self.exact.get(&composed) {
+            return Some((*i, false));
+        }
+        self.keyed
+            .get(&name_key(name))
+            .map(|(i, count)| (*i, *count > 1))
+    }
+}
+
+/// Internal links (and the paragraph they sit in) that resolve to bookmark `target`.
+fn links_to(
+    doc: &RichDocument,
+    reading: &Reading,
+    resolver: &Resolver,
+    target: usize,
+) -> Vec<(LinkRef, Link)> {
     let mut out = Vec::new();
     for (id, zone, section) in &reading.paras {
         let Ok(p) = doc.paragraph(*id) else { continue };
         for l in &p.links {
-            if matches!(&l.target, LinkTarget::Bookmark(n) if name_key(n) == key) {
+            if matches!(&l.target, LinkTarget::Bookmark(n)
+                if resolver.resolve(n).is_some_and(|(i, _)| i == target))
+            {
                 let link = LinkRef {
                     paragraph: *id,
                     link: l.id,
@@ -191,10 +264,11 @@ fn links_to(doc: &RichDocument, reading: &Reading, key: &str) -> Vec<(LinkRef, L
 }
 
 /// Bookmarks `start..end` (in one paragraph; reversed ends are swapped; equal
-/// ends make a point bookmark). The name must follow `mode`. If a bookmark
-/// already has this name (case ignored) it is **moved**, as in Word: same id,
-/// same stored spelling, so links to it stay valid. A range over several
-/// paragraphs is refused (`RangeSpansParagraphs`), never silently shortened.
+/// ends make a point bookmark). The name is normalized to NFC, then must
+/// follow `mode`. If a bookmark already has this name (exact match first, else
+/// case ignored) it is **moved**, as in Word: same id, same stored spelling,
+/// so links to it stay valid. A range over several paragraphs is refused
+/// (`RangeSpansParagraphs`), never silently shortened.
 pub fn insert_bookmark(
     doc: &mut RichDocument,
     name: &str,
@@ -203,6 +277,7 @@ pub fn insert_bookmark(
     mode: NameMode,
 ) -> Result<BookmarkEdit, BookmarkError> {
     validate_bookmark_name(name, mode)?;
+    let name = normalize_name(name);
     if start.node != end.node {
         return Err(BookmarkError::RangeSpansParagraphs);
     }
@@ -221,14 +296,17 @@ pub fn insert_bookmark(
             }
         }
     }
-    let ops = match find_bookmark(doc, name) {
+    let all = collect(doc, &Reading::new(doc));
+    let found = Resolver::new(&all).resolve(&name);
+    let ambiguous = found.is_some_and(|f| f.1);
+    let ops = match found.map(|f| &all[f.0]) {
         None => {
             let id = doc.alloc_id()?;
             vec![RichOp::InsertInline {
                 para,
                 item: Inline::Bookmark(Bookmark {
                     id,
-                    name: name.to_owned(),
+                    name,
                     start: s,
                     end: e,
                 }),
@@ -237,7 +315,7 @@ pub fn insert_bookmark(
         Some(old) => {
             let moved = Bookmark {
                 id: old.id,
-                name: old.name,
+                name: old.name.clone(),
                 start: s,
                 end: e,
             };
@@ -260,13 +338,15 @@ pub fn insert_bookmark(
             }
         }
     };
-    transaction(ops, Vec::new())
+    transaction(ops, Vec::new(), ambiguous)
 }
 
-/// Renames `old` (case ignored) to `new`, which follows `mode`. Internal
-/// links to the bookmark are retargeted in the same transaction and listed in
-/// `links`. Another bookmark with the new name is `NameTaken`; changing only
-/// the case of the name is allowed; the same name gives an empty transaction.
+/// Renames `old` (exact name first, else case ignored) to `new` (NFC, follows
+/// `mode`). Internal links that resolve to the bookmark are retargeted in the
+/// same transaction and listed in `links`. Any **other** bookmark with the new
+/// name, exactly or up to case, is `NameTaken` (checked before the model could
+/// refuse it); changing only the case of the bookmark's own name is allowed;
+/// the same name gives an empty transaction.
 pub fn rename_bookmark(
     doc: &RichDocument,
     old: &str,
@@ -274,59 +354,67 @@ pub fn rename_bookmark(
     mode: NameMode,
 ) -> Result<BookmarkEdit, BookmarkError> {
     validate_bookmark_name(new, mode)?;
+    let new = normalize_name(new);
     let reading = Reading::new(doc);
     let all = collect(doc, &reading);
-    let (old_key, new_key) = (name_key(old), name_key(new));
-    let found = all
-        .iter()
-        .find(|b| name_key(&b.name) == old_key)
+    let resolver = Resolver::new(&all);
+    let (idx, ambiguous) = resolver
+        .resolve(old)
         .ok_or_else(|| BookmarkError::NotFound(old.to_owned()))?;
-    if old_key != new_key && all.iter().any(|b| name_key(&b.name) == new_key) {
-        return Err(BookmarkError::NameTaken(new.to_owned()));
+    let found = &all[idx];
+    let new_key = name_key(&new);
+    if all
+        .iter()
+        .enumerate()
+        .any(|(i, b)| i != idx && (b.name == new || name_key(&b.name) == new_key))
+    {
+        return Err(BookmarkError::NameTaken(new));
     }
     if found.name == new {
-        return transaction(Vec::new(), Vec::new());
+        return transaction(Vec::new(), Vec::new(), ambiguous);
     }
     let mut ops = vec![RichOp::ModifyInline {
         para: found.paragraph,
         item: Inline::Bookmark(Bookmark {
             id: found.id,
-            name: new.to_owned(),
+            name: new.clone(),
             start: found.start,
             end: found.end,
         }),
     }];
     let mut refs = Vec::new();
-    for (r, mut link) in links_to(doc, &reading, &old_key) {
-        link.target = LinkTarget::Bookmark(new.to_owned());
+    for (r, mut link) in links_to(doc, &reading, &resolver, idx) {
+        link.target = LinkTarget::Bookmark(new.clone());
         ops.push(RichOp::ModifyInline {
             para: r.paragraph,
             item: Inline::Link(link),
         });
         refs.push(r);
     }
-    transaction(ops, refs)
+    transaction(ops, refs, ambiguous)
 }
 
-/// Deletes the bookmark `name` (case ignored). Internal links to it are **left
-/// unchanged** (they now point nowhere, as in Word) and returned in `links` so
-/// the caller can warn; undoing restores the bookmark and they work again.
+/// Deletes the bookmark `name` (exact name first, else case ignored). Internal
+/// links to it are **left unchanged** (they now point nowhere, as in Word) and
+/// returned in `links` so the caller can warn; undoing restores the bookmark
+/// and they work again.
 pub fn delete_bookmark(doc: &RichDocument, name: &str) -> Result<BookmarkEdit, BookmarkError> {
     let reading = Reading::new(doc);
-    let key = name_key(name);
-    let found = collect(doc, &reading)
-        .into_iter()
-        .find(|b| name_key(&b.name) == key)
+    let all = collect(doc, &reading);
+    let resolver = Resolver::new(&all);
+    let (idx, ambiguous) = resolver
+        .resolve(name)
         .ok_or_else(|| BookmarkError::NotFound(name.to_owned()))?;
-    let links = links_to(doc, &reading, &key)
+    let links = links_to(doc, &reading, &resolver, idx)
         .into_iter()
         .map(|(r, _)| r)
         .collect();
     transaction(
         vec![RichOp::RemoveInline {
-            para: found.paragraph,
-            id: found.id,
+            para: all[idx].paragraph,
+            id: all[idx].id,
         }],
         links,
+        ambiguous,
     )
 }

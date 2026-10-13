@@ -4,8 +4,10 @@
 //! Certain (documented by Microsoft): a name is made of letters, digits and
 //! underscores, has no space, starts with a letter and is unique without
 //! regard to case. Hypotheses, each isolated in one function below:
-//! - the limit is 40 *characters* ([`MAX_NAME_CHARS`], Word may count UTF-16
-//!   units);
+//! - the limit is 40 *characters* ([`MAX_NAME_CHARS`]), counted after NFC
+//!   normalization; Word probably counts UTF-16 units (a character outside
+//!   the BMP would count 2), so such a name may be accepted here and refused
+//!   by Word;
 //! - "letter" and "digit" are the Unicode classes `Alphabetic` and
 //!   `Alphanumeric` (accented letters are accepted);
 //! - a name starting with an underscore is hidden (internal: `_Toc…`,
@@ -61,8 +63,22 @@ impl fmt::Display for NameError {
 }
 impl std::error::Error for NameError {}
 
+/// The stored form of a typed name: NFC (a decomposed `e` + accent is the
+/// same name as the composed letter).
+pub fn normalize_name(name: &str) -> String {
+    if name.is_ascii() {
+        name.to_owned()
+    } else {
+        nfc(name)
+    }
+}
+
 /// Checks a name against the rules of Word (see the module documentation).
+/// The name is judged in its NFC form ([`normalize_name`]); error indices and
+/// the length refer to that form.
 pub fn validate_bookmark_name(name: &str, mode: NameMode) -> Result<(), NameError> {
+    let name = normalize_name(name);
+    let name = name.as_str();
     let mut chars = name.chars().enumerate();
     let Some((_, first)) = chars.next() else {
         return Err(NameError::Empty);

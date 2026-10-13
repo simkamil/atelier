@@ -383,3 +383,123 @@ fn sort_by_position_across_zones() {
         ["b0", "b1", "foot", "hdr", "later", "tbl"]
     );
 }
+
+/// A document as an import can produce it: "Titre" and "titre" coexist.
+fn imported_duplicates() -> (RichDocument, NodeId) {
+    let (mut doc, p0) = with_text("0123456789");
+    raw_bookmark(&mut doc, "Titre", p0, 0, 2);
+    raw_bookmark(&mut doc, "titre", p0, 4, 6);
+    (doc, p0)
+}
+
+#[test]
+fn exact_name_wins_over_case_variants() {
+    let (doc, p0) = imported_duplicates();
+    let m = lookup_bookmark(&doc, "titre").unwrap();
+    assert_eq!(
+        (m.info.name.as_str(), m.info.start, m.ambiguous),
+        ("titre", 4, false)
+    );
+    let m = lookup_bookmark(&doc, "Titre").unwrap();
+    assert_eq!(
+        (m.info.name.as_str(), m.info.start, m.ambiguous),
+        ("Titre", 0, false)
+    );
+    // No exact match: the first in reading order, flagged.
+    let m = lookup_bookmark(&doc, "TITRE").unwrap();
+    assert_eq!((m.info.name.as_str(), m.ambiguous), ("Titre", true));
+    assert_eq!(find_bookmark(&doc, "tItRe").unwrap().name, "Titre");
+
+    // rename("titre", ...) renames "titre", not "Titre".
+    let edit = rename_bookmark(&doc, "titre", "autre", NameMode::User).unwrap();
+    assert!(!edit.ambiguous);
+    let mut d = doc.clone();
+    let after = apply_checked(&mut d, &edit);
+    let mut names: Vec<_> = list_bookmarks(&after, BookmarkOrder::Position, true)
+        .into_iter()
+        .map(|b| b.name)
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Titre", "autre"]);
+    // Ambiguous input is flagged on every command.
+    assert!(
+        rename_bookmark(&doc, "TITRE", "autre", NameMode::User)
+            .unwrap()
+            .ambiguous
+    );
+    assert!(delete_bookmark(&doc, "TITRE").unwrap().ambiguous);
+    // delete("titre") removes the exact one.
+    let mut d = doc.clone();
+    let after = apply_checked(&mut d, &delete_bookmark(&doc, "titre").unwrap());
+    assert_eq!(names_of(&after), ["Titre"]);
+    // Moving by insertion also prefers the exact name.
+    let mut d = doc.clone();
+    let edit = user_insert(&mut d, "titre", p0, 8, 9).unwrap();
+    assert!(!edit.ambiguous);
+    let after = apply_checked(&mut d, &edit);
+    assert_eq!(
+        (
+            find_bookmark(&after, "titre").unwrap().start,
+            find_bookmark(&after, "Titre").unwrap().start
+        ),
+        (8, 0)
+    );
+}
+
+fn names_of(doc: &RichDocument) -> Vec<String> {
+    list_bookmarks(doc, BookmarkOrder::Position, true)
+        .into_iter()
+        .map(|b| b.name)
+        .collect()
+}
+
+#[test]
+fn rename_collision_is_detected_before_the_model() {
+    let (doc, _) = imported_duplicates();
+    for (old, new) in [("Titre", "titre"), ("titre", "Titre"), ("titre", "TITRE")] {
+        assert_eq!(
+            rename_bookmark(&doc, old, new, NameMode::User).err(),
+            Some(BookmarkError::NameTaken(new.into())),
+            "{old} -> {new}"
+        );
+    }
+    // A clean document: another bookmark differing by case only is taken too...
+    let (mut doc, p0) = with_text("0123456789");
+    bookmark_at(&mut doc, "Alpha", p0, 0, 1);
+    bookmark_at(&mut doc, "beta", p0, 2, 3);
+    assert_eq!(
+        rename_bookmark(&doc, "beta", "ALPHA", NameMode::User).err(),
+        Some(BookmarkError::NameTaken("ALPHA".into()))
+    );
+    // ...but a bookmark may change the case of its own name.
+    let edit = rename_bookmark(&doc, "beta", "BETA", NameMode::User).unwrap();
+    apply_checked(&mut doc, &edit);
+}
+
+#[test]
+fn composed_and_decomposed_names_are_the_same() {
+    let decomposed = "e\u{301}te\u{301}";
+    assert_eq!(validate_bookmark_name(decomposed, NameMode::User), Ok(()));
+    assert_eq!(normalize_name(decomposed), "été");
+    // 40 decomposed letters = 80 chars before NFC, 40 after.
+    assert_eq!(
+        validate_bookmark_name(&"e\u{301}".repeat(40), NameMode::User),
+        Ok(())
+    );
+    assert_eq!(
+        validate_bookmark_name(&"e\u{301}".repeat(41), NameMode::User),
+        Err(NameError::TooLong { chars: 41 })
+    );
+    let (mut doc, p0) = with_text("0123456789");
+    let edit = user_insert(&mut doc, decomposed, p0, 0, 1).unwrap();
+    doc = apply_checked(&mut doc, &edit);
+    // Stored composed; found by either spelling; the second spelling moves it.
+    assert_eq!(names_of(&doc), ["été"]);
+    assert!(find_bookmark(&doc, decomposed).is_some() && find_bookmark(&doc, "été").is_some());
+    let edit = user_insert(&mut doc, "été", p0, 2, 3).unwrap();
+    doc = apply_checked(&mut doc, &edit);
+    assert_eq!(names_of(&doc), ["été"]);
+    let edit = rename_bookmark(&doc, decomposed, "e\u{301}le\u{301}ve", NameMode::User).unwrap();
+    let after = apply_checked(&mut doc, &edit);
+    assert_eq!(names_of(&after), ["éléve"]);
+}

@@ -155,3 +155,21 @@ pub fn bookmark_at(doc: &mut RichDocument, name: &str, para: NodeId, start: usiz
     .unwrap();
     doc.apply(&edit.transaction).unwrap();
 }
+
+/// Inserts a bookmark straight through the model, bypassing the name rules
+/// (what an imported document can contain).
+pub fn raw_bookmark(doc: &mut RichDocument, name: &str, para: NodeId, start: usize, end: usize) {
+    let id = doc.alloc_id().unwrap();
+    run_checked(
+        doc,
+        RichOp::InsertInline {
+            para,
+            item: Inline::Bookmark(Bookmark {
+                id,
+                name: name.into(),
+                start,
+                end,
+            }),
+        },
+    );
+}

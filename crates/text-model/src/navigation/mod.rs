@@ -23,15 +23,17 @@ use atelier_model::selection::TextPosition;
 use std::collections::BTreeMap;
 
 pub use bookmarks::{
-    BookmarkEdit, BookmarkError, BookmarkInfo, BookmarkOrder, LinkRef, delete_bookmark,
-    find_bookmark, insert_bookmark, list_bookmarks, rename_bookmark,
+    BookmarkEdit, BookmarkError, BookmarkInfo, BookmarkMatch, BookmarkOrder, LinkRef,
+    delete_bookmark, find_bookmark, insert_bookmark, list_bookmarks, lookup_bookmark,
+    rename_bookmark,
 };
 pub use goto::{
     Clamp, GotoAmount, GotoError, GotoKind, GotoOutcome, Landing, ParseError, goto,
     is_heading_style, parse_amount, step,
 };
 pub use name::{
-    MAX_NAME_CHARS, NameError, NameMode, is_hidden_name, name_key, validate_bookmark_name,
+    MAX_NAME_CHARS, NameError, NameMode, is_hidden_name, name_key, normalize_name,
+    validate_bookmark_name,
 };
 pub use pages::{FixedPageMap, PageMap};
 
