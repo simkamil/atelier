@@ -106,3 +106,5 @@ La validation immuable passe **18 contrôles**, **1064 tests Rust**, avec 1119 e
 | Vérification des tests et preuve Rust réutilisée | aucun constat | Référence i18n inchangée ; gardes des empreintes et de l’ensemble des entrées Rust/moteur ; tests frontend/natifs relancés. |
 
 Validation finale : 20 contrôles d’intégration, 1 123 entrées figées. Le reçu initial complet reste conservé ; aucun résultat Rust n’est réutilisé sans vérifier l’identité exacte des entrées. Les tests physiques et Word restent ouverts.
+
+US-315 prête sur `main` (`a027af4`) a été fusionnée à son tour. Validation complète finale : 21 contrôles, 1081 tests Rust, 1139 entrées immuables, corpus chiffré et tests i18n inclus. Aucun résultat antérieur réutilisé. Les fichiers non commités et la branche US-306 sont préservés.

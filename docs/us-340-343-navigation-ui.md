@@ -15,3 +15,5 @@ Les réponses portent une révision ; les requêtes remplacées, modifications, 
 Les résultats et empreintes exactes sont consignés dans `navigation-validation.json` et `navigation-validation.log`, sous `_bmad-output/implementation-artifacts`. La revue indépendante est suivie dans `spec-search-statistics-ui.md`.
 
 Après fusion d’US-102, `py _bmad-output/implementation-artifacts/validate-navigation-integration.py` vérifie les empreintes de la preuve Rust initiale et réexécute les contrôles i18n, frontend et natifs. Les reçus `navigation-integration-validation.json` et `.log` consignent cette passe combinée. Catalogue absent ou incomplet : outils de navigation omis, édition de secours conservée.
+
+Après intégration d’US-315, la passe de référence est `py _bmad-output/implementation-artifacts/validate-navigation-merged.py` : tests complets relancés sur les sources fusionnées, sans réutiliser les résultats Rust précédents. Reçus : `navigation-merged-validation.json` et `.log`.

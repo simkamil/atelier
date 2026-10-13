@@ -1,10 +1,10 @@
 {
   "status": "passed",
-  "immutable_inputs": 1123,
+  "immutable_inputs": 1139,
   "graph_files": 5,
-  "gates": 20,
-  "graph_nodes": 9167,
-  "graph_edges": 23537,
+  "gates": 21,
+  "graph_nodes": 9236,
+  "graph_edges": 23696,
   "browser_checks": [
     {
       "command": [

@@ -1,16 +1,16 @@
 {
   "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
-  "nodes": 9167,
-  "edges": 23537,
+  "nodes": 9236,
+  "edges": 23696,
   "stories": 158,
   "done": 53,
   "baseline_document_semantic_nodes": 70,
   "baseline_document_semantic_edges": 56,
-  "html_nodes": 9167,
+  "html_nodes": 9236,
   "html_node_limit": 10000,
   "dangling_edges": 0,
   "missing_endpoint_edges": 0,
-  "same_endpoint_groups_preserved_in_raw_extract": 1160,
+  "same_endpoint_groups_preserved_in_raw_extract": 1180,
   "cargo_packages": 34,
   "cargo_dependency_edges": 63,
   "cargo_dependency_cycles": 0,
@@ -38,14 +38,14 @@
   "missing_located_sources": 0,
   "ui_latency_certified": false,
   "graph_sha256": {
-    "graphify-out/GRAPH_REPORT.md": "16e2007d76676300aff3d91fe8d83e45638144018d0daeede033d3d56b6dacf0",
-    "graphify-out/graph.json": "316af5d865dfce1d5198b81cc1e090b33edd4ef19b259c5f5da86d93d617dd00",
-    "graphify-out/graph.html": "3fb77e6e553eb29f0d046291576f2eecfb446865b679626174fd39f7c4f18c2d",
-    "graphify-out/story-dependencies.json": "5cb993a4eb9e91186e9acdda815913f4b96872b57d2f9f467ccdc7d9aeea0aba",
-    "graphify-out/unresolved-structural-references.json": "343b0a682b78655be0a3a6cdfba80ff2d6de081cd79f4a7c448dabfff06c7283"
+    "graphify-out/GRAPH_REPORT.md": "a02452e5dd2f7a3cfbcf1aec242918dd15ced09f788dd43d2d3ea8eff4d116af",
+    "graphify-out/graph.json": "58d12d68fa434cb25c5774447df9674fdff8e673dccef91e7700b166cdeea340",
+    "graphify-out/graph.html": "278ad5b9b10cf466cecb50c1a426f23ded0aeda18f9b4094e67b6263ade2552c",
+    "graphify-out/story-dependencies.json": "5ea376e53e05c6e7ac1a1b7cc235198cfad608eaaf60571c4868a99f6deb3719",
+    "graphify-out/unresolved-structural-references.json": "1aad09f7d62da38d5acec5523edcf7b6fcbe9fa6a3f53d6abc4c67f2f8addf9f"
   },
   "graph_tools_sha256": {
-    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "d814ad80214e2f42556591df6cf939c2804a270bf1b0e23554a423a9a251441c",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "1e9495c48e29e7a70cd269ed068f3f51216cd7fda1100a6e6eac00cac1feca39",
     "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "e3e764d508cbd19229665d93c1e318fdfada2eb0b895f039a146c985b962f9e2"
   }
 }
