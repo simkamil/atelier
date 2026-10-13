@@ -12,7 +12,7 @@
     "Cargo.lock": "5ce26d47e70d85adfaa84e334d223f56f15cfebc8bff6ecaa390f0ea37ea1c3a",
     "Cargo.toml": "ddc107ed47b0e35fae04075c6d8a0e3cce251d934647c246773fd8f18d61975e",
     "crates/compress/Cargo.toml": "e58b8044e29ed2bfaa73d7dc16ec4aad15af6691d5658d378aafdacfbf5ba27e",
-    "crates/compress/src/lib.rs": "177b5133e756afdb7786d2c0cb1c5378d4eac72c9d94ccb74c800fd307401cd2",
+    "crates/compress/src/lib.rs": "8b721f52cceaf60d6fba332468f37a4e8b17dcdd6b810f3e76755ff808a5907e",
     "crates/core-wasm/Cargo.toml": "5281c329b0accdb6c49dd3934163dd9df565d4367541cb964a6ce127b9d95db5",
     "crates/core-wasm/src/editor-layout.rs": "9b09e0fbd230d2e1a499d3c95ab1357c8116f46973e2624463e13d81c3acfadd",
     "crates/core-wasm/src/editor.rs": "72ef83b13e12167c36c248c5c4c662de2f3ad5fa3a338eb5ed94ec8d0dfba2d4",
