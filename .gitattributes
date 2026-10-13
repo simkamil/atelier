@@ -8,6 +8,8 @@
 *.dot binary
 *.odt binary
 *.ott binary
+*.xls binary
+*.xlsx binary
 /tests/odt-reference/*.fodt -text -whitespace
 *.otf binary
 *.font binary

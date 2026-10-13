@@ -609,7 +609,10 @@ fn builtin_seeds_run_cleanly_and_degenerate_inputs_do_not_panic() {
         assert!(!seeds.is_empty(), "{} has no seed", target.name());
         for seed in &seeds {
             // Container formats reuse reference files already versioned under `tests/`.
-            let max_seed_size = if matches!(target.name(), "cfb" | "doc-import" | "odt-import") {
+            let max_seed_size = if matches!(
+                target.name(),
+                "cfb" | "doc-import" | "odt-import" | "detect-protection"
+            ) {
                 64 * 1024
             } else {
                 8192
