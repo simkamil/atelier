@@ -13,6 +13,7 @@
 1	hardcoded	web/app.mjs	"Atelier · aperçu DOCX"
 1	hardcoded	web/app.mjs	"Cette commande de saisie n’est pas disponible."
 1	hardcoded	web/app.mjs	"DOCUMENT WORD · LECTURE SEULE"
+1	hardcoded	web/app.mjs	"Deux pages"
 1	hardcoded	web/app.mjs	"Document enregistré."
 1	hardcoded	web/app.mjs	"Document ouvert."
 1	hardcoded	web/app.mjs	"Document prêt."
@@ -20,7 +21,9 @@
 1	hardcoded	web/app.mjs	"Document vierge créé."
 1	hardcoded	web/app.mjs	"Enregistré"
 1	hardcoded	web/app.mjs	"Espaces françaises automatiques"
+1	hardcoded	web/app.mjs	"Facteur de zoom"
 1	hardcoded	web/app.mjs	"Initialisation du document…"
+1	hardcoded	web/app.mjs	"Largeur de page"
 1	hardcoded	web/app.mjs	"Le contrôle du moteur a échoué."
 1	hardcoded	web/app.mjs	"Le contrôle local n’a pas abouti."
 1	hardcoded	web/app.mjs	"Le dialogue de fichiers est indisponible."
@@ -39,13 +42,18 @@
 1	hardcoded	web/app.mjs	"Opération annulée."
 1	hardcoded	web/app.mjs	"Ouverture de l’aperçu DOCX…"
 1	hardcoded	web/app.mjs	"Ouvrir DOCX…"
+1	hardcoded	web/app.mjs	"Page entière"
 1	hardcoded	web/app.mjs	"Pages du document texte brut"
 1	hardcoded	web/app.mjs	"Pages du document"
+1	hardcoded	web/app.mjs	"Pourcentage personnalisé"
 1	hardcoded	web/app.mjs	"Retour au texte"
+1	hardcoded	web/app.mjs	"Régler le zoom"
+1	hardcoded	web/app.mjs	"Saisissez un pourcentage entier entre 10 et 500."
 1	hardcoded	web/app.mjs	"Texte du document"
 1	hardcoded	web/app.mjs	"Transport vérifié"
 1	hardcoded	web/app.mjs	"Une autre opération sur les fichiers est en cours."
 1	hardcoded	web/app.mjs	"Worker WebAssembly : transport vérifié, écho Ping reçu."
+1	hardcoded	web/app.mjs	"Zoom du document"
 1	hardcoded	web/app.mjs	"Échec"
 1	hardcoded	web/app.mjs	"Écho confirmé"
 1	hardcoded	web/app.mjs	"Éditeur de texte"
@@ -71,4 +79,5 @@
 1	unused-key	web/i18n/fr-FR.txt	i18n.pages-count
 1	unused-key	web/i18n/fr-FR.txt	i18n.search-occurrences
 1	unused-key	web/i18n/fr-FR.txt	i18n.words-count
+1	unused-key	web/i18n/fr-FR.txt	page-format
 2	hardcoded	web/index.html	"Pages de l’aperçu DOCX"
