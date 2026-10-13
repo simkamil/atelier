@@ -57,6 +57,7 @@ fn biff(filepass: Option<&[u8]>) -> Vec<u8> {
     }
     b.extend(record(0x00E1, &[0xB0, 4]));
     b.extend(record(0x0042, &[0xB0, 4]));
+    b.extend(record(0x0031, &[0; 14]));
     b
 }
 
@@ -332,24 +333,22 @@ fn reference(name: &str) -> Vec<u8> {
 #[test]
 fn libreoffice_encrypted_files() {
     // LibreOffice writes standard encryption (EncryptionInfo 3.2 or 4.2).
+    let std = Protection::Encrypted(Encryption::Standard);
     for name in ["encrypted.docx", "encrypted.xlsx"] {
-        let got = detect_protection(&reference(name));
-        assert_eq!(got.family, OOXML, "{name}");
-        assert!(
-            matches!(got.protection, Protection::Encrypted(Encryption::Standard)),
-            "{name}: {got:?}"
-        );
+        assert_eq!(detect_protection(&reference(name)), d(OOXML, std), "{name}");
     }
-    assert_eq!(
-        detect_protection(&reference("encrypted.docx")).protection,
-        Protection::Encrypted(Encryption::Standard)
-    );
     let doc = detect_protection(&reference("encrypted.doc"));
-    assert_eq!(doc.family, Family::Word97);
-    assert!(doc.is_protected(), "{doc:?}");
+    assert_eq!(
+        doc,
+        d(Family::Word97, Protection::Encrypted(Encryption::Unknown))
+    );
     let xls = detect_protection(&reference("encrypted.xls"));
-    assert_eq!(xls.family, Family::Excel97);
-    assert!(xls.is_protected(), "{xls:?}");
+    assert_eq!(
+        xls,
+        d(Family::Excel97, Protection::Encrypted(Encryption::Rc4))
+    );
+    assert!(xls.may_be_default_password());
+    assert!(!doc.may_be_default_password());
     // The existing importer agrees on the real .doc.
     assert!(matches!(
         import_doc(&reference("encrypted.doc")),
@@ -442,4 +441,70 @@ fn seeded_mutations_and_truncations_never_panic() {
         }
         let _ = detect_protection(&data);
     }
+}
+
+#[test]
+fn excel_filepass_after_interfacehdr_or_writeprot() {
+    let x = |records: Vec<Vec<u8>>| {
+        detect_protection(&build(vec![stream("Workbook", &records.concat())]))
+    };
+    let bof = record(0x0809, &[0, 6, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let pass = record(0x002F, &[1, 0, 1, 0, 1, 0]);
+    let rc4 = d(Family::Excel97, Protection::Encrypted(Encryption::Rc4));
+    let orders = [
+        vec![bof.clone(), record(0x0086, &[0, 0]), pass.clone()],
+        vec![bof.clone(), record(0x00E1, &[0xB0, 4]), pass.clone()],
+        vec![
+            bof.clone(),
+            record(0x00E1, &[0xB0, 4]),
+            record(0x00C1, &[0, 0]),
+            record(0x00E2, &[]),
+            record(0x005C, &[0; 8]),
+            record(0x0042, &[0xB0, 4]),
+            pass.clone(),
+        ],
+    ];
+    for records in orders {
+        let got = x(records);
+        assert_eq!(got, rc4);
+        assert!(got.is_protected());
+    }
+    // Header records and then the body without FILEPASS: not protected.
+    let plain = x(vec![
+        bof.clone(),
+        record(0x00E1, &[0xB0, 4]),
+        record(0x0042, &[0xB0, 4]),
+        record(0x0085, &[0; 8]),
+        pass,
+    ]);
+    assert_eq!(plain, d(Family::Excel97, Protection::None));
+    // A header cut short before any marker cannot be classified.
+    let cut = x(vec![bof, record(0x00E1, &[0xB0, 4])]);
+    assert_eq!(cut, d(Family::Excel97, Protection::Undetermined));
+}
+
+#[test]
+fn default_password_hint() {
+    let rc4 = d(Family::Excel97, Protection::Encrypted(Encryption::Rc4));
+    assert!(rc4.is_protected() && rc4.may_be_default_password());
+    let word = d(Family::Word97, Protection::Encrypted(Encryption::Unknown));
+    assert!(word.is_protected() && !word.may_be_default_password());
+    let none = d(Family::Excel97, Protection::None);
+    assert!(!none.may_be_default_password());
+}
+
+#[test]
+fn libreoffice_protected_structure_workbooks() {
+    // Workbook structure protected without opening password: LibreOffice
+    // writes a FILEPASS record (default-password encryption), so the file is
+    // reported protected but flagged as possibly openable without a password.
+    let doc = detect_protection(&reference("doc-protected.xls"));
+    assert_eq!(
+        doc,
+        d(Family::Excel97, Protection::Encrypted(Encryption::Rc4))
+    );
+    assert!(doc.is_protected() && doc.may_be_default_password());
+    // Sheet protection alone writes no FILEPASS.
+    let sheet = detect_protection(&reference("sheet-protected.xls"));
+    assert_eq!(sheet, d(Family::Excel97, Protection::None));
 }

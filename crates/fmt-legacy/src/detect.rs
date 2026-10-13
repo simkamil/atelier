@@ -18,7 +18,9 @@ use atelier_cfb::{Compound, Limits, is_cfb};
 /// Largest number of bytes read from any stream.
 const HEAD: usize = 512;
 /// Records examined at the start of a BIFF workbook stream.
-const MAX_BIFF_RECORDS: usize = 16;
+const MAX_BIFF_RECORDS: usize = 64;
+/// Bytes read from a workbook stream to walk those records.
+const BIFF_HEAD: usize = 4096;
 
 /// Container limits for detection: only the directory is needed.
 fn limits() -> Limits {
@@ -108,6 +110,26 @@ impl Detection {
     }
 }
 
+impl Detection {
+    /// True for an Excel 97-2003 workbook with a `FILEPASS` record. Excel
+    /// also writes `FILEPASS` for a workbook whose structure or sheets are
+    /// protected but that has no opening password: it then encrypts with the
+    /// default password `VelvetSweatshop` and opens without a prompt.
+    /// Checking that password needs RC4 and MD5 and is not done, so the
+    /// document may open without any password despite
+    /// [`is_protected`](Self::is_protected). Callers can soften their message.
+    pub fn may_be_default_password(&self) -> bool {
+        self.family == Family::Excel97
+            && matches!(
+                self.protection,
+                Protection::Encrypted(
+                    Encryption::Rc4 | Encryption::Rc4CryptoApi | Encryption::Unknown
+                ) | Protection::Obfuscated
+                    | Protection::EncryptedUnknown
+            )
+    }
+}
+
 fn result(family: Family, protection: Protection) -> Detection {
     Detection { family, protection }
 }
@@ -191,7 +213,9 @@ fn word_protection(word: &[u8]) -> Protection {
 }
 
 /// Excel: walks the first records of the workbook globals looking for
-/// `FILEPASS` ([MS-XLS] 2.4.117), which follows the BOF record.
+/// `FILEPASS` ([MS-XLS] 2.4.117). It comes after BOF and may come after
+/// WRITEPROT or INTERFACEHDR, so the walk stops only at records that always
+/// follow it, or after a bounded number of records.
 fn excel_protection(book: &[u8]) -> Protection {
     let mut pos = 0usize;
     for index in 0..MAX_BIFF_RECORDS {
@@ -215,8 +239,12 @@ fn excel_protection(book: &[u8]) -> Protection {
                     _ => Protection::EncryptedUnknown,
                 };
             }
-            // CodePage, Date1904, InterfaceHdr: records that follow FILEPASS.
-            0x0042 | 0x0022 | 0x00E1 => return Protection::None,
+            // First records of the workbook body: FONT, XF, FORMAT, STYLE,
+            // BOUNDSHEET, SST, EOF. FILEPASS always precedes them; it may
+            // follow INTERFACEHDR, WRITEPROT or other header records.
+            0x0031 | 0x00E0 | 0x041E | 0x0293 | 0x0085 | 0x00FC | 0x000A => {
+                return Protection::None;
+            }
             _ => {}
         }
         pos = body + usize::from(len);
@@ -262,7 +290,8 @@ pub fn detect_protection(data: &[u8]) -> Detection {
     }
     for name in ["Workbook", "Book"] {
         if c.is_stream(name) {
-            let p = head(&c, name, HEAD).map_or(Protection::Undetermined, |b| excel_protection(&b));
+            let p = head(&c, name, BIFF_HEAD)
+                .map_or(Protection::Undetermined, |b| excel_protection(&b));
             return result(Family::Excel97, p);
         }
     }
