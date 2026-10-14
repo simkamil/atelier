@@ -15,3 +15,6 @@ mod file_bridge;
 
 #[cfg(windows)]
 pub(crate) mod webview;
+
+#[cfg(test)]
+mod build_date;

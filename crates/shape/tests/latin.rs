@@ -20,6 +20,41 @@ fn text_maps_scalars_and_reports_utf8_grapheme_boundaries() {
 }
 
 #[test]
+fn nonbreaking_hyphen_uses_display_fallback_without_rewriting_source_clusters() {
+    let embedded = atelier_font::embedded::EMBEDDED_FONTS
+        .iter()
+        .find(|font| {
+            font.family == "Carlito"
+                && font.weight == 400
+                && font.style == atelier_font::embedded::EmbeddedFontStyle::Normal
+        })
+        .unwrap();
+    let face = FontFace::parse(embedded.data).unwrap();
+    assert_eq!(
+        face.glyph_index('\u{2011}'),
+        0,
+        "Carlito has no U+2011 cmap mapping"
+    );
+    let en_dash = face.glyph_index('\u{2010}');
+    let fallback = if en_dash != 0 {
+        en_dash
+    } else {
+        face.glyph_index('-')
+    };
+    assert_ne!(fallback, 0, "Carlito provides a hyphen for display");
+    assert_eq!(face.display_glyph_index('\u{2011}'), fallback);
+    assert_eq!(face.display_glyph_index('A'), face.glyph_index('A'));
+
+    let run = LatinShaper::new(&face)
+        .unwrap()
+        .shape_text("A\u{2011}B", ShapeOptions::default())
+        .unwrap();
+    assert_eq!(run.glyphs[1].glyph_id, fallback);
+    assert_eq!(run.glyphs[1].cluster, 1..2);
+    assert_eq!(run.grapheme_boundaries.as_deref(), Some(&[0, 1, 4, 5][..]));
+}
+
+#[test]
 fn generic_glyphs_preserve_clusters_and_spacing_groups() {
     let (face, _) = shaper();
     let shaper = LatinShaper::new(&face).unwrap();

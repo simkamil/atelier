@@ -8,6 +8,12 @@ import { createEditorShell } from "/editor-shell.mjs";
 import { createZoomControls } from "/zoom-controls.mjs";
 import { createNavigationTools } from "/navigation-tools.mjs";
 import { createDocumentStatus } from "/document-status.mjs";
+import { createSymbolDialog } from "/symbol-dialog.mjs";
+import { SYMBOL_CATALOGUE } from "/symbol-catalogue.mjs";
+import { createEditorContextMenu } from "/editor-context-menu.mjs";
+import { createAboutDialog } from "/about-dialog.mjs";
+import { ABOUT_LICENSES } from "/about-licenses.mjs";
+import { BUILD_INFO } from "/build-info.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -121,7 +127,23 @@ async function start() {
   let zoomControls;
   let navigation;
   let documentStatus;
+  let symbols;
+  let about;
+  let contextMenu;
+  let symbolSnapshot;
+  const symbolKeys = ["title", "close", "symbols", "specialCharacters", "search", "block", "allBlocks", "font", "recent", "insert", "noResults", "insertionFailed", "previous", "next", "page"];
+  const specialKeys = ["emDash", "enDash", "noBreakSpace", "narrowNoBreakSpace", "nonBreakingHyphen", "copyright", "registered", "trademark", "section", "paragraph", "ellipsis"];
+  const aboutKeys = ["dialogTitle", "close", "tabList", "overviewTab", "agplTab", "fontLicensePrefix", "unicodeTab", "version", "buildDate", "sourceUrl", "agplHeading", "unicodeHeading"];
+  const contextKeys = ["menu", "undo", "redo", "cut", "copy", "paste", "selectAll"];
+  const symbolsAvailable = [...symbolKeys.map(key => `symbols-${key}`), ...specialKeys.map(key => `symbols-${key}`), "symbolsTitle"].every(key => messages.has(key));
+  const aboutAvailable = [...aboutKeys.map(key => `about-${key}`), "aboutTitle", "about-buildUnavailable"].every(key => messages.has(key));
+  const contextAvailable = contextKeys.every(key => messages.has(`context-${key}`));
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
+    symbolsAvailable, aboutAvailable, onSymbols: () => {
+      if (!symbols || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
+      symbolSnapshot = editor.getState(); symbols.open({ returnFocusTo: editor.element });
+    },
+    onAbout: () => about?.open({ returnFocusTo: document.activeElement }),
     onZoom: () => zoomControls?.open({ returnFocusTo: document.activeElement }),
     onSearch: () => navigation?.openSearch(), onReplace: () => navigation?.openReplace(), onStatistics: () => navigation?.openStatistics() });
   let client;
@@ -146,7 +168,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    symbols?.dispose(); about?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -198,6 +220,8 @@ async function start() {
     const toolsEnabled = !blocked && !previewActive;
     navigation?.setEnabled(toolsEnabled, { preview: previewActive });
     shell.setNavigationEnabled(toolsEnabled && toolsAvailable);
+    shell.setSymbolsEnabled(toolsEnabled && symbolsAvailable);
+    if (!toolsEnabled) { symbols?.close(); contextMenu?.close({ restoreFocus: false }); }
     shell.refresh();
   };
   const onBusy = value => { busy = value; updateControls(editor?.state); };
@@ -290,6 +314,44 @@ async function start() {
     }
     const state = await editor.initialize();
     initialized = true;
+    if (symbolsAvailable) {
+      symbols = createSymbolDialog({ catalogue: SYMBOL_CATALOGUE,
+        labels: { ...Object.fromEntries(symbolKeys.map(key => [key, messages.get(`symbols-${key}`)])),
+          specialNames: Object.fromEntries(specialKeys.map(key => [key, messages.get(`symbols-${key}`)])) },
+        onInsert: async text => {
+          if (previewActive || !editor.canEdit) return false;
+          try { await editor.editSelection(text, symbolSnapshot); editor.focus(); return true; }
+          catch (error) { onError(error); return false; }
+        } });
+      document.body.append(symbols.element);
+    }
+    if (aboutAvailable) {
+      about = createAboutDialog({ labels: Object.fromEntries(aboutKeys.map(key => [key, messages.get(`about-${key}`)])),
+        metadata: { ...BUILD_INFO, buildDate: BUILD_INFO.buildDate ?? messages.get("about-buildUnavailable") }, licenseTexts: ABOUT_LICENSES });
+      document.body.append(about.element);
+    }
+    if (contextAvailable) {
+      contextMenu = createEditorContextMenu({ target: nodes.canvas, focusTarget: editor.element,
+        labels: Object.fromEntries(contextKeys.map(key => [key, messages.get(`context-${key}`)])),
+        getState: () => { const current = editor.getState(); return { revision: current.revision, anchor: current.anchor, focus: current.focus,
+          text: current.text, canUndo: current.canUndo, canRedo: current.canRedo, enabled: editor.canEdit && !previewActive, busy, preview: previewActive }; },
+        clipboardCapabilities: { read: () => typeof navigator.clipboard?.readText === "function", write: () => typeof navigator.clipboard?.writeText === "function" },
+        onError: () => showEditorMessage(messages.get("utilities-clipboardError"), true),
+        onCommand: async (action, snapshot) => {
+          if (previewActive || !editor.canEdit) throw new EditorError("EDITOR_BUSY");
+          if (["copy", "cut"].includes(action)) {
+            const bytes = new TextEncoder().encode(snapshot.text);
+            const selected = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(Math.min(snapshot.anchor, snapshot.focus), Math.max(snapshot.anchor, snapshot.focus)));
+            await navigator.clipboard.writeText(selected);
+            if (action === "cut") await editor.editSelection("", snapshot);
+          } else if (action === "paste") {
+            const text = await navigator.clipboard.readText();
+            await editor.editSelection(text, snapshot);
+          } else await editor.selectionAction(action, snapshot);
+          editor.focus();
+        } });
+      document.body.append(contextMenu.element);
+    }
     onState(state);
     showEditorMessage(messages.get("status-ready"));
     nodes.openDocx.addEventListener("click", () => { void openDocx(); }, { signal: listeners.signal });
@@ -328,6 +390,12 @@ async function start() {
     }, { signal: listeners.signal });
     document.addEventListener("keydown", event => {
       if (document.querySelector("dialog:modal")) return;
+      if (symbolsAvailable && event.target === editor.element && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey
+          && (event.code === "Space" || event.key === " ") && !event.isComposing && editor.canEdit && !previewActive) {
+        event.preventDefault();
+        void editor.editSelection("\u00a0", editor.getState()).catch(onError);
+        return;
+      }
       if (previewActive && event.key === "Escape" && !event.isComposing) { event.preventDefault(); closePreview(); return; }
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
       const action = event.key.toLowerCase();
@@ -347,6 +415,7 @@ async function start() {
       zoomControls,
       navigation,
       documentStatus,
+      symbols, about, contextMenu,
       openDocx, closePreview, dispose,
       get previewActive() { return previewActive; },
     });

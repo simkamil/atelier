@@ -28,6 +28,12 @@ jobs:
         run: .\target\check-workspace.exe .
       - name: Verify independent DOCX reference fixture
         run: python tools/generate-docx-reference.py --check
+      - name: Verify offline symbol and license data
+        run: |
+          python tools/package-editor-utilities.py --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/editor-utilities-data.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify CFB references with native Structured Storage
         run: python tools/generate-cfb-reference.py --check
       - name: Build Windows MSVC workspace
@@ -87,6 +93,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+      - name: Check symbol, context menu and About controls in Edge
+        run: node tests/run-editor-utilities-browser.mjs
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Check SPDX headers

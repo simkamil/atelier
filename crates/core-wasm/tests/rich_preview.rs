@@ -102,6 +102,25 @@ fn tab_control_keeps_its_advance_without_drawing_notdef() {
 }
 
 #[test]
+fn nonbreaking_hyphen_keeps_its_text_and_uses_the_hyphen_outline() {
+    let make = |text: &str| {
+        minimal_docx(&format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body></w:document>"#
+        ))
+    };
+    let nonbreaking = preview_docx(&make("A\u{2011}B")).unwrap();
+    let hyphen = preview_docx(&make("A-B")).unwrap();
+    assert_eq!(
+        nonbreaking.text, "A\u{2011}B",
+        "the source scalar stays nonbreaking"
+    );
+    assert_eq!(
+        nonbreaking.pages, hyphen.pages,
+        "the missing Carlito character uses a real hyphen outline rather than .notdef"
+    );
+}
+
+#[test]
 fn generated_long_docx_paginates_without_losing_text_order() {
     let text = "A long paragraph used to force line wrapping across multiple pages. ".repeat(4);
     let xml = format!(
@@ -145,7 +164,7 @@ fn paragraph_and_text_budgets_reject_oversized_models() {
     );
     assert!(preview_docx(&minimal_docx(&xml)).is_err());
 
-    let oversized_text = "x".repeat(128 * 1024 + 1);
+    let oversized_text = "x".repeat(131_073);
     let xml = format!(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{oversized_text}</w:t></w:r></w:p></w:body></w:document>"#
     );
@@ -153,15 +172,65 @@ fn paragraph_and_text_budgets_reject_oversized_models() {
 }
 
 #[test]
-fn glyph_budget_is_enforced_while_layout_is_built() {
-    let oversized_text = "x".repeat(65_537);
+fn glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page() {
+    // Keep each shaping input small while exercising the preview's cumulative
+    // glyph budget across the complete document.
+    let paragraph = "Bi é. ".repeat(240);
+    let paragraphs = (0..70).map(|_| paragraph.as_str()).collect::<Vec<_>>();
+    let text = paragraphs.join("\n");
+    let body = paragraphs
+        .iter()
+        .map(|paragraph| format!("<w:p><w:r><w:t>{paragraph}</w:t></w:r></w:p>"))
+        .collect::<String>();
     let xml = format!(
-        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>{oversized_text}</w:t></w:r></w:p></w:body></w:document>"#
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>"#
     );
-    assert!(matches!(
-        preview_docx(&minimal_docx(&xml)),
-        Err(PreviewError::Layout(_)) | Err(PreviewError::Limit("glyphs"))
-    ));
+    let preview =
+        preview_docx(&minimal_docx(&xml)).expect("the preview budget accepts more than 65k glyphs");
+    assert_eq!(
+        preview.text, text,
+        "preview preserves the complete source text"
+    );
+    assert!(
+        preview
+            .pages
+            .iter()
+            .all(|page| DisplayList::decode(page).is_ok()),
+        "every generated page remains a valid display list"
+    );
+    let atlas_bytes = preview
+        .glyph_atlas
+        .as_ref()
+        .expect("long text uses an atlas");
+    let atlas = DisplayList::decode(atlas_bytes).expect("atlas is valid ATDL");
+    assert_eq!(atlas.commands.len(), 4, "each visible glyph is stored once");
+    assert!(atlas.commands.iter().any(|command| matches!(command,
+        Command::FillPath { path, .. } if path.elements.iter().filter(|element| matches!(element, PathElement::MoveTo(_))).count() > 1
+    )), "counter contours remain grouped in the atlas");
+    assert!(atlas.commands.iter().any(|command| matches!(command,
+        Command::FillPath { path, .. } if path.elements.iter().any(|element| matches!(element, PathElement::QuadraticTo { .. }))
+    )), "exact curves survive atlas encoding");
+    let mut drawn = 0;
+    for page in &preview.pages {
+        for command in DisplayList::decode(page).unwrap().commands {
+            if let Command::DrawGlyphRun {
+                font_id, glyphs, ..
+            } = command
+            {
+                assert_eq!(font_id, 0);
+                drawn += glyphs.len();
+                assert!(
+                    glyphs
+                        .iter()
+                        .all(|glyph| (glyph.glyph_id as usize) < atlas.commands.len())
+                );
+            }
+        }
+    }
+    assert_eq!(drawn, 4 * 240 * 70, "every non-space glyph is positioned");
+    assert!(
+        atlas_bytes.len() + preview.pages.iter().map(Vec::len).sum::<usize>() < 26 * 1024 * 1024
+    );
 }
 
 fn minimal_docx(xml: &str) -> Vec<u8> {

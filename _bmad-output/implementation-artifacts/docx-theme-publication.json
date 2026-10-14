@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "immutable_inputs": 1152,
+  "graph_files": 5,
+  "gates": 13,
+  "graph_nodes": 9322,
+  "graph_edges": 23883,
+  "browser_checks": [
+    {
+      "command": [
+        "node",
+        "tests/run-editor-browser.mjs"
+      ],
+      "assertions": 219
+    }
+  ],
+  "staged_input_mismatches": 0
+}

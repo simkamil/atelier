@@ -1,0 +1,730 @@
+$ cargo fmt --all --check
+$ cargo clippy -p atelier-geom -p atelier-render -p atelier-text-layout -p atelier-text-model -p atelier-fmt-ooxml -p atelier-core-wasm --all-targets --locked --offline -- -D warnings
+    Checking atelier-core-wasm v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\core-wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.27s
+$ cargo test -p atelier-geom -p atelier-render -p atelier-text-layout -p atelier-text-model -p atelier-fmt-ooxml -p atelier-core-wasm --locked --offline
+
+running 12 tests
+test editor::navigation_tests::selecting_a_unit_starting_at_base_end_extends_forward ... ok
+test protocol::tests::copies_payload_and_enforces_size_limit ... ok
+test protocol::tests::rejects_invalid_fields_direction_ids_and_control_payloads ... ok
+test editor_layout::tests::path_budget_rejects_before_adding_elements_or_bytes ... ok
+test protocol::tests::rejects_every_truncated_prefix_and_trailing_bytes ... ok
+test protocol::tests::all_types_round_trip_and_header_is_little_endian ... ok
+test protocol::tests::rejects_oversized_encode_and_declared_payload_before_copying ... ok
+test tests::allocation_limits_are_checked_before_allocation ... ok
+test tests::exact_pointer_and_length_are_required_for_release ... ok
+test tests::exact_take_transfers_ownership_and_updates_totals ... ok
+test tests::in_flight_dispatch_input_remains_charged_until_replaced_or_released ... ok
+test tests::zero_length_is_noop_and_never_enters_the_registry ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test stale_or_malformed_commands_fail_without_publishing_state ... ok
+test external_drop_uses_source_zero_and_inserts_at_target ... ok
+test point_probe_returns_atpt_without_changing_selection_revision_or_undo_history ... ok
+test french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing ... ok
+test drop_move_before_after_and_copy_inside_are_single_reversible_transactions ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+
+running 17 tests
+test malformed_commands_and_invalid_utf8_are_rejected_without_publishing_candidate ... ok
+test atlm_editor_response_keeps_the_request_id_and_editor_types_are_registered ... ok
+test invalid_select_point_fails_through_wasm_without_mutating_the_session ... ok
+test selecting_only_an_explicit_newline_emits_a_thin_selection_rectangle ... ok
+test empty_and_loaded_document_emit_real_carlito_paths_and_preserve_bom_crlf ... ok
+test select_point_character_extension_accepts_a_nonzero_anchor ... ok
+test loading_identical_content_does_not_advance_content_revision ... ok
+test select_point_selects_word_and_crlf_terminated_paragraph ... ok
+test crlf_is_removed_as_one_grapheme_and_selection_hit_testing_uses_page_slots ... ok
+test word_delete_is_one_undoable_edit_and_restores_a_reversed_utf8_selection ... ok
+test loading_short_text_rebuilds_pages_and_glyph_paths_after_a_long_document ... ok
+test edit_undo_and_stale_save_preserve_revision_dirty_and_document_state ... ok
+test vertical_navigation_keeps_the_preferred_column_across_a_short_line ... ok
+test word_and_paragraph_navigation_respect_unicode_segments_and_crlf ... ok
+test paragraph_navigation_uses_logical_boundaries_and_resets_preferred_x ... ok
+test paragraph_navigation_clears_the_previous_vertical_column ... ok
+test navigation_is_safe_on_fresh_session_and_collapses_selections_by_direction ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 4 tests
+test malformed_search_frames_and_stale_revisions_are_rejected ... ok
+test unicode_search_uses_exact_ranges_and_cached_geometry_without_changing_state ... ok
+test statistics_reports_selection_counts_and_layout_totals_without_mutation ... ok
+test empty_and_capped_searches_have_bounded_envelopes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
+
+
+running 1 test
+test exact_transport_limit_round_trips_and_oversized_input_is_rejected ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 4 tests
+test selected_unicode_match_and_stale_selection_are_checked ... ok
+test no_match_and_identical_replacement_keep_revision_and_history ... ok
+test stale_revision_invalid_frames_and_output_overflow_are_atomic ... ok
+test replace_all_processes_the_original_matches_once_and_undoes_as_one_edit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+
+running 7 tests
+test invalid_and_over_limit_docx_return_controlled_errors ... ok
+test tab_control_keeps_its_advance_without_drawing_notdef ... ok
+test inline_bold_italic_underline_and_size_reach_the_display_list ... ok
+test paragraph_and_text_budgets_reject_oversized_models ... ok
+test reference_docx_renders_real_title_color_and_valid_page ... ok
+test generated_long_docx_paginates_without_losing_text_order ... ok
+test glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.32s
+
+
+running 2 tests
+test common_empty_paragraphs_can_be_previewed ... ok
+test preview_success_and_failure_preserve_txt_selection_history_dirty_and_revision ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 14 tests
+test automatic_text_color_and_named_highlight_are_supported_without_loss ... ok
+test malformed_on_off_values_are_not_silently_treated_as_true ... ok
+test hyperlink_text_is_visible_but_deleted_instruction_and_foreign_text_are_not ... ok
+test grapheme_splits_keep_the_first_scalar_style_and_later_text_style ... ok
+test text_controls_false_overrides_and_prefixes_keep_utf8_offsets_and_break_types ... ok
+test embedded_font_rejects_fake_relationship_type_suffix ... ok
+test highlight_none_is_preserved_and_warns_that_cascade_reset_is_unsupported ... ok
+test malformed_symbols_and_false_namespaces_are_rejected_contextually ... ok
+test malformed_rgb_and_paragraph_budget_fail_without_publishing_a_partial_result ... ok
+test size_and_other_supported_numeric_properties_are_validated ... ok
+test standard_theme_color_names_resolve_in_runs_and_styles ... ok
+test default_numbering_character_and_table_styles_do_not_replace_default_paragraph ... ok
+test independent_reference_imports_styles_settings_font_and_preserves_unknown_bytes ... ok
+test alternating_styled_runs_and_split_graphemes_keep_stable_offsets ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 29 tests
+test theme_colours_tint_and_shade ... ok
+test nesting_beyond_the_depth_limit_flattens_to_paragraphs ... ok
+test table_first_in_body_keeps_a_trailing_empty_paragraph ... ok
+test continuation_with_content_moves_it_to_the_first_cell ... ok
+test nested_tables_are_imported_and_mapped_to_their_cells ... ok
+test vertical_merge_without_a_start_is_a_plain_cell_with_a_notice ... ok
+test uneven_rows_and_inconsistent_grids_are_normalised_with_notices ... ok
+test grid_before_and_after_pad_with_synthetic_cells ... ok
+test legacy_horizontal_merge_is_converted_to_a_span ... ok
+test grid_span_becomes_a_column_span ... ok
+test grid_wider_than_every_row_is_truncated ... ok
+test style_cycles_and_unusable_table_styles_never_break_resolution ... ok
+test row_exceptions_and_tracked_row_deletions ... ok
+test vertical_merge_becomes_a_row_span_and_drops_continuations ... ok
+test table_row_and_cell_properties_are_read ... ok
+test absurd_spans_and_widths_are_clamped_not_fatal ... ok
+test simple_table_has_grid_widths_text_and_keeps_surrounding_paragraphs ... ok
+test paragraph_ids_lists_every_paragraph_including_the_final_empty_one ... ok
+test empty_cells_and_rows_get_an_empty_paragraph ... ok
+test paragraphs_outside_tables_resolve_as_before ... ok
+test row_band_size_set_directly_on_the_table_overrides_the_style ... ok
+test conditional_character_formatting_reaches_resolved_paragraphs ... ok
+test table_limits_are_typed_errors ... ok
+test conditional_formatting_follows_the_specification_order_on_overlaps ... ok
+test direct_cell_properties_override_conditional_formatting ... ok
+test paragraph_style_and_direct_formatting_outrank_conditional_formatting ... ok
+test vmerge_continuation_keeping_only_non_text_content_is_not_dropped ... ok
+test look_flags_and_band_sizes_change_the_applicable_zones ... ok
+test mutated_and_truncated_table_documents_never_panic ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.14s
+
+
+running 14 tests
+test refuses_to_overwrite_a_part_name_when_materializing_properties ... ok
+test applies_public_part_byte_and_relationship_limits_and_rejects_truncated_zip ... ok
+test rejects_case_folded_and_derivable_part_name_collisions ... ok
+test rejects_invalid_part_uris_and_duplicate_relationship_ids ... ok
+test rejects_nested_content_type_entries ... ok
+test rejects_missing_internal_relationship_targets_on_read ... ok
+test accepts_case_insensitive_relationships_media_type ... ok
+test writes_core_and_app_properties_from_a_new_package ... ok
+test supports_iri_references_and_resolves_only_internal_target_paths ... ok
+test validates_content_types_and_extension_syntax ... ok
+test rejects_relationships_at_package_root_if_nested_or_id_has_whitespace ... ok
+test rejects_malformed_and_oversized_xml_parts ... ok
+test preserves_unknown_parts_relations_and_properties_through_deterministic_round_trip ... ok
+test supports_relationship_metadata_overrides_and_case_insensitive_paths ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 10 tests
+test tests::affine_composition_order_and_inverse_are_explicit ... ok
+test tests::close_then_line_quadratic_or_cubic_starts_a_new_open_subpath ... ok
+test tests::empty_and_move_only_paths_have_defined_bounds_and_flattening ... ok
+test tests::flatten_rejects_invalid_tolerance_and_path_without_current_subpath ... ok
+test tests::flatten_keeps_subpaths_and_catches_collinear_excursion ... ok
+test tests::point_and_rect_reject_numeric_overflow ... ok
+test tests::rectangles_normalize_and_handle_intersection ... ok
+test tests::visit_commands_exposes_exact_curves_without_mutable_storage ... ok
+test tests::quadratic_and_cubic_bounds_include_internal_extrema ... ok
+test tests::flatten_samples_non_collinear_curves_and_coincident_cubic_endpoints ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 19 tests
+test svg::tests::glyph_outline_is_revalidated_and_path_budget_checked_before_validation ... ok
+test svg::tests::clips_are_outer_to_transform_and_transforms_compose_in_order ... ok
+test tests::independent_nested_state_stacks_balance_separately ... ok
+test tests::encoded_lengths_match_every_opcode_and_variable_operand ... ok
+test tests::encoder_refuses_over_budget_before_writing ... ok
+test tests::decoder_rejects_invalid_stack_operations_as_soon_as_seen ... ok
+test svg::tests::glyphs_are_deduplicated_and_output_is_repeatable_and_parseable ... ok
+test svg::tests::malformed_resources_and_budgets_return_typed_errors ... ok
+test svg::tests::base64_images_and_escaped_metadata_are_inert_and_valid_xml ... ok
+test tests::known_header_and_empty_page_encoding ... ok
+test svg::tests::empty_nested_clip_does_not_shift_following_clip_ids ... ok
+test tests::rejects_unknown_version_opcode_and_trailing_data ... ok
+test tests::round_trip_preserves_every_command_and_order ... ok
+test tests::short_streams_cannot_trigger_large_declared_count_reservations ... ok
+test tests::rejects_unbalanced_state_and_invalid_values ... ok
+test tests::every_truncation_of_complex_stream_is_rejected ... ok
+test tests::arbitrary_bytes_never_panic ... ok
+test tests::decoder_checks_cumulative_budgets_before_allocating ... ok
+test tests::cumulative_path_and_glyph_budgets_are_enforced ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 4 tests
+test absent_page_and_malformed_primitives_fail_without_returning_commands ... ok
+test circle_diameter_does_not_truncate_i64_and_geometry_errors_are_typed ... ok
+test fill_paths_use_nonzero_closed_rectangles ... ok
+test adapted_commands_round_trip_and_render_as_svg_in_paint_order ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test default_profile_incremental_pages_and_border_display_list_share_geometry ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 10 tests
+test between_edge_checks_exact_and_insufficient_spacing_envelopes ... ok
+test a_group_split_across_pages_gets_closed_local_frames_and_no_intra_paragraph_between ... ok
+test adjacent_equal_borders_share_frame_but_keep_independent_shading ... ok
+test changed_border_color_or_spacing_separates_adjacent_frames ... ok
+test frame_horizontal_edges_reach_side_centerlines_with_different_spacings ... ok
+test malformed_inputs_and_resource_ceilings_return_typed_errors ... ok
+test no_border_zero_line_or_changed_column_interrupts_a_group ... ok
+test solid_double_dashed_and_dotted_styles_have_bounded_deterministic_geometry ... ok
+test isolated_frame_uses_explicit_column_bounds_and_border_spacing ... ok
+test malformed_placements_source_order_and_dash_budgets_return_errors ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 10 tests
+test terminal_break_needs_an_empty_following_line_and_line_boxes_must_not_overlap ... ok
+test hit_test_chooses_the_y_containing_line_before_considering_x ... ok
+test same_source_multiglyph_cluster_aggregates_advance_once ... ok
+test affinity_aware_upward_moves_keep_the_preceding_soft_wrap_line ... ok
+test combining_grapheme_rejects_internal_byte_and_ligature_stops_are_interpolated ... ok
+test independent_glyph_advances_are_not_interpolated_as_one_cluster ... ok
+test trailing_spaces_have_distinct_zero_advance_positions_and_selection_keeps_pages ... ok
+test invalid_ranges_geometry_and_exhausted_budgets_fail_without_partial_results ... ok
+test crlf_before_and_after_map_to_previous_and_following_lines ... ok
+test vertical_motion_retains_preferred_column_across_a_short_line ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 5 tests
+test main_document_requires_authentic_relationship_and_root_namespace ... ok
+test malformed_indents_never_panic_or_silently_become_default_properties ... ok
+test docx_font_budget_rejects_the_independently_generated_embedded_font ... ok
+test independently_packaged_docx_resolves_styles_and_embedded_font_into_lines ... ok
+test odttf_recovers_exact_source_bytes_and_original_unknown_part_survives ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+
+running 3 tests
+test adapter_rejects_forged_page_ranges_and_source_indices ... ok
+test real_tabbed_layout_paginates_and_maps_carets_between_pages ... ok
+test included_paragraph_spacing_is_counted_once_across_the_pipeline ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 10 tests
+test failures_and_duplicate_ids_leave_the_last_published_result_usable ... ok
+test layout_and_pagination_failures_preserve_published_state_and_cache ... ok
+test identical_update_reuses_layouts_and_pagination_without_stream_work ... ok
+test local_edit_with_global_pagination_change_uses_a_full_declared_fallback ... ok
+test resolved_property_edit_reshapes_only_its_paragraph_and_matches_fresh ... ok
+test global_invalidations_are_reported_and_structure_reuses_unchanged_geometry ... ok
+test insert_and_delete_keep_stable_id_layouts_and_match_fresh_results ... ok
+test global_tabs_invalidate_geometry_and_rule_changes_match_full_pagination ... ok
+test same_manager_font_mutations_invalidate_only_after_success ... ok
+test local_edit_in_a_300_page_document_stops_at_a_real_stable_boundary ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.53s
+
+
+running 1 test
+test deterministic_mixed_edit_sequence_matches_fresh_shaping_and_pagination ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.23s
+
+
+running 16 tests
+test empty_paragraph_produces_one_metric_line ... ok
+test overlong_words_progress_at_grapheme_boundaries ... ok
+test justification_expands_only_nonfinal_lines ... ok
+test hanging_indent_applies_left_indent_to_continuation_lines ... ok
+test mixed_font_sizes_change_only_their_line_extents ... ok
+test mandatory_lf_and_crlf_are_consumed_without_glyphs ... ok
+test requested_font_fallback_keeps_the_face_selected_for_the_scalar ... ok
+test unsupported_rich_controls_are_reported ... ok
+test paragraph_spacing_and_mandatory_justification_have_numeric_geometry ... ok
+test line_wrapping_does_not_split_a_shaping_cluster ... ok
+test trailing_spaces_keep_source_offsets_but_do_not_add_width_or_glyphs ... ok
+test alignment_and_twip_indents_have_numeric_geometry ... ok
+test uax_breaks_nonbreaking_spaces_and_zero_width_space_differ ... ok
+test line_spacing_rules_use_twips_and_auto_240ths ... ok
+test malformed_width_and_budgets_return_typed_errors ... ok
+test terminal_mandatory_breaks_keep_the_following_empty_line ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 13 tests
+test explicit_breaks_take_precedence_over_keep_with_next ... ok
+test automatic_page_top_drops_spacing_but_explicit_break_preserves_it ... ok
+test break_after_survives_empty_paragraphs_without_creating_a_trailing_page ... ok
+test five_short_lines_split_three_and_two_without_relaxation ... ok
+test malformed_inputs_and_limits_return_typed_errors ... ok
+test keep_with_next_moves_a_fitting_chain_and_reports_an_impossible_one ... ok
+test manual_line_break_splits_exactly_once_and_page_ranges_are_contiguous ... ok
+test keep_together_moves_intact_and_baseline_uses_each_lines_input_offset ... ok
+test normal_and_contextual_spacing_use_resolved_maximum ... ok
+test many_single_line_pages_conserve_sources_under_a_linear_work_budget ... ok
+test overheight_line_and_unavoidable_widow_are_reported_without_losing_lines ... ok
+test widow_backtracking_never_crosses_an_explicit_manual_break ... ok
+test widow_rule_moves_a_line_when_the_previous_page_can_keep_its_minimum ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 10 tests
+test tab_only_lines_retain_default_and_resolved_font_metrics ... ok
+test default_tab_grid_accounts_for_first_line_and_hanging_indents ... ok
+test custom_stops_precede_the_default_grid_then_automatic_stops_resume ... ok
+test center_and_decimal_without_comma_align_by_segment_width ... ok
+test bars_are_fixed_and_invalid_settings_fail_without_partial_layout ... ok
+test default_tab_uses_2268_grid_and_keeps_terminal_control_source ... ok
+test mandatory_lines_without_tabs_respect_a_tight_range_scan_budget ... ok
+test tabs_survive_wrapping_with_contiguous_utf8_sources ... ok
+test explicit_right_decimal_and_leader_stops_have_numeric_positions ... ok
+test all_leader_kinds_cover_the_consumed_gap_and_respect_decoration_limits ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+test factory_builds_resolvable_default_document_and_exact_metadata ... ok
+test no_spacing_is_independent_and_factory_instances_do_not_share_mutations ... ok
+test catalog_has_all_required_french_names_kinds_and_valid_next_targets ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test invalid_offsets_and_budget_or_text_limit_fail_without_state_changes ... ok
+test isolated_replacement_converts_ascii_space_and_restores_directed_selection ... ok
+test isolated_replacement_undo_redo_keeps_typing_on_separate_groups ... ok
+test move_drop_before_and_after_selection_preserves_unicode_crlf_and_bom ... ok
+test move_inside_or_onto_source_is_an_exact_noop_but_copy_inside_inserts ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 18 tests
+test control_characters_are_kept_and_counted ... ok
+test line_endings_and_line_model ... ok
+test invalid_sequences_are_replaced_and_counted ... ok
+test labels_and_lists_for_the_interface ... ok
+test saved_line_endings ... ok
+test detection_and_confidence ... ok
+test open_then_save_as_opened_is_exact ... ok
+test saved_bytes_per_encoding ... ok
+test size_limits_are_checked_before_decoding ... ok
+test plain_document_target ... ok
+test utf16_pattern_needs_enough_evidence ... ok
+test unrepresentable_characters_in_both_modes ... ok
+test the_error_list_is_capped_but_the_total_is_exact ... ok
+test windows_1252_c1_range ... ok
+test a_document_without_formatting_has_an_empty_report ... ok
+test rich_document_target_one_paragraph_per_line ... ok
+test table_cells_are_tab_separated_and_spans_keep_columns_aligned ... ok
+test formatting_loss_lists_every_category ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 2 tests
+test structurally_undecidable_cases ... ok
+test measured_accuracy_on_french_text ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 8 tests
+test control_heavy_ascii_without_a_pattern_is_uncertain_utf8 ... ok
+test cyrillic_utf16_without_bom_is_never_indifferent ... ok
+test ordinary_ascii_stays_indifferent ... ok
+test bom_bytes_and_replacement_mark_are_exact ... ok
+test utf32_boms_are_never_read_in_silence ... ok
+test vertical_merge_keeps_the_columns_aligned ... ok
+test merges_in_a_nested_table ... ok
+test horizontal_and_combined_merges ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+running 3 tests
+test save_then_reopen_and_as_opened_round_trips ... ok
+test arbitrary_bytes_never_panic_and_valid_ones_round_trip ... ok
+test large_inputs_are_handled_in_one_pass ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+
+running 12 tests
+test budget_failures_and_document_limit_leave_state_unchanged ... ok
+test caret_inside_crlf_still_deletes_the_entire_cluster ... ok
+test close_typing_group_with_cursor_move_and_new_edit_discards_redo ... ok
+test failed_edit_keeps_an_existing_redo_branch ... ok
+test delete_forward_and_empty_document_edges_are_safe ... ok
+test empty_insert_is_a_noop_with_zero_budget_and_preserves_redo ... ok
+test caret_delete_removes_whole_combining_emoji_and_crlf_clusters ... ok
+test reversed_selection_replace_undo_and_redo_restore_text_and_selection ... ok
+test invalid_utf8_and_invalid_offsets_are_rejected_without_changes ... ok
+test imports_exports_bom_and_line_endings_exactly ... ok
+test unicode_selection_and_deletion_sequence_matches_oracle ... ok
+test deterministic_edit_sequence_matches_oracle_through_undo_and_redo ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 33 tests
+test new_document_is_valid_with_one_section_and_one_paragraph ... ok
+test ids_are_unique_and_never_reused ... ok
+test rich_operations_have_no_recovery_codec_yet ... ok
+test failing_transaction_restores_everything ... ok
+test insert_that_would_glue_clusters_is_rejected ... ok
+test split_and_merge_position_maps_follow_selections ... ok
+test validate_local_detects_each_paragraph_invariant ... ok
+test history_undo_redo_and_selection_mapping ... ok
+test insert_text_at_start_middle_end_and_undo ... ok
+test restoring_an_invalid_branch_is_refused ... ok
+test all_mvp_character_properties_and_opaque_attributes_round_trip ... ok
+test empty_insert_and_empty_delete_are_no_ops ... ok
+test inserted_text_inherits_previous_attributes_but_not_at_start ... ok
+test split_inside_a_field_is_refused_and_straddling_links_are_truncated ... ok
+test paragraph_properties_set_clear_and_validate ... ok
+test inline_items_are_validated ... ok
+test delete_whole_text_and_across_runs_normalizes ... ok
+test wrong_number_of_new_cells_is_rejected ... ok
+test multibyte_graphemes_are_atomic_for_offsets ... ok
+test block_operations_reject_misplaced_nodes_and_bad_positions ... ok
+test text_edits_move_and_drop_inline_items ... ok
+test apply_and_remove_attributes_with_normalization ... ok
+test split_at_start_middle_end_then_merge_back ... ok
+test merge_paragraphs_with_different_attributes_keeps_runs_and_first_properties ... ok
+test a_cell_keeps_at_least_one_paragraph ... ok
+test anchored_objects_fields_bookmarks_and_links_insert_modify_remove ... ok
+test headers_and_footers_attach_per_section_and_detach ... ok
+test insert_and_remove_blocks_including_opaque_and_sections ... ok
+test extreme_arguments_are_rejected_without_panicking ... ok
+test merge_and_split_cells ... ok
+test deleting_and_inserting_rows_through_vertical_merges ... ok
+test deleting_a_column_through_a_merged_cell_shrinks_it ... ok
+test insert_and_delete_rows_and_columns ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+
+running 2 tests
+test the_generator_is_deterministic ... ok
+test random_sequences_keep_invariants_and_undo_is_identity ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.65s
+
+
+running 18 tests
+test cap_and_count ... ok
+test case_option ... ok
+test combining_accent_is_part_of_its_grapheme ... ok
+test empty_text_and_query ... ok
+test composed_and_decomposed_forms_find_each_other ... ok
+test excerpts ... ok
+test ignore_accents ... ok
+test ligature ... ok
+test matches_do_not_overlap ... ok
+test no_break_spaces ... ok
+test paragraph_starts_ends_and_limits ... ok
+test text_lines_positions ... ok
+test sharp_s_both_ways ... ok
+test turkish_dotted_capital_i ... ok
+test whole_word_uax29 ... ok
+test navigation_and_wrapping ... ok
+test emoji_and_surrogate_pairs ... ok
+test rich_document_order_zones_and_fields ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 2 tests
+test quadratic_traps_stay_linear ... ok
+test three_hundred_pages ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.59s
+
+
+running 1 test
+test search_matches_the_reference ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.42s
+
+
+running 29 tests
+test apostrophes_do_not_split ... ok
+test counts_add_subtract_and_replace ... ok
+test character_units ... ok
+test empty_and_blank_text ... ok
+test ideographic_text_counts_one_word_per_character ... ok
+test no_break_spaces_do_not_separate_words ... ok
+test plain_selection_and_ranges ... ok
+test invisible_characters_do_not_separate ... ok
+test isolated_dash_is_a_word ... ok
+test characters_are_text_characters_not_bytes ... ok
+test fresh_document_is_all_zeros ... ok
+test numbers_with_separators_are_single_words ... ok
+test punctuation_sticks_to_the_word ... ok
+test spaces_separate_words_however_many ... ok
+test tabs_and_line_breaks_separate_and_count_as_spaces ... ok
+test field_result_counts_field_code_does_not ... ok
+test body_totals_skip_empty_paragraphs ... ok
+test cut_word_counts_in_both_halves ... ok
+test selection_ranges_are_merged_and_summed ... ok
+test layout_figures_are_restituted ... ok
+test selection_rules ... ok
+test selection_offset_inside_a_character_is_rejected ... ok
+test plain_text_paragraphs_and_totals ... ok
+test notes_and_text_boxes_option_changes_nothing_yet ... ok
+test selection_in_a_header_and_errors ... ok
+test headers_and_footers_are_excluded_by_default ... ok
+test cache_follows_edits ... ok
+test selection_through_table_cells ... ok
+test table_cells_are_counted ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+test local_oracle_directory_is_within_tolerance ... ok
+test word_profile_differences_with_libreoffice_are_the_documented_ones ... ok
+test libreoffice_profile_reproduces_libreoffice_counts ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test three_hundred_pages ... ignored
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test plain_cache_survives_wrong_arguments_by_recounting ... ok
+test plain_cache_update_equals_full_recount ... ok
+test adjacent_selections_agree_with_their_union ... ok
+test total_is_the_sum_of_paragraphs_and_cache_matches_recount ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+
+
+running 12 tests
+test default_table_style_applies_to_cells_but_not_body_paragraphs ... ok
+test theme_font_and_color_references_resolve_to_concrete_values ... ok
+test cached_base_is_safe_for_equal_node_ids_across_documents ... ok
+test successful_character_format_operation_invalidates_the_paragraph_entry ... ok
+test cache_is_bounded_and_successful_operations_invalidate_only_the_affected_paragraph ... ok
+test missing_styles_cycles_and_missing_theme_slots_are_typed_and_bounded ... ok
+test failed_operation_keeps_cached_result_and_style_edits_invalidate_dependents ... ok
+test linked_style_pair_is_selected_for_the_application_target_and_missing_link_is_ignored ... ok
+test toggle_values_in_based_on_chain_inherit_and_child_values_reset_them ... ok
+test resolves_independent_properties_across_full_cascade_and_linked_style ... ok
+test table_style_operation_is_reversible_and_refreshes_descendant_cache ... ok
+test toggle_levels_follow_word_table_paragraph_character_and_direct_rules ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling atelier-core-wasm v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\core-wasm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.54s
+     Running unittests src\lib.rs (target\debug\deps\atelier_core_wasm-744c746f8b2e855d.exe)
+     Running tests\drag_spacing.rs (target\debug\deps\drag_spacing-94d9e539c0f35d51.exe)
+     Running tests\editor_engine.rs (target\debug\deps\editor_engine-26d7c9a7351f9a27.exe)
+     Running tests\navigation_queries.rs (target\debug\deps\navigation_queries-c00e3f49ba860513.exe)
+     Running tests\protocol_boundaries.rs (target\debug\deps\protocol_boundaries-c0fec606f5207156.exe)
+     Running tests\replacement.rs (target\debug\deps\replacement-a76f9fb1e834a1a7.exe)
+     Running tests\rich_preview.rs (target\debug\deps\rich_preview-0cc224e5232a4a99.exe)
+     Running tests\rich_preview_session.rs (target\debug\deps\rich_preview_session-37d51e5146b9ae47.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_fmt_ooxml-dab2de5bda7026aa.exe)
+     Running tests\docx_import.rs (target\debug\deps\docx_import-fc5adf3ffcab96de.exe)
+     Running tests\docx_tables.rs (target\debug\deps\docx_tables-505fce6b0b3d079f.exe)
+     Running tests\opc_package.rs (target\debug\deps\opc_package-c6e6f2417ea218a1.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_geom-6912c6a05385467e.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_render-0196570be018cc5e.exe)
+     Running tests\paragraph_borders.rs (target\debug\deps\paragraph_borders-2f4ff497a8cdf37a.exe)
+     Running tests\rich_pipeline.rs (target\debug\deps\rich_pipeline-cd643c6aaabf44b5.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_text_layout-a5d9634026cda4de.exe)
+     Running tests\borders.rs (target\debug\deps\borders-3aa5ecbf40e5719a.exe)
+     Running tests\caret.rs (target\debug\deps\caret-d0adaebca2a37797.exe)
+     Running tests\docx_integration.rs (target\debug\deps\docx_integration-6ddcdd2de9e0f940.exe)
+     Running tests\flow.rs (target\debug\deps\flow-a53d1edbcd9b7942.exe)
+     Running tests\incremental.rs (target\debug\deps\incremental-6fe3a18979e1b743.exe)
+     Running tests\incremental_sequences.rs (target\debug\deps\incremental_sequences-72512cecff29e22b.exe)
+     Running tests\layout.rs (target\debug\deps\layout-5f83f41e50425e1f.exe)
+     Running tests\pagination.rs (target\debug\deps\pagination-37f0293878a38507.exe)
+     Running tests\tabs.rs (target\debug\deps\tabs-b7cb37818e7ea9aa.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_text_model-11f15fa259a3b618.exe)
+     Running tests\default_document.rs (target\debug\deps\default_document-6a1a6b1b1cda9b40.exe)
+     Running tests\drag_spacing.rs (target\debug\deps\drag_spacing-3f3a0e12b3990a1b.exe)
+     Running tests\plain_io.rs (target\debug\deps\plain_io-8783275e0dda7ce1.exe)
+     Running tests\plain_io_detection.rs (target\debug\deps\plain_io_detection-ecfd5f5a1aa30179.exe)
+     Running tests\plain_io_fixes.rs (target\debug\deps\plain_io_fixes-a9fafddc5d134b01.exe)
+     Running tests\plain_io_property.rs (target\debug\deps\plain_io_property-453ae179e5295c11.exe)
+     Running tests\plain_text.rs (target\debug\deps\plain_text-4f5e40fe3b2e180b.exe)
+     Running tests\rich_ops.rs (target\debug\deps\rich_ops-cba163d1f61cb7c8.exe)
+     Running tests\rich_property.rs (target\debug\deps\rich_property-d0ba55af786040fd.exe)
+     Running tests\search.rs (target\debug\deps\search-7a93a94ec62273fb.exe)
+     Running tests\search_perf.rs (target\debug\deps\search_perf-26caf0a0b1984e9f.exe)
+     Running tests\search_property.rs (target\debug\deps\search_property-ea416a8cb1b8905c.exe)
+     Running tests\statistics.rs (target\debug\deps\statistics-686130d5bf1785ca.exe)
+     Running tests\statistics_oracle.rs (target\debug\deps\statistics_oracle-723933054e421d1d.exe)
+     Running tests\statistics_perf.rs (target\debug\deps\statistics_perf-16e0573b18e8e628.exe)
+     Running tests\statistics_property.rs (target\debug\deps\statistics_property-fd7f04fea8f97d35.exe)
+     Running tests\styles.rs (target\debug\deps\styles-2656915d2e1a5999.exe)
+   Doc-tests atelier_core_wasm
+   Doc-tests atelier_fmt_ooxml
+   Doc-tests atelier_geom
+   Doc-tests atelier_render
+   Doc-tests atelier_text_layout
+   Doc-tests atelier_text_model
+$ cargo clippy -p atelier-geom -p atelier-render -p atelier-text-layout -p atelier-text-model -p atelier-fmt-ooxml -p atelier-core-wasm --target wasm32-unknown-unknown --all-targets --locked --offline -- -D warnings
+    Checking atelier-core-wasm v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\core-wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s
+$ cargo run -p atelier-check-workspace --locked --offline -- .
+Cargo.lock contains only workspace packages.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running `target\debug\atelier-check-workspace.exe .`
+$ cargo run -p atelier-check-license --locked --offline -- .
+All Rust source files have the required SPDX header.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running `target\debug\atelier-check-license.exe .`
+$ node --test tests/rich-preview.mjs tests/rich-preview-protocol.mjs tests/editor-protocol.mjs tests/editor-abi.mjs tests/display-list.mjs
+{"status":"passed","checks":["Rust-produced all-opcode ATDL, valid close-following segments, and u64 identifiers","strict truncation/tag/version/trailing/UTF-8/opcode rejection","stack underflow/depth and composed-transform limits","coordinate/color validation and subview offsets"]}
+✔ tests\display-list.mjs (175.4057ms)
+Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, ProbePoint/DropText/ReplaceRange, DOCX preview and 11 atomic SelectPoint rejections passed.
+✔ tests\editor-abi.mjs (204.3698ms)
+editor protocol/host checks passed: strict ATED/ATES/ATEX bounds, double BOM, correlation, host open/save/cancel/dirty
+✔ tests\editor-protocol.mjs (40.3206ms)
+✔ ATRP owns pages, preserves Unicode/notices and rejects corrupt envelopes (2.1504ms)
+✔ DOCX command has an independent 8 MiB limit, TXT retains its own limit (3.5567ms)
+✔ Native DOCX reads up to 8 MiB with bounded reservations, strict base64 and cancellation (613.7543ms)
+{"status":"passed","checks":["A4 multi-page layout and accessible literal-text mirror","keyboard focus, Escape close and focus restoration","atomic rejection of malformed ATDL, decoded objects and oversized text","spacer recalculation from hidden install through open and resize, including narrow horizontal scrolling","zoom bounds, disposal and listener cleanup"]}
+✔ tests\rich-preview.mjs (102.1542ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 694.2258
+$ node tests/check-embedded-engine.mjs --compare-artifact
+{"status":"passed","bytes":4225759,"sha256":"f0ed9d8a2505026acd443bfcb7768664d4266606e9608403ad4465e352cb2900","source_count":160,"resource_count":36,"local_packages":["atelier-compress","atelier-core-wasm","atelier-fmt-ooxml","atelier-font","atelier-geom","atelier-model","atelier-render","atelier-shape","atelier-text-layout","atelier-text-model","atelier-ucd-gen","atelier-unicode","atelier-xml","atelier-zip"],"exact_local_artifact":true,"dispatch":"legacy ABI echo; editor semantics verified by separate integration suite"}
+$ node tests/check-wasm-size.mjs data/engine/atelier_core_wasm.wasm
+4225759 bytes / 4271903 byte limit (10% growth allowed from 3883549 bytes).
+$ node tests/run-editor-browser.mjs
+{"status":"passed","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0","checks":["fresh optimized WASM available","legacy Ping echo remains exact","initial empty A4 state","input surface is hidden while Canvas remains the document view","editor Canvas exposes a grey area beside the A4 page","A4 page background is opaque white in the real Canvas pixels","area outside the A4 page composites to the grey document-scroll background","accessible text representation updates with accented document text","UTF-8 selection follows rapid multibyte typing","editor state contains ATDL pages","word selection uses UTF-8 boundaries and includes the separating space","real model selection copies exact text synchronously without mutation","failed clipboard write preserves the real model","cut writes before returning to the browser","one undo restores the cut text and its directed selection","plain paste replaces selection once and ignores HTML","Ctrl+A selects the real document rather than the hidden textarea","Escape returns to ordinary caret navigation","word deletion is undone as a single edit in real WASM","one undo restores the deleted word and original selection","double-click selects a whole accented word through engine unit selection","triple-click selects the logical paragraph including CRLF","rapid down/move/up preserves the final drag range while WASM is asynchronous","completed mouse drag restores hidden input focus","drag position probe preserves the selection revision and text","drop indicator is a visible two-pixel insertion line","drop clears insertion marker","one undo restores moved UTF-8 text and original directed selection","one redo reapplies the complete move","Ctrl copy is a single undoable edit","Escape cancels the complete drag without mutation or residual marker","text drop prevents browser default handling","external drop exports exact Unicode CRLF and literal markup without typography correction","one undo restores the original document and selection after external insertion","French correction keeps a UTF-8 caret after punctuation","immediate undo removes only automatic spacing and keeps raw punctuation","redo restores automatic spacing","subsequent typing stays outside substitution undo group","French spacing can be disabled for the current editor","French quote interiors use nonbreaking spaces","pasted punctuation and guillemets remain exact","composition punctuation stays exact with automatic spacing enabled","replacing a selection does not add an automatic transaction","native open cancellation returned to controller","open cancellation preserves document and dirty state","invalid open leaves the previous document intact","load preserves BOM metadata and CRLF content","accessible text representation exposes accents and line breaks after load","ATEX exports the exact loaded file bytes","document paginates across A4 pages (6 page(s), 2098 chars)","page stack creates a real scroll range","hidden input caret stays bounded on screen after scroll","editing navigation scrolls the caret into the visible Canvas viewport","IME preview text is temporarily underlined at the caret","composition mutates model only at commit","save cancellation retains dirty state","successful save marks exactly the exported revision clean","native host receives exact UTF-8/BOM/CRLF bytes","public undo is guarded while a native file operation is active","out-of-band revision change rejects stale save confirmation","stale save leaves the live document dirty and accessible","retry saves the current revision","dirty state reaches the host channel","Canvas hit-test restores hidden input focus","zoom preserves the reading point across fixed page gaps without returning to the caret (expected 2902, actual 2902.5, height 8499)","zoom preserves exact editor state object, selection and history","200 percent TXT creates a real horizontal page extent","TXT Canvas stays pinned while the right side of an enlarged page scrolls into view","ordinary wheel and AltGr wheel leave document zoom unchanged","Ctrl wheel zooms the actual editor and suppresses browser zoom","Ctrl wheel preserves the document point under the pointer on both axes","wheel is exercised on a visible browser viewport","invalid zoom is rejected atomically: NaN","invalid zoom is rejected atomically: 0.09","invalid zoom is rejected atomically: 5.01","10 percent is supported by real editor rendering","500 percent is supported by real editor rendering","two-page mode fits two vertically stacked A4 pages including their fixed gap","width mode uses the actual scrollport width","container resize refits document zoom","zoomed hit-testing retains UTF-8 model coordinates","undo restores text after zoom without changing its factor","product entry document available to the shortcut harness","real app entry initializes with fake native WebView","real app exposes all six ribbon tabs","real app marks unavailable formatting commands disabled","real app theme changes the visible shell palette without reloading","real app theme preserves exact TXT state and white document pixels","real app appearance command opens a named modal","appearance modal blocks editor new/open/save shortcuts behind the dialog","real app appearance modal can close and return to the ribbon","app initialization restores a saved disabled French-spacing preference","product viewport is at least 1280×800 for layout verification","product shell keeps the document scrollbar inside the normal viewport","Ctrl+N discards only after the app confirmation and creates a clean document","Ctrl+N does not request file access","real Worker search/statistics queries preserve exact TXT state, selection, dirty and undo history","Ctrl+F opens the actual named search pane and focuses its query","Unicode matches carry exact UTF-8 byte ranges and real cached-layout geometry","all current search hits produce visible warm Canvas highlight pixels","cancelled composition preserves current search highlights without waiting for caret blink","Enter selects and scrolls to a hit without stealing query focus or editing history","reverse search wrap is announced","rapid Enter presses advance successively through the asynchronous Worker","whole-word option excludes the caféine substring using Rust Unicode rules","case-sensitive search preserves exact original spelling","accent folding maps back to original UTF-8 bytes","full Unicode case folding finds Straße from strasse in the real engine","NBSP option distinguishes nonbreaking and ordinary spaces","actual search excerpts preserve literal markup as inert text","empty search results have a clear localized message","empty query removes all Canvas search highlights synchronously","search highlights remain correctly painted after zoom and scrolling back to hits","Escape closes the real pane, removes highlights and restores text input focus","statistics dialog maps real document and selected word counts plus actual lines/pages/paragraphs","statistics modal blocks Ctrl+F behind it","statistics and result selection do not interfere with edit undo","dense search remains bounded to 1000 hits and announces truncation","rapid query changes leave only the latest real Worker results","Ctrl+H opens and focuses the actual search and replacement pane","replacing the selected occurrence creates a dirty, undoable edit","identical replacement reports its occurrence without changing revision, dirty state, or undo history","zero matches report none and preserve revision, dirty state, text, and undo history","the UI keeps its 1000-result search bound while replacement uses the full source","Replace all makes one dirty undoable edit for all 1105 original occurrences","one Undo restores the entire multi-match transaction and clean state","one Redo reapplies all matches without creating per-match transactions","accent folding and whole-word boundaries agree with the real Rust searcher","matchCase Replace all applies the configured option and reports its exact occurrence count","wholeWord Replace all applies the configured option and reports its exact occurrence count","ignoreAccents Replace all applies the configured option and reports its exact occurrence count","matchNbsp Replace all applies the configured option and reports its exact occurrence count","empty strings and newline-containing replacements preserve surrounding blank and trailing lines","a stale match selection is rejected by Worker/WASM without publishing a partial edit","a replacement carrying an old revision is refused without changing the latest document","a result above 128 KiB fails atomically with the original revision, clean state, and history intact","real app exposes document status fields, page dialog, visibility menu and parent slots","multi-page TXT has a real scrollable viewport","document language remains undefined and is distinct from the French interface locale","a clean opened TXT document reports its saved state","an edited TXT document reports unsaved changes","invariance baseline includes a dirty document, undo history and a directed selection","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","real TXT zoom changes while the status page stays synchronized","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","words parent slot starts visible with its checked menu state","status menu exposes the words visibility control","words menu choice hides the parent-owned app slot","status menu exposes the words visibility control","words menu choice restores the parent-owned app slot","words visibility returns to its initial session state","zoom parent slot starts visible with its checked menu state","status menu exposes the zoom visibility control","zoom menu choice hides the parent-owned app slot","status menu exposes the zoom visibility control","zoom menu choice restores the parent-owned app slot","zoom visibility returns to its initial session state","integration test leaves the page dialog and visibility menu closed","multi-page document scrolls inside document-scroll","long document does not grow the product body or move toolbar/footer outside the viewport","Ctrl+O uses the native open path and surfaces cancellation","Ctrl+O cancellation preserves the current clean document","status zoom controls initialize from the real document view","status slider changes Canvas factor and displayed percentage together","zoom percentage opens a named modal with focused number field","invalid dialog percentage remains visible without changing the document","document wheel zoom is blocked behind a modal","valid dialog submission applies once and restores the trigger focus","dialog cancellation does not apply its uncommitted percentage","Affichage ribbon opens the same zoom dialog","whole-page dialogue mode follows the real Canvas viewport","fractional fit percentage can switch directly to the two-page mode","Ctrl+S marks the successfully saved revision clean","status bar reflects the native save confirmation","Ctrl+S forwards the exact current document bytes","French spacing option is an enabled native checkbox with visible label","French spacing option is keyboard focusable","French spacing preference is saved locally","enabled app option applies French spacing through real Worker WASM","independent DOCX fixture exercises a native response larger than the TXT limit","real app imports DOCX through native host and Worker/WASM","read-only DOCX workspace replaces only the visible TXT workspace","search and statistics tools are explicitly unavailable in the simplified DOCX preview","accessible preview mirror contains actual imported text","rich preview Canvas has a real visible viewport","real DOCX preview paints the blue styled heading as visible Canvas pixels","DOCX preview has its own enabled zoom controls starting at 100 percent","preview zoom changes independently of the suspended TXT view","narrow DOCX preview exposes horizontal scrolling for the complete A4 page","preview Canvas remains pinned to viewport during horizontal page scrolling","preview leaves exact TXT state object untouched and freezes its input","status describes DOCX read-only view and replacement stays unavailable","preview page navigation uses its own viewport without touching TXT state","preview disables new-document","preview disables open-document","preview disables open-docx","preview disables save-document","preview disables undo","preview disables redo","preview disables french-spacing","preview announces read-only mode","preview primary identity and state badge describe DOCX rather than TXT save state","preview explicitly explains omitted content and Word page breaks","Ctrl+S in preview suppresses native/browser saving","Escape returns to exact TXT state and restores trigger focus","closing preview restores TXT identity and dirty badge","returning from DOCX restores the TXT session zoom in the status controls","TXT undo history remains available after preview","TXT redo restores exact content and dirty after preview","reopening preview for fitted TXT view","hiding a fitted TXT viewport does not refit it against zero dimensions","returning to a fitted TXT view preserves its mode and recomputes visible dimensions","cancelled native DOCX dialogue preserves TXT and releases controls","native DOCX read failure preserves TXT","invalid DOCX reports an error without partial preview or TXT mutation","late native response after close cannot reopen preview or mutate TXT","disposing app during DOCX dialogue removes native listener and ignores late response","fresh app initialization enables French spacing when no preference exists"],"executable":"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"}
+$ cargo build -p atelier-desktop-win --release --locked --offline
+    Finished `release` profile [optimized] target(s) in 0.03s
+$ C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\target\release\atelier.exe --resources-self-check C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\target\docx-long-guides-native-check
+embedded resources: assets=41; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts=64; rotated=34; callback objects 0->0
+$ git diff --check
+warning: in the working copy of 'graphify-out/GRAPH_REPORT.md', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'graphify-out/graph.json', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'graphify-out/story-dependencies.json', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'graphify-out/unresolved-structural-references.json', CRLF will be replaced by LF the next time Git touches it

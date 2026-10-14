@@ -1,0 +1,240 @@
+$ cargo fmt --all --check
+$ cargo clippy -p atelier-fmt-ooxml -p atelier-core-wasm --all-targets --locked --offline -- -D warnings
+    Checking atelier-fmt-ooxml v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\fmt-ooxml)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+$ cargo test -p atelier-fmt-ooxml -p atelier-core-wasm --locked --offline
+
+running 12 tests
+test editor::navigation_tests::selecting_a_unit_starting_at_base_end_extends_forward ... ok
+test editor_layout::tests::path_budget_rejects_before_adding_elements_or_bytes ... ok
+test protocol::tests::rejects_invalid_fields_direction_ids_and_control_payloads ... ok
+test protocol::tests::rejects_every_truncated_prefix_and_trailing_bytes ... ok
+test protocol::tests::all_types_round_trip_and_header_is_little_endian ... ok
+test protocol::tests::rejects_oversized_encode_and_declared_payload_before_copying ... ok
+test tests::allocation_limits_are_checked_before_allocation ... ok
+test tests::exact_pointer_and_length_are_required_for_release ... ok
+test tests::exact_take_transfers_ownership_and_updates_totals ... ok
+test protocol::tests::copies_payload_and_enforces_size_limit ... ok
+test tests::in_flight_dispatch_input_remains_charged_until_replaced_or_released ... ok
+test tests::zero_length_is_noop_and_never_enters_the_registry ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test stale_or_malformed_commands_fail_without_publishing_state ... ok
+test external_drop_uses_source_zero_and_inserts_at_target ... ok
+test point_probe_returns_atpt_without_changing_selection_revision_or_undo_history ... ok
+test french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing ... ok
+test drop_move_before_after_and_copy_inside_are_single_reversible_transactions ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+
+running 17 tests
+test malformed_commands_and_invalid_utf8_are_rejected_without_publishing_candidate ... ok
+test atlm_editor_response_keeps_the_request_id_and_editor_types_are_registered ... ok
+test invalid_select_point_fails_through_wasm_without_mutating_the_session ... ok
+test loading_identical_content_does_not_advance_content_revision ... ok
+test selecting_only_an_explicit_newline_emits_a_thin_selection_rectangle ... ok
+test empty_and_loaded_document_emit_real_carlito_paths_and_preserve_bom_crlf ... ok
+test select_point_character_extension_accepts_a_nonzero_anchor ... ok
+test select_point_selects_word_and_crlf_terminated_paragraph ... ok
+test crlf_is_removed_as_one_grapheme_and_selection_hit_testing_uses_page_slots ... ok
+test edit_undo_and_stale_save_preserve_revision_dirty_and_document_state ... ok
+test loading_short_text_rebuilds_pages_and_glyph_paths_after_a_long_document ... ok
+test word_delete_is_one_undoable_edit_and_restores_a_reversed_utf8_selection ... ok
+test vertical_navigation_keeps_the_preferred_column_across_a_short_line ... ok
+test word_and_paragraph_navigation_respect_unicode_segments_and_crlf ... ok
+test paragraph_navigation_uses_logical_boundaries_and_resets_preferred_x ... ok
+test paragraph_navigation_clears_the_previous_vertical_column ... ok
+test navigation_is_safe_on_fresh_session_and_collapses_selections_by_direction ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+
+running 4 tests
+test malformed_search_frames_and_stale_revisions_are_rejected ... ok
+test unicode_search_uses_exact_ranges_and_cached_geometry_without_changing_state ... ok
+test statistics_reports_selection_counts_and_layout_totals_without_mutation ... ok
+test empty_and_capped_searches_have_bounded_envelopes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+
+
+running 1 test
+test exact_transport_limit_round_trips_and_oversized_input_is_rejected ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 4 tests
+test no_match_and_identical_replacement_keep_revision_and_history ... ok
+test selected_unicode_match_and_stale_selection_are_checked ... ok
+test stale_revision_invalid_frames_and_output_overflow_are_atomic ... ok
+test replace_all_processes_the_original_matches_once_and_undoes_as_one_edit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+
+running 7 tests
+test invalid_and_over_limit_docx_return_controlled_errors ... ok
+test inline_bold_italic_underline_and_size_reach_the_display_list ... ok
+test tab_control_keeps_its_advance_without_drawing_notdef ... ok
+test paragraph_and_text_budgets_reject_oversized_models ... ok
+test reference_docx_renders_real_title_color_and_valid_page ... ok
+test glyph_budget_is_enforced_while_layout_is_built ... ok
+test generated_long_docx_paginates_without_losing_text_order ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.25s
+
+
+running 2 tests
+test common_empty_paragraphs_can_be_previewed ... ok
+test preview_success_and_failure_preserve_txt_selection_history_dirty_and_revision ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 14 tests
+test automatic_text_color_and_named_highlight_are_supported_without_loss ... ok
+test text_controls_false_overrides_and_prefixes_keep_utf8_offsets_and_break_types ... ok
+test malformed_on_off_values_are_not_silently_treated_as_true ... ok
+test grapheme_splits_keep_the_first_scalar_style_and_later_text_style ... ok
+test hyperlink_text_is_visible_but_deleted_instruction_and_foreign_text_are_not ... ok
+test malformed_rgb_and_paragraph_budget_fail_without_publishing_a_partial_result ... ok
+test highlight_none_is_preserved_and_warns_that_cascade_reset_is_unsupported ... ok
+test embedded_font_rejects_fake_relationship_type_suffix ... ok
+test malformed_symbols_and_false_namespaces_are_rejected_contextually ... ok
+test standard_theme_color_names_resolve_in_runs_and_styles ... ok
+test size_and_other_supported_numeric_properties_are_validated ... ok
+test default_numbering_character_and_table_styles_do_not_replace_default_paragraph ... ok
+test independent_reference_imports_styles_settings_font_and_preserves_unknown_bytes ... ok
+test alternating_styled_runs_and_split_graphemes_keep_stable_offsets ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 29 tests
+test theme_colours_tint_and_shade ... ok
+test grid_wider_than_every_row_is_truncated ... ok
+test row_exceptions_and_tracked_row_deletions ... ok
+test nested_tables_are_imported_and_mapped_to_their_cells ... ok
+test nesting_beyond_the_depth_limit_flattens_to_paragraphs ... ok
+test legacy_horizontal_merge_is_converted_to_a_span ... ok
+test vertical_merge_without_a_start_is_a_plain_cell_with_a_notice ... ok
+test table_first_in_body_keeps_a_trailing_empty_paragraph ... ok
+test absurd_spans_and_widths_are_clamped_not_fatal ... ok
+test grid_before_and_after_pad_with_synthetic_cells ... ok
+test style_cycles_and_unusable_table_styles_never_break_resolution ... ok
+test simple_table_has_grid_widths_text_and_keeps_surrounding_paragraphs ... ok
+test continuation_with_content_moves_it_to_the_first_cell ... ok
+test grid_span_becomes_a_column_span ... ok
+test uneven_rows_and_inconsistent_grids_are_normalised_with_notices ... ok
+test vertical_merge_becomes_a_row_span_and_drops_continuations ... ok
+test table_limits_are_typed_errors ... ok
+test empty_cells_and_rows_get_an_empty_paragraph ... ok
+test paragraphs_outside_tables_resolve_as_before ... ok
+test table_row_and_cell_properties_are_read ... ok
+test direct_cell_properties_override_conditional_formatting ... ok
+test paragraph_ids_lists_every_paragraph_including_the_final_empty_one ... ok
+test row_band_size_set_directly_on_the_table_overrides_the_style ... ok
+test conditional_character_formatting_reaches_resolved_paragraphs ... ok
+test conditional_formatting_follows_the_specification_order_on_overlaps ... ok
+test paragraph_style_and_direct_formatting_outrank_conditional_formatting ... ok
+test vmerge_continuation_keeping_only_non_text_content_is_not_dropped ... ok
+test look_flags_and_band_sizes_change_the_applicable_zones ... ok
+test mutated_and_truncated_table_documents_never_panic ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.13s
+
+
+running 14 tests
+test refuses_to_overwrite_a_part_name_when_materializing_properties ... ok
+test rejects_case_folded_and_derivable_part_name_collisions ... ok
+test rejects_invalid_part_uris_and_duplicate_relationship_ids ... ok
+test writes_core_and_app_properties_from_a_new_package ... ok
+test rejects_nested_content_type_entries ... ok
+test supports_iri_references_and_resolves_only_internal_target_paths ... ok
+test rejects_missing_internal_relationship_targets_on_read ... ok
+test accepts_case_insensitive_relationships_media_type ... ok
+test applies_public_part_byte_and_relationship_limits_and_rejects_truncated_zip ... ok
+test validates_content_types_and_extension_syntax ... ok
+test rejects_malformed_and_oversized_xml_parts ... ok
+test rejects_relationships_at_package_root_if_nested_or_id_has_whitespace ... ok
+test supports_relationship_metadata_overrides_and_case_insensitive_paths ... ok
+test preserves_unknown_parts_relations_and_properties_through_deterministic_round_trip ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling atelier-fmt-ooxml v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\fmt-ooxml)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.94s
+     Running unittests src\lib.rs (target\debug\deps\atelier_core_wasm-744c746f8b2e855d.exe)
+     Running tests\drag_spacing.rs (target\debug\deps\drag_spacing-94d9e539c0f35d51.exe)
+     Running tests\editor_engine.rs (target\debug\deps\editor_engine-26d7c9a7351f9a27.exe)
+     Running tests\navigation_queries.rs (target\debug\deps\navigation_queries-c00e3f49ba860513.exe)
+     Running tests\protocol_boundaries.rs (target\debug\deps\protocol_boundaries-c0fec606f5207156.exe)
+     Running tests\replacement.rs (target\debug\deps\replacement-a76f9fb1e834a1a7.exe)
+     Running tests\rich_preview.rs (target\debug\deps\rich_preview-0cc224e5232a4a99.exe)
+     Running tests\rich_preview_session.rs (target\debug\deps\rich_preview_session-37d51e5146b9ae47.exe)
+     Running unittests src\lib.rs (target\debug\deps\atelier_fmt_ooxml-dab2de5bda7026aa.exe)
+     Running tests\docx_import.rs (target\debug\deps\docx_import-fc5adf3ffcab96de.exe)
+     Running tests\docx_tables.rs (target\debug\deps\docx_tables-505fce6b0b3d079f.exe)
+     Running tests\opc_package.rs (target\debug\deps\opc_package-c6e6f2417ea218a1.exe)
+   Doc-tests atelier_core_wasm
+   Doc-tests atelier_fmt_ooxml
+$ cargo clippy -p atelier-fmt-ooxml -p atelier-core-wasm --target wasm32-unknown-unknown --all-targets --locked --offline -- -D warnings
+    Checking atelier-fmt-ooxml v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\fmt-ooxml)
+    Checking atelier-core-wasm v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\core-wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.21s
+$ cargo run -p atelier-check-workspace --locked --offline -- .
+Cargo.lock contains only workspace packages.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running `target\debug\atelier-check-workspace.exe .`
+$ cargo run -p atelier-check-license --locked --offline -- .
+All Rust source files have the required SPDX header.
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running `target\debug\atelier-check-license.exe .`
+$ node --test tests/rich-preview.mjs tests/rich-preview-protocol.mjs tests/editor-abi.mjs
+Editor real WASM ABI: rollback, cleanup, UTF-8/BOM/CRLF, ProbePoint/DropText/ReplaceRange, DOCX preview and 11 atomic SelectPoint rejections passed.
+✔ tests\editor-abi.mjs (211.3927ms)
+✔ ATRP owns pages, preserves Unicode/notices and rejects corrupt envelopes (2.0805ms)
+✔ DOCX command has an independent 8 MiB limit, TXT retains its own limit (3.4279ms)
+✔ Native DOCX reads up to 8 MiB with bounded reservations, strict base64 and cancellation (617.3525ms)
+{"status":"passed","checks":["A4 multi-page layout and accessible literal-text mirror","keyboard focus, Escape close and focus restoration","atomic rejection of malformed ATDL, decoded objects and oversized text","spacer recalculation from hidden install through open and resize, including narrow horizontal scrolling","zoom bounds, disposal and listener cleanup"]}
+✔ tests\rich-preview.mjs (42.1861ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 690.6685
+$ node tests/check-embedded-engine.mjs --compare-artifact
+{"status":"passed","bytes":4214052,"sha256":"477e11f1d6ed01fa1e47190b016febc7695405cc59d5e74841f06020eef8540e","source_count":158,"resource_count":36,"local_packages":["atelier-compress","atelier-core-wasm","atelier-fmt-ooxml","atelier-font","atelier-geom","atelier-model","atelier-render","atelier-shape","atelier-text-layout","atelier-text-model","atelier-ucd-gen","atelier-unicode","atelier-xml","atelier-zip"],"exact_local_artifact":true,"dispatch":"legacy ABI echo; editor semantics verified by separate integration suite"}
+$ node tests/check-wasm-size.mjs data/engine/atelier_core_wasm.wasm
+4214052 bytes / 4271903 byte limit (10% growth allowed from 3883549 bytes).
+$ node tests/run-editor-browser.mjs
+{"status":"passed","userAgent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0","checks":["fresh optimized WASM available","legacy Ping echo remains exact","initial empty A4 state","input surface is hidden while Canvas remains the document view","editor Canvas exposes a grey area beside the A4 page","A4 page background is opaque white in the real Canvas pixels","area outside the A4 page composites to the grey document-scroll background","accessible text representation updates with accented document text","UTF-8 selection follows rapid multibyte typing","editor state contains ATDL pages","word selection uses UTF-8 boundaries and includes the separating space","real model selection copies exact text synchronously without mutation","failed clipboard write preserves the real model","cut writes before returning to the browser","one undo restores the cut text and its directed selection","plain paste replaces selection once and ignores HTML","Ctrl+A selects the real document rather than the hidden textarea","Escape returns to ordinary caret navigation","word deletion is undone as a single edit in real WASM","one undo restores the deleted word and original selection","double-click selects a whole accented word through engine unit selection","triple-click selects the logical paragraph including CRLF","rapid down/move/up preserves the final drag range while WASM is asynchronous","completed mouse drag restores hidden input focus","drag position probe preserves the selection revision and text","drop indicator is a visible two-pixel insertion line","drop clears insertion marker","one undo restores moved UTF-8 text and original directed selection","one redo reapplies the complete move","Ctrl copy is a single undoable edit","Escape cancels the complete drag without mutation or residual marker","text drop prevents browser default handling","external drop exports exact Unicode CRLF and literal markup without typography correction","one undo restores the original document and selection after external insertion","French correction keeps a UTF-8 caret after punctuation","immediate undo removes only automatic spacing and keeps raw punctuation","redo restores automatic spacing","subsequent typing stays outside substitution undo group","French spacing can be disabled for the current editor","French quote interiors use nonbreaking spaces","pasted punctuation and guillemets remain exact","composition punctuation stays exact with automatic spacing enabled","replacing a selection does not add an automatic transaction","native open cancellation returned to controller","open cancellation preserves document and dirty state","invalid open leaves the previous document intact","load preserves BOM metadata and CRLF content","accessible text representation exposes accents and line breaks after load","ATEX exports the exact loaded file bytes","document paginates across A4 pages (6 page(s), 2098 chars)","page stack creates a real scroll range","hidden input caret stays bounded on screen after scroll","editing navigation scrolls the caret into the visible Canvas viewport","IME preview text is temporarily underlined at the caret","composition mutates model only at commit","save cancellation retains dirty state","successful save marks exactly the exported revision clean","native host receives exact UTF-8/BOM/CRLF bytes","public undo is guarded while a native file operation is active","out-of-band revision change rejects stale save confirmation","stale save leaves the live document dirty and accessible","retry saves the current revision","dirty state reaches the host channel","Canvas hit-test restores hidden input focus","zoom preserves the reading point across fixed page gaps without returning to the caret (expected 2902, actual 2902.5, height 8499)","zoom preserves exact editor state object, selection and history","200 percent TXT creates a real horizontal page extent","TXT Canvas stays pinned while the right side of an enlarged page scrolls into view","ordinary wheel and AltGr wheel leave document zoom unchanged","Ctrl wheel zooms the actual editor and suppresses browser zoom","Ctrl wheel preserves the document point under the pointer on both axes","wheel is exercised on a visible browser viewport","invalid zoom is rejected atomically: NaN","invalid zoom is rejected atomically: 0.09","invalid zoom is rejected atomically: 5.01","10 percent is supported by real editor rendering","500 percent is supported by real editor rendering","two-page mode fits two vertically stacked A4 pages including their fixed gap","width mode uses the actual scrollport width","container resize refits document zoom","zoomed hit-testing retains UTF-8 model coordinates","undo restores text after zoom without changing its factor","product entry document available to the shortcut harness","real app entry initializes with fake native WebView","real app exposes all six ribbon tabs","real app marks unavailable formatting commands disabled","real app theme changes the visible shell palette without reloading","real app theme preserves exact TXT state and white document pixels","real app appearance command opens a named modal","appearance modal blocks editor new/open/save shortcuts behind the dialog","real app appearance modal can close and return to the ribbon","app initialization restores a saved disabled French-spacing preference","product viewport is at least 1280×800 for layout verification","product shell keeps the document scrollbar inside the normal viewport","Ctrl+N discards only after the app confirmation and creates a clean document","Ctrl+N does not request file access","real Worker search/statistics queries preserve exact TXT state, selection, dirty and undo history","Ctrl+F opens the actual named search pane and focuses its query","Unicode matches carry exact UTF-8 byte ranges and real cached-layout geometry","all current search hits produce visible warm Canvas highlight pixels","cancelled composition preserves current search highlights without waiting for caret blink","Enter selects and scrolls to a hit without stealing query focus or editing history","reverse search wrap is announced","rapid Enter presses advance successively through the asynchronous Worker","whole-word option excludes the caféine substring using Rust Unicode rules","case-sensitive search preserves exact original spelling","accent folding maps back to original UTF-8 bytes","full Unicode case folding finds Straße from strasse in the real engine","NBSP option distinguishes nonbreaking and ordinary spaces","actual search excerpts preserve literal markup as inert text","empty search results have a clear localized message","empty query removes all Canvas search highlights synchronously","search highlights remain correctly painted after zoom and scrolling back to hits","Escape closes the real pane, removes highlights and restores text input focus","statistics dialog maps real document and selected word counts plus actual lines/pages/paragraphs","statistics modal blocks Ctrl+F behind it","statistics and result selection do not interfere with edit undo","dense search remains bounded to 1000 hits and announces truncation","rapid query changes leave only the latest real Worker results","Ctrl+H opens and focuses the actual search and replacement pane","replacing the selected occurrence creates a dirty, undoable edit","identical replacement reports its occurrence without changing revision, dirty state, or undo history","zero matches report none and preserve revision, dirty state, text, and undo history","the UI keeps its 1000-result search bound while replacement uses the full source","Replace all makes one dirty undoable edit for all 1105 original occurrences","one Undo restores the entire multi-match transaction and clean state","one Redo reapplies all matches without creating per-match transactions","accent folding and whole-word boundaries agree with the real Rust searcher","matchCase Replace all applies the configured option and reports its exact occurrence count","wholeWord Replace all applies the configured option and reports its exact occurrence count","ignoreAccents Replace all applies the configured option and reports its exact occurrence count","matchNbsp Replace all applies the configured option and reports its exact occurrence count","empty strings and newline-containing replacements preserve surrounding blank and trailing lines","a stale match selection is rejected by Worker/WASM without publishing a partial edit","a replacement carrying an old revision is refused without changing the latest document","a result above 128 KiB fails atomically with the original revision, clean state, and history intact","real app exposes document status fields, page dialog, visibility menu and parent slots","multi-page TXT has a real scrollable viewport","document language remains undefined and is distinct from the French interface locale","a clean opened TXT document reports its saved state","an edited TXT document reports unsaved changes","invariance baseline includes a dirty document, undo history and a directed selection","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","real TXT zoom changes while the status page stays synchronized","scroll, page navigation and zoom preserve text, selection, dirty state, history availability and revision","words parent slot starts visible with its checked menu state","status menu exposes the words visibility control","words menu choice hides the parent-owned app slot","status menu exposes the words visibility control","words menu choice restores the parent-owned app slot","words visibility returns to its initial session state","zoom parent slot starts visible with its checked menu state","status menu exposes the zoom visibility control","zoom menu choice hides the parent-owned app slot","status menu exposes the zoom visibility control","zoom menu choice restores the parent-owned app slot","zoom visibility returns to its initial session state","integration test leaves the page dialog and visibility menu closed","multi-page document scrolls inside document-scroll","long document does not grow the product body or move toolbar/footer outside the viewport","Ctrl+O uses the native open path and surfaces cancellation","Ctrl+O cancellation preserves the current clean document","status zoom controls initialize from the real document view","status slider changes Canvas factor and displayed percentage together","zoom percentage opens a named modal with focused number field","invalid dialog percentage remains visible without changing the document","document wheel zoom is blocked behind a modal","valid dialog submission applies once and restores the trigger focus","dialog cancellation does not apply its uncommitted percentage","Affichage ribbon opens the same zoom dialog","whole-page dialogue mode follows the real Canvas viewport","fractional fit percentage can switch directly to the two-page mode","Ctrl+S marks the successfully saved revision clean","status bar reflects the native save confirmation","Ctrl+S forwards the exact current document bytes","French spacing option is an enabled native checkbox with visible label","French spacing option is keyboard focusable","French spacing preference is saved locally","enabled app option applies French spacing through real Worker WASM","independent DOCX fixture exercises a native response larger than the TXT limit","real app imports DOCX through native host and Worker/WASM","read-only DOCX workspace replaces only the visible TXT workspace","search and statistics tools are explicitly unavailable in the simplified DOCX preview","accessible preview mirror contains actual imported text","rich preview Canvas has a real visible viewport","real DOCX preview paints the blue styled heading as visible Canvas pixels","DOCX preview has its own enabled zoom controls starting at 100 percent","preview zoom changes independently of the suspended TXT view","narrow DOCX preview exposes horizontal scrolling for the complete A4 page","preview Canvas remains pinned to viewport during horizontal page scrolling","preview leaves exact TXT state object untouched and freezes its input","status describes DOCX read-only view and replacement stays unavailable","preview page navigation uses its own viewport without touching TXT state","preview disables new-document","preview disables open-document","preview disables open-docx","preview disables save-document","preview disables undo","preview disables redo","preview disables french-spacing","preview announces read-only mode","preview primary identity and state badge describe DOCX rather than TXT save state","preview explicitly explains omitted content and Word page breaks","Ctrl+S in preview suppresses native/browser saving","Escape returns to exact TXT state and restores trigger focus","closing preview restores TXT identity and dirty badge","returning from DOCX restores the TXT session zoom in the status controls","TXT undo history remains available after preview","TXT redo restores exact content and dirty after preview","reopening preview for fitted TXT view","hiding a fitted TXT viewport does not refit it against zero dimensions","returning to a fitted TXT view preserves its mode and recomputes visible dimensions","cancelled native DOCX dialogue preserves TXT and releases controls","native DOCX read failure preserves TXT","invalid DOCX reports an error without partial preview or TXT mutation","late native response after close cannot reopen preview or mutate TXT","disposing app during DOCX dialogue removes native listener and ignores late response","fresh app initialization enables French spacing when no preference exists"],"executable":"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"}
+$ cargo build -p atelier-desktop-win --release --locked --offline
+   Compiling atelier-desktop-win v0.1.0 (C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\crates\desktop-win)
+    Finished `release` profile [optimized] target(s) in 2.39s
+$ C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\target\release\atelier.exe --resources-self-check C:\Users\simka\.codex\worktrees\ui-components-ribbon\mon-bureau\target\docx-theme-native-check
+embedded resources: assets=41; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts=64; rotated=34; callback objects 0->0
+$ git diff --check

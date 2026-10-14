@@ -1618,6 +1618,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
           ];
           paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);
+          paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/build-info.mjs','text/javascript']);
           // Keep required log probes within the bounded request log.
           paths.sort((a,b)=>Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(a[0]))-Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(b[0])));
           const assets={};
@@ -1645,6 +1646,16 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
           const deadline=Date.now()+12000;
           while(Date.now()<deadline&&(document.documentElement.dataset.engineEcho!=='ok'||!required.every(prefix=>window.__atelierUs112Violations.some(v=>v.startsWith(prefix)))))await new Promise(r=>setTimeout(r,40));
            const editor=ready.editor;
+           const buildInfo=(await import('/build-info.mjs')).BUILD_INFO;
+           const legal=(await import('/about-licenses.mjs')).ABOUT_LICENSES;
+           const catalogue=(await import('/symbol-catalogue.mjs')).SYMBOL_CATALOGUE;
+           ready.about.open({returnFocusTo:editor.element});
+           const aboutText=ready.about.element.textContent;
+           const utilitiesOk=/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(buildInfo.buildDate)
+             &&aboutText.includes(buildInfo.version)&&aboutText.includes(buildInfo.buildDate)
+             &&aboutText.includes(legal.agpl)&&aboutText.includes(legal.unicode)
+             &&legal.fonts.every(font=>aboutText.includes(font.text))&&catalogue.symbols.length>2000&&!!ready.symbols&&!!ready.contextMenu;
+           ready.about.close();
           const input=editor.element;
           input.focus();
           const expected='Bonjour é€\n';
@@ -1664,6 +1675,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
           window.__atelierUs112Result={
             assets,
             assetsOk:Object.entries(assets).length===paths.length&&Object.values(assets).every(x=>x.status===200&&x.type.startsWith(x.mime)),
+            utilitiesOk,
             origin:location.origin,
             echo:document.documentElement.dataset.engineEcho||'',
             csp:root.headers.get('content-security-policy')||'',
@@ -1707,7 +1719,8 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ));
         }
     };
-    if !payload.contains("\"assetsOk\":true")
+    if !payload.contains("\"utilitiesOk\":true")
+        || !payload.contains("\"assetsOk\":true")
         || !payload.contains("\"origin\":\"https://app.atelier\"")
         || !payload.contains("\"echo\":\"ok\"")
         || !payload.contains("\"encodedStatus\":403")
@@ -1745,7 +1758,8 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
     // Startup plus explicit probes may rotate the bounded diagnostic log.
     // Every required probe above must still be present; report rotation honestly.
     Ok(format!(
-        "embedded resources: assets=41; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
+        "embedded resources: assets={}; worker-ping=echo; editor=typed+ink+undo+redo; encoded-path=403; CSP fetch+WebSocket+image+frame=blocked; attempts={}; rotated={}",
+        crate::resources::RESOURCES.len(),
         attempts.len(),
         view.dropped_resource_attempts()
     ))

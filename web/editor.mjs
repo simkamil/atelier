@@ -383,6 +383,13 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     throw new EditorError("EDITOR_UNSUPPORTED_INPUT");
   }
 
+  function checkActionSnapshot(snapshot) {
+    if (disposed || busy || !state || compositionStart) throw new EditorError(disposed ? "EDITOR_CLOSED" : "EDITOR_BUSY");
+    if (!snapshot || snapshot.revision !== state.revision || snapshot.anchor !== state.anchor || snapshot.focus !== state.focus) {
+      throw new EditorError("EDITOR_STALE_SELECTION");
+    }
+  }
+
   function handleComposition(preview) {
     if (preview.phase === "cancel" || preview.phase === "commit") {
       if (preview.phase === "commit") compositionCommit = compositionStart;
@@ -506,6 +513,26 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     },
     async initialize() { return enqueue(EditorOpcode.State); },
     getState() { return state; },
+    get canEdit() { return Boolean(state && !busy && !disposed && !compositionStart); },
+    editSelection(text, snapshot) {
+      if (typeof text !== "string") return Promise.reject(new TypeError("Inserted text must be a string."));
+      return enqueueTask(() => {
+        checkActionSnapshot(snapshot);
+        textDragDrop?.cancel(); extensionMode = false;
+        return dispatch(EditorOpcode.ReplaceRange, { text, revision: state.revision,
+          start: Math.min(state.anchor, state.focus), end: Math.max(state.anchor, state.focus), nowMs: nowMs() });
+      });
+    },
+    selectionAction(action, snapshot) {
+      return enqueueTask(() => {
+        checkActionSnapshot(snapshot);
+        textDragDrop?.cancel(); extensionMode = false;
+        if (action === "selectAll") return dispatch(EditorOpcode.SetSelection, { anchor: 0, focus: state.textBytes.length });
+        if (action === "undo") return dispatch(EditorOpcode.Undo);
+        if (action === "redo") return dispatch(EditorOpcode.Redo);
+        throw new EditorError("EDITOR_UNSUPPORTED_INPUT");
+      });
+    },
     search(queryText, options = {}) { return query(EditorOpcode.Search, { query: queryText, options }); },
     statistics() { return query(EditorOpcode.Statistics); },
     replaceCurrent(values, { signal } = {}) { return replace(EditorOpcode.Replace, values, signal); },

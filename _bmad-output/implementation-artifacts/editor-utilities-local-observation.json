@@ -1,0 +1,39 @@
+{
+  "status": "passed",
+  "root_docx": {
+    "status": "passed",
+    "inputBytes": 490279,
+    "opened": "ok",
+    "previewActive": true,
+    "txtStatePreserved": true,
+    "previewVisible": true,
+    "textBytes": 110286,
+    "canvasWidth": 1164,
+    "canvasHeight": 410,
+    "pages": 35,
+    "inkPixels": 625,
+    "lastPageReached": true,
+    "returnedToTxt": true,
+    "environment": "real Edge UI + production Worker/WASM; native file reply simulated locally; no input text logged"
+  },
+  "root_source_unchanged": true,
+  "previous_docx": {
+    "status": "passed",
+    "inputBytes": 2149773,
+    "opened": "ok",
+    "previewActive": true,
+    "txtStatePreserved": true,
+    "previewVisible": true,
+    "textBytes": 2296,
+    "canvasWidth": 1164,
+    "canvasHeight": 410,
+    "pages": 3,
+    "inkPixels": 1392,
+    "lastPageReached": true,
+    "returnedToTxt": true,
+    "environment": "real Edge UI + production Worker/WASM; native file reply simulated locally; no input text logged",
+    "input_sha256": "23d1eff7de995ad09eced89eefd3cb50d93dc466f53f4d1f01b45e833834f9bb",
+    "input_unchanged": true
+  },
+  "scope": "Local private documents only; no document text or private paths distributed."
+}

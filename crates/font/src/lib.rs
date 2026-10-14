@@ -447,6 +447,23 @@ impl<'a> FontFace<'a> {
         0
     }
 
+    /// Resolve the glyph used to display a scalar, with a small typographic
+    /// fallback for U+2011 when the font lacks its dedicated non-breaking hyphen.
+    /// The character itself is never changed; callers retain its Unicode value
+    /// and source range. `glyph_index` remains the strict cmap query.
+    pub fn display_glyph_index(&self, character: char) -> u16 {
+        let glyph = self.glyph_index(character);
+        if glyph != 0 || character != '\u{2011}' {
+            return glyph;
+        }
+        let en_dash = self.glyph_index('\u{2010}');
+        if en_dash != 0 {
+            en_dash
+        } else {
+            self.glyph_index('-')
+        }
+    }
+
     /// Resolve a base character and variation selector through cmap format 14.
     pub fn variation_glyph(&self, base: char, selector: char) -> VariationGlyph {
         let Some(CmapSubtable::Format14 {

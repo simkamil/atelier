@@ -26,6 +26,46 @@ pub struct Resource {
 // Every URL here is an explicit, immutable route. No directory or prefix serving exists.
 pub static RESOURCES: &[Resource] = &[
     Resource {
+        path: "/symbol-dialog.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/symbol-dialog.mjs"),
+    },
+    Resource {
+        path: "/symbol-dialog.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/symbol-dialog.css"),
+    },
+    Resource {
+        path: "/symbol-catalogue.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/symbol-catalogue.mjs"),
+    },
+    Resource {
+        path: "/editor-context-menu.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/editor-context-menu.mjs"),
+    },
+    Resource {
+        path: "/about-dialog.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/about-dialog.mjs"),
+    },
+    Resource {
+        path: "/about-dialog.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/about-dialog.css"),
+    },
+    Resource {
+        path: "/about-licenses.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/about-licenses.mjs"),
+    },
+    Resource {
+        path: "/build-info.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!(concat!(env!("OUT_DIR"), "/build-info.mjs")),
+    },
+    Resource {
         path: "/page-navigation.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/page-navigation.mjs"),

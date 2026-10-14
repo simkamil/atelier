@@ -22,7 +22,7 @@ if sys.argv[1:] == ['--inspect-routes']:
     project=Path(__file__).resolve().parents[2]
     resource_file=project/'crates/desktop-win/src/resources.rs'
     source=resource_file.read_text(encoding='utf-8')
-    routes={match.group(1) for match in re.finditer(r'Resource\s*\{\s*path:\s*"([^"]+)".*?bytes:\s*include_bytes!\("([^"]+)"\).*?\}',source,re.S)}
+    routes={match.group(1) for match in re.finditer(r'Resource\s*\{\s*path:\s*"([^"]+)"[^{}]*?bytes:\s*include_bytes!\("([^"]+)"\)[^{}]*?\}',source,re.S)}
     refs=[]
     for file in sorted((project/'web').glob('*')):
         if not file.is_file() or file.suffix.lower() not in ('.html','.mjs','.css'):
@@ -82,6 +82,10 @@ prototype_docs.extend(['docs/us-340-343-navigation-ui.md','web/navigation-tools.
 prototype_docs.extend(['docs/us-102-i18n.md','web/i18n.mjs','tests/i18n.mjs','tests/check-i18n.mjs','tests/i18n-baseline.txt'])
 prototype_docs.extend(['docs/us-315-encrypted-detection.md','tests/encrypted-reference/README.md'])
 prototype_docs.extend(['docs/us-341-replacement.md','docs/us-344-status-bar.md','web/page-navigation.mjs','web/replace-controls.mjs','web/replace-controls.css','web/document-status.mjs','web/document-status.css','tests/page-navigation.mjs','tests/replacement-protocol.mjs','tests/replacement-browser.mjs','tests/replace-controls-browser.mjs','tests/replacement-controller-browser.mjs','tests/document-status-browser.mjs','tests/document-status-integration-browser.mjs'])
+prototype_docs.append('docs/us-316-text-files.md')
+prototype_docs.extend(['docs/us-227-editor-utilities.md','docs/us-230-editor-utilities.md','docs/us-361-editor-utilities.md'])
+prototype_docs.append('docs/us-220-rich-session.md')
+prototype_docs.extend(['web/symbol-dialog.css','web/about-dialog.css'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.
 # These versioned inputs are also exercised by the independent pixel tests.
@@ -240,7 +244,7 @@ for match in re.finditer(r'include_bytes!\("([^"]+)"\)',resource_contents):
 
 # Preserve the real URL -> native route -> embedded bytes -> source file chain.
 route_targets={}
-for match in re.finditer(r'Resource\s*\{\s*path:\s*"([^"]+)".*?bytes:\s*include_bytes!\("([^"]+)"\).*?\}',resource_contents,re.S):
+for match in re.finditer(r'Resource\s*\{\s*path:\s*"([^"]+)"[^{}]*?bytes:\s*include_bytes!\("([^"]+)"\)[^{}]*?\}',resource_contents,re.S):
     url,include_path=match.groups()
     asset=(resource_source.parent/include_path).resolve()
     relative=asset.relative_to(root).as_posix()
@@ -254,17 +258,42 @@ for match in re.finditer(r'Resource\s*\{\s*path:\s*"([^"]+)".*?bytes:\s*include_
     merged['edges'].append({'source':'crates_desktop_win_src_resources','target':route_id,'relation':'serves_url','confidence':'EXTRACTED','confidence_score':1.0,'source_file':'crates/desktop-win/src/resources.rs','source_location':line})
     merged['edges'].append({'source':route_id,'target':asset_id,'relation':'serves_embedded_bytes','confidence':'EXTRACTED','confidence_score':1.0,'source_file':'crates/desktop-win/src/resources.rs','source_location':line})
     file_id=relative.rsplit('.',1)[0].replace('/','_').replace('-','_')
-    if file_id not in node_ids:
+    if file_id not in node_ids or not any(node['id']==file_id and node.get('source_file')==relative for node in merged['nodes']):
         file_id='document_'+relative.replace('/','_').replace('.','_').replace('-','_').lower()
     if file_id in node_ids:
         merged['edges'].append({'source':route_id,'target':file_id,'relation':'serves_source_file','confidence':'EXTRACTED','confidence_score':1.0,'source_file':'crates/desktop-win/src/resources.rs','source_location':line})
 
 def source_node_id(relative):
     module_id=relative.rsplit('.',1)[0].replace('/','_').replace('-','_')
-    if module_id in node_ids:
+    if module_id in node_ids and any(node['id']==module_id and node.get('source_file')==relative for node in merged['nodes']):
         return module_id
     document_id='document_'+relative.replace('/','_').replace('.','_').replace('-','_').lower()
     return document_id if document_id in node_ids else None
+
+# Build metadata is generated in OUT_DIR, not copied from the development fallback.
+for match in re.finditer(r'Resource\s*\{\s*path:\s*"([^"]+)"[^{}]*?bytes:\s*include_bytes!\(concat!\(env!\("OUT_DIR"\),\s*"([^"]+)"\)\)[^{}]*?\}',resource_contents,re.S):
+    url,generated_name=match.groups()
+    assert generated_name == '/build-info.mjs', generated_name
+    build_source=(root/'crates/desktop-win/build.rs').read_text(encoding='utf-8')
+    assert '.join("build-info.mjs")' in build_source
+    route_id='http_route_'+re.sub(r'[^a-z0-9]+','_',url.casefold()).strip('_')
+    asset_id='embedded_generated_build_info_module'
+    line=str(resource_contents[:match.start()].count('\n')+1)
+    for node in [
+        {'id':route_id,'label':url,'type':'http_route','source_file':'crates/desktop-win/src/resources.rs','source_location':line,'_origin':'extracted'},
+        {'id':asset_id,'label':'OUT_DIR/build-info.mjs','type':'embedded_generated_asset','source_file':'crates/desktop-win/build.rs','source_location':str(build_source[:build_source.index('let metadata')].count('\n')+1),'_origin':'extracted'},
+    ]:
+        if node['id'] not in node_ids:
+            merged['nodes'].append(node);node_ids.add(node['id'])
+    route_targets[url]='crates/desktop-win/build.rs'
+    for source,target,relation in [
+        ('crates_desktop_win_src_resources',route_id,'serves_url'),
+        (route_id,asset_id,'serves_embedded_bytes'),
+    ]:
+        merged['edges'].append({'source':source,'target':target,'relation':relation,'confidence':'EXTRACTED','confidence_score':1.0,'source_file':'crates/desktop-win/src/resources.rs','source_location':line})
+    build_id=source_node_id('crates/desktop-win/build.rs')
+    if build_id:
+        merged['edges'].append({'source':asset_id,'target':build_id,'relation':'generated_by','confidence':'EXTRACTED','confidence_score':1.0,'source_file':'crates/desktop-win/build.rs','source_location':str(build_source[:build_source.index('let metadata')].count('\n')+1)})
 
 for folder in ('web',):
     for source in sorted((root/folder).glob('*')):
@@ -455,6 +484,15 @@ for node in removed:
         assert (root/source).read_bytes().replace(b'\r\n',b'\n') == merged_source.replace(b'\r\n',b'\n')
         cleanup.append({'id':node['id'],'reason':'source symbol removed by merged US-313','baseline_commit':baseline_commit,'retirement_commit':retirement_commit,'source_file':source})
         continue
+    if node['id'] == 'crates_core_wasm_tests_rich_preview_glyph_budget_is_enforced_while_layout_is_built':
+        # The long-guide regression now verifies acceptance above the former
+        # ceiling rather than rejection there; preserve its located successor.
+        assert source == 'crates/core-wasm/tests/rich_preview.rs'
+        replacement = 'crates_core_wasm_tests_rich_preview_glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page'
+        assert replacement in g
+        current_source = (root/source).read_text(encoding='utf-8')
+        assert 'fn glyph_budget_is_enforced_while_layout_is_built(' not in current_source
+        assert 'fn glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page(' in current_source
     if not placeholder and replacement is None:
         raise RuntimeError(f'Refused to remove located graph node: {node["id"]}')
     cleanup.append({'id':node['id'],'reason':'unresolved AST placeholder' if placeholder else 'equivalent located node','replacement':replacement})

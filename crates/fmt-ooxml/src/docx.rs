@@ -1745,7 +1745,9 @@ fn parse_styles(root: &XmlNode, limits: &DocxLimits) -> Result<ParsedStyles, Doc
             "table" => StyleKind::Table,
             _ => StyleKind::Paragraph,
         };
-        if kind == StyleKind::Paragraph
+        // Word also has a default numbering style; its unsupported model kind
+        // must not be mistaken for a second default paragraph style.
+        if n.w_attr("type").unwrap_or("paragraph") == "paragraph"
             && n.w_attr("default")
                 .map(|v| parse_on_off(Some(v), false))
                 .transpose()?
@@ -1931,18 +1933,18 @@ fn theme_font_slot(value: &str) -> Option<ThemeFont> {
 }
 fn theme_color_slot(value: &str) -> Option<ThemeColor> {
     Some(match value {
-        "dark1" | "tx1" => ThemeColor::Dark1,
-        "light1" | "bg1" => ThemeColor::Light1,
-        "dark2" | "tx2" => ThemeColor::Dark2,
-        "light2" | "bg2" => ThemeColor::Light2,
+        "dark1" | "tx1" | "text1" => ThemeColor::Dark1,
+        "light1" | "bg1" | "background1" => ThemeColor::Light1,
+        "dark2" | "tx2" | "text2" => ThemeColor::Dark2,
+        "light2" | "bg2" | "background2" => ThemeColor::Light2,
         "accent1" => ThemeColor::Accent1,
         "accent2" => ThemeColor::Accent2,
         "accent3" => ThemeColor::Accent3,
         "accent4" => ThemeColor::Accent4,
         "accent5" => ThemeColor::Accent5,
         "accent6" => ThemeColor::Accent6,
-        "hlink" => ThemeColor::Hyperlink,
-        "folHlink" => ThemeColor::FollowedHyperlink,
+        "hlink" | "hyperlink" => ThemeColor::Hyperlink,
+        "folHlink" | "followedHyperlink" => ThemeColor::FollowedHyperlink,
         _ => return None,
     })
 }

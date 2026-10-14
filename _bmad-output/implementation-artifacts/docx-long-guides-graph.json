@@ -1,0 +1,49 @@
+{
+  "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
+  "nodes": 9496,
+  "edges": 24293,
+  "stories": 158,
+  "done": 53,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 9496,
+  "html_node_limit": 10000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 1215,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 64,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "94df23fb037145d75542f54dbc0215d0daf929bc:graphify-out/GRAPH_REPORT.md",
+  "local_cost_meter_available": false,
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "replacement_story_status": null,
+  "zoom_story_status": null,
+  "navigation_story_status": null,
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "a19486cef5cebe524a2508ea34ef826d2b56cef1aa19617bc60003f8dd5fe7cc",
+    "graphify-out/graph.json": "e3e9159810992a30ba798191793b95e464f1573b467223bdc847232ab07294ab",
+    "graphify-out/graph.html": "03309fd8d02b0f7a86cd2c28cc801f87ce31831174522f8dbec5e2cce4164727",
+    "graphify-out/story-dependencies.json": "12fb7f3d7a25e9de21ba4ad2d6767e7d4abe03bfc2dadac7362fb60a2ac166bc",
+    "graphify-out/unresolved-structural-references.json": "d620fece445c95ad415fba402a4be077f83a35116ea739992e5f3575052a8c05"
+  },
+  "graph_tools_sha256": {
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "854210f1b031275051c839a640679b7055c89a83d2aba38fa6930a86dfe4c9ef",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "bfc877fc69165f97d6055a394645d3c16e03edfde1a8dfc0e0e978b37cbb732e"
+  }
+}

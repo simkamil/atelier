@@ -706,6 +706,8 @@ Réf : F-TXT-012 · Taille : S · Dépend de : US-212
 ## E1.3 — Édition
 
 #### US-220 — Saisir du texte
+
+Préparation DOCX du 2026-10-14 : [session riche conservée](docs/us-220-rich-session.md) pour remplacer du texte dans un paragraphe et annuler/rétablir sans aplatir les styles. API Rust uniquement ; saisie riche dans l'interface, IME et structure des paragraphes restent à raccorder et valider.
 *En tant qu'*utilisateur, *je veux* taper du texte avec mon clavier français *afin de* rédiger mes documents.
 - [ ] Caractères, accents par touches mortes, AltGr (€, @…), majuscules accentuées via le pavé ou Alt+code.
 - [ ] Entrée : nouveau paragraphe (style suivant appliqué) ; Maj+Entrée : saut de ligne ; Ctrl+Entrée : saut de page.
@@ -768,6 +770,8 @@ Tranche TXT validée le 2026-10-11 : copy/cut/paste text/plain synchrones, Ctrl+
 Réf : F-COM-016 · Taille : L · Dépend de : US-200, US-270
 
 #### US-226 — Annuler et rétablir
+
+Préparation DOCX du 2026-10-14 : session riche Rust, remplacement dans un paragraphe et historique conservant sélection/styles/métadonnées. Le raccordement UI et l'enregistrement restent ouverts ; voir [contrat US-220/226](docs/us-220-rich-session.md).
 *En tant qu'*utilisateur, *je veux* annuler et rétablir mes actions *afin de* corriger mes erreurs sans crainte.
 - [ ] Ctrl+Z / Ctrl+Y, boutons de la barre d'accès rapide avec liste déroulante des actions (libellés lisibles : « Frappe », « Mise en gras »…).
 - [ ] Le curseur et la vue reviennent à l'endroit de l'action.
@@ -778,10 +782,13 @@ Réf : F-COM-009 · Taille : S · Dépend de : US-072, US-220
 #### US-227 — Caractères spéciaux
 *En tant qu'*utilisateur, *je veux* insérer des symboles *afin d'écrire* des caractères absents du clavier.
 - [ ] Dialogue Symbole : grille par police et par bloc Unicode, recherche par nom, symboles récents.
-- [ ] Onglet caractères spéciaux : tirets cadratin et demi-cadratin, espace insécable, espace fine insécable, trait d'union insécable, ©, ®, ™, §, ¶, points de suspension.
-- [ ] Ctrl+Maj+Espace : espace insécable.
+- [x] Onglet caractères spéciaux : tirets cadratin et demi-cadratin, espace insécable, espace fine insécable, trait d'union insécable, ©, ®, ™, §, ¶, points de suspension.
+- [x] Ctrl+Maj+Espace : espace insécable.
 
 Réf : F-TXT-004 · Taille : S · Dépend de : US-104, US-220
+
+Avancement US-227 (2026-10-14) : US-227 reste partielle : le choix parmi plusieurs polices et la mise en forme/édition riche ne sont pas encore raccordés. La police du TXT est Carlito. L’aperçu DOCX reste en lecture seule. [Contrat et validation](docs/us-227-editor-utilities.md).
+
 
 #### US-228 — Espaces insécables automatiques
 *En tant qu'*utilisateur, *je veux* que les espaces insécables soient insérés automatiquement selon la typographie française *afin d'éviter* une ponctuation isolée en début de ligne.
@@ -804,9 +811,12 @@ Réf : F-TXT-005 · Taille : S · Dépend de : US-220
 #### US-230 — Menu contextuel
 *En tant qu'*utilisateur, *je veux* un menu au clic droit *afin d'accéder* aux actions pertinentes.
 - [ ] Contenu selon le contexte : texte, lien, tableau, image, en-tête.
-- [ ] Ouvrable au clavier (touche Menu, Maj+F10).
+- [x] Ouvrable au clavier (touche Menu, Maj+F10).
 
 Réf : F-COM-018 · Taille : S · Dépend de : US-104
+
+Avancement US-230 (2026-10-14) : US-230 reste partielle pour les contextes lien, tableau, image et en-tête, encore absents de l’éditeur riche. Les formats clipboard HTML/RTF ne sont pas ajoutés. [Contrat et validation](docs/us-230-editor-utilities.md).
+
 
 #### US-231 — Raccourcis clavier de Word en français
 *En tant qu'*utilisateur habitué à Word, *je veux* retrouver les mêmes raccourcis *afin de* ne rien réapprendre.
@@ -1471,9 +1481,12 @@ Réf : D6, §7.2 · Taille : S · Dépend de : US-112, US-116
 
 #### US-361 — À propos
 *En tant qu'*utilisateur, *je veux* connaître la version et la licence *afin de* savoir ce que j'utilise.
-- [ ] Version, date de build, licence AGPL-3.0 (texte complet consultable), adresse du code source, licences des polices et des données Unicode.
+- [x] Version, date de build, licence AGPL-3.0 (texte complet consultable), adresse du code source, licences des polices et des données Unicode.
 
 Réf : §9 · Taille : S · Dépend de : US-320
+
+Avancement US-361 (2026-10-14) : US-361 est validée. La consultation fonctionne aussi pendant un aperçu DOCX sans changer le document. [Contrat et validation](docs/us-361-editor-utilities.md).
+
 
 #### US-362 — Validation des performances
 *En tant qu'*utilisateur, *je veux* une application rapide *afin de* travailler sans attendre.

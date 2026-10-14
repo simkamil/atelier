@@ -1,0 +1,38 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+.ui-dialog.symbol-dialog-shell { width: min(820px, calc(100vw - 32px)); max-width: 820px; padding: 0; color: var(--chrome-ink); background: var(--chrome-surface-raised); border: 1px solid var(--chrome-border); border-radius: 12px; box-shadow: 0 20px 64px rgb(0 0 0 / .28); }
+.ui-dialog.symbol-dialog-shell::backdrop { background: rgb(9 20 14 / .48); }
+.ui-dialog.symbol-dialog-shell .ui-dialog-title { padding: 20px 24px 12px; margin: 0; }
+.ui-dialog.symbol-dialog-shell .ui-dialog-close { position: absolute; top: 14px; right: 16px; }
+.ui-dialog.symbol-dialog-shell .ui-dialog-content { padding: 0 24px 24px; }
+.symbol-dialog { display: grid; gap: 14px; }
+.symbol-dialog-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--chrome-border); }
+.symbol-dialog-tab { appearance: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 10px 14px; background: transparent; color: var(--chrome-muted); font: inherit; font-weight: 600; cursor: pointer; }
+.symbol-dialog-tab[aria-selected="true"] { color: var(--chrome-accent); border-bottom-color: var(--chrome-accent); }
+.symbol-dialog-tab:focus-visible,.symbol-dialog button:focus-visible,.symbol-dialog input:focus-visible,.symbol-dialog select:focus-visible { outline: 2px solid var(--chrome-focus); outline-offset: 2px; }
+.symbol-dialog-panel { min-width: 0; }
+.symbol-dialog-font,.symbol-dialog-status { margin: 0; color: var(--chrome-muted); }
+.symbol-dialog-font-name { color: var(--chrome-ink); font-weight: 600; }
+.symbol-dialog-controls { display: grid; grid-template-columns: minmax(180px, 1.3fr) minmax(180px, 1fr); gap: 12px; }
+.symbol-dialog-field-label { display: grid; gap: 5px; color: var(--chrome-muted); font-size: .9rem; }
+.symbol-dialog-search,.symbol-dialog-block { width: 100%; min-height: 38px; padding: 7px 9px; border: 1px solid var(--chrome-control-border); border-radius: 6px; color: var(--chrome-ink); background: var(--chrome-control); font: inherit; }
+.symbol-dialog-section-title { margin: 0; font-size: .95rem; }
+.symbol-dialog-recent,.symbol-dialog-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 5px; }
+.symbol-dialog-row { display: contents; }
+.symbol-dialog-recent:empty { display: none; }
+.symbol-dialog-cell { display: grid; min-width: 0; min-height: 60px; align-content: center; justify-items: center; gap: 2px; padding: 4px 2px; border: 1px solid var(--chrome-border); border-radius: 6px; color: var(--chrome-ink); background: var(--chrome-control); cursor: pointer; }
+.symbol-dialog-cell:hover,.symbol-dialog-cell.is-selected { border-color: var(--chrome-accent); background: var(--chrome-control-hover); }
+.symbol-dialog-glyph { max-width: 100%; overflow: hidden; font-size: 1.6rem; line-height: 1.1; }
+.symbol-dialog-code { color: var(--chrome-muted); font-size: .65rem; }
+.symbol-dialog-status:empty { display: none; }
+.symbol-dialog-insertion-status { margin: 0; color: var(--chrome-danger); font-weight: 600; }
+.symbol-dialog-insertion-status:empty { display: none; }
+.symbol-dialog-pager,.symbol-dialog-insert-row { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.symbol-dialog-page-button,.symbol-dialog-insert { min-height: 36px; padding: 6px 12px; border: 1px solid var(--chrome-control-border); border-radius: 6px; color: var(--chrome-ink); background: var(--chrome-control); font: inherit; cursor: pointer; }
+.symbol-dialog-insert { color: var(--chrome-accent-ink); background: var(--chrome-accent); border-color: var(--chrome-accent); font-weight: 600; }
+.symbol-dialog-page-button:disabled,.symbol-dialog-insert:disabled { opacity: .5; cursor: default; }
+.symbol-dialog-special-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 580px) {
+  .ui-dialog.symbol-dialog-shell .ui-dialog-content { padding: 0 14px 16px; }
+  .symbol-dialog-controls { grid-template-columns: 1fr; }
+  .symbol-dialog-recent,.symbol-dialog-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

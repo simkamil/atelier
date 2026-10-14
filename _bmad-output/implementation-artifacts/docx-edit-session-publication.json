@@ -1,0 +1,9 @@
+{
+  "validated_inputs": 1174,
+  "additional_graph_inputs": 7,
+  "staged_blobs_checked": 1181,
+  "staged_sha256_mismatches": [],
+  "validation_passed": true,
+  "rust_tests_passed": 70,
+  "scope": "Compared exact staged blobs with tested product inputs and architectural receipts; source HEAD recorded in spec is the baseline."
+}

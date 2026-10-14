@@ -11,6 +11,17 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_desktop_win_build",
+    "target": "build_date",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/build.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_unicode_build",
     "target": "std",
     "relation": "imports_from",
@@ -192,7 +203,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/editor.rs",
-    "source_location": "L1056",
+    "source_location": "L1067",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -236,7 +247,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/lib.rs",
-    "source_location": "L498",
+    "source_location": "L499",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -308,6 +319,83 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_core_wasm_src_rich_preview",
+    "target": "btreemap",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_preview.rs",
+    "source_location": "L17",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "atelier_fmt_ooxml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "grapheme_boundaries",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "size_of",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "rich_preview",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_core_wasm_tests_editor_engine",
     "target": "protocol",
     "relation": "imports_from",
@@ -325,6 +413,39 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/tests/protocol_boundaries.rs",
     "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_retained_preview",
+    "target": "rich_preview",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/retained_preview.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_retained_preview",
+    "target": "transaction",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/retained_preview.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_retained_preview",
+    "target": "richop",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/retained_preview.rs",
+    "source_location": "L4",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -369,6 +490,50 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/tests/rich_preview_session.rs",
     "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_session",
+    "target": "preview_docx",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_session.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_session",
+    "target": "rich_session",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_session.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_session",
+    "target": "atelier_fmt_ooxml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_session.rs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_desktop_win_src_build_date",
+    "target": "build_date",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/desktop-win/src/build_date.rs",
+    "source_location": "L21",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -665,7 +830,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/resources.rs",
-    "source_location": "L357",
+    "source_location": "L397",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -863,7 +1028,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2162",
+    "source_location": "L2176",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -874,7 +1039,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2167",
+    "source_location": "L2181",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -885,7 +1050,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/desktop-win/src/win32.rs",
-    "source_location": "L2170",
+    "source_location": "L2184",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -2788,7 +2953,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/font/src/lib.rs",
-    "source_location": "L1192",
+    "source_location": "L1209",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -3069,6 +3234,17 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_font_tests_ui_symbol_coverage",
+    "target": "fontface",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/font/tests/ui_symbol_coverage.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_geom_src_lib",
     "target": "fmt",
     "relation": "imports_from",
@@ -3085,7 +3261,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/geom/src/lib.rs",
-    "source_location": "L696",
+    "source_location": "L743",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -4097,7 +4273,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/text-model/src/lib.rs",
-    "source_location": "L14",
+    "source_location": "L15",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -4108,7 +4284,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/text-model/src/lib.rs",
-    "source_location": "L15",
+    "source_location": "L16",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -4142,6 +4318,116 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/text-model/tests/drag_spacing.rs",
     "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io",
+    "target": "plain_io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io.rs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io",
+    "target": "atelier_text_model",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io",
+    "target": "common",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io_detection",
+    "target": "plain_io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io_detection.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io_fixes",
+    "target": "plain_io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io_fixes.rs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io_fixes",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io_fixes.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io_fixes",
+    "target": "common",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io_fixes.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io_property",
+    "target": "plain_io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io_property.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_tests_plain_io_property",
+    "target": "encoding",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/tests/plain_io_property.rs",
+    "source_location": "L7",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -4516,6 +4802,50 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/text-model/tests/styles.rs",
     "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_src_plain_io_mod",
+    "target": "cow",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/src/plain_io/mod.rs",
+    "source_location": "L21",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_src_plain_io_mod",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/src/plain_io/mod.rs",
+    "source_location": "L23",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_src_plain_io_rich",
+    "target": "super",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/src/plain_io/rich.rs",
+    "source_location": "L26",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_text_model_src_plain_io_rich",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/text-model/src/plain_io/rich.rs",
+    "source_location": "L27",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -6139,11 +6469,22 @@
   },
   {
     "source": "tools_fuzz_src_targets",
+    "target": "plain_io",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/fuzz/src/targets.rs",
+    "source_location": "L32",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_fuzz_src_targets",
     "target": "atelier_zip",
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "tools/fuzz/src/targets.rs",
-    "source_location": "L34",
+    "source_location": "L35",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -6842,6 +7183,17 @@
     "_origin": "ast"
   },
   {
+    "source": "web_about_dialog",
+    "target": "ref_ui_components_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/about-dialog.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
     "source": "web_app",
     "target": "ref_engine_client_mjs",
     "relation": "imports_from",
@@ -6937,6 +7289,72 @@
     "confidence": "EXTRACTED",
     "source_file": "web/app.mjs",
     "source_location": "L10",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_symbol_dialog_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_symbol_catalogue_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L12",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_editor_context_menu_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L13",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_about_dialog_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L14",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_about_licenses_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L15",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "web_app",
+    "target": "ref_build_info_mjs",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "web/app.mjs",
+    "source_location": "L16",
     "weight": 1.0,
     "_origin": "ast"
   },
@@ -7168,6 +7586,28 @@
     "confidence": "EXTRACTED",
     "source_file": "tests/editor-protocol.mjs",
     "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_editor_utilities_data",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/editor-utilities-data.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_editor_utilities_data",
+    "target": "ref_node_fs_promises",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/editor-utilities-data.mjs",
+    "source_location": "L3",
     "weight": 1.0,
     "_origin": "ast"
   },
@@ -7445,6 +7885,83 @@
     "context": "import",
     "confidence": "EXTRACTED",
     "source_file": "tests/run-editor-browser.mjs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_assert_strict",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_child_process",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_http",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_fs_promises",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L5",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_os",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_path",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tests_run_editor_utilities_browser",
+    "target": "ref_node_url",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tests/run-editor-utilities-browser.mjs",
     "source_location": "L8",
     "weight": 1.0,
     "_origin": "ast"
@@ -8263,6 +8780,72 @@
     "confidence": "EXTRACTED",
     "source_file": "tools/generate-odt-reference.py",
     "source_location": "L36",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "pathlib",
+    "relation": "imports_from",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L3",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "bisect",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L4",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "re",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L6",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "struct",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L7",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "sys",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L8",
+    "weight": 1.0,
+    "_origin": "ast"
+  },
+  {
+    "source": "tools_package_editor_utilities",
+    "target": "tomllib",
+    "relation": "imports",
+    "context": "import",
+    "confidence": "EXTRACTED",
+    "source_file": "tools/package-editor-utilities.py",
+    "source_location": "L9",
     "weight": 1.0,
     "_origin": "ast"
   },

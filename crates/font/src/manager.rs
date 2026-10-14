@@ -308,7 +308,8 @@ impl<'a> FontManager<'a> {
     pub fn resolve(&self, request: &FontRequest) -> Result<ResolvedFont<'_, 'a>, ManagerError> {
         self.resolve_inner(request, None)
     }
-    /// Resolve only among faces whose cmap maps `character` to a non-.notdef glyph.
+    /// Resolve only among faces that can display `character`, using the narrowly
+    /// scoped display fallback where one exists.
     pub fn resolve_for_char(
         &self,
         request: &FontRequest,
@@ -355,7 +356,7 @@ impl<'a> FontManager<'a> {
             for candidate in self
                 .entries
                 .iter()
-                .filter(|entry| character.is_none_or(|ch| entry.face.glyph_index(ch) != 0))
+                .filter(|entry| character.is_none_or(|ch| entry.face.display_glyph_index(ch) != 0))
             {
                 if let Some(family_key) = candidate.keys.first() {
                     if let Some(entry) = self.best_for_family(request, family_key, character) {
@@ -381,7 +382,7 @@ impl<'a> FontManager<'a> {
             .iter()
             .filter(|entry| {
                 entry.keys.iter().any(|key| key == family)
-                    && character.is_none_or(|ch| entry.face.glyph_index(ch) != 0)
+                    && character.is_none_or(|ch| entry.face.display_glyph_index(ch) != 0)
             })
             .collect();
         candidates.sort_by(|a, b| {

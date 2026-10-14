@@ -1,0 +1,159 @@
+$ cargo test -p atelier-core-wasm --locked --offline
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running unittests src\lib.rs (target\debug\deps\atelier_core_wasm-744c746f8b2e855d.exe)
+
+running 12 tests
+test editor::navigation_tests::selecting_a_unit_starting_at_base_end_extends_forward ... ok
+test editor_layout::tests::path_budget_rejects_before_adding_elements_or_bytes ... ok
+test tests::exact_pointer_and_length_are_required_for_release ... ok
+test tests::in_flight_dispatch_input_remains_charged_until_replaced_or_released ... ok
+test tests::zero_length_is_noop_and_never_enters_the_registry ... ok
+test protocol::tests::all_types_round_trip_and_header_is_little_endian ... ok
+test protocol::tests::rejects_every_truncated_prefix_and_trailing_bytes ... ok
+test tests::allocation_limits_are_checked_before_allocation ... ok
+test protocol::tests::rejects_invalid_fields_direction_ids_and_control_payloads ... ok
+test protocol::tests::rejects_oversized_encode_and_declared_payload_before_copying ... ok
+test protocol::tests::copies_payload_and_enforces_size_limit ... ok
+test tests::exact_take_transfers_ownership_and_updates_totals ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\drag_spacing.rs (target\debug\deps\drag_spacing-94d9e539c0f35d51.exe)
+
+running 5 tests
+test stale_or_malformed_commands_fail_without_publishing_state ... ok
+test external_drop_uses_source_zero_and_inserts_at_target ... ok
+test point_probe_returns_atpt_without_changing_selection_revision_or_undo_history ... ok
+test french_spacing_replacement_undo_keeps_raw_punctuation_then_redoes_spacing ... ok
+test drop_move_before_after_and_copy_inside_are_single_reversible_transactions ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests\editor_engine.rs (target\debug\deps\editor_engine-26d7c9a7351f9a27.exe)
+
+running 17 tests
+test atlm_editor_response_keeps_the_request_id_and_editor_types_are_registered ... ok
+test malformed_commands_and_invalid_utf8_are_rejected_without_publishing_candidate ... ok
+test invalid_select_point_fails_through_wasm_without_mutating_the_session ... ok
+test loading_identical_content_does_not_advance_content_revision ... ok
+test empty_and_loaded_document_emit_real_carlito_paths_and_preserve_bom_crlf ... ok
+test selecting_only_an_explicit_newline_emits_a_thin_selection_rectangle ... ok
+test select_point_character_extension_accepts_a_nonzero_anchor ... ok
+test select_point_selects_word_and_crlf_terminated_paragraph ... ok
+test loading_short_text_rebuilds_pages_and_glyph_paths_after_a_long_document ... ok
+test crlf_is_removed_as_one_grapheme_and_selection_hit_testing_uses_page_slots ... ok
+test edit_undo_and_stale_save_preserve_revision_dirty_and_document_state ... ok
+test word_delete_is_one_undoable_edit_and_restores_a_reversed_utf8_selection ... ok
+test vertical_navigation_keeps_the_preferred_column_across_a_short_line ... ok
+test word_and_paragraph_navigation_respect_unicode_segments_and_crlf ... ok
+test paragraph_navigation_uses_logical_boundaries_and_resets_preferred_x ... ok
+test paragraph_navigation_clears_the_previous_vertical_column ... ok
+test navigation_is_safe_on_fresh_session_and_collapses_selections_by_direction ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\navigation_queries.rs (target\debug\deps\navigation_queries-c00e3f49ba860513.exe)
+
+running 4 tests
+test malformed_search_frames_and_stale_revisions_are_rejected ... ok
+test unicode_search_uses_exact_ranges_and_cached_geometry_without_changing_state ... ok
+test statistics_reports_selection_counts_and_layout_totals_without_mutation ... ok
+test empty_and_capped_searches_have_bounded_envelopes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s
+
+     Running tests\protocol_boundaries.rs (target\debug\deps\protocol_boundaries-c0fec606f5207156.exe)
+
+running 1 test
+test exact_transport_limit_round_trips_and_oversized_input_is_rejected ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\replacement.rs (target\debug\deps\replacement-a76f9fb1e834a1a7.exe)
+
+running 4 tests
+test no_match_and_identical_replacement_keep_revision_and_history ... ok
+test selected_unicode_match_and_stale_selection_are_checked ... ok
+test stale_revision_invalid_frames_and_output_overflow_are_atomic ... ok
+test replace_all_processes_the_original_matches_once_and_undoes_as_one_edit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running tests\retained_preview.rs (target\debug\deps\retained_preview-39e1bb3af85ffd6a.exe)
+
+running 2 tests
+test wrapper_and_retained_render_seams_produce_identical_preview ... ok
+test retained_text_edits_change_render_without_changing_package ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running tests\rich_preview.rs (target\debug\deps\rich_preview-0cc224e5232a4a99.exe)
+
+running 8 tests
+test invalid_and_over_limit_docx_return_controlled_errors ... ok
+test tab_control_keeps_its_advance_without_drawing_notdef ... ok
+test inline_bold_italic_underline_and_size_reach_the_display_list ... ok
+test nonbreaking_hyphen_keeps_its_text_and_uses_the_hyphen_outline ... ok
+test paragraph_and_text_budgets_reject_oversized_models ... ok
+test reference_docx_renders_real_title_color_and_valid_page ... ok
+test generated_long_docx_paginates_without_losing_text_order ... ok
+test glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.78s
+
+     Running tests\rich_preview_session.rs (target\debug\deps\rich_preview_session-37d51e5146b9ae47.exe)
+
+running 2 tests
+test common_empty_paragraphs_can_be_previewed ... ok
+test preview_success_and_failure_preserve_txt_selection_history_dirty_and_revision ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests\rich_session.rs (target\debug\deps\rich_session-4a58bf4546cea469.exe)
+
+running 15 tests
+test rich_session_operations_do_not_touch_plain_editor_state ... ok
+test deleting_across_style_boundary_keeps_surviving_style_identities ... ok
+test failed_large_render_preserves_existing_history_and_model ... ok
+test oversized_history_entry_is_rejected_before_mutation ... ok
+test undo_restores_actual_selection_when_replacing_another_range ... ok
+test history_budget_counts_owned_formatting_strings ... ok
+test source_breaks_and_symbols_shift_delete_and_restore_exactly ... ok
+test noops_preserve_redo_and_new_edit_clears_it ... ok
+test empty_import_and_tab_insertion_are_supported ... ok
+test projected_text_limit_counts_all_paragraphs_and_separators ... ok
+test replace_undo_redo_restore_render_model_metadata_and_selection ... ok
+test styles_follow_text_and_insertions_inherit_preceding_character ... ok
+test rejected_edits_preserve_redo_selection_revision_and_preview ... ok
+test retained_import_equals_preview_and_rejects_bad_input ... ok
+test layout_failure_after_candidate_edit_restores_model_and_redo ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.05s
+
+   Doc-tests atelier_core_wasm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+$ cargo clippy -p atelier-core-wasm --all-targets --locked --offline -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+
+$ cargo check -p atelier-core-wasm --target wasm32-unknown-unknown --locked --offline
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+
+$ cargo fmt --all -- --check
+
+$ node tests/check-embedded-engine.mjs --compare-artifact
+{"status":"passed","bytes":4226606,"sha256":"70e2bba4cb59d5c4b0f10877442ca302610ec462c4fc47a495c3d608e7e9b4d9","source_count":161,"resource_count":36,"local_packages":["atelier-compress","atelier-core-wasm","atelier-fmt-ooxml","atelier-font","atelier-geom","atelier-model","atelier-render","atelier-shape","atelier-text-layout","atelier-text-model","atelier-ucd-gen","atelier-unicode","atelier-xml","atelier-zip"],"exact_local_artifact":true,"dispatch":"legacy ABI echo; editor semantics verified by separate integration suite"}
+
+$ node tests/check-wasm-size.mjs
+4226606 bytes / 4271903 byte limit (10% growth allowed from 3883549 bytes).
+
+$ node tests/editor-protocol.mjs
+editor protocol/host checks passed: strict ATED/ATES/ATEX bounds, double BOM, correlation, host open/save/cancel/dirty
+
+$ git diff --check
+
+$ git diff --cached --check

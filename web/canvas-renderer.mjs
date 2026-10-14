@@ -41,7 +41,7 @@ function pathBounds(path, matrix) {
   }
   return points.length ? rectOf(points.map(point => map(matrix, point))) : null;
 }
-function makePath(elements) {
+export function makePath(elements) {
   const p = new Path2D();
   for (const element of elements) {
     if (element.type === "moveTo") p.moveTo(element.point.x, element.point.y);

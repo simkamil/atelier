@@ -7,6 +7,7 @@ import { checkEditorZoom, checkAppZoom } from "./zoom-browser.mjs";
 import { checkNavigation } from "./navigation-browser.mjs";
 import { run as checkReplacement } from "./replacement-browser.mjs";
 import { checkDocumentStatus } from "./document-status-integration-browser.mjs";
+import { checkEditorUtilities } from "./editor-utilities-integration-browser.mjs";
 
 const checks = [];
 function assert(value, name) {
@@ -527,6 +528,7 @@ try {
   await checkNavigation({ app, assert, waitFor, key, inputText, openText: openAppText });
   await checkReplacement({ app, assert, openText: openAppText });
   await checkDocumentStatus({ app, assert, waitFor, key, inputText, openText: openAppText });
+  await checkEditorUtilities({ app, assert, waitFor, key, inputText, openText: openAppText });
   nextAppOpen = {status:"ok",payload:btoa(appLargeText)};
   await app.editor.openDocument();
   assert(productScrollport.scrollHeight > productScrollport.clientHeight, "multi-page document scrolls inside document-scroll");
@@ -582,6 +584,13 @@ try {
   assert((await app.openDocx()).kind === "ok", "real app imports DOCX through native host and Worker/WASM");
   assert(app.previewActive && document.querySelector("#text-workspace").hidden && !document.querySelector("#rich-workspace").hidden,
     "read-only DOCX workspace replaces only the visible TXT workspace");
+  assert(document.querySelector("#symbols-command").disabled && !app.editor.canEdit, "symbol insertion is disabled during DOCX preview");
+  let previewEditBlocked = false;
+  try { await app.editor.editSelection("©", beforePreview); } catch (error) { previewEditBlocked = error.code === "EDITOR_BUSY"; }
+  assert(previewEditBlocked && app.getState() === beforePreview, "public symbol/clipboard insertion cannot edit the hidden TXT during preview");
+  app.about.open({ returnFocusTo: document.querySelector("#open-docx") });
+  assert(app.about.element.open && app.previewActive, "About remains consultable in read-only DOCX preview");
+  app.about.close();
   assert(document.querySelector("#search-command").disabled && document.querySelector("#statistics-command").disabled
       && document.querySelector("[data-statistics-status]").disabled,
     "search and statistics tools are explicitly unavailable in the simplified DOCX preview");
