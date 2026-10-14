@@ -84,6 +84,7 @@ prototype_docs.extend(['docs/us-315-encrypted-detection.md','tests/encrypted-ref
 prototype_docs.extend(['docs/us-341-replacement.md','docs/us-344-status-bar.md','web/page-navigation.mjs','web/replace-controls.mjs','web/replace-controls.css','web/document-status.mjs','web/document-status.css','tests/page-navigation.mjs','tests/replacement-protocol.mjs','tests/replacement-browser.mjs','tests/replace-controls-browser.mjs','tests/replacement-controller-browser.mjs','tests/document-status-browser.mjs','tests/document-status-integration-browser.mjs'])
 prototype_docs.append('docs/us-316-text-files.md')
 prototype_docs.extend(['docs/us-227-editor-utilities.md','docs/us-230-editor-utilities.md','docs/us-361-editor-utilities.md'])
+prototype_docs.append('docs/us-220-rich-session.md')
 prototype_docs.extend(['web/symbol-dialog.css','web/about-dialog.css'])
 document_paths.update(prototype_docs)
 # Retain already-extracted JPEG fixture concepts at their real source paths.

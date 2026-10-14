@@ -706,6 +706,8 @@ Réf : F-TXT-012 · Taille : S · Dépend de : US-212
 ## E1.3 — Édition
 
 #### US-220 — Saisir du texte
+
+Préparation DOCX du 2026-10-14 : [session riche conservée](docs/us-220-rich-session.md) pour remplacer du texte dans un paragraphe et annuler/rétablir sans aplatir les styles. API Rust uniquement ; saisie riche dans l'interface, IME et structure des paragraphes restent à raccorder et valider.
 *En tant qu'*utilisateur, *je veux* taper du texte avec mon clavier français *afin de* rédiger mes documents.
 - [ ] Caractères, accents par touches mortes, AltGr (€, @…), majuscules accentuées via le pavé ou Alt+code.
 - [ ] Entrée : nouveau paragraphe (style suivant appliqué) ; Maj+Entrée : saut de ligne ; Ctrl+Entrée : saut de page.
@@ -768,6 +770,8 @@ Tranche TXT validée le 2026-10-11 : copy/cut/paste text/plain synchrones, Ctrl+
 Réf : F-COM-016 · Taille : L · Dépend de : US-200, US-270
 
 #### US-226 — Annuler et rétablir
+
+Préparation DOCX du 2026-10-14 : session riche Rust, remplacement dans un paragraphe et historique conservant sélection/styles/métadonnées. Le raccordement UI et l'enregistrement restent ouverts ; voir [contrat US-220/226](docs/us-220-rich-session.md).
 *En tant qu'*utilisateur, *je veux* annuler et rétablir mes actions *afin de* corriger mes erreurs sans crainte.
 - [ ] Ctrl+Z / Ctrl+Y, boutons de la barre d'accès rapide avec liste déroulante des actions (libellés lisibles : « Frappe », « Mise en gras »…).
 - [ ] Le curseur et la vue reviennent à l'endroit de l'action.

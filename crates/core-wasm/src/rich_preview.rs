@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Read-only DOCX import and paginated A4 display-list generation.
+//! Bounded DOCX import and paginated A4 display-list generation.
 
-use atelier_fmt_ooxml::{DocxLimits, import_docx_with_limits};
+use atelier_fmt_ooxml::{DocxLimits, ImportedDocx, import_docx_with_limits};
 use atelier_font::manager::{FontManager, FontManagerLimits, FontRequest, FontSource, FontStyle};
 use atelier_geom::{PathCommand, Point, Rect};
 use atelier_render::{
@@ -17,7 +17,7 @@ use core::fmt;
 use std::collections::BTreeMap;
 
 const MAX_DOCX_BYTES: usize = 8 * 1024 * 1024;
-const MAX_TEXT_BYTES: usize = 128 * 1024;
+pub(crate) const MAX_TEXT_BYTES: usize = 128 * 1024;
 const MAX_PARAGRAPHS: usize = 1024;
 const MAX_PAGES: usize = 256;
 const MAX_GLYPHS: usize = 128 * 1024;
@@ -65,9 +65,8 @@ impl fmt::Display for PreviewError {
 }
 impl std::error::Error for PreviewError {}
 
-/// Imports a bounded DOCX and returns one independent ATDL stream per A4 page.
-/// The function owns all intermediate state and cannot mutate the TXT editor.
-pub fn preview_docx(bytes: &[u8]) -> Result<RichPreview, PreviewError> {
+/// Imports a bounded DOCX into a retained semantic model using the preview budgets.
+pub fn import_preview_docx(bytes: &[u8]) -> Result<ImportedDocx, PreviewError> {
     if bytes.len() > MAX_DOCX_BYTES {
         return Err(PreviewError::InputTooLarge);
     }
@@ -81,21 +80,21 @@ pub fn preview_docx(bytes: &[u8]) -> Result<RichPreview, PreviewError> {
         package: bounded_package_limits(atelier_fmt_ooxml::Limits::default()),
         ..DocxLimits::default()
     };
-    let mut imported =
+    let imported =
         import_docx_with_limits(bytes, limits).map_err(|e| PreviewError::Import(e.to_string()))?;
+    validate_retained_text(&imported)?;
+    Ok(imported)
+}
+
+/// Renders the current retained DOCX model without re-importing its package bytes.
+pub fn render_imported_docx(imported: &mut ImportedDocx) -> Result<RichPreview, PreviewError> {
     let ids = imported.paragraph_ids().to_vec();
-    if ids.len() > MAX_PARAGRAPHS {
-        return Err(PreviewError::Limit("paragraphs"));
-    }
+    validate_retained_text(imported)?;
     let paragraph_bytes = ids
         .iter()
         .map(|id| imported.document.paragraph(*id).map(|p| p.text.len()))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| PreviewError::Import(e.to_string()))?;
-    let total_source_bytes = paragraph_bytes.iter().sum::<usize>() + ids.len().saturating_sub(1);
-    if total_source_bytes > MAX_TEXT_BYTES {
-        return Err(PreviewError::Limit("text"));
-    }
     let mut fonts = FontManager::with_limits(FontManagerLimits {
         max_faces: 4 + 16,
         max_total_bytes: MAX_EMBEDDED_FONT_BYTES
@@ -476,6 +475,38 @@ pub fn preview_docx(bytes: &[u8]) -> Result<RichPreview, PreviewError> {
             )
             .min(u32::MAX as usize) as u32,
     })
+}
+
+/// Imports and renders a DOCX using the retained-model seams.
+pub fn preview_docx(bytes: &[u8]) -> Result<RichPreview, PreviewError> {
+    let mut imported = import_preview_docx(bytes)?;
+    render_imported_docx(&mut imported)
+}
+
+fn validate_retained_text(imported: &ImportedDocx) -> Result<(), PreviewError> {
+    let ids = imported.paragraph_ids();
+    if ids.len() > MAX_PARAGRAPHS {
+        return Err(PreviewError::Limit("paragraphs"));
+    }
+    let total = ids
+        .iter()
+        .enumerate()
+        .try_fold(0usize, |total, (index, id)| {
+            let text_len = imported
+                .document
+                .paragraph(*id)
+                .map_err(|e| PreviewError::Import(e.to_string()))?
+                .text
+                .len();
+            total
+                .checked_add(text_len)
+                .and_then(|n| n.checked_add(usize::from(index > 0)))
+                .ok_or(PreviewError::Limit("text"))
+        })?;
+    if total > MAX_TEXT_BYTES {
+        return Err(PreviewError::Limit("text"));
+    }
+    Ok(())
 }
 
 fn stable_style_id(value: &str) -> u64 {

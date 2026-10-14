@@ -14,7 +14,7 @@ from graphify.cargo_introspect import introspect_cargo
 from graphify.export import to_html
 from graphify.diagnostics import diagnose_extraction
 
-if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"], ["--finalize-navigation"], ["--finalize-replacement"], ["--finalize-docx"], ["--finalize-docx-merged"], ["--finalize-docx-long"], ["--finalize-utilities"]):
+if sys.argv[1:] not in (["--finalize"], ["--finalize-zoom"], ["--finalize-navigation"], ["--finalize-replacement"], ["--finalize-docx"], ["--finalize-docx-merged"], ["--finalize-docx-long"], ["--finalize-utilities"], ["--finalize-rich-session"]):
     raise SystemExit("Usage: py ui-shell-graph-receipt.py --finalize (only after parent GO)")
 zoom_run = sys.argv[1:] == ["--finalize-zoom"]
 navigation_run = sys.argv[1:] == ["--finalize-navigation"]
@@ -23,6 +23,7 @@ docx_run = sys.argv[1:] == ["--finalize-docx"]
 docx_long_run = sys.argv[1:] == ["--finalize-docx-long"]
 docx_merged_run = sys.argv[1:] == ["--finalize-docx-merged"]
 utilities_run = sys.argv[1:] == ["--finalize-utilities"]
+rich_session_run = sys.argv[1:] == ["--finalize-rich-session"]
 
 ROOT = Path(__file__).resolve().parents[2]
 ART = Path(__file__).resolve().parent
@@ -160,6 +161,11 @@ if utilities_run:
     assert any(edge['source']=='http_route_build_info_mjs' and edge['target']=='embedded_generated_build_info_module' and edge.get('relation')=='serves_embedded_bytes' for edge in extraction['edges'])
     assert not any(edge['source']=='http_route_build_info_mjs' and edge['target']=='embedded_web_page_navigation_mjs' for edge in extraction['edges'])
 
+if rich_session_run:
+    required_sources = {'crates/core-wasm/src/rich_session.rs', 'crates/core-wasm/tests/rich_session.rs', 'crates/core-wasm/tests/retained_preview.rs', 'docs/us-220-rich-session.md'}
+    located_sources = {node.get('source_file', '').replace('\\', '/') for node in raw['nodes']}
+    assert required_sources <= located_sources, f"missing rich session sources: {required_sources - located_sources}"
+
 for name in GRAPH_FILES:
     path = OUT / name
     path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
@@ -196,6 +202,7 @@ evidence = {
     "replacement_story_status": {key: stories['us_v0_v1_us_'+key].get('status') for key in ('341','344')} if replacement_run else None,
     "zoom_story_status": stories['us_v0_v1_us_342'].get('status') if zoom_run else None,
     "navigation_story_status": {key: stories['us_v0_v1_us_'+key].get('status') for key in ('340','343')} if navigation_run else None,
+    "rich_session_story_status": {key: stories['us_v0_v1_us_'+key].get('status') for key in ('220','226')} if rich_session_run else None,
     "missing_located_sources": len(missing_sources),
     "ui_latency_certified": False,
     "graph_sha256": {
@@ -207,7 +214,7 @@ evidence = {
         for name in ("merged-branches-graph-refresh.py", "merged-branches-graph-receipt.py")
     },
 }
-(ART / ("editor-utilities-graph.json" if utilities_run else "docx-long-guides-graph.json" if docx_long_run else "docx-theme-merged-graph.json" if docx_merged_run else "docx-theme-graph.json" if docx_run else "replacement-status-graph.json" if replacement_run else "navigation-graph.json" if navigation_run else "zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
+(ART / ("docx-edit-session-graph.json" if rich_session_run else "editor-utilities-graph.json" if utilities_run else "docx-long-guides-graph.json" if docx_long_run else "docx-theme-merged-graph.json" if docx_merged_run else "docx-theme-graph.json" if docx_run else "replacement-status-graph.json" if replacement_run else "navigation-graph.json" if navigation_run else "zoom-graph.json" if zoom_run else "merged-branches-graph.json")).write_text(
     json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
     newline="\n",

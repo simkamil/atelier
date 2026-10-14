@@ -1,5 +1,13 @@
 # Préparation du démonstrateur — 2026-10-14
 
+## Session riche DOCX — 2026-10-14
+
+Le lot [US-220/226 — session conservée](us-220-rich-session.md) ajoute le socle Rust permettant de modifier le texte d'un paragraphe DOCX en conservant le modèle riche, les styles et le package original. Annuler/rétablir restaure aussi la sélection et les métadonnées importées ; le rendu d'une modification doit réussir avant publication. Développement et revue avec des agents GPT-6 Luna moyen, tâches séparées par fichier.
+
+Ce lot est un prérequis moteur : **les DOCX restent en lecture seule dans l'application**. Le branchement UI/protocole et la sauvegarde US-307 ne sont pas inclus. Les deux US restent ouvertes et le total reste **54/158 US terminées**. Le [reçu](../_bmad-output/implementation-artifacts/docx-edit-session-validation.json) indique les vérifications exécutées et leurs limites.
+
+## État précédent du démonstrateur
+
 Le backlog compte désormais **54 US terminées sur 158**. Le dernier lot raccorde
 le remplacement TXT et la barre d’état configurable (US-341/344 partielles), avec des agents GPT-6 Luna moyen.
 L’ouverture DOCX donne toujours un aperçu A4 en lecture seule.

@@ -1,0 +1,53 @@
+{
+  "baseline_commit": "0327fd1851d80394f7241339197d7ee2b2a9c582",
+  "nodes": 9687,
+  "edges": 24753,
+  "stories": 158,
+  "done": 54,
+  "baseline_document_semantic_nodes": 70,
+  "baseline_document_semantic_edges": 56,
+  "html_nodes": 9687,
+  "html_node_limit": 10000,
+  "dangling_edges": 0,
+  "missing_endpoint_edges": 0,
+  "same_endpoint_groups_preserved_in_raw_extract": 1243,
+  "cargo_packages": 34,
+  "cargo_dependency_edges": 64,
+  "cargo_dependency_cycles": 0,
+  "cli_refreshed": true,
+  "recorded_cumulative_semantic_tokens": null,
+  "historical_baseline_reported_tokens": {
+    "input": 129535,
+    "output": 22799
+  },
+  "historical_token_provenance": "94df23fb037145d75542f54dbc0215d0daf929bc:graphify-out/GRAPH_REPORT.md",
+  "local_cost_meter_available": false,
+  "this_final_cli_refresh_llm_tokens": 0,
+  "unreported_semantic_runs": null,
+  "api_report_llm_tokens": 0,
+  "ui_stories": {
+    "104": "done",
+    "105": "done",
+    "106": "done"
+  },
+  "replacement_story_status": null,
+  "zoom_story_status": null,
+  "navigation_story_status": null,
+  "rich_session_story_status": {
+    "220": "open",
+    "226": "open"
+  },
+  "missing_located_sources": 0,
+  "ui_latency_certified": false,
+  "graph_sha256": {
+    "graphify-out/GRAPH_REPORT.md": "c355a5081bc6393eb7641fefe283b62c9814af5abfc6e1c0cd611e74494dcb77",
+    "graphify-out/graph.json": "0617cb8a7610b4e63016c36c61f0eec60d57d50fcf181d4de3bb37db54a78208",
+    "graphify-out/graph.html": "82acd5bd9266bd11c76969f309dcd493da5847caa00e664e6c28a9e12723445e",
+    "graphify-out/story-dependencies.json": "98df76154cfb70032b93af9febfba5026bae3a46f6f05559ff907b74e8caf65f",
+    "graphify-out/unresolved-structural-references.json": "3426561225cd9be9b0d21c64f140bb06e8835e12823c61127194fde89fb505e5"
+  },
+  "graph_tools_sha256": {
+    "_bmad-output/implementation-artifacts/merged-branches-graph-refresh.py": "299d46e8f93445bf3297f6e5d98ae8ae5e64adba35bd98dd8bd46d01140c49a3",
+    "_bmad-output/implementation-artifacts/merged-branches-graph-receipt.py": "3c5aecad7856c92749b16657486ad15ae4abf2ba9c1c951096a77968df440f76"
+  }
+}

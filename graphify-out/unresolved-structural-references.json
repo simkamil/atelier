@@ -247,7 +247,7 @@
     "relation": "imports_from",
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/src/lib.rs",
-    "source_location": "L498",
+    "source_location": "L499",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -330,6 +330,72 @@
     "_origin": "ast"
   },
   {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "atelier_fmt_ooxml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "rich",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L6",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "grapheme_boundaries",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L7",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "fmt",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L8",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "size_of",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L9",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_src_rich_session",
+    "target": "rich_preview",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/src/rich_session.rs",
+    "source_location": "L11",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
     "source": "crates_core_wasm_tests_editor_engine",
     "target": "protocol",
     "relation": "imports_from",
@@ -347,6 +413,39 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/tests/protocol_boundaries.rs",
     "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_retained_preview",
+    "target": "rich_preview",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/retained_preview.rs",
+    "source_location": "L2",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_retained_preview",
+    "target": "transaction",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/retained_preview.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_retained_preview",
+    "target": "richop",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/retained_preview.rs",
+    "source_location": "L4",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
@@ -391,6 +490,39 @@
     "confidence": "EXTRACTED",
     "source_file": "crates/core-wasm/tests/rich_preview_session.rs",
     "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_session",
+    "target": "preview_docx",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_session.rs",
+    "source_location": "L3",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_session",
+    "target": "rich_session",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_session.rs",
+    "source_location": "L4",
+    "weight": 1.0,
+    "context": "import",
+    "_origin": "ast"
+  },
+  {
+    "source": "crates_core_wasm_tests_rich_session",
+    "target": "atelier_fmt_ooxml",
+    "relation": "imports_from",
+    "confidence": "EXTRACTED",
+    "source_file": "crates/core-wasm/tests/rich_session.rs",
+    "source_location": "L5",
     "weight": 1.0,
     "context": "import",
     "_origin": "ast"
