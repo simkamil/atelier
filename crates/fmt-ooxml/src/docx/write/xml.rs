@@ -77,6 +77,10 @@ impl Out {
         self.stack.truncate(stack);
     }
 
+    pub fn is_muted(&self) -> bool {
+        self.muted > 0
+    }
+
     pub fn mute(&mut self) {
         self.muted += 1;
     }

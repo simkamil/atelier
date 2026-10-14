@@ -242,9 +242,7 @@ impl<'a> Gen<'a> {
         let Some(Node::Table(t)) = self.doc.node(id) else {
             return;
         };
-        let doc = self.doc;
-        let _ = doc;
-        if let Some(el) = self.pres_table(id) {
+        if let Some(el) = self.pres_table(id).filter(|_| !self.structure_changed(id)) {
             self.out.start(
                 &el.name,
                 el.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
@@ -257,6 +255,33 @@ impl<'a> Gen<'a> {
         } else {
             self.gen_table(id);
         }
+    }
+
+    /// Whether the rows, cells or spans of a table differ from the import: the
+    /// source grid (merged cells, folded continuations) no longer fits.
+    fn structure_changed(&self, id: NodeId) -> bool {
+        let Some(base) = self.base else {
+            return true;
+        };
+        let (Some(Node::Table(now)), Some(Node::Table(then))) = (self.doc.node(id), base.node(id))
+        else {
+            return true;
+        };
+        if now.rows != then.rows || now.columns != then.columns {
+            return true;
+        }
+        now.rows.iter().any(|r| match (self.doc.node(*r), base.node(*r)) {
+            (Some(Node::Row(a)), Some(Node::Row(b))) => {
+                a.cells != b.cells
+                    || a.cells.iter().any(|c| match (self.doc.node(*c), base.node(*c)) {
+                        (Some(Node::Cell(x)), Some(Node::Cell(y))) => {
+                            x.col_span != y.col_span || x.row_span != y.row_span
+                        }
+                        _ => true,
+                    })
+            }
+            _ => true,
+        })
     }
 
     fn widths(&self, id: NodeId, columns: usize) -> Vec<u32> {
@@ -284,7 +309,13 @@ impl<'a> Gen<'a> {
         let w = self.p.w.clone();
         let widths = self.widths(id, t.columns);
         let slots = layout(self.doc, t);
-        self.out.start(&format!("{w}:tbl"), std::iter::empty());
+        match self.pres_table(id) {
+            Some(el) => self.out.start(
+                &el.name,
+                el.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
+            ),
+            None => self.out.start(&format!("{w}:tbl"), std::iter::empty()),
+        }
         match self.opaque_of(id, "tblPr") {
             Some(b) => self.out.raw(&b),
             None => {
@@ -336,7 +367,10 @@ impl<'a> Gen<'a> {
             if self.failed.is_some() {
                 break;
             }
-            self.emit_row(row);
+            let doc = self.doc;
+            if let Some(Node::Row(r)) = doc.node(row) {
+                self.gen_row(row, r);
+            }
         }
         self.table_stack.pop();
         self.out.end();
@@ -381,7 +415,13 @@ impl<'a> Gen<'a> {
         let index = t.rows.iter().position(|x| *x == id).unwrap_or(0);
         let widths = self.widths(table, t.columns);
         let row_slots = slots.get(index).cloned().unwrap_or_default();
-        self.out.start(&format!("{w}:tr"), std::iter::empty());
+        match self.pres_table(id) {
+            Some(el) => self.out.start(
+                &el.name,
+                el.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
+            ),
+            None => self.out.start(&format!("{w}:tr"), std::iter::empty()),
+        }
         for name in ["tblPrEx", "trPr"] {
             if let Some(b) = r.opaque.iter().find(|o| o.name == name) {
                 self.out.raw(&b.value);
@@ -448,6 +488,14 @@ impl<'a> Gen<'a> {
             );
             let blocks = c.blocks.to_vec();
             self.emit_container(&el.children, &blocks, Some(id));
+            // A cell must end with a paragraph.
+            if !blocks
+                .last()
+                .is_some_and(|b| matches!(self.doc.node(*b), Some(Node::Paragraph(_))))
+            {
+                let w = self.p.w.clone();
+                self.out.empty(&format!("{w}:p"), std::iter::empty());
+            }
             self.out.end();
         } else {
             self.gen_cell(id, None);
@@ -459,7 +507,14 @@ impl<'a> Gen<'a> {
             return;
         };
         let w = self.p.w.clone();
-        self.out.start(&format!("{w}:tc"), std::iter::empty());
+        let skel = self.pres_table(id);
+        match skel {
+            Some(el) => self.out.start(
+                &el.name,
+                el.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
+            ),
+            None => self.out.start(&format!("{w}:tc"), std::iter::empty()),
+        }
         match self.opaque_of(id, "tcPr") {
             Some(b) => {
                 let patched = patch_tc_pr(&b, c);
@@ -484,7 +539,10 @@ impl<'a> Gen<'a> {
             }
         }
         let blocks = c.blocks.to_vec();
-        self.emit_container(&[], &blocks, Some(id));
+        // The content keeps the wrappers and unknown children of the source
+        // cell; its `w:tcPr` was written above (no owner: slots are skipped).
+        let children: &[super::super::preserve::PreservedChild] = skel.map_or(&[], |e| &e.children);
+        self.emit_container(children, &blocks, None);
         // A cell must end with a paragraph.
         let last_is_paragraph = blocks
             .last()

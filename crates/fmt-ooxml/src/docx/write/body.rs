@@ -60,6 +60,8 @@ pub(super) struct Gen<'a> {
     /// Tables being written, innermost last, with their lazily built layout.
     pub table_stack: Vec<(NodeId, Option<Vec<Vec<super::tbl::Slot>>>)>,
     pub tables_info: Option<&'a super::super::ImportedTables>,
+    /// The next `emit_container` writes a body: it ends with a paragraph.
+    pub terminate_body: bool,
 }
 
 /// Edit that turned the text of the import into the current text.
@@ -115,6 +117,18 @@ impl Mapper {
             self.ec
         } else {
             a - self.eb + self.ec
+        }
+    }
+
+    /// Position of an element of fixed width (a tab, a break, a symbol) in
+    /// the current text; `None` when the edit deleted it.
+    fn fixed(&self, x: usize, y: usize) -> Option<(usize, usize)> {
+        if self.identity || y <= self.p {
+            Some((x, y))
+        } else if x >= self.eb {
+            Some((x - self.eb + self.ec, y - self.eb + self.ec))
+        } else {
+            None
         }
     }
 
@@ -321,6 +335,7 @@ impl<'a> Gen<'a> {
         model: &[NodeId],
         owner: Option<NodeId>,
     ) {
+        let terminate = std::mem::take(&mut self.terminate_body);
         let in_model: BTreeSet<NodeId> = model.iter().copied().collect();
         let mut skel_ids = Vec::new();
         collect_blocks(children, &mut skel_ids);
@@ -370,8 +385,19 @@ impl<'a> Gen<'a> {
             front_done: false,
             emitted: BTreeSet::new(),
             owner,
+            // A body must end with a paragraph (Word's rule): a body without
+            // blocks, or ending with a table, gets an empty one.
+            empty_paragraph: terminate
+                && model
+                    .last()
+                    .is_none_or(|b| !matches!(self.doc.node(*b), Some(Node::Paragraph(_)))),
+            pending: Vec::new(),
         };
         self.walk(children, &mut state);
+        if state.empty_paragraph {
+            let w = self.p.w.clone();
+            self.out.empty(&format!("{w}:p"), std::iter::empty());
+        }
         if !state.front_done {
             let front = std::mem::take(&mut state.front);
             for id in front {
@@ -394,15 +420,26 @@ impl<'a> Gen<'a> {
         }
         self.depth += 1;
         let mut skip_shadow_tag = false;
+        // The `mc:AlternateContent` copy written just before a branch.
+        let mut ac_live = false;
         for (i, c) in children.iter().enumerate() {
             if self.failed.is_some() {
                 break;
             }
             match c {
                 PreservedChild::Block(id) => {
-                    if self.doc.node(*id).is_none() {
+                    let Some(node) = self.doc.node(*id) else {
                         continue;
-                    }
+                    };
+                    let is_ac = matches!(node, Node::Opaque(o) if local_of(&o.kind) == "AlternateContent");
+                    // Blocks added between the copy and its branch, or edits of
+                    // the branch, replace the `mc:AlternateContent`.
+                    let next_changed = match children.get(i + 1) {
+                        Some(PreservedChild::Element(e)) if e.shadow => {
+                            self.shadow_changed_blocks(e) || st.after.contains_key(id)
+                        }
+                        _ => false,
+                    };
                     if st.in_model.contains(id) {
                         if st.emitted.contains(id) {
                             continue;
@@ -415,12 +452,23 @@ impl<'a> Gen<'a> {
                                 st.emitted.insert(f);
                             }
                         }
-                        self.emit_item(*id);
+                        if is_ac && next_changed {
+                            self.note(WriteNotice::AlternateContentFlattened);
+                            skip_shadow_tag = true;
+                        } else {
+                            self.emit_item(*id);
+                            ac_live = is_ac;
+                        }
                         st.emitted.insert(*id);
                         if let Some(list) = st.after.remove(id) {
-                            for n in list {
-                                self.emit_item(n);
-                                st.emitted.insert(n);
+                            if self.out.is_muted() {
+                                // Inside a branch that is not written: after it.
+                                st.pending.extend(list);
+                            } else {
+                                for n in list {
+                                    self.emit_item(n);
+                                    st.emitted.insert(n);
+                                }
                             }
                         }
                     } else {
@@ -428,6 +476,11 @@ impl<'a> Gen<'a> {
                     }
                 }
                 PreservedChild::Opaque(b) => {
+                    if st.empty_paragraph && local_of_bytes(b) == "sectPr" {
+                        st.empty_paragraph = false;
+                        let w = self.p.w.clone();
+                        self.out.empty(&format!("{w}:p"), std::iter::empty());
+                    }
                     let next_shadow = match children.get(i + 1) {
                         Some(PreservedChild::Element(e)) if e.shadow => Some(e),
                         _ => None,
@@ -439,6 +492,7 @@ impl<'a> Gen<'a> {
                         skip_shadow_tag = true;
                     } else {
                         self.out.raw(b);
+                        ac_live = local_of_bytes(b) == "AlternateContent";
                     }
                 }
                 PreservedChild::Element(e) if e.slot => {
@@ -448,13 +502,21 @@ impl<'a> Gen<'a> {
                 }
                 PreservedChild::Element(e) => {
                     if e.shadow {
-                        if skip_shadow_tag {
-                            skip_shadow_tag = false;
+                        let flatten = skip_shadow_tag || !ac_live;
+                        skip_shadow_tag = false;
+                        ac_live = false;
+                        if flatten {
                             self.walk(&e.children, st);
                         } else {
                             self.out.mute();
                             self.walk(&e.children, st);
                             self.out.unmute();
+                            if !self.out.is_muted() {
+                                for n in std::mem::take(&mut st.pending) {
+                                    self.emit_item(n);
+                                    st.emitted.insert(n);
+                                }
+                            }
                         }
                     } else {
                         self.out.start(
@@ -705,6 +767,14 @@ impl<'a> Gen<'a> {
             PreservedChild::Anchored(id) => {
                 if let Some(a) = cx.cur.anchored.iter().find(|a| a.id == *id) {
                     if cx.seen.insert(*id) {
+                        if local_of(&a.kind) == "AlternateContent" {
+                            if let Some(PreservedChild::Element(next)) = kids.get(i + 1) {
+                                if next.shadow && self.shadow_changed_text(next, cx) {
+                                    self.note(WriteNotice::AlternateContentFlattened);
+                                    return true;
+                                }
+                            }
+                        }
                         self.out.raw(&a.data);
                     }
                 }
@@ -748,6 +818,9 @@ impl<'a> Gen<'a> {
             Anch(NodeId),
             Raw(&'e [u8]),
             Other(&'e PreservedElement),
+            /// Text the model holds that no element of the source carries
+            /// (typed after a tab or a break): written as a `w:t`.
+            Gap(usize, usize),
         }
         let mut parts: Vec<(Part<'_>, usize)> = Vec::new();
         let mut cursor = a2;
@@ -760,10 +833,18 @@ impl<'a> Gen<'a> {
                 }
                 PreservedChild::Element(e) if e.range.is_some() => {
                     let (x, y) = e.range.unwrap_or((0, 0));
-                    let x2 = cx.map.start(x).max(a2).min(b2);
-                    let y2 = cx.map.end(y).max(x2).min(b2);
+                    let (x2, y2) = if local_of(&e.name) == "t" || x == y {
+                        let x2 = cx.map.start(x).max(a2).min(b2);
+                        (x2, cx.map.end(y).max(x2).min(b2))
+                    } else {
+                        // One character: it is where the edit leaves it, or gone.
+                        match cx.map.fixed(x, y) {
+                            Some((x2, y2)) if x2 >= a2 && y2 <= b2 => (x2, y2),
+                            _ => (cursor, cursor),
+                        }
+                    };
                     parts.push((Part::Leaf(e, x2, y2, x == y), x2));
-                    cursor = y2;
+                    cursor = cursor.max(y2);
                 }
                 PreservedChild::Element(e) => parts.push((Part::Other(e), cursor)),
                 PreservedChild::Opaque(bytes) => parts.push((Part::Raw(bytes), cursor)),
@@ -774,6 +855,30 @@ impl<'a> Gen<'a> {
                 }
                 PreservedChild::Block(_) => cx.ok = false,
             }
+        }
+        // Text between the leaves that no leaf carries.
+        {
+            let mut covered = a2;
+            let mut out: Vec<(Part<'_>, usize)> = Vec::with_capacity(parts.len() + 1);
+            let mut last_leaf = None;
+            for (part, pos) in parts {
+                if let Part::Leaf(_, x, y, _) = &part {
+                    if x < y {
+                        if *x > covered {
+                            out.push((Part::Gap(covered, *x), covered));
+                        }
+                        covered = covered.max(*y);
+                        out.push((part, pos));
+                        last_leaf = Some(out.len());
+                        continue;
+                    }
+                }
+                out.push((part, pos));
+            }
+            if covered < b2 {
+                out.insert(last_leaf.unwrap_or(out.len()), (Part::Gap(covered, b2), covered));
+            }
+            parts = out;
         }
         let has_other = parts
             .iter()
@@ -793,6 +898,13 @@ impl<'a> Gen<'a> {
                 }
             }
         }
+        if !cx.map.identity {
+            for o in [cx.map.p, cx.map.ec] {
+                if o > a2 && o < b2 {
+                    cuts.push(o);
+                }
+            }
+        }
         cuts.sort_unstable();
         cuts.dedup();
         let candidates: Vec<(usize, usize)> = if cuts.len() < 2 {
@@ -800,12 +912,20 @@ impl<'a> Gen<'a> {
         } else {
             cuts.windows(2).map(|w| (w[0], w[1])).collect()
         };
-        // What the source had where a piece sits; a piece is rebuilt when the
-        // model's attributes differ from it. Adjacent pieces that agree merge.
+        // What the source had where a piece sits. A piece the model formats as
+        // the source did keeps the source properties; one it formats otherwise
+        // is rebuilt on them; text that came from elsewhere (a merged paragraph)
+        // gets properties of its own. Neighbours of the same kind merge.
+        #[derive(Clone, Copy, Eq, PartialEq)]
+        enum Kind {
+            Same,
+            Edited,
+            Foreign,
+        }
         struct Piece {
             s: usize,
             e: usize,
-            regen: bool,
+            kind: Kind,
             attrs: CharAttrs,
             from: CharAttrs,
         }
@@ -813,13 +933,22 @@ impl<'a> Gen<'a> {
         let mut pieces: Vec<Piece> = Vec::new();
         for (s, e) in candidates {
             let attrs = cx.cur.attrs_at(s);
-            let from = cx
-                .map
-                .back(s)
-                .map_or_else(|| run_attrs.clone(), |o| cx.base.attrs_at(o));
-            let regen = b > a && s < e && attrs != from;
+            let origin = cx.map.back(s);
+            let inside_run = origin.is_some_and(|o| o >= a && o < b);
+            let from = if inside_run {
+                cx.base.attrs_at(origin.unwrap_or(a))
+            } else {
+                run_attrs.clone()
+            };
+            let kind = if !(b > a && s < e) || attrs == from {
+                Kind::Same
+            } else if origin.is_some() && !inside_run {
+                Kind::Foreign
+            } else {
+                Kind::Edited
+            };
             if let Some(last) = pieces.last_mut() {
-                if (!last.regen && !regen) || (last.regen && regen && last.attrs == attrs) {
+                if last.kind == kind && (kind == Kind::Same || last.attrs == attrs) {
                     last.e = e;
                     continue;
                 }
@@ -827,7 +956,7 @@ impl<'a> Gen<'a> {
             pieces.push(Piece {
                 s,
                 e,
-                regen,
+                kind,
                 attrs,
                 from,
             });
@@ -838,19 +967,21 @@ impl<'a> Gen<'a> {
             let (s, e) = (piece.s, piece.e);
             let piece_attrs = piece.attrs.clone();
             let base_attrs = piece.from.clone();
-            let regen = piece.regen;
+            let kind = piece.kind;
             let inside = |pos: usize| (pos >= s && pos < e) || (index == last_piece && pos == e);
             self.out.start(
                 &el.name,
                 el.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
             );
-            if regen && !has_rpr {
+            if kind != Kind::Same && !has_rpr {
                 self.write_rpr_new(&piece_attrs, cx.id);
             }
             for (part, pos) in &parts {
                 match part {
                     Part::Rpr(rp) => {
-                        if regen {
+                        if kind == Kind::Foreign {
+                            self.write_rpr_new(&piece_attrs, cx.id);
+                        } else if kind == Kind::Edited {
                             let mut approx = Vec::new();
                             let items = merge_rpr(
                                 &rp.children,
@@ -912,6 +1043,22 @@ impl<'a> Gen<'a> {
                         }
                         cx.emitted.push_str(text);
                     }
+                    Part::Gap(x, y) => {
+                        let (cs, ce) = ((*x).max(s), (*y).min(e));
+                        if cs < ce {
+                            let text = cx.cur.text.get(cs..ce).unwrap_or("");
+                            let tag = format!("{}:t", self.p.w);
+                            let attrs: &[(&str, &str)] = if needs_preserve(text) {
+                                &[("xml:space", "preserve")]
+                            } else {
+                                &[]
+                            };
+                            self.out.start(&tag, attrs.iter().copied());
+                            self.out.text(text);
+                            self.out.end();
+                            cx.emitted.push_str(text);
+                        }
+                    }
                     Part::Anch(id) => {
                         if inside(*pos) && cx.seen.insert(*id) {
                             if let Some(o) = cx.cur.anchored.iter().find(|o| o.id == *id) {
@@ -969,11 +1116,20 @@ impl<'a> Gen<'a> {
                 }
             }
         }
-        self.paragraph_content(id, cur);
+        // The copy of an `mc:AlternateContent` and the text of its branch are
+        // both in the model: written from the model, only the text stays.
+        let mut skip = BTreeSet::new();
+        if let Some(s) = skel {
+            alternate_with_branch(&s.children, &mut skip);
+        }
+        if !skip.is_empty() {
+            self.note(WriteNotice::AlternateContentFlattened);
+        }
+        self.paragraph_content(id, cur, &skip);
         self.out.end();
     }
 
-    fn paragraph_content(&mut self, id: NodeId, cur: &Paragraph) {
+    fn paragraph_content(&mut self, id: NodeId, cur: &Paragraph, skip: &BTreeSet<NodeId>) {
         let len = cur.text.len();
         let mut cuts: BTreeSet<usize> = BTreeSet::new();
         cuts.insert(0);
@@ -1036,6 +1192,9 @@ impl<'a> Gen<'a> {
                 self.field_begin(&f.instruction);
             }
             for a in cur.anchored.iter().filter(|a| a.offset.min(len) == o) {
+                if skip.contains(&a.id) || self.branch_text_follows(a, &cur.text, o) {
+                    continue;
+                }
                 self.anchored_flat(id, a, &cur.attrs_at(o));
             }
             if let Some(&next) = cuts.get(i + 1) {
@@ -1108,6 +1267,69 @@ impl<'a> Gen<'a> {
         self.out.end();
         self.out.end();
         self.field_char("separate");
+    }
+
+    /// Whether an `mc:AlternateContent` object is followed, in the text, by the
+    /// text of its branch: the model holds that text itself (the import
+    /// interprets the branch), so the object is not written again.
+    fn branch_text_follows(&mut self, a: &AnchoredObject, text: &str, at: usize) -> bool {
+        if local_of(&a.kind) != "AlternateContent" {
+            return false;
+        }
+        let Some(part) = self.pres.and_then(|p| p.document.as_ref()) else {
+            return false;
+        };
+        let xml = part.standalone(&a.data);
+        let mut reader = atelier_xml::Reader::new(xml.as_slice());
+        let mut branch: Vec<String> = Vec::new();
+        let mut in_text = false;
+        let mut current = String::new();
+        let mut depth_branch = 0usize;
+        let mut chosen_fallback = String::new();
+        let mut chosen_choice = String::new();
+        let mut kind = "";
+        while let Ok(Some(event)) = reader.next_event() {
+            match event {
+                atelier_xml::Event::StartElement { name, .. } => {
+                    match name.local.as_str() {
+                        "Fallback" => {
+                            kind = "fallback";
+                            depth_branch += 1;
+                        }
+                        "Choice" => {
+                            kind = "choice";
+                            depth_branch += 1;
+                        }
+                        "t" if depth_branch > 0 => in_text = true,
+                        _ => {}
+                    }
+                }
+                atelier_xml::Event::EndElement { name } => match name.local.as_str() {
+                    "t" => in_text = false,
+                    "Fallback" | "Choice" => {
+                        if kind == "fallback" {
+                            chosen_fallback = std::mem::take(&mut current);
+                        } else if chosen_choice.is_empty() {
+                            chosen_choice = std::mem::take(&mut current);
+                        } else {
+                            current.clear();
+                        }
+                        depth_branch = depth_branch.saturating_sub(1);
+                    }
+                    _ => {}
+                },
+                atelier_xml::Event::Text(t) if in_text => current.push_str(&t),
+                _ => {}
+            }
+        }
+        branch.push(chosen_fallback);
+        branch.push(chosen_choice);
+        let tail = text.get(at..).unwrap_or("");
+        let hit = branch.iter().any(|b| !b.is_empty() && tail.starts_with(b.as_str()));
+        if hit {
+            self.note(WriteNotice::AlternateContentFlattened);
+        }
+        hit
     }
 
     fn anchored_flat(&mut self, para: NodeId, a: &AnchoredObject, attrs: &CharAttrs) {
@@ -1203,6 +1425,9 @@ struct Walk {
     front_done: bool,
     emitted: BTreeSet<NodeId>,
     owner: Option<NodeId>,
+    empty_paragraph: bool,
+    /// New blocks that belong after a branch that is not written.
+    pending: Vec<NodeId>,
 }
 
 pub(super) fn collect_blocks(children: &[PreservedChild], out: &mut Vec<NodeId>) {
@@ -1210,6 +1435,22 @@ pub(super) fn collect_blocks(children: &[PreservedChild], out: &mut Vec<NodeId>)
         match c {
             PreservedChild::Block(id) => out.push(*id),
             PreservedChild::Element(e) => collect_blocks(&e.children, out),
+            _ => {}
+        }
+    }
+}
+
+/// Anchored objects that are an `mc:AlternateContent` followed by the
+/// interpreted copy of its branch.
+fn alternate_with_branch(kids: &[PreservedChild], out: &mut BTreeSet<NodeId>) {
+    for (i, c) in kids.iter().enumerate() {
+        match c {
+            PreservedChild::Anchored(id) => {
+                if matches!(kids.get(i + 1), Some(PreservedChild::Element(e)) if e.shadow) {
+                    out.insert(*id);
+                }
+            }
+            PreservedChild::Element(e) => alternate_with_branch(&e.children, out),
             _ => {}
         }
     }

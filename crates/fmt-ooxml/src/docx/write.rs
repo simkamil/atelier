@@ -555,6 +555,7 @@ pub fn write_docx(
             sect_after: secs.after,
             table_stack: Vec::new(),
             tables_info: Some(&imported.tables),
+            terminate_body: false,
         };
         g.out.declaration();
         let attrs = root_attrs(part, &extra);
@@ -566,6 +567,7 @@ pub fn write_docx(
                         &body.name,
                         body.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
                     );
+                    g.terminate_body = true;
                     g.emit_container(&body.children, &secs.blocks, None);
                     g.out.end();
                 }
@@ -741,6 +743,7 @@ pub fn write_new_docx(
         sect_after: secs.after,
         table_stack: Vec::new(),
         tables_info: None,
+        terminate_body: false,
     };
     g.out.declaration();
     let mut attrs: Vec<(String, String)> = decls
@@ -750,6 +753,7 @@ pub fn write_new_docx(
     attrs.push(("mc:Ignorable".into(), "w14".into()));
     g.out.start("w:document", as_refs(&attrs));
     g.out.start("w:body", std::iter::empty());
+    g.terminate_body = true;
     g.emit_container(&[], &secs.blocks, None);
     g.out.raw(&parts::sect_pr(&input.page, None, false));
     g.out.end();

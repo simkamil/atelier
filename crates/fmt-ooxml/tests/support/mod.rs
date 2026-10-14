@@ -370,7 +370,7 @@ pub fn built_documents() -> Vec<(String, Vec<u8>)> {
     d.styles = Some(STYLES.into());
     out.push(("tables".into(), d.bytes()));
     let text = concat!(
-        r#"<w:p><w:pPr><w:pStyle w:val="Normal"/><w:jc w:val="both"/><w:ind w:left="720" w:hanging="360"/><w:spacing w:before="120" w:after="240" w:line="360" w:lineRule="auto"/></w:pPr>"#,
+        r#"<w:p><w:pPr><w:pStyle w:val="Normal"/><w:spacing w:before="120" w:after="240" w:line="360" w:lineRule="auto"/><w:ind w:left="720" w:hanging="360"/><w:jc w:val="both"/></w:pPr>"#,
         r#"<w:r><w:rPr><w:rFonts w:ascii="Carlito" w:hAnsi="Carlito"/><w:b/><w:i w:val="0"/><w:strike/><w:color w:val="FF0000"/><w:sz w:val="28"/><w:szCs w:val="28"/><w:highlight w:val="yellow"/><w:u w:val="wave"/><w:vertAlign w:val="superscript"/></w:rPr><w:t xml:space="preserve"> écrit à l'œuvre </w:t></w:r>"#,
         r#"<w:r><w:tab/><w:t>tab</w:t><w:br/><w:t>line</w:t><w:br w:type="page"/><w:noBreakHyphen/><w:softHyphen/><w:sym w:font="Wingdings" w:char="F04A"/></w:r>"#,
         r#"<w:r><w:rPr><w:color w:val="auto"/><w:highlight w:val="none"/></w:rPr><w:t>   spaces   </w:t></w:r></w:p>"#,
@@ -404,3 +404,6 @@ pub fn skeleton_child_count(e: &PreservedElement) -> usize {
         })
         .sum::<usize>()
 }
+
+pub mod order;
+pub mod scratch;
