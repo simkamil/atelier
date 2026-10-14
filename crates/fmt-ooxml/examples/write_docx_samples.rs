@@ -11,7 +11,7 @@
 mod support;
 
 use atelier_fmt_ooxml::{
-    DocxWriteOptions, NewDocument, W3cDateTime, SaveContext, import_docx, write_docx,
+    DocxWriteOptions, NewDocument, SaveContext, W3cDateTime, import_docx, write_docx,
     write_new_docx,
 };
 use std::fmt::Write as _;
@@ -111,7 +111,11 @@ fn main() {
     for i in [0usize, 1, 2, 3, 5, 8, 10, 11] {
         let built = scratch_document(i);
         let w = write_new_docx(&NewDocument::from_default(&built.doc), &options()).unwrap();
-        fs::write(out.join("word").join(format!("sample-{i:02}.docx")), &w.bytes).unwrap();
+        fs::write(
+            out.join("word").join(format!("sample-{i:02}.docx")),
+            &w.bytes,
+        )
+        .unwrap();
     }
     fs::write(out.join("manifest.tsv"), manifest).unwrap();
     println!("samples written under {}", out.display());

@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use atelier_fmt_ooxml::{
-    ImportedDocx, Package, PartUri, PreservedChild, PreservedElement, TargetMode, DocxWriteOptions,
+    DocxWriteOptions, ImportedDocx, Package, PartUri, PreservedChild, PreservedElement, TargetMode,
     import_docx, write_docx,
 };
 use atelier_xml::{Event, Reader};
@@ -67,10 +67,22 @@ impl Doc {
             .unwrap();
         };
         if let Some(s) = &self.styles {
-            add(&mut p, "word/styles.xml", "application/xml", s.as_bytes(), "styles");
+            add(
+                &mut p,
+                "word/styles.xml",
+                "application/xml",
+                s.as_bytes(),
+                "styles",
+            );
         }
         if let Some(s) = &self.settings {
-            add(&mut p, "word/settings.xml", "application/xml", s.as_bytes(), "settings");
+            add(
+                &mut p,
+                "word/settings.xml",
+                "application/xml",
+                s.as_bytes(),
+                "settings",
+            );
         }
         for (uri, ct, bytes, rel) in &self.extra {
             add(&mut p, uri, ct, bytes, rel);
@@ -173,7 +185,11 @@ pub fn first_diff(a: &C, b: &C, path: &str) -> Option<String> {
                         .collect::<Vec<_>>()
                         .join(",")
                 };
-                return Some(format!("{here}: children [{}] vs [{}]", short(k1), short(k2)));
+                return Some(format!(
+                    "{here}: children [{}] vs [{}]",
+                    short(k1),
+                    short(k2)
+                ));
             }
             k1.iter()
                 .zip(k2)
@@ -220,10 +236,16 @@ pub fn round_trip(name: &str, bytes: &[u8]) -> RoundTrip {
         let out = Package::read(&written.bytes).unwrap_or_else(|e| panic!("{name}: read: {e:?}"));
         let tag = if regenerate { "regenerated" } else { "reused" };
         // Same set of parts.
-        let want: Vec<_> = imp.package.parts().keys().map(ToString::to_string).collect();
+        let want: Vec<_> = imp
+            .package
+            .parts()
+            .keys()
+            .map(ToString::to_string)
+            .collect();
         let got: Vec<_> = out.parts().keys().map(ToString::to_string).collect();
         if want != got {
-            rt.differences.push(format!("{name} [{tag}]: parts {want:?} vs {got:?}"));
+            rt.differences
+                .push(format!("{name} [{tag}]: parts {want:?} vs {got:?}"));
         }
         for (uri, part) in imp.package.parts() {
             let Some(o) = out.part(uri) else { continue };
@@ -241,23 +263,28 @@ pub fn round_trip(name: &str, bytes: &[u8]) -> RoundTrip {
                     Some(d) => rt.differences.push(format!("{name} [{tag}] {uri}: {d}")),
                 }
                 if !regenerate && part.bytes != o.bytes {
-                    rt.differences.push(format!("{name} [{tag}] {uri}: bytes not reused"));
+                    rt.differences
+                        .push(format!("{name} [{tag}] {uri}: bytes not reused"));
                 }
             } else if part.bytes != o.bytes {
-                rt.differences.push(format!("{name} [{tag}] {uri}: bytes differ"));
+                rt.differences
+                    .push(format!("{name} [{tag}] {uri}: bytes differ"));
             }
         }
         // Re-import: the model is equal.
         let again = import_docx(&written.bytes)
             .unwrap_or_else(|e| panic!("{name} [{tag}]: reimport: {e:?}"));
         if again.document != imp.document {
-            rt.differences.push(format!("{name} [{tag}]: reimported document differs"));
+            rt.differences
+                .push(format!("{name} [{tag}]: reimported document differs"));
         }
         if again.tables != imp.tables {
-            rt.differences.push(format!("{name} [{tag}]: reimported tables differ"));
+            rt.differences
+                .push(format!("{name} [{tag}]: reimported tables differ"));
         }
         if again.settings != imp.settings {
-            rt.differences.push(format!("{name} [{tag}]: reimported settings differ"));
+            rt.differences
+                .push(format!("{name} [{tag}]: reimported settings differ"));
         }
         let (a, b) = (&again.preserved, &imp.preserved);
         for (label, same) in [
@@ -268,12 +295,15 @@ pub fn round_trip(name: &str, bytes: &[u8]) -> RoundTrip {
             ("tables", a.tables == b.tables),
         ] {
             if !same {
-                rt.differences.push(format!("{name} [{tag}]: reimported skeleton differs ({label})"));
+                rt.differences.push(format!(
+                    "{name} [{tag}]: reimported skeleton differs ({label})"
+                ));
             }
         }
         let ids = imp.paragraph_ids().to_vec();
         if again.paragraph_ids() != ids.as_slice() {
-            rt.differences.push(format!("{name} [{tag}]: paragraph order differs"));
+            rt.differences
+                .push(format!("{name} [{tag}]: paragraph order differs"));
         }
     }
     rt
@@ -341,11 +371,15 @@ pub fn rich() -> Doc {
 fn grid(n: usize) -> String {
     format!(
         "<w:tblGrid>{}</w:tblGrid>",
-        (0..n).map(|_| r#"<w:gridCol w:w="2000"/>"#).collect::<String>()
+        (0..n)
+            .map(|_| r#"<w:gridCol w:w="2000"/>"#)
+            .collect::<String>()
     )
 }
 fn tc(text: &str) -> String {
-    format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"#)
+    format!(
+        r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"#
+    )
 }
 
 /// Documents with the constructs of the other import tests: tables with
@@ -387,7 +421,11 @@ pub fn built_documents() -> Vec<(String, Vec<u8>)> {
 pub fn corpus() -> Vec<(String, Vec<u8>)> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/docx-reference");
     let mut out = Vec::new();
-    for rel in ["basic.docx", "libreoffice/rich.docx", "libreoffice/properties.docx"] {
+    for rel in [
+        "basic.docx",
+        "libreoffice/rich.docx",
+        "libreoffice/properties.docx",
+    ] {
         let bytes = std::fs::read(root.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"));
         out.push((rel.to_owned(), bytes));
     }

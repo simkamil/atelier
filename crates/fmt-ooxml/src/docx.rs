@@ -30,15 +30,15 @@ pub use preserve::{
     MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart,
     interpreted_elements, para_mark_rpr_rank, ppr_rank, rpr_rank, sect_pr_rank,
 };
-pub use write::{
-    DocxVariant, NewDocument, PageSetup, StyleDecl, WriteError, WriteNotice, DocxWriteOptions,
-    WrittenDocx, write_docx, write_new_docx,
-};
 pub use tables::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
     HeightRule, ImportedCell, ImportedRow, ImportedTable, ImportedTables, ResolvedCell, RowHeight,
     RowProps, Shading, TableAlign, TableColor, TableLayout, TableLook, TableProps, TableStyleDef,
     TableWidth, VMerge,
+};
+pub use write::{
+    DocxVariant, DocxWriteOptions, NewDocument, PageSetup, StyleDecl, WriteError, WriteNotice,
+    WrittenDocx, write_docx, write_new_docx,
 };
 
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";

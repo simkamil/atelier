@@ -42,7 +42,8 @@ pub(super) const MAIN_CONTENT_TYPES: [&str; 4] = [
 const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const MC_NS: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 const W14_NS: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
-const REL_STYLES: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+const REL_STYLES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const REL_SETTINGS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings";
 const REL_FONTS: &str =
@@ -189,31 +190,49 @@ impl From<DocxError> for WriteError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WriteNotice {
     /// Macro parts were removed because the target variant has no macros.
-    MacrosRemoved { parts: Vec<String> },
+    MacrosRemoved {
+        parts: Vec<String>,
+    },
     /// A modified paragraph was written from the model: its source envelopes
     /// (`w:hyperlink`, `w:ins`...) and run structure are not kept.
-    ParagraphRebuilt { paragraph: NodeId },
+    ParagraphRebuilt {
+        paragraph: NodeId,
+    },
     /// An envelope all of whose text was deleted was dropped.
-    EnvelopeDropped { name: String },
+    EnvelopeDropped {
+        name: String,
+    },
     /// Text inside an `mc:AlternateContent` branch was edited: the edited
     /// content replaces the element and the other branch is dropped.
     AlternateContentFlattened,
     /// Blocks were moved: the wrappers of the source were dropped.
     BlocksReordered,
     /// The color of a highlight is not one of the sixteen Word highlights.
-    HighlightApproximated { paragraph: NodeId, color: (u8, u8, u8) },
-    HighlightColorApproximated { color: (u8, u8, u8) },
+    HighlightApproximated {
+        paragraph: NodeId,
+        color: (u8, u8, u8),
+    },
+    HighlightColorApproximated {
+        color: (u8, u8, u8),
+    },
     /// A character XML 1.0 cannot carry was left out.
-    UnsupportedCharacter { paragraph: NodeId, character: u32 },
+    UnsupportedCharacter {
+        paragraph: NodeId,
+        character: u32,
+    },
     /// The table grid of the source was edited in a way the writer cannot
     /// keep consistent (vertical merges).
-    MergeStructureChanged { table: NodeId },
+    MergeStructureChanged {
+        table: NodeId,
+    },
     /// The theme differs from the import; the theme part is written as is.
     ThemeNotWritten,
     /// Headers and footers of the model are not written (US-304).
     HeaderFooterNotWritten,
     /// Further notices were dropped.
-    MoreNotices { count: usize },
+    MoreNotices {
+        count: usize,
+    },
 }
 
 /// A written package.
@@ -368,7 +387,10 @@ fn root_attrs(part: &PreservedPart, extra: &[(String, String)]) -> Vec<(String, 
 }
 
 fn as_refs(attrs: &[(String, String)]) -> Vec<(&str, &str)> {
-    attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+    attrs
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -408,11 +430,7 @@ fn remove_parts(package: &mut Package, uris: &[PartUri]) {
         package.relationships.remove(&Some(uri.clone()));
     }
     for list in package.relationships.values_mut() {
-        list.retain(|r| {
-            r.resolved_target
-                .as_ref()
-                .is_none_or(|t| !uris.contains(t))
-        });
+        list.retain(|r| r.resolved_target.as_ref().is_none_or(|t| !uris.contains(t)));
     }
 }
 
@@ -490,9 +508,10 @@ fn default_style_of(imported: &ImportedDocx) -> Option<String> {
                 && e.attrs
                     .iter()
                     .any(|a| props::local_of(&a.name) == "type" && a.value == "paragraph")
-                && e.attrs
-                    .iter()
-                    .any(|a| props::local_of(&a.name) == "default" && matches!(a.value.as_str(), "1" | "true" | "on")) =>
+                && e.attrs.iter().any(|a| {
+                    props::local_of(&a.name) == "default"
+                        && matches!(a.value.as_str(), "1" | "true" | "on")
+                }) =>
         {
             e.attrs
                 .iter()
@@ -527,7 +546,12 @@ pub fn write_docx(
 
     // ---- document.xml
     let document_changed = options.regenerate_all || imported.document != base.document;
-    if let Some(part) = imported.preserved.document.as_ref().filter(|_| document_changed) {
+    if let Some(part) = imported
+        .preserved
+        .document
+        .as_ref()
+        .filter(|_| document_changed)
+    {
         let (decl_prefixes, extra) = prefixes(&part.declarations, has_links(&imported.document));
         let page = PageSetup::default();
         let secs = sections(&imported.document, &page);
@@ -538,7 +562,7 @@ pub fn write_docx(
             doc: &imported.document,
             base: Some(&base.document),
             pres: Some(&imported.preserved),
-                p: decl_prefixes,
+            p: decl_prefixes,
             default_style: default_style_of(imported),
             out: Out::new(),
             notices: Vec::new(),
@@ -565,7 +589,9 @@ pub fn write_docx(
                 super::preserve::PreservedChild::Element(body) => {
                     g.out.start(
                         &body.name,
-                        body.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
+                        body.attrs
+                            .iter()
+                            .map(|a| (a.name.as_str(), a.value.as_str())),
                     );
                     g.terminate_body = true;
                     g.emit_container(&body.children, &secs.blocks, None);
@@ -607,9 +633,8 @@ pub fn write_docx(
     if let Some(part) = &imported.preserved.styles {
         let mut added = options.added_styles.clone();
         added.dedup();
-        let changed = options.regenerate_all
-            || !added.is_empty()
-            || styles_changed(imported, &base, part);
+        let changed =
+            options.regenerate_all || !added.is_empty() || styles_changed(imported, &base, part);
         if changed {
             let (p, extra) = prefixes(&part.declarations, false);
             let attrs = root_attrs(part, &extra);
@@ -785,11 +810,38 @@ pub fn write_new_docx(
     let main = part_uri("word/document.xml")?;
     let mut package = Package::new();
     package.insert_part(main.clone(), variant.content_type(), document_xml)?;
-    package.add_relationship(None, "rId1", REL_DOC, "word/document.xml", TargetMode::Internal)?;
+    package.add_relationship(
+        None,
+        "rId1",
+        REL_DOC,
+        "word/document.xml",
+        TargetMode::Internal,
+    )?;
     for (rid, uri, ct, rel, target, bytes) in [
-        ("rId1", "word/styles.xml", CT_STYLES, REL_STYLES, "styles.xml", styles_xml),
-        ("rId2", "word/settings.xml", CT_SETTINGS, REL_SETTINGS, "settings.xml", settings_xml),
-        ("rId3", "word/fontTable.xml", CT_FONTS, REL_FONTS, "fontTable.xml", fonts_xml),
+        (
+            "rId1",
+            "word/styles.xml",
+            CT_STYLES,
+            REL_STYLES,
+            "styles.xml",
+            styles_xml,
+        ),
+        (
+            "rId2",
+            "word/settings.xml",
+            CT_SETTINGS,
+            REL_SETTINGS,
+            "settings.xml",
+            settings_xml,
+        ),
+        (
+            "rId3",
+            "word/fontTable.xml",
+            CT_FONTS,
+            REL_FONTS,
+            "fontTable.xml",
+            fonts_xml,
+        ),
     ] {
         package.insert_part(part_uri(uri)?, ct, bytes)?;
         package.add_relationship(Some(main.clone()), rid, rel, target, TargetMode::Internal)?;

@@ -157,9 +157,12 @@ pub(super) fn char_fam_eq(fam: CharFam, a: &CharAttrs, b: &CharAttrs) -> bool {
         CharFam::Font => a.font == b.font,
         CharFam::Size => a.size_half_points == b.size_half_points,
         CharFam::SizeCs => opaque_value(a, "szCs") == opaque_value(b, "szCs"),
-        CharFam::Color => a.color == b.color && opaque_value(a, "color") == opaque_value(b, "color"),
+        CharFam::Color => {
+            a.color == b.color && opaque_value(a, "color") == opaque_value(b, "color")
+        }
         CharFam::Highlight => {
-            a.highlight == b.highlight && opaque_value(a, "highlight") == opaque_value(b, "highlight")
+            a.highlight == b.highlight
+                && opaque_value(a, "highlight") == opaque_value(b, "highlight")
         }
     }
 }
@@ -268,7 +271,10 @@ pub(super) fn char_fam_elems(
         CharFam::Italic => out.extend(a.italic.map(|v| on_off(p, "i", v))),
         CharFam::Strike => out.extend(a.strike.map(|v| on_off(p, "strike", v))),
         CharFam::Underline => {
-            out.extend(a.underline.map(|u| p.el("u", &[("val", underline_name(u).into())])));
+            out.extend(
+                a.underline
+                    .map(|u| p.el("u", &[("val", underline_name(u).into())])),
+            );
         }
         CharFam::VAlign => out.extend(a.vertical_align.map(|v| {
             let name = match v {
@@ -290,11 +296,17 @@ pub(super) fn char_fam_elems(
                 ));
             } else if let Some(t) = theme.font {
                 let n = theme_font_name(t);
-                out.push(p.el("rFonts", &[("asciiTheme", n.into()), ("hAnsiTheme", n.into())]));
+                out.push(p.el(
+                    "rFonts",
+                    &[("asciiTheme", n.into()), ("hAnsiTheme", n.into())],
+                ));
             }
         }
         CharFam::Size => {
-            out.extend(a.size_half_points.map(|v| p.el("sz", &[("val", v.to_string())])));
+            out.extend(
+                a.size_half_points
+                    .map(|v| p.el("sz", &[("val", v.to_string())])),
+            );
         }
         CharFam::SizeCs => {
             if let Some(v) = opaque_value(a, "szCs") {
@@ -309,7 +321,10 @@ pub(super) fn char_fam_elems(
             } else if let Some(t) = theme.color {
                 out.push(p.el(
                     "color",
-                    &[("val", "auto".into()), ("themeColor", theme_color_name(t).into())],
+                    &[
+                        ("val", "auto".into()),
+                        ("themeColor", theme_color_name(t).into()),
+                    ],
                 ));
             }
         }
@@ -615,11 +630,7 @@ pub(super) fn merge_ppr<'a>(
 }
 
 /// Children of a new `w:pPr`, in schema order.
-pub(super) fn new_ppr(
-    cur: &ParaProps,
-    p: &Prefixes,
-    hide_style: Option<&str>,
-) -> Vec<GenEl> {
+pub(super) fn new_ppr(cur: &ParaProps, p: &Prefixes, hide_style: Option<&str>) -> Vec<GenEl> {
     let mut out: Vec<GenEl> = Vec::new();
     for fam in PARA_FAMILIES {
         out.extend(para_fam_elems(fam, cur, p, hide_style));

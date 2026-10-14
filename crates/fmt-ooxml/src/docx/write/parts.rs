@@ -25,7 +25,10 @@ pub(super) fn put(out: &mut Out, g: &GenEl) {
         // Not written in parts other than the body.
         return;
     }
-    out.start(&g.name, g.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    out.start(
+        &g.name,
+        g.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
+    );
     out.end();
 }
 
@@ -133,7 +136,11 @@ fn write_style_new(
     }
     out.start("w:style", attrs);
     let val = |out: &mut Out, el: &str, v: &str| out.empty(el, [("w:val", v)]);
-    val(out, "w:name", builtin_name(&style.id).as_deref().unwrap_or(name));
+    val(
+        out,
+        "w:name",
+        builtin_name(&style.id).as_deref().unwrap_or(name),
+    );
     if let Some(b) = &style.based_on {
         val(out, "w:basedOn", b);
     }
@@ -157,7 +164,10 @@ fn write_style_new(
     if let Some(level) = heading {
         extra.push(p.el("keepNext", &[]));
         extra.push(p.el("keepLines", &[]));
-        extra.push(p.el("outlineLvl", &[("val", (level.saturating_sub(1)).to_string())]));
+        extra.push(p.el(
+            "outlineLvl",
+            &[("val", (level.saturating_sub(1)).to_string())],
+        ));
     }
     if style.kind != StyleKind::Character {
         write_ppr_new(out, &style.paragraph, p, &extra);
@@ -258,7 +268,10 @@ pub(super) fn settings_new(tab_stop: u32) -> Vec<u8> {
     let mut out = Out::new();
     root(&mut out, "w:settings", &[]);
     out.empty("w:zoom", [("w:percent", "100")]);
-    out.empty("w:defaultTabStop", [("w:val", tab_stop.to_string().as_str())]);
+    out.empty(
+        "w:defaultTabStop",
+        [("w:val", tab_stop.to_string().as_str())],
+    );
     out.empty("w:characterSpacingControl", [("w:val", "doNotCompress")]);
     out.start("w:compat", std::iter::empty());
     out.empty(
@@ -306,10 +319,7 @@ pub(super) fn numbering_new(lists: &BTreeSet<u32>) -> Vec<u8> {
             let left = 720 * (level + 1);
             out.empty(
                 "w:ind",
-                [
-                    ("w:left", left.to_string().as_str()),
-                    ("w:hanging", "360"),
-                ],
+                [("w:left", left.to_string().as_str()), ("w:hanging", "360")],
             );
             out.end();
             out.start("w:rPr", std::iter::empty());
@@ -497,7 +507,15 @@ fn write_rpr_merged(
     match skel {
         Some(e) => {
             let base_attrs = base.map(|b| merge_base(cur, b));
-            let items = merge_rpr(&e.children, base_attrs.as_ref(), &cur.values, theme, p, rpr_rank, approx);
+            let items = merge_rpr(
+                &e.children,
+                base_attrs.as_ref(),
+                &cur.values,
+                theme,
+                p,
+                rpr_rank,
+                approx,
+            );
             out.start(
                 &e.name,
                 e.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
@@ -599,7 +617,10 @@ fn write_style_merged(
         if pending_based && before(local, style_rank("basedOn")) {
             pending_based = false;
             if let Some(b) = &cur.based_on {
-                out.empty(&format!("{w}:basedOn"), [(&*format!("{w}:val"), b.as_str())]);
+                out.empty(
+                    &format!("{w}:basedOn"),
+                    [(&*format!("{w}:val"), b.as_str())],
+                );
             }
         }
         if pending_link && before(local, style_rank("link")) {
@@ -614,7 +635,16 @@ fn write_style_merged(
         }
         if pending_rpr && before(local, style_rank("rPr")) {
             pending_rpr = false;
-            write_rpr_merged(out, None, &cur.character, None, p, fonts, approx, &format!("{w}:rPr"));
+            write_rpr_merged(
+                out,
+                None,
+                &cur.character,
+                None,
+                p,
+                fonts,
+                approx,
+                &format!("{w}:rPr"),
+            );
         }
         match c {
             PreservedChild::Element(x) => match local {
@@ -633,7 +663,14 @@ fn write_style_merged(
                 "pPr" if !done_ppr => {
                     done_ppr = true;
                     if cur.paragraph != base.paragraph {
-                        write_ppr_merged(out, Some(x), &cur.paragraph, Some(&base.paragraph), p, "");
+                        write_ppr_merged(
+                            out,
+                            Some(x),
+                            &cur.paragraph,
+                            Some(&base.paragraph),
+                            p,
+                            "",
+                        );
                     } else {
                         write_plain(out, x);
                     }
@@ -663,7 +700,10 @@ fn write_style_merged(
     }
     if pending_based {
         if let Some(b) = &cur.based_on {
-            out.empty(&format!("{w}:basedOn"), [(&*format!("{w}:val"), b.as_str())]);
+            out.empty(
+                &format!("{w}:basedOn"),
+                [(&*format!("{w}:val"), b.as_str())],
+            );
         }
     }
     if pending_link {
@@ -675,7 +715,16 @@ fn write_style_merged(
         emit_ppr_new(out);
     }
     if pending_rpr {
-        write_rpr_merged(out, None, &cur.character, None, p, fonts, approx, &format!("{w}:rPr"));
+        write_rpr_merged(
+            out,
+            None,
+            &cur.character,
+            None,
+            p,
+            fonts,
+            approx,
+            &format!("{w}:rPr"),
+        );
     }
     out.end();
 }
@@ -834,7 +883,16 @@ fn write_defaults_merged(
     }
     if !has_r && cur.character != base.character {
         out.start(&format!("{w}:rPrDefault"), std::iter::empty());
-        write_rpr_merged(out, None, &cur.character, None, p, fonts, approx, &format!("{w}:rPr"));
+        write_rpr_merged(
+            out,
+            None,
+            &cur.character,
+            None,
+            p,
+            fonts,
+            approx,
+            &format!("{w}:rPr"),
+        );
         out.end();
     }
     if !has_p && cur.paragraph != base.paragraph {
@@ -892,7 +950,10 @@ pub(super) fn settings_imported(
         if !written && local != "defaultTabStop" && AFTER.contains(&local) {
             written = true;
             if let Some(v) = &value {
-                out.empty(&format!("{w}:defaultTabStop"), [(&*format!("{w}:val"), v.as_str())]);
+                out.empty(
+                    &format!("{w}:defaultTabStop"),
+                    [(&*format!("{w}:val"), v.as_str())],
+                );
             }
         }
         match c {
@@ -917,7 +978,10 @@ pub(super) fn settings_imported(
     }
     if !written {
         if let Some(v) = &value {
-            out.empty(&format!("{w}:defaultTabStop"), [(&*format!("{w}:val"), v.as_str())]);
+            out.empty(
+                &format!("{w}:defaultTabStop"),
+                [(&*format!("{w}:val"), v.as_str())],
+            );
         }
     }
     out.end();

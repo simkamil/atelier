@@ -117,5 +117,9 @@ fn systematic_new_documents_write_and_read_back_equal() {
             }
         }
     }
-    assert!(problems.is_empty(), "{:#?}", &problems[..problems.len().min(20)]);
+    assert!(
+        problems.is_empty(),
+        "{:#?}",
+        &problems[..problems.len().min(20)]
+    );
 }

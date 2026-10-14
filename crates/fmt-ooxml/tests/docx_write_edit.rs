@@ -63,12 +63,24 @@ fn text_inserted_and_deleted_inside_a_formatted_run_keeps_the_run() {
     let (bytes, notices) = written_document(&imp);
     let text = xml(&bytes);
     assert!(notices.is_empty(), "{notices:?}");
-    assert!(text.contains(r#"w:rsidR="1""#) && text.contains(r#"w:rsidR="2""#), "{text}");
+    assert!(
+        text.contains(r#"w:rsidR="1""#) && text.contains(r#"w:rsidR="2""#),
+        "{text}"
+    );
     assert!(text.contains("<w:t>ello, dear world</w:t>"), "{text}");
     assert!(text.contains("<w:b/>") && text.contains("w14:x"), "{text}");
-    let again = import_docx(&write_docx(&imp, &DocxWriteOptions::default()).unwrap().bytes).unwrap();
+    let again = import_docx(
+        &write_docx(&imp, &DocxWriteOptions::default())
+            .unwrap()
+            .bytes,
+    )
+    .unwrap();
     assert_eq!(
-        again.document.paragraph(again.paragraph_ids()[0]).unwrap().text,
+        again
+            .document
+            .paragraph(again.paragraph_ids()[0])
+            .unwrap()
+            .text,
         "ello, dear world"
     );
 }
@@ -96,7 +108,12 @@ fn formatting_applied_to_part_of_a_run_splits_it_and_orders_properties() {
     );
     let (bytes, _) = written_document(&imp);
     let text = xml(&bytes);
-    assert!(text.contains("<w:t>ab</w:t>") && text.contains("<w:t>cd</w:t>") && text.contains("<w:t>ef</w:t>"), "{text}");
+    assert!(
+        text.contains("<w:t>ab</w:t>")
+            && text.contains("<w:t>cd</w:t>")
+            && text.contains("<w:t>ef</w:t>"),
+        "{text}"
+    );
     assert!(order_problems(&parse(&bytes)).is_empty(), "{text}");
     // rFonts, b, color, sz, u in schema order in the middle run.
     let middle = text.split("<w:t>cd</w:t>").next().unwrap();
@@ -127,7 +144,12 @@ fn split_and_merged_paragraphs_keep_their_text_and_source_properties() {
     let (bytes, _) = written_document(&imp);
     let text = xml(&bytes);
     assert!(text.contains("<w:keepNext/>"), "{text}");
-    let back = import_docx(&write_docx(&imp, &DocxWriteOptions::default()).unwrap().bytes).unwrap();
+    let back = import_docx(
+        &write_docx(&imp, &DocxWriteOptions::default())
+            .unwrap()
+            .bytes,
+    )
+    .unwrap();
     assert_eq!(all_text(&back.document), ["one", "two", "three"]);
     edit(
         &mut imp,
@@ -136,7 +158,12 @@ fn split_and_merged_paragraphs_keep_their_text_and_source_properties() {
             position: 1,
         }],
     );
-    let back = import_docx(&write_docx(&imp, &DocxWriteOptions::default()).unwrap().bytes).unwrap();
+    let back = import_docx(
+        &write_docx(&imp, &DocxWriteOptions::default())
+            .unwrap()
+            .bytes,
+    )
+    .unwrap();
     assert_eq!(all_text(&back.document), ["one", "twothree"]);
 }
 
@@ -156,9 +183,18 @@ fn inline_objects_follow_the_text_and_deleted_ones_disappear() {
     );
     let (bytes, _) = written_document(&imp);
     let text = xml(&bytes);
-    let at = |needle: &str| text.find(needle).unwrap_or_else(|| panic!("{needle} in {text}"));
-    assert!(at("XYab") < at("proofErr") && at("proofErr") < at("<w:t>cd</w:t>"), "{text}");
-    assert!(at("bookmarkStart") < at("<w:t>ef</w:t>") && at("<w:t>ef</w:t>") < at("bookmarkEnd"), "{text}");
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle} in {text}"))
+    };
+    assert!(
+        at("XYab") < at("proofErr") && at("proofErr") < at("<w:t>cd</w:t>"),
+        "{text}"
+    );
+    assert!(
+        at("bookmarkStart") < at("<w:t>ef</w:t>") && at("<w:t>ef</w:t>") < at("bookmarkEnd"),
+        "{text}"
+    );
     // Deleting the text up to and including the proofing mark's position.
     edit(
         &mut imp,
@@ -170,7 +206,10 @@ fn inline_objects_follow_the_text_and_deleted_ones_disappear() {
     );
     let (bytes, _) = written_document(&imp);
     let text = xml(&bytes);
-    assert!(text.contains("bookmarkStart") && text.contains("<w:t>ef</w:t>"), "{text}");
+    assert!(
+        text.contains("bookmarkStart") && text.contains("<w:t>ef</w:t>"),
+        "{text}"
+    );
     assert!(!text.contains("<w:t>ab</w:t>"), "{text}");
 }
 
@@ -190,7 +229,10 @@ fn envelopes_stay_when_text_is_edited_and_go_when_emptied() {
     );
     let (bytes, notices) = written_document(&imp);
     let text = xml(&bytes);
-    assert!(text.contains(r#"<w:hyperlink r:id="rId9" w:history="1">"#), "{text}");
+    assert!(
+        text.contains(r#"<w:hyperlink r:id="rId9" w:history="1">"#),
+        "{text}"
+    );
     assert!(text.contains("<w:t>linked</w:t>"), "{text}");
     assert!(notices.is_empty(), "{notices:?}");
     // Emptying the hyperlink drops it; the tracked insertion stays.
@@ -206,7 +248,12 @@ fn envelopes_stay_when_text_is_edited_and_go_when_emptied() {
     let text = xml(&bytes);
     assert!(!text.contains("hyperlink"), "{text}");
     assert!(text.contains("<w:ins "), "{text}");
-    assert!(notices.iter().any(|n| matches!(n, WriteNotice::EnvelopeDropped { .. })), "{notices:?}");
+    assert!(
+        notices
+            .iter()
+            .any(|n| matches!(n, WriteNotice::EnvelopeDropped { .. })),
+        "{notices:?}"
+    );
 }
 
 #[test]
@@ -243,14 +290,27 @@ fn text_edited_in_an_alternate_content_branch_replaces_the_element() {
     );
     let (bytes, notices) = written_document(&imp);
     let text = xml(&bytes);
-    assert!(!text.contains("AlternateContent") && !text.contains("CH"), "{text}");
-    assert!(text.contains("yxF!") && text.contains("<w:t>B</w:t>"), "{text}");
-    assert!(notices.contains(&WriteNotice::AlternateContentFlattened), "{notices:?}");
+    assert!(
+        !text.contains("AlternateContent") && !text.contains("CH"),
+        "{text}"
+    );
+    assert!(
+        text.contains("yxF!") && text.contains("<w:t>B</w:t>"),
+        "{text}"
+    );
+    assert!(
+        notices.contains(&WriteNotice::AlternateContentFlattened),
+        "{notices:?}"
+    );
 }
 
 #[test]
 fn table_rows_added_and_removed_are_written_in_place() {
-    let cell = |t: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#);
+    let cell = |t: &str| {
+        format!(
+            r#"<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc>"#
+        )
+    };
     let mut imp = doc_with(&format!(
         r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="1000"/></w:tblGrid><w:tr>{}{}</w:tr><w:tr>{}{}</w:tr></w:tbl><w:p><w:r><w:t>end</w:t></w:r></w:p>"#,
         cell("a"),
@@ -258,12 +318,19 @@ fn table_rows_added_and_removed_are_written_in_place() {
         cell("c"),
         cell("d")
     ));
-    let table = imp.document.block_ids(Some(imp.document.section_ids()[0])).unwrap()[0];
+    let table = imp
+        .document
+        .block_ids(Some(imp.document.section_ids()[0]))
+        .unwrap()[0];
     let op = imp.document.insert_row_op(table, 1).unwrap();
     edit(&mut imp, vec![op]);
     let w = write_docx(&imp, &DocxWriteOptions::default()).unwrap();
     let back = import_docx(&w.bytes).unwrap();
-    let Some(Node::Table(t)) = back.document.node(back.document.block_ids(Some(back.document.section_ids()[0])).unwrap()[0]) else {
+    let Some(Node::Table(t)) = back.document.node(
+        back.document
+            .block_ids(Some(back.document.section_ids()[0]))
+            .unwrap()[0],
+    ) else {
         panic!("table")
     };
     assert_eq!((t.rows.len(), t.columns), (3, 2));
@@ -272,13 +339,21 @@ fn table_rows_added_and_removed_are_written_in_place() {
     edit(&mut imp, vec![RichOp::DeleteRow { table, index: 0 }]);
     let w = write_docx(&imp, &DocxWriteOptions::default()).unwrap();
     let back = import_docx(&w.bytes).unwrap();
-    let Some(Node::Table(t)) = back.document.node(back.document.block_ids(Some(back.document.section_ids()[0])).unwrap()[0]) else {
+    let Some(Node::Table(t)) = back.document.node(
+        back.document
+            .block_ids(Some(back.document.section_ids()[0]))
+            .unwrap()[0],
+    ) else {
         panic!("table")
     };
     assert_eq!((t.rows.len(), t.columns), (2, 3));
     assert_eq!(all_text(&back.document), all_text(&imp.document));
     let package = Package::read(&w.bytes).unwrap();
-    let main = package.parts().values().find(|p| p.uri.as_str().ends_with("document.xml")).unwrap();
+    let main = package
+        .parts()
+        .values()
+        .find(|p| p.uri.as_str().ends_with("document.xml"))
+        .unwrap();
     let text = xml(&main.bytes);
     assert_eq!(text.matches("<w:gridCol ").count(), 3, "{text}");
 }
@@ -293,26 +368,48 @@ fn a_changed_style_and_default_tab_stop_are_written() {
     imp.styles.set_style(style).unwrap();
     imp.settings.default_tab_stop_twips = Some(500);
     let w = write_docx(&imp, &DocxWriteOptions::default()).unwrap();
-    assert!(w.regenerated_parts.iter().any(|p| p.ends_with("styles.xml")));
-    assert!(w.regenerated_parts.iter().any(|p| p.ends_with("settings.xml")));
+    assert!(
+        w.regenerated_parts
+            .iter()
+            .any(|p| p.ends_with("styles.xml"))
+    );
+    assert!(
+        w.regenerated_parts
+            .iter()
+            .any(|p| p.ends_with("settings.xml"))
+    );
     let back = import_docx(&w.bytes).unwrap();
     let got = back.styles.catalog().style("Normal").unwrap();
     assert_eq!(got.character.values.size_half_points, Some(30));
     assert_eq!(got.character.values.bold, Some(false));
-    assert_eq!(got.paragraph.alignment, Some(atelier_text_model::rich::Alignment::Center));
+    assert_eq!(
+        got.paragraph.alignment,
+        Some(atelier_text_model::rich::Alignment::Center)
+    );
     assert_eq!(back.settings.default_tab_stop_twips, Some(500));
     let package = Package::read(&w.bytes).unwrap();
-    let styles = package.parts().values().find(|p| p.uri.as_str().ends_with("styles.xml")).unwrap();
+    let styles = package
+        .parts()
+        .values()
+        .find(|p| p.uri.as_str().ends_with("styles.xml"))
+        .unwrap();
     let text = xml(&styles.bytes);
     // Unknown children and attributes of the style stay; rPr in schema order.
-    assert!(text.contains(r#"w14:foo="1""#) && text.contains("<w:noProof/>"), "{text}");
+    assert!(
+        text.contains(r#"w14:foo="1""#) && text.contains("<w:noProof/>"),
+        "{text}"
+    );
     assert!(
         text.contains(r#"<w:rPr><w:noProof/><w:b w:val="0"/><w:sz w:val="30"/></w:rPr>"#),
         "{text}"
     );
     // Untouched parts are reused byte for byte.
     let none = write_docx(&doc_with("<w:p/>"), &DocxWriteOptions::default()).unwrap();
-    assert!(none.regenerated_parts.is_empty(), "{:?}", none.regenerated_parts);
+    assert!(
+        none.regenerated_parts.is_empty(),
+        "{:?}",
+        none.regenerated_parts
+    );
 }
 
 fn default_style(imp: &ImportedDocx) -> Option<String> {
@@ -321,7 +418,9 @@ fn default_style(imp: &ImportedDocx) -> Option<String> {
     styles.root.children.iter().find_map(|c| match c {
         PreservedChild::Element(e)
             if e.name.ends_with("style")
-                && e.attrs.iter().any(|a| a.name.ends_with("default") && a.value == "1") =>
+                && e.attrs
+                    .iter()
+                    .any(|a| a.name.ends_with("default") && a.value == "1") =>
         {
             e.attrs
                 .iter()
@@ -358,7 +457,10 @@ fn shape(doc: &RichDocument) -> Vec<String> {
                 _ => {}
             }
         }
-        if !matches!(ids.last().and_then(|b| doc.node(*b)), Some(Node::Paragraph(_))) {
+        if !matches!(
+            ids.last().and_then(|b| doc.node(*b)),
+            Some(Node::Paragraph(_))
+        ) {
             out.push("p ".into());
         }
     }
@@ -383,7 +485,12 @@ fn texts(doc: &RichDocument) -> Vec<String> {
 fn seeded_edit_campaign_writes_files_that_read_back_equal() {
     let mut docs = corpus();
     docs.extend(built_documents());
-    let ordered = ["basic.docx", "libreoffice/rich.docx", "libreoffice/properties.docx", "text"];
+    let ordered = [
+        "basic.docx",
+        "libreoffice/rich.docx",
+        "libreoffice/properties.docx",
+        "text",
+    ];
     let mut files = 0;
     let mut problems = Vec::new();
     // Formatting differences on edited paragraphs (documented limits).
@@ -418,7 +525,11 @@ fn seeded_edit_campaign_writes_files_that_read_back_equal() {
             let flattened = w.notices.contains(&WriteNotice::AlternateContentFlattened);
             let (want, got) = (texts(&imp.document), all_text(&back.document));
             if got != want {
-                let at = want.iter().zip(&got).position(|(a, b)| a != b).unwrap_or(want.len().min(got.len()));
+                let at = want
+                    .iter()
+                    .zip(&got)
+                    .position(|(a, b)| a != b)
+                    .unwrap_or(want.len().min(got.len()));
                 problems.push(format!(
                     "{name}/{seed}: text differs at paragraph {at} ({} vs {} paragraphs): {:?} vs {:?}",
                     want.len(),
@@ -438,8 +549,16 @@ fn seeded_edit_campaign_writes_files_that_read_back_equal() {
             }
             if got_shape != expected_shape {
                 let (a, b) = (expected_shape, got_shape);
-                let at = a.iter().zip(&b).position(|(x, y)| x != y).unwrap_or(a.len().min(b.len()));
-                problems.push(format!("{name}/{seed}: structure differs at {at}: {:?} vs {:?}", a.get(at), b.get(at)));
+                let at = a
+                    .iter()
+                    .zip(&b)
+                    .position(|(x, y)| x != y)
+                    .unwrap_or(a.len().min(b.len()));
+                problems.push(format!(
+                    "{name}/{seed}: structure differs at {at}: {:?} vs {:?}",
+                    a.get(at),
+                    b.get(at)
+                ));
             }
             if ordered.contains(&name.as_str()) {
                 let package = Package::read(&w.bytes).unwrap();
@@ -454,8 +573,16 @@ fn seeded_edit_campaign_writes_files_that_read_back_equal() {
             // Runs and properties, paragraph by paragraph (identifiers are
             // minted again by the import, so the order is the key).
             let default = default_style(&back);
-            for (x, y) in imp.document.paragraph_ids().iter().zip(back.document.paragraph_ids()) {
-                let (p, q) = (imp.document.paragraph(*x).unwrap(), back.document.paragraph(y).unwrap());
+            for (x, y) in imp
+                .document
+                .paragraph_ids()
+                .iter()
+                .zip(back.document.paragraph_ids())
+            {
+                let (p, q) = (
+                    imp.document.paragraph(*x).unwrap(),
+                    back.document.paragraph(y).unwrap(),
+                );
                 let norm = |x: &ParaProps| {
                     let mut x = x.clone();
                     x.list = None;
@@ -489,7 +616,15 @@ fn seeded_edit_campaign_writes_files_that_read_back_equal() {
             }
         }
     }
-    println!("{files} edited files written, {} soft formatting differences: {soft:?}", soft.len());
+    println!(
+        "{files} edited files written, {} soft formatting differences: {soft:?}",
+        soft.len()
+    );
     assert!(soft.len() <= 5, "{soft:?}");
-    assert!(problems.is_empty(), "{} problems: {:#?}", problems.len(), &problems[..problems.len().min(25)]);
+    assert!(
+        problems.is_empty(),
+        "{} problems: {:#?}",
+        problems.len(),
+        &problems[..problems.len().min(25)]
+    );
 }

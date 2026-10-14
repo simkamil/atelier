@@ -180,7 +180,11 @@ fn patch_grid(bytes: &[u8], columns: usize, fallback: u32) -> Vec<u8> {
     let Some(mut node) = parse(bytes) else {
         return bytes.to_vec();
     };
-    let have = node.children.iter().filter(|c| c.name.local == "gridCol").count();
+    let have = node
+        .children
+        .iter()
+        .filter(|c| c.name.local == "gridCol")
+        .count();
     if have == columns {
         return bytes.to_vec();
     }
@@ -218,7 +222,9 @@ impl<'a> Gen<'a> {
             Node::Cell(c) => &c.opaque,
             _ => return None,
         };
-        list.iter().find(|o| o.name == name).map(|o| o.value.clone())
+        list.iter()
+            .find(|o| o.name == name)
+            .map(|o| o.value.clone())
     }
 
     /// A property container (`w:tblPr`, `w:trPr`, `w:tcPr`...) held by the
@@ -230,9 +236,11 @@ impl<'a> Gen<'a> {
         };
         let out = match (self.doc.node(owner), local) {
             (Some(Node::Cell(c)), "tcPr") => patch_tc_pr(&bytes, c),
-            (Some(Node::Table(t)), "tblGrid") => {
-                patch_grid(&bytes, t.columns, self.text_width / u32::try_from(t.columns.max(1)).unwrap_or(1))
-            }
+            (Some(Node::Table(t)), "tblGrid") => patch_grid(
+                &bytes,
+                t.columns,
+                self.text_width / u32::try_from(t.columns.max(1)).unwrap_or(1),
+            ),
             _ => bytes,
         };
         self.out.raw(&out);
@@ -270,18 +278,22 @@ impl<'a> Gen<'a> {
         if now.rows != then.rows || now.columns != then.columns {
             return true;
         }
-        now.rows.iter().any(|r| match (self.doc.node(*r), base.node(*r)) {
-            (Some(Node::Row(a)), Some(Node::Row(b))) => {
-                a.cells != b.cells
-                    || a.cells.iter().any(|c| match (self.doc.node(*c), base.node(*c)) {
-                        (Some(Node::Cell(x)), Some(Node::Cell(y))) => {
-                            x.col_span != y.col_span || x.row_span != y.row_span
-                        }
-                        _ => true,
-                    })
-            }
-            _ => true,
-        })
+        now.rows
+            .iter()
+            .any(|r| match (self.doc.node(*r), base.node(*r)) {
+                (Some(Node::Row(a)), Some(Node::Row(b))) => {
+                    a.cells != b.cells
+                        || a.cells
+                            .iter()
+                            .any(|c| match (self.doc.node(*c), base.node(*c)) {
+                                (Some(Node::Cell(x)), Some(Node::Cell(y))) => {
+                                    x.col_span != y.col_span || x.row_span != y.row_span
+                                }
+                                _ => true,
+                            })
+                }
+                _ => true,
+            })
     }
 
     fn widths(&self, id: NodeId, columns: usize) -> Vec<u32> {
@@ -321,15 +333,14 @@ impl<'a> Gen<'a> {
             None => {
                 self.out.start(&format!("{w}:tblPr"), std::iter::empty());
                 if let Some(style) = &t.style {
-                    self.out
-                        .empty(&format!("{w}:tblStyle"), [(&*format!("{w}:val"), style.as_str())]);
+                    self.out.empty(
+                        &format!("{w}:tblStyle"),
+                        [(&*format!("{w}:val"), style.as_str())],
+                    );
                 }
                 self.out.empty(
                     &format!("{w}:tblW"),
-                    [
-                        (&*format!("{w}:w"), "0"),
-                        (&*format!("{w}:type"), "auto"),
-                    ],
+                    [(&*format!("{w}:w"), "0"), (&*format!("{w}:type"), "auto")],
                 );
                 self.out.empty(
                     &format!("{w}:tblLook"),
@@ -355,8 +366,10 @@ impl<'a> Gen<'a> {
             None => {
                 self.out.start(&format!("{w}:tblGrid"), std::iter::empty());
                 for width in &widths {
-                    self.out
-                        .empty(&format!("{w}:gridCol"), [(&*format!("{w}:w"), width.to_string().as_str())]);
+                    self.out.empty(
+                        &format!("{w}:gridCol"),
+                        [(&*format!("{w}:w"), width.to_string().as_str())],
+                    );
                 }
                 self.out.end();
             }
@@ -530,10 +543,8 @@ impl<'a> Gen<'a> {
                     );
                 }
                 if c.row_span > 1 {
-                    self.out.empty(
-                        &format!("{w}:vMerge"),
-                        [(&*format!("{w}:val"), "restart")],
-                    );
+                    self.out
+                        .empty(&format!("{w}:vMerge"), [(&*format!("{w}:val"), "restart")]);
                 }
                 self.out.end();
             }
@@ -552,5 +563,4 @@ impl<'a> Gen<'a> {
         }
         self.out.end();
     }
-
 }

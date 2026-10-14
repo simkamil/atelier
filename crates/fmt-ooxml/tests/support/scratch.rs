@@ -117,7 +117,8 @@ pub fn random_attrs(rng: &mut Rng) -> CharAttrs {
         a.strike = Some(true);
     }
     if rng.chance(15) {
-        a.vertical_align = Some([VerticalAlign::Superscript, VerticalAlign::Subscript][rng.below(2)]);
+        a.vertical_align =
+            Some([VerticalAlign::Superscript, VerticalAlign::Subscript][rng.below(2)]);
     }
     if rng.chance(30) {
         a.font = Some(["Carlito", "Liberation Serif", "Courier New", "Arial"][rng.below(4)].into());
@@ -136,10 +137,22 @@ pub fn random_attrs(rng: &mut Rng) -> CharAttrs {
         // One of the sixteen Word highlight colors.
         a.highlight = Some(
             [
-                Color { r: 255, g: 255, b: 0 },
-                Color { r: 0, g: 255, b: 255 },
+                Color {
+                    r: 255,
+                    g: 255,
+                    b: 0,
+                },
+                Color {
+                    r: 0,
+                    g: 255,
+                    b: 255,
+                },
                 Color { r: 0, g: 255, b: 0 },
-                Color { r: 255, g: 0, b: 255 },
+                Color {
+                    r: 255,
+                    g: 0,
+                    b: 255,
+                },
             ][rng.below(4)],
         );
     }
@@ -149,7 +162,14 @@ pub fn random_attrs(rng: &mut Rng) -> CharAttrs {
 pub fn random_props(rng: &mut Rng) -> ParaProps {
     let mut p = ParaProps::default();
     if rng.chance(50) {
-        p.alignment = Some([Alignment::Left, Alignment::Center, Alignment::Right, Alignment::Justify][rng.below(4)]);
+        p.alignment = Some(
+            [
+                Alignment::Left,
+                Alignment::Center,
+                Alignment::Right,
+                Alignment::Justify,
+            ][rng.below(4)],
+        );
     }
     if rng.chance(30) {
         p.indent_left = Some(rng.below(1500) as i32);
@@ -246,7 +266,10 @@ pub fn scratch_document(i: usize) -> Built {
     push_paragraph(
         &mut d.document,
         section,
-        &[(SAMPLES[(i / 2) % SAMPLES.len()].to_owned(), CharAttrs::default())],
+        &[(
+            SAMPLES[(i / 2) % SAMPLES.len()].to_owned(),
+            CharAttrs::default(),
+        )],
         ParaProps {
             style: Some(heading),
             ..ParaProps::default()
@@ -441,7 +464,9 @@ pub fn locate(doc: &RichDocument, block: NodeId) -> Option<(NodeId, usize)> {
         }
         None
     }
-    doc.section_ids().iter().find_map(|s| search(doc, *s, block))
+    doc.section_ids()
+        .iter()
+        .find_map(|s| search(doc, *s, block))
 }
 
 fn tables(doc: &RichDocument) -> Vec<NodeId> {
@@ -501,13 +526,25 @@ pub fn mutate(doc: &mut RichDocument, rng: &mut Rng) -> bool {
         2 => {
             let end = cuts[rng.below(cuts.len())];
             let (a, b) = (at.min(end), at.max(end));
-            a < b && apply(doc, vec![RichOp::DeleteText { para: pid, start: a, end: b }])
+            a < b
+                && apply(
+                    doc,
+                    vec![RichOp::DeleteText {
+                        para: pid,
+                        start: a,
+                        end: b,
+                    }],
+                )
         }
         3 | 4 => {
             let end = cuts[rng.below(cuts.len())];
             let (a, b) = (at.min(end), at.max(end));
             let set = random_attrs(rng);
-            let clear = if rng.chance(30) { random_attrs(rng) } else { CharAttrs::default() };
+            let clear = if rng.chance(30) {
+                random_attrs(rng)
+            } else {
+                CharAttrs::default()
+            };
             a < b
                 && apply(
                     doc,
@@ -565,7 +602,8 @@ pub fn mutate(doc: &mut RichDocument, rng: &mut Rng) -> bool {
             let sub = if rng.chance(25) {
                 doc.new_table(1 + rng.below(3), 1 + rng.below(3)).unwrap()
             } else {
-                doc.new_paragraph(SAMPLES[rng.below(SAMPLES.len())]).unwrap()
+                doc.new_paragraph(SAMPLES[rng.below(SAMPLES.len())])
+                    .unwrap()
             };
             apply(
                 doc,
@@ -631,13 +669,15 @@ pub fn mutate(doc: &mut RichDocument, rng: &mut Rng) -> bool {
                     }],
                 ),
                 _ => {
-                    let cell = t
-                        .rows
-                        .get(rng.below(t.rows.len()))
-                        .and_then(|r| match doc.node(*r) {
-                            Some(Node::Row(row)) => row.cells.get(rng.below(row.cells.len().max(1))).copied(),
-                            _ => None,
-                        });
+                    let cell =
+                        t.rows
+                            .get(rng.below(t.rows.len()))
+                            .and_then(|r| match doc.node(*r) {
+                                Some(Node::Row(row)) => {
+                                    row.cells.get(rng.below(row.cells.len().max(1))).copied()
+                                }
+                                _ => None,
+                            });
                     match cell.map(|c| doc.split_cell_op(table, c)) {
                         Some(Ok(op)) => apply(doc, vec![op]),
                         _ => false,

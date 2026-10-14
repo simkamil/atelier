@@ -10,12 +10,12 @@
 
 use super::super::preserve::{Preserved, PreservedChild, PreservedElement};
 use super::super::{ppr_rank, rpr_rank};
+use super::WriteNotice;
 use super::props::{
     GenEl, Item, Prefixes, ThemeRefs, insert_ranked, local_of, local_of_bytes, merge_ppr,
     merge_rpr, new_ppr, new_rpr,
 };
 use super::xml::{Out, xml_char};
-use super::WriteNotice;
 use atelier_model::NodeId as ModelNodeId;
 use atelier_text_model::rich::{
     AnchoredObject, CharAttrs, Color, LinkTarget, Node, ParaProps, Paragraph, RichDocument,
@@ -289,8 +289,10 @@ impl<'a> Gen<'a> {
             }
             let w = self.p.w.clone();
             self.out.start(&g.name, std::iter::empty());
-            self.out
-                .empty(&format!("{w}:ilvl"), [(&*format!("{w}:val"), level.as_str())]);
+            self.out.empty(
+                &format!("{w}:ilvl"),
+                [(&*format!("{w}:val"), level.as_str())],
+            );
             self.out
                 .empty(&format!("{w}:numId"), [(&*format!("{w}:val"), id.as_str())]);
             self.out.end();
@@ -431,7 +433,8 @@ impl<'a> Gen<'a> {
                     let Some(node) = self.doc.node(*id) else {
                         continue;
                     };
-                    let is_ac = matches!(node, Node::Opaque(o) if local_of(&o.kind) == "AlternateContent");
+                    let is_ac =
+                        matches!(node, Node::Opaque(o) if local_of(&o.kind) == "AlternateContent");
                     // Blocks added between the copy and its branch, or edits of
                     // the branch, replace the `mc:AlternateContent`.
                     let next_changed = match children.get(i + 1) {
@@ -678,7 +681,9 @@ impl<'a> Gen<'a> {
         };
         self.out.start(
             &skel.name,
-            skel.attrs.iter().map(|a| (a.name.as_str(), a.value.as_str())),
+            skel.attrs
+                .iter()
+                .map(|a| (a.name.as_str(), a.value.as_str())),
         );
         let ppr = Self::ppr_of(skel);
         if ppr.is_none() {
@@ -876,7 +881,10 @@ impl<'a> Gen<'a> {
                 out.push((part, pos));
             }
             if covered < b2 {
-                out.insert(last_leaf.unwrap_or(out.len()), (Part::Gap(covered, b2), covered));
+                out.insert(
+                    last_leaf.unwrap_or(out.len()),
+                    (Part::Gap(covered, b2), covered),
+                );
             }
             parts = out;
         }
@@ -1290,20 +1298,18 @@ impl<'a> Gen<'a> {
         let mut kind = "";
         while let Ok(Some(event)) = reader.next_event() {
             match event {
-                atelier_xml::Event::StartElement { name, .. } => {
-                    match name.local.as_str() {
-                        "Fallback" => {
-                            kind = "fallback";
-                            depth_branch += 1;
-                        }
-                        "Choice" => {
-                            kind = "choice";
-                            depth_branch += 1;
-                        }
-                        "t" if depth_branch > 0 => in_text = true,
-                        _ => {}
+                atelier_xml::Event::StartElement { name, .. } => match name.local.as_str() {
+                    "Fallback" => {
+                        kind = "fallback";
+                        depth_branch += 1;
                     }
-                }
+                    "Choice" => {
+                        kind = "choice";
+                        depth_branch += 1;
+                    }
+                    "t" if depth_branch > 0 => in_text = true,
+                    _ => {}
+                },
                 atelier_xml::Event::EndElement { name } => match name.local.as_str() {
                     "t" => in_text = false,
                     "Fallback" | "Choice" => {
@@ -1325,7 +1331,9 @@ impl<'a> Gen<'a> {
         branch.push(chosen_fallback);
         branch.push(chosen_choice);
         let tail = text.get(at..).unwrap_or("");
-        let hit = branch.iter().any(|b| !b.is_empty() && tail.starts_with(b.as_str()));
+        let hit = branch
+            .iter()
+            .any(|b| !b.is_empty() && tail.starts_with(b.as_str()));
         if hit {
             self.note(WriteNotice::AlternateContentFlattened);
         }

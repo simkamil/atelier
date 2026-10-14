@@ -1,0 +1,249 @@
+{
+  "created_utc": "2026-10-14T10:27:10.689722+00:00",
+  "integration_parent": "b456c5700dd2bf12d4f1fc2c78c81825eb07d717",
+  "merged_branches": {
+    "codex/docx-edit-session": "a0b33c9e668eff3db55ab8ce07987624e4f567c9",
+    "us-307-docx-writer": "a003e21a3f2c960a7823db98336c08f923015f29"
+  },
+  "scope": "All previously unmerged feature branches included via the two descendant tips; local LibreOffice stdout fix included; compression fix already present.",
+  "workspace_tests": {
+    "command": [
+      "cargo",
+      "test",
+      "--workspace",
+      "--locked",
+      "--offline"
+    ],
+    "exit_code": 0,
+    "passed": 1255,
+    "ignored": 7
+  },
+  "checks": [
+    {
+      "name": "clippy-host",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--locked",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 8.3
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 1.27
+    },
+    {
+      "name": "licenses",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--offline",
+        "-p",
+        "atelier-check-license",
+        "--",
+        "."
+      ],
+      "exit_code": 0,
+      "seconds": 0.55
+    },
+    {
+      "name": "package-engine",
+      "command": [
+        "py",
+        "-3.12",
+        "tools/package-engine.py"
+      ],
+      "exit_code": 0,
+      "seconds": 13.42
+    },
+    {
+      "name": "clippy-wasm",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "atelier-core-wasm",
+        "-p",
+        "atelier-fmt-ooxml",
+        "--all-targets",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--locked",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 4.05
+    },
+    {
+      "name": "embedded-engine",
+      "command": [
+        "node",
+        "tests/check-embedded-engine.mjs",
+        "--compare-artifact"
+      ],
+      "exit_code": 0,
+      "seconds": 0.45
+    },
+    {
+      "name": "wasm-size",
+      "command": [
+        "node",
+        "tests/check-wasm-size.mjs"
+      ],
+      "exit_code": 0,
+      "seconds": 0.03
+    },
+    {
+      "name": "editor-protocol",
+      "command": [
+        "node",
+        "tests/editor-protocol.mjs"
+      ],
+      "exit_code": 0,
+      "seconds": 0.05
+    },
+    {
+      "name": "rich-preview",
+      "command": [
+        "node",
+        "tests/rich-preview.mjs"
+      ],
+      "exit_code": 0,
+      "seconds": 0.47
+    },
+    {
+      "name": "ui-assets",
+      "command": [
+        "py",
+        "-3.12",
+        "tools/package-editor-utilities.py",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.11
+    },
+    {
+      "name": "i18n",
+      "command": [
+        "node",
+        "tests/check-i18n.mjs"
+      ],
+      "exit_code": 0,
+      "seconds": 0.16
+    },
+    {
+      "name": "editor-browser",
+      "command": [
+        "node",
+        "tests/run-editor-browser.mjs"
+      ],
+      "exit_code": 0,
+      "seconds": 15.34
+    },
+    {
+      "name": "utilities-browser",
+      "command": [
+        "node",
+        "tests/run-editor-utilities-browser.mjs"
+      ],
+      "exit_code": 0,
+      "seconds": 0.92
+    },
+    {
+      "name": "native-release",
+      "command": [
+        "cargo",
+        "build",
+        "-p",
+        "atelier-desktop-win",
+        "--release",
+        "--locked",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 2.33
+    }
+  ],
+  "all_passed": true,
+  "browser_executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "browser_assertion_counts": {
+    "editor-browser": 247,
+    "utilities-browser": 92
+  },
+  "native_embedded_resource_probe": {
+    "exit_code": 0,
+    "passed": true,
+    "asset_count": 49,
+    "worker_ping": "echo",
+    "editor": "typed+ink+undo+redo",
+    "encoded_path": 403,
+    "csp": "fetch+WebSocket+image+frame blocked",
+    "callback_objects": "0->0"
+  },
+  "engine": {
+    "bytes": 4305241,
+    "sha256": "fbba577625e84a76f187d2475dc9547ba789873e1d7f2e82a5621794bf9d4cdd",
+    "matches_rebuilt_artifact": true
+  },
+  "graph": {
+    "nodes": 10870,
+    "edges": 27878,
+    "missing_edge_endpoints": 0,
+    "story_document_nodes": 163,
+    "documentary_preservation": {
+      "restored_unchanged_documentary_sources": [
+        ".github/workflows/ci.yml",
+        "crates/font/tests/fixtures/README.md",
+        "README.md",
+        "US-V0-V1.md",
+        "docs/us-102-i18n.md"
+      ],
+      "restored_nodes": 174,
+      "nodes": 10870,
+      "edges": 27878,
+      "story_document_nodes": 163,
+      "missing_edge_endpoints": 0,
+      "basis": "Existing source-attributed nodes and edges from b456c57, only for documentary files byte-identical after LF normalization. No inferred edges added.",
+      "removed_verified_unreferenced_duplicate": {
+        "id": "crates_font_tests_fixtures_readme",
+        "canonical": "document_crates_font_tests_fixtures_readme_md",
+        "source_file": "crates/font/tests/fixtures/README.md"
+      }
+    },
+    "semantic_extraction_partial_files": 26,
+    "gemini_input_tokens": 105294,
+    "gemini_output_tokens": 13132,
+    "estimated_cost_usd": 0.092
+  },
+  "input_count": 1214,
+  "normalized_source_inventory_sha256": "a17fe9154f8f6365f2c919f85bbd27b18dda32b61a97d137761c3f8a09d284a9",
+  "local_work_backup": {
+    "branch": "codex/backup-main-local-20261014",
+    "stash_commit": "63d0b0c4f1048352349b481b2968d0100ee794de",
+    "directory": "C:\\Users\\simka\\AppData\\Local\\Codex\\integration-backups\\mon-bureau-20261014-61f915e3"
+  },
+  "limits": [
+    "Seven optional Rust tests ignored by their own environment prerequisites",
+    "Initial Edge headless launch exited before reporting; both browser suites passed with installed Chrome",
+    "Word acceptance and Linux runtime tests not performed",
+    "Graphify semantic extraction remains partial; unchanged documentary nodes preserved from committed baseline"
+  ]
+}
