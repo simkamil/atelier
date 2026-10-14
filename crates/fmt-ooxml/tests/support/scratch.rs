@@ -343,7 +343,7 @@ pub fn scratch_document(i: usize) -> Built {
             position,
             subtree: sub,
         }];
-        assert!(apply(&mut d.document, ops.drain(..).collect()));
+        assert!(apply(&mut d.document, std::mem::take(&mut ops)));
         let mut texts = Vec::new();
         for r in 0..rows {
             for c in 0..cols {

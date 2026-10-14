@@ -25,7 +25,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BATCH = 25
+BATCH = 20
 
 
 def soffice() -> str:
@@ -39,25 +39,35 @@ def soffice() -> str:
     sys.exit("LibreOffice (soffice) not found; set ATELIER_SOFFICE")
 
 
+def kill_soffice() -> None:
+    """Stops a LibreOffice left behind by a timed out conversion."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/IM", "soffice.bin", "/IM", "soffice.exe"], capture_output=True)
+    else:
+        subprocess.run(["pkill", "-f", "soffice"], capture_output=True)
+
+
+def run_batch(exe: str, batch: list[Path], fmt: str, outdir: Path, profile: Path, timeout: int) -> bool:
+    cmd = [exe, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--convert-to", fmt,
+           "--outdir", str(outdir), *map(str, batch)]
+    try:
+        subprocess.run(cmd, check=False, capture_output=True, timeout=timeout)
+        return True
+    except subprocess.TimeoutExpired:
+        kill_soffice()
+        return False
+
+
 def convert(exe: str, files: list[Path], fmt: str, outdir: Path, profile: Path) -> None:
-    """Converts files in batches with one LibreOffice process per batch."""
+    """Converts files in batches; a batch that hangs is redone file by file."""
     outdir.mkdir(parents=True, exist_ok=True)
     for i in range(0, len(files), BATCH):
         batch = files[i : i + BATCH]
-        cmd = [
-            exe,
-            f"-env:UserInstallation={profile.as_uri()}",
-            "--headless",
-            "--convert-to",
-            fmt,
-            "--outdir",
-            str(outdir),
-            *map(str, batch),
-        ]
-        try:
-            subprocess.run(cmd, check=False, capture_output=True, timeout=600)
-        except subprocess.TimeoutExpired:
-            print(f"  LibreOffice timed out on a batch of {len(batch)} files", file=sys.stderr)
+        if run_batch(exe, batch, fmt, outdir, profile, 240):
+            continue
+        for f in batch:
+            if not run_batch(exe, [f], fmt, outdir, profile, 90):
+                print(f"  LibreOffice hung on {f.name}", file=sys.stderr)
 
 
 def words(text: str) -> list[str]:

@@ -39,13 +39,6 @@ fn doc_with(inner: &str) -> ImportedDocx {
     d.import()
 }
 
-fn bold() -> CharAttrs {
-    CharAttrs {
-        bold: Some(true),
-        ..CharAttrs::default()
-    }
-}
-
 #[test]
 fn text_inserted_and_deleted_inside_a_formatted_run_keeps_the_run() {
     let mut imp = doc_with(

@@ -49,6 +49,8 @@ const TC_PR: &[&str] = &[
 /// `w:trPr` is a choice in the schema (any order); listed for completeness.
 const TR_PR_NOTE: &str = "trPr children may come in any order";
 
+type Ranked = (fn(&str) -> usize, usize);
+
 fn local(name: &str) -> &str {
     name.rsplit('}').next().unwrap_or(name)
 }
@@ -68,7 +70,7 @@ fn walk(c: &C, parent: &str, out: &mut Vec<String>) {
         })
         .collect();
     if is_w(name) {
-        let ranked: Option<(fn(&str) -> usize, usize)> = match me {
+        let ranked: Option<Ranked> = match me {
             "rPr" if parent == "pPr" => Some((para_mark_rpr_rank, para_mark_rpr_rank("zzz"))),
             "rPr" => Some((rpr_rank, rpr_rank("zzz"))),
             "pPr" => Some((ppr_rank, ppr_rank("zzz"))),
