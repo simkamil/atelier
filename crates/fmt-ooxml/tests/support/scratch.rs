@@ -327,7 +327,7 @@ pub fn scratch_document(i: usize) -> Built {
                     id,
                     start: 5,
                     end: 6,
-                    instruction: "PAGE".into(),
+                    instruction: "SEQ Figure".into(),
                 }),
             }]
         ));
