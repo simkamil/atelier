@@ -25,9 +25,14 @@ use std::fmt;
 
 mod preserve;
 mod tables;
+mod write;
 pub use preserve::{
     MC_NS, Preserved, PreservedAttr, PreservedChild, PreservedElement, PreservedPart,
     interpreted_elements, para_mark_rpr_rank, ppr_rank, rpr_rank, sect_pr_rank,
+};
+pub use write::{
+    DocxVariant, NewDocument, PageSetup, StyleDecl, WriteError, WriteNotice, DocxWriteOptions,
+    WrittenDocx, write_docx, write_new_docx,
 };
 pub use tables::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
@@ -366,6 +371,15 @@ pub fn import_docx_with_limits(
     limits: DocxLimits,
 ) -> Result<ImportedDocx, DocxError> {
     let package = Package::read_with_limits(bytes, limits.package.clone())?;
+    import_package(package, limits)
+}
+
+/// Import from an already read package (the writer re-imports the package of
+/// an `ImportedDocx` to know what the source model was).
+pub(crate) fn import_package(
+    package: Package,
+    limits: DocxLimits,
+) -> Result<ImportedDocx, DocxError> {
     let mut notices = Vec::new();
     let main_rel = package
         .relationships(None)
@@ -385,10 +399,7 @@ pub fn import_docx_with_limits(
     let main = package
         .part(&main_uri)
         .ok_or(DocxError::MissingPart("main document target"))?;
-    if main.content_type != CONTENT_DOC
-        && main.content_type
-            != "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
-    {
+    if !write::MAIN_CONTENT_TYPES.contains(&main.content_type.as_str()) {
         return Err(DocxError::InvalidStructure {
             part: main_uri.to_string(),
             detail: "main part has a non-DOCX content type",
