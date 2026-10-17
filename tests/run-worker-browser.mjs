@@ -69,7 +69,7 @@ const timer = setTimeout(() => rejectReport(new Error(`Browser check timed out. 
 try {
   const report = await reportPromise;
   assert.equal(report.status, "passed", JSON.stringify(report));
-  assert.equal(report.checks.length, 9, "Every browser scenario must complete.");
+  assert.equal(report.checks.length, 11, "Every browser scenario must complete.");
   assert.match(report.userAgent, /(?:Chrome|Edg)\//);
   assert.equal(report.crossOriginIsolated, false, "Worker must work without SharedArrayBuffer isolation.");
   console.log(JSON.stringify({ ...report, executable }));

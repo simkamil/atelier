@@ -101,7 +101,7 @@ export async function createEngineClient({ worker, workerUrl, module, bytes } = 
       }
       entry.lastProgress.set(message.phase, message.copiedBytes);
       if (entry.onProgress) {
-        try { entry.onProgress(Object.freeze({ phase: message.phase, copiedBytes: message.copiedBytes, totalBytes: message.totalBytes })); } catch { /* isolate user callbacks */ }
+        try { entry.onProgress(Object.freeze({ phase: message.phase, copiedBytes: message.copiedBytes, totalBytes: message.totalBytes, ...(message.phase === "step" && typeof message.jobId === "bigint" ? { jobId: message.jobId } : {}) })); } catch { /* isolate user callbacks */ }
       }
       return;
     }

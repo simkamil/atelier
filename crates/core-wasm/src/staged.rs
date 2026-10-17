@@ -11,7 +11,8 @@
 //! Commands are `Editor` payloads (`ATED`, version 1) with these opcodes:
 //! * 23 `Begin`: `u16 kind` (1 open DOCX preview, 2 export DOCX), `u16 0`, DOCX bytes.
 //! * 24 `Step`: `u64 job id`.
-//! * 25 `Cancel`: `u64 job id`; cancelling an unknown job is a no-op.
+//! * 25 `Cancel`: `u64 job id`; id 0 drops whatever job is active (used when the
+//!   host aborted before it read the id); an unknown id is a no-op.
 //!
 //! Progress responses are `ATJB`: `u16 1`, `u16 state` (0 running, 1
 //! cancelled), `u32 done`, `u32 total` (always 1000), `u64 job id`. The final
@@ -119,7 +120,7 @@ impl StagedEngine {
             OP_STEP => self.step(job_id(body)?),
             _ => {
                 let id = job_id(body)?;
-                if self.job.as_ref().is_some_and(|job| job.id == id) {
+                if self.job.as_ref().is_some_and(|job| id == 0 || job.id == id) {
                     self.job = None;
                 }
                 progress_frame(1, 0, id)
@@ -128,8 +129,6 @@ impl StagedEngine {
     }
 
     fn begin(&mut self, body: &[u8]) -> Result<Vec<u8>, EditorError> {
-        // A new job always replaces (and so frees) any abandoned one.
-        self.job = None;
         if body.len() < 4 || body.len() - 4 > MAX_INPUT || body[2] != 0 || body[3] != 0 {
             return Err(EditorError("EDITOR_INVALID_COMMAND"));
         }
@@ -137,11 +136,14 @@ impl StagedEngine {
         if kind != KIND_OPEN && kind != KIND_EXPORT {
             return Err(EditorError("EDITOR_INVALID_COMMAND"));
         }
+        // A valid Begin replaces (and so frees) any abandoned job; an invalid
+        // one is rejected above without touching the active job.
         let mut input = Vec::new();
         input
             .try_reserve_exact(body.len() - 4)
             .map_err(|_| EditorError("EDITOR_LIMIT"))?;
         input.extend_from_slice(&body[4..]);
+        self.job = None;
         self.next_id = self.next_id.wrapping_add(1).max(1);
         let id = self.next_id;
         self.job = Some(Job {

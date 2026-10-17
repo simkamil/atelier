@@ -53,7 +53,7 @@ export function installEngineWorker(scope) {
           throw Object.assign(new Error("WASM staged job reported an unexpected state."), { name: "WorkerProtocolError", code: "STAGED_STATE" });
         }
         jobId = progress.jobId;
-        send({ kind: "progress", requestId: job.requestId, phase: "step", copiedBytes: progress.done, totalBytes: progress.total });
+        send({ kind: "progress", requestId: job.requestId, phase: "step", copiedBytes: progress.done, totalBytes: progress.total, jobId });
         await yieldToTaskQueue();
         if (options.signal.aborted) throw asAbortError();
         reply = await engine.dispatchAsync(encodeStagedStep(job.requestId, jobId), {
@@ -63,8 +63,9 @@ export function installEngineWorker(scope) {
         });
       }
     } finally {
-      if (!finished && jobId !== undefined) {
-        try { await engine.dispatchAsync(encodeStagedCancel(job.requestId, jobId)); } catch { /* the engine drops the job on its next Begin */ }
+      if (!finished) {
+        // Id 0 drops whatever job is active: an abort during Begin happens before the id is read.
+        try { await engine.dispatchAsync(encodeStagedCancel(job.requestId, jobId ?? 0n)); } catch { /* the engine drops the job on its next Begin */ }
       }
     }
   }

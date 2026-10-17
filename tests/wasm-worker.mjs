@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { createEngineClient } from "../web/engine-client.mjs";
 import { createWasmEngine, EngineInputError } from "../web/wasm-loader.mjs";
 import {
-  MessageType, ProtocolError, StagedKind, decodeMessage, decodeStagedExport, encodeMessage, encodeStagedBegin,
+  MessageType, ProtocolError, StagedKind, decodeMessage, decodeStagedExport, encodeMessage, encodeStagedBegin, encodeStagedStep,
 } from "../web/wasm-protocol.mjs";
 import { decodeEditorResponse } from "../web/editor-protocol.mjs";
 
@@ -243,24 +243,29 @@ try {
   const exportedAgain = decodeStagedExport(resultOf(await staged.request(encodeStagedBegin(904n, StagedKind.ExportDocx, docx))).payload);
   assert.deepEqual(exportedAgain.bytes, exported.bytes, "staged export is deterministic");
 
-  async function abortAfter(kind, requestId, events) {
+  async function abortAfter(kind, requestId, abortAtEvent) {
     const controller = new AbortController();
+    const events = [];
     const pending = staged.request(encodeStagedBegin(requestId, kind, docx), {
       signal: controller.signal,
       onProgress(progress) {
         if (progress.phase !== "step") return;
         events.push(progress);
-        if (events.length === 2) controller.abort();
+        if (events.length === abortAtEvent) controller.abort();
       },
     });
     await assert.rejects(pending, { name: "AbortError" });
-    assert.ok(events.length >= 2, "cancelled after at least two progress events");
+    assert.ok(events.length >= abortAtEvent, "cancelled after the requested progress event");
     assert.ok(events.at(-1).copiedBytes < 1000, "cancelled before completion");
+    assert.equal(typeof events[0].jobId, "bigint", "step progress carries the job id");
+    const stale = resultOf(await staged.request(encodeStagedStep(requestId + 100n, events[0].jobId)));
+    assert.equal(stale.type, MessageType.Failed, "the engine job was freed by the abort");
+    assert.equal(new TextDecoder().decode(stale.payload), "EDITOR_JOB_UNKNOWN");
   }
-  await abortAfter(StagedKind.OpenDocx, 905n, []);
+  await abortAfter(StagedKind.OpenDocx, 905n, 2);
   assert.deepEqual(await staged.request(command(MessageType.Ping, 906n)), command(MessageType.Ping, 906n), "engine answers after a cancelled open");
   assert.deepEqual(resultOf(await staged.request(encodeStagedBegin(907n, StagedKind.OpenDocx, docx))).payload, oneShot.payload, "a new open after cancellation matches the one-shot preview");
-  await abortAfter(StagedKind.ExportDocx, 908n, []);
+  await abortAfter(StagedKind.ExportDocx, 908n, 1);
   assert.deepEqual(decodeStagedExport(resultOf(await staged.request(encodeStagedBegin(909n, StagedKind.ExportDocx, docx))).payload).bytes, exported.bytes, "export after a cancelled export is unchanged");
   const failed = resultOf(await staged.request(encodeStagedBegin(910n, StagedKind.OpenDocx, Uint8Array.of(1, 2, 3))));
   assert.equal(failed.type, MessageType.Failed, "a malformed DOCX fails the staged job with a Failed frame");
