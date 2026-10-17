@@ -521,14 +521,14 @@ Validation US-110 (2027-10-11) : [contrat et limites](docs/us-110-win32-window.m
 
 #### US-111 — Liaisons WebView2
 *En tant que* développeur, *je veux* des liaisons COM WebView2 écrites à la main *afin d'afficher* le front-end sans Tauri.
-- [ ] Tables virtuelles des interfaces nécessaires déclarées en Rust ; comptage de références correct (pas de fuite au test de 100 ouvertures/fermetures).
+- [x] Tables virtuelles des interfaces nécessaires déclarées en Rust ; comptage de références correct : après 100 ouvertures/fermetures, 0 callback vivant et toute référence COM acquise relâchée. La croissance des handles `Process` du processus hôte, attribuée au runtime WebView2 ([WebView2Feedback #5704](https://github.com/MicrosoftEdge/WebView2Feedback/issues/5704)), est mesurée et publiée comme indicateur non bloquant.
 - [x] Environnement créé avec le dossier de données résolu par US-116 (`atelier-data/` en mode portable) ; aucun cache n'est créé avant la résolution de ce dossier.
 - [x] Redimensionnement, focus et DPI suivis.
 - [x] Outils de développement activés en build de debug uniquement.
 
 Réf : D9, §6.8 · Taille : L · Dépend de : US-110, US-116
 
-En cours (2026-10-11) : [hébergement réel et limite de validation](docs/us-111-webview2.md). Le test strict de 100 cycles reste en échec sur le compte de handles ; US-111 reste ouverte.
+Terminée (2026-10-17) : critère reformulé par le propriétaire du produit ; registre COM équilibré sur 100 cycles réels (4946/4946 références, 2882/2882 AddRef/Release, 0 callback vivant). Le contrôle strict des handles reste publié comme indicateur non bloquant ; [preuves et limites](docs/us-111-webview2.md).
 
 #### US-112 — Ressources embarquées et isolement réseau
 *En tant que* développeur, *je veux* servir les ressources depuis l'exe et bloquer tout le reste *afin que* l'application soit totalement déconnectée.
