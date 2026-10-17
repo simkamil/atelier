@@ -234,3 +234,4 @@ image-error-too-large=Cette image est trop volumineuse (8 Mio et 16 millions de 
 image-error-limit=Le document contient déjà le nombre maximal d’images.
 image-error-read=Le fichier image n’a pas pu être lu.
 image-inserted={count, plural, one {# image insérée.} other {# images insérées.}}
+image-alt-default=Image {number}

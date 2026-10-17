@@ -290,3 +290,27 @@ fn foreign_drawings_without_a_supported_media_part_are_skipped_by_the_reader() {
     let imported = import_docx(&copy.write().unwrap()).unwrap();
     assert!(read_pictures(&imported).is_empty());
 }
+
+#[test]
+fn alternative_text_is_written_escaped_and_read_back_and_never_left_empty() {
+    let described =
+        image(ImageFormat::Png, PNG, 40, 40, 1).with_alt("Plan <A&B> \"nord\" d'\u{e9}t\u{e9}");
+    let plain = image(ImageFormat::Gif, GIF, 40, 40, 1);
+    let d = build(&["ab"], &[(0, 0, described), (0, 1, plain)]);
+    let written =
+        write_new_docx_with_pictures(&NewDocument::from_default(&d), &DocxWriteOptions::default())
+            .unwrap();
+    let xml = document_xml(&Package::read(&written.bytes).unwrap());
+    assert!(
+        xml.contains("descr=\"Plan &lt;A&amp;B&gt; &quot;nord&quot; d&apos;\u{e9}t\u{e9}\""),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("descr=\"Image 2\""),
+        "default text is never empty"
+    );
+    assert!(!xml.contains("descr=\"\""));
+    let pictures = read_pictures(&import_docx(&written.bytes).unwrap());
+    assert_eq!(pictures[0].alt, "Plan <A&B> \"nord\" d'\u{e9}t\u{e9}");
+    assert_eq!(pictures[1].alt, "Image 2");
+}

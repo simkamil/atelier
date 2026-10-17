@@ -7,7 +7,7 @@ import { decodeDisplayList } from "./display-list.mjs";
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
 import { decodeEditorResponse, EditorOpcode, encodeEditorCommand } from "./editor-protocol.mjs";
-import { attachImagePaste, createImageCache, insertImageFiles } from "./image-insert.mjs";
+import { attachImagePaste, createImageCache, imageAltText, insertImageFiles } from "./image-insert.mjs";
 import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
 import { visiblePage, pageScrollTop } from "./page-navigation.mjs";
 
@@ -25,7 +25,7 @@ function pageTop(renderer, pageIndex) {
 
 /** Connects the editor protocol, ATDL renderer, hidden native text input and file host. */
 // i18n-ignore: valeur par défaut d’un composant autonome ; l’application transmet le texte du catalogue (confirm-discard, input-label)
-export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, inputLabel, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {}, onImages = () => {} } = {}) {
+export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, inputLabel, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {}, onImages = () => {}, imageAlt = () => "" } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.open !== "function"
       || typeof host.save !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
   if (!canvas?.getBoundingClientRect || !scrollport?.addEventListener || !spacer?.style) throw new TypeError("Canvas, scrollport and spacer are required.");
@@ -431,13 +431,14 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   /** Inserts picture files at the caret, or at `target` (a text offset) for a drop. */
   async function insertImages(files, { revision, target } = {}) {
     const result = await insertImageFiles(files, {
-      insertBytes: bytes => enqueueTask(async () => {
+      insertBytes: (bytes, file) => enqueueTask(async () => {
         if (busy || compositionStart || disposed) throw new EditorError(disposed ? "EDITOR_CLOSED" : "EDITOR_BUSY");
         if (target !== undefined) {
           if (revision !== state.revision) throw new EditorError("EDITOR_STALE_EDIT");
           await dispatch(EditorOpcode.SetSelection, { anchor: target, focus: target });
         }
-        return dispatch(EditorOpcode.InsertImage, { bytes, nowMs: nowMs() });
+        const number = (state.text.match(/[\u{100000}-\u{10fffd}]/gu) ?? []).length + 1;
+        return dispatch(EditorOpcode.InsertImage, { bytes, alt: imageAltText(file, imageAlt(number)), nowMs: nowMs() });
       }),
       onError: reportError,
     });

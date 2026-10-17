@@ -134,3 +134,23 @@ fn rich_model_inserts_a_picture_by_an_undoable_transaction() {
     assert_eq!(InlineImage::from_object_data(&stored.data), Ok(image));
     assert_eq!(para.text, "avant apres");
 }
+
+#[test]
+fn alternative_text_is_cleaned_bounded_and_survives_the_codec() {
+    let bytes: Arc<[u8]> = Arc::from(&b"\x89PNG\r\n\x1a\nxyz"[..]);
+    let image = InlineImage::new(ImageFormat::Png, bytes.clone(), 4, 4, 1)
+        .unwrap()
+        .with_alt("  Plan\nde l\u{e9}tage\t ");
+    assert_eq!(image.alt, "Plan de l\u{e9}tage");
+    let round = InlineImage::from_object_data(&image.to_object_data()).unwrap();
+    assert_eq!(round, image);
+    assert_eq!(round.alt, "Plan de l\u{e9}tage");
+    let long = InlineImage::new(ImageFormat::Png, bytes, 4, 4, 1)
+        .unwrap()
+        .with_alt(&"\u{e9}".repeat(1000));
+    assert!(long.alt.len() <= MAX_ALT_BYTES && long.alt.chars().all(|c| c == '\u{e9}'));
+    // Inconsistent alt length is refused, not read out of bounds.
+    let mut bad = image.to_object_data();
+    bad[6] = 255;
+    assert!(InlineImage::from_object_data(&bad).is_err());
+}

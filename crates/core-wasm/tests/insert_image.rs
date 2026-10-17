@@ -71,7 +71,17 @@ fn insert_image(
     session: &EditorSession,
     bytes: &[u8],
 ) -> Result<(EditorSession, State), &'static str> {
+    insert_image_alt(session, bytes, "")
+}
+fn insert_image_alt(
+    session: &EditorSession,
+    bytes: &[u8],
+    alt: &str,
+) -> Result<(EditorSession, State), &'static str> {
     let mut body = 100u64.to_le_bytes().to_vec();
+    body.extend_from_slice(&(alt.len() as u16).to_le_bytes());
+    body.extend_from_slice(&[0, 0]);
+    body.extend_from_slice(alt.as_bytes());
     body.extend_from_slice(bytes);
     session
         .transact(&command(28, &body))
@@ -619,4 +629,28 @@ fn docx_export_of_plain_text_and_edge_cases_does_not_fail() {
     // Too many paragraphs are refused, not truncated.
     let many = "\n".repeat(16_385);
     assert_eq!(export_docx(&load(&many)).err(), Some("EDITOR_EXPORT_LIMIT"));
+}
+
+#[test]
+fn alternative_text_is_kept_through_dedup_and_written_to_the_docx() {
+    use atelier_fmt_ooxml::docx_image::read_pictures;
+    let bytes = png(4, 4, 31);
+    let (session, _) = insert_image_alt(&load(""), &bytes, "Plan du site").unwrap();
+    // Same bytes, other alternative text: a separate picture, not a silent merge.
+    let (session, st) = insert_image_alt(&session, &bytes, "Autre plan").unwrap();
+    let chars: Vec<char> = st.text.chars().collect();
+    assert_ne!(chars[0], chars[1]);
+    let (session, _) = insert_image(&session, &png(4, 4, 32)).unwrap();
+    let (_, pictures, docx) = export_docx(&session).unwrap();
+    assert_eq!(pictures, 3);
+    let found = read_pictures(&atelier_fmt_ooxml::import_docx(&docx).unwrap());
+    let alts: Vec<&str> = found.iter().map(|p| p.alt.as_str()).collect();
+    assert_eq!(alts, ["Plan du site", "Autre plan", "Image 3"]);
+    // Oversized alternative text is refused at the ABI, not truncated silently.
+    let mut body = 1u64.to_le_bytes().to_vec();
+    body.extend_from_slice(&513u16.to_le_bytes());
+    body.extend_from_slice(&[0, 0]);
+    body.extend_from_slice(&vec![b'a'; 513]);
+    body.extend_from_slice(&bytes);
+    assert!(load("").transact(&command(28, &body)).is_err());
 }

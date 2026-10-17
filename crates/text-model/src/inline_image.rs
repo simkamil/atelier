@@ -129,7 +129,12 @@ pub struct InlineImage {
     pub height: u32,
     /// EXIF orientation 1..=8 (1 = as stored).
     pub orientation: u8,
+    /// Alternative text (at most [`MAX_ALT_BYTES`] bytes, no control characters).
+    pub alt: String,
 }
+
+/// Longest alternative text kept with a picture.
+pub const MAX_ALT_BYTES: usize = 512;
 
 const MAGIC: &[u8; 4] = b"ATIM";
 
@@ -153,7 +158,22 @@ impl InlineImage {
             width,
             height,
             orientation,
+            alt: String::new(),
         })
+    }
+
+    /// The picture with alternative text `alt`: control characters become
+    /// spaces and the text is cut at a character boundary to [`MAX_ALT_BYTES`].
+    pub fn with_alt(mut self, alt: &str) -> Self {
+        let mut clean = String::new();
+        for c in alt.chars().map(|c| if c.is_control() { ' ' } else { c }) {
+            if clean.len() + c.len_utf8() > MAX_ALT_BYTES {
+                break;
+            }
+            clean.push(c);
+        }
+        self.alt = clean.trim().to_owned();
+        self
     }
 
     /// Pixel size once the orientation is applied (width and height swap for 5..=8).
@@ -163,26 +183,34 @@ impl InlineImage {
 
     /// Payload of an `AnchoredObject` of kind [`IMAGE_OBJECT_KIND`].
     pub fn to_object_data(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(16 + self.bytes.len());
+        let mut out = Vec::with_capacity(16 + self.alt.len() + self.bytes.len());
         out.extend_from_slice(MAGIC);
         out.push(self.format.code());
         out.push(self.orientation);
-        out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(&(self.alt.len() as u16).to_le_bytes());
         out.extend_from_slice(&self.width.to_le_bytes());
         out.extend_from_slice(&self.height.to_le_bytes());
+        out.extend_from_slice(self.alt.as_bytes());
         out.extend_from_slice(&self.bytes);
         out
     }
 
     /// Inverse of [`Self::to_object_data`]; never panics on foreign data.
     pub fn from_object_data(data: &[u8]) -> Result<Self, ImageModelError> {
-        if data.len() < 16 || &data[..4] != MAGIC || data[6] != 0 || data[7] != 0 {
+        if data.len() < 16 || &data[..4] != MAGIC {
             return Err(ImageModelError::InvalidObjectData);
         }
+        let alt_len = usize::from(u16::from_le_bytes([data[6], data[7]]));
+        let rest = &data[16..];
+        if alt_len > MAX_ALT_BYTES || alt_len > rest.len() {
+            return Err(ImageModelError::InvalidObjectData);
+        }
+        let alt = core::str::from_utf8(&rest[..alt_len])
+            .map_err(|_| ImageModelError::InvalidObjectData)?;
         let format = ImageFormat::from_code(data[4]).ok_or(ImageModelError::InvalidObjectData)?;
         let width = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
         let height = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
-        Self::new(format, Arc::from(&data[16..]), width, height, data[5])
+        Ok(Self::new(format, Arc::from(&rest[alt_len..]), width, height, data[5])?.with_alt(alt))
     }
 }
 

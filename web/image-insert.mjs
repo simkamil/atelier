@@ -41,12 +41,22 @@ export async function readImageFile(file) {
  * Insère les fichiers un par un à la position courante ; une erreur n'arrête pas les suivants.
  * `insertBytes(bytes)` envoie l'image au moteur ; `onError` reçoit chaque échec.
  */
+/**
+ * Texte alternatif d'une image : nom du fichier sans extension quand il en dit quelque chose,
+ * sinon `fallback` (texte localisé « Image N »). Les noms génériques du presse-papiers sont ignorés.
+ */
+export function imageAltText(file, fallback = "") {
+  const name = typeof file?.name === "string" ? file.name.replace(/\.[^./\\]*$/, "").trim() : "";
+  if (name === "" || /^(?:image|img|blob|capture|screenshot)(?:[ _-]?\d*)?$/i.test(name)) return fallback;
+  return name;
+}
+
 export async function insertImageFiles(files, { insertBytes, onError = () => {} }) {
   let inserted = 0;
   let failed = 0;
   for (const file of files) {
     try {
-      await insertBytes(await readImageFile(file));
+      await insertBytes(await readImageFile(file), file);
       inserted += 1;
     } catch (error) {
       failed += 1;

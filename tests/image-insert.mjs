@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // US-270 : logique d'entrée des images sans navigateur (collage, sélecteur, lecture bornée, cache, messages).
 import assert from "node:assert/strict";
-import { attachImagePaste, createImageCache, createImagePicker, imageMessageKey, insertImageFiles, readImageFile } from "../web/image-insert.mjs";
+import { attachImagePaste, createImageCache, imageAltText, createImagePicker, imageMessageKey, insertImageFiles, readImageFile } from "../web/image-insert.mjs";
 import { EditorOpcode, encodeEditorCommand } from "../web/editor-protocol.mjs";
 
 const fakeFile = (size, type = "image/png") => ({ size, type, arrayBuffer: async () => new Uint8Array(size).fill(1).buffer });
@@ -13,6 +13,14 @@ assert.equal(imageMessageKey("EDITOR_IMAGE_TOO_LARGE"), "image-error-too-large")
 assert.equal(imageMessageKey("EDITOR_IMAGE_LIMIT"), "image-error-limit");
 assert.equal(imageMessageKey("EDITOR_BUSY"), null);
 assert.equal(imageMessageKey("toString"), null);
+
+// Texte alternatif : nom de fichier utile, sinon le texte localisé.
+assert.equal(imageAltText({ name: "plan du site.png" }, "Image 3"), "plan du site");
+assert.equal(imageAltText({ name: "photo.2024.jpeg" }, "Image 3"), "photo.2024");
+for (const name of ["image.png", "Image 12.PNG", "blob", "", ".png"]) assert.equal(imageAltText({ name }, "Image 3"), "Image 3", name);
+assert.equal(imageAltText(undefined, "Image 1"), "Image 1");
+const alted = encodeEditorCommand(EditorOpcode.InsertImage, { bytes: Uint8Array.of(9), alt: "é".repeat(400), nowMs: 0 });
+assert.equal(new DataView(alted.buffer).getUint16(16, true), 512, "alternative text is cut to 512 bytes on a character boundary");
 
 // Lecture bornée.
 assert.equal((await readImageFile(fakeFile(10))).byteLength, 10);
@@ -31,7 +39,7 @@ assert.deepEqual(errors, ["EDITOR_IMAGE_TOO_LARGE"]);
 
 // Protocole : bornes de la commande.
 const payload = encodeEditorCommand(EditorOpcode.InsertImage, { bytes: Uint8Array.of(1, 2, 3), nowMs: 5n });
-assert.equal(payload.byteLength, 8 + 8 + 3);
+assert.equal(payload.byteLength, 8 + 12 + 3);
 assert.equal(new DataView(payload.buffer).getUint16(6, true), 28);
 assert.throws(() => encodeEditorCommand(EditorOpcode.InsertImage, { bytes: new Uint8Array(0), nowMs: 0 }), { code: "INVALID_ARGUMENT" });
 assert.throws(() => encodeEditorCommand(EditorOpcode.InsertImage, { bytes: new Uint8Array(8 * 1024 * 1024 + 1), nowMs: 0 }), { code: "MESSAGE_TOO_LARGE" });

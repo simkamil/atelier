@@ -23,6 +23,7 @@ export const EDITOR_LIMITS = Object.freeze({
   maxExcerptBytes: 128 * 1024,
   maxReplacementCount: 128 * 1024,
   maxImageBytes: 8 * 1024 * 1024,
+  maxImageAltBytes: 512,
   maxBitmapSide: 1600,
   maxDocxExportBytes: 32 * 1024 * 1024,
 });
@@ -144,9 +145,13 @@ export function encodeEditorCommand(opcode, values = {}) {
   } else if (opcode === EditorOpcode.InsertImage) {
     if (!isBytes(values.bytes) || values.bytes.byteLength === 0) fail("INVALID_ARGUMENT", "Image bytes are required.");
     if (values.bytes.byteLength > EDITOR_LIMITS.maxImageBytes) fail("MESSAGE_TOO_LARGE", "Image exceeds the picture size limit.");
-    body = new Uint8Array(8 + values.bytes.byteLength);
-    new DataView(body.buffer).setBigUint64(0, u64(values.nowMs, "nowMs"), true);
-    body.set(values.bytes, 8);
+    const alt = encoder.encode(imageAlt(values.alt ?? ""));
+    body = new Uint8Array(12 + alt.byteLength + values.bytes.byteLength);
+    const view = new DataView(body.buffer);
+    view.setBigUint64(0, u64(values.nowMs, "nowMs"), true);
+    view.setUint16(8, alt.byteLength, true);
+    body.set(alt, 12);
+    body.set(values.bytes, 12 + alt.byteLength);
   } else if (opcode === EditorOpcode.ImageBitmap) {
     body = new Uint8Array(4);
     new DataView(body.buffer).setUint32(0, u32(values.id, "id"), true);
@@ -239,6 +244,18 @@ export function encodeEditorCommand(opcode, values = {}) {
   view.setUint16(6, opcode, true);
   payload.set(body, 8);
   return payload;
+}
+
+/** Alternative text bounded to the engine limit, cut on a character boundary. */
+function imageAlt(text) {
+  if (typeof text !== "string") fail("INVALID_ARGUMENT", "Image alternative text must be a string.");
+  let out = "", bytes = 0;
+  for (const char of text) {
+    const size = encoder.encode(char).byteLength;
+    if (bytes + size > EDITOR_LIMITS.maxImageAltBytes) break;
+    out += char; bytes += size;
+  }
+  return out;
 }
 
 function concat(left, right) {

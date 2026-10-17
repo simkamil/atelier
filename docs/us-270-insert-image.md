@@ -18,6 +18,8 @@ L'éditeur de texte brut insère des images PNG, JPEG, GIF et BMP à la position
 
 **ABI.** Opcodes Editor : 28 `InsertImage` (`u64 nowMs`, octets), 29 `ImageBitmap` (`u32 id`, réponse `ATIM` : id, largeur, hauteur, longueur, RGBA), 30 `ExportDocx` (réponse `ATDX` : nombre d'avis, nombre d'images, DOCX). Les opcodes 26 et 27 sont réservés à US-328. Codes d'échec : `EDITOR_IMAGE_UNSUPPORTED`, `_CORRUPT`, `_TOO_LARGE`, `_LIMIT`, `_UNKNOWN`, `EDITOR_EXPORT_LIMIT`, `EDITOR_EXPORT_FAILED`. L'état (`ATES`) expose `imageIds` côté JavaScript.
 
+**Texte alternatif.** Le nom du fichier sans extension (ou « Image N » du catalogue pour un nom générique comme `image.png` du presse-papiers) est transmis au moteur (opcode 28 : `u64 nowMs`, `u16` longueur, `u16 0`, texte UTF-8 de 512 octets au plus, octets de l'image), conservé dans `InlineImage::alt` et écrit en `wp:docPr/@descr` (jamais vide : « Image N » à défaut) ; `read_pictures` le relit. Un EXIF mal formé ou une orientation hors 1-8 vaut orientation 1 sans refuser l'image.
+
 ## Limites connues
 
 - Le texte brut n'a pas de format d'image : un TXT enregistré contient U+FFFC à la place de chaque image (l'indicateur de modification suit ce contenu). L'export DOCX existe dans le moteur et sur `editor.exportDocx()` mais aucun bouton « Enregistrer en DOCX » n'est branché ; l'ouverture d'un DOCX reste un aperçu en lecture seule qui n'affiche pas les images.

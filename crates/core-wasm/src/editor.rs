@@ -617,7 +617,17 @@ impl EditorSession {
             28 => {
                 let mut r = Reader::new(body);
                 let now = r.u64()?;
-                let image = images::analyze(r.rest()).map_err(map_image_error)?;
+                let alt_len = usize::from(r.u16()?);
+                r.reserved_u16()?;
+                if alt_len > atelier_text_model::inline_image::MAX_ALT_BYTES {
+                    return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                }
+                let alt = core::str::from_utf8(r.take(alt_len)?)
+                    .map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?
+                    .to_owned();
+                let image = images::analyze(r.rest())
+                    .map_err(map_image_error)?
+                    .with_alt(&alt);
                 let ch = candidate.images.add(image).map_err(map_image_error)?;
                 let doc = candidate.ensure_document()?;
                 let selection = doc.selection();
@@ -985,7 +995,7 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         18 if body.len() <= 8 * 1024 * 1024 => None,
         19 if (16..=16 + MAX_QUERY_BYTES).contains(&body.len()) => None,
         20 => Some(8),
-        28 if (9..=8 + images::MAX_IMAGE_BYTES).contains(&body.len()) => None,
+        28 if (13..=12 + images::MAX_ALT + images::MAX_IMAGE_BYTES).contains(&body.len()) => None,
         29 => Some(4),
         21 if (36..=36 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
         22 if (28..=28 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,

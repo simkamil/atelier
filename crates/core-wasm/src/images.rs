@@ -17,6 +17,8 @@ use std::sync::Arc;
 
 /// Largest accepted encoded picture.
 pub(crate) const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+/// Longest alternative text of a picture, in bytes.
+pub(crate) const MAX_ALT: usize = atelier_text_model::inline_image::MAX_ALT_BYTES;
 /// Total encoded bytes kept by one document.
 pub(crate) const MAX_STORE_BYTES: usize = 32 * 1024 * 1024;
 /// Distinct pictures per document.
@@ -132,6 +134,7 @@ impl ImageStore {
         if let Some(slot) = self.items.iter().position(|i| {
             i.format == image.format
                 && i.orientation == image.orientation
+                && i.alt == image.alt
                 && i.bytes[..] == image.bytes[..]
         }) {
             return self.char_of(slot).ok_or(ImageInsertError::StoreFull);

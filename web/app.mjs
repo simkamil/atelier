@@ -185,8 +185,10 @@ async function start() {
   const imagePicker = imageAvailable ? createImagePicker() : null;
   async function insertPickedImages() {
     if (!imagePicker || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
-    const files = await imagePicker.open();
-    if (files.length > 0) await editor.insertImages(files);
+    try {
+      const files = await imagePicker.open();
+      if (files.length > 0) await editor.insertImages(files);
+    } catch (error) { onError(error); }
     editor.focus();
   }
   const listeners = new AbortController();
@@ -300,6 +302,7 @@ async function start() {
       confirmDiscard: messages.get("confirm-discard"), inputLabel: messages.get("input-label"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
       onZoom: () => { if (!previewActive) updateZoom(); },
       onViewport: () => { if (!previewActive) updateStatus(); },
+      imageAlt: number => i18n.t("image-alt-default", { number }),
       onImages: ({ inserted, failed }) => { if (inserted > 0 && failed === 0) showEditorMessage(i18n.t("image-inserted", { count: inserted })); },
     });
     function closePreview() {

@@ -27,19 +27,51 @@ pub const EMU_PER_POINT: f64 = 12_700.0;
 /// Most pictures one document may carry (matches the editor store).
 pub const MAX_PICTURES: usize = 4096;
 
+fn escape_attr(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+fn unescape_attr(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
 /// The `w:drawing` element of an inline picture of `width_emu` x `height_emu`.
+/// `alt` becomes `wp:docPr/@descr`; an empty one is written as "Image N".
 pub fn drawing_xml(
     relationship_id: &str,
     drawing_id: u32,
     file_name: &str,
+    alt: &str,
     width_emu: u64,
     height_emu: u64,
 ) -> Vec<u8> {
+    let descr = if alt.trim().is_empty() {
+        format!("Image {drawing_id}")
+    } else {
+        escape_attr(alt)
+    };
+    let file_name = escape_attr(file_name);
     format!(
         "<w:drawing><wp:inline xmlns:wp=\"{WP_NS}\" distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">\
 <wp:extent cx=\"{width_emu}\" cy=\"{height_emu}\"/>\
 <wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>\
-<wp:docPr id=\"{drawing_id}\" name=\"Image {drawing_id}\" descr=\"\"/>\
+<wp:docPr id=\"{drawing_id}\" name=\"Image {drawing_id}\" descr=\"{descr}\"/>\
 <wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a=\"{A_NS}\" noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>\
 <a:graphic xmlns:a=\"{A_NS}\"><a:graphicData uri=\"{PIC_NS}\">\
 <pic:pic xmlns:pic=\"{PIC_NS}\"><pic:nvPicPr><pic:cNvPr id=\"{drawing_id}\" name=\"{file_name}\"/><pic:cNvPicPr/></pic:nvPicPr>\
@@ -138,7 +170,14 @@ pub fn write_new_docx_with_pictures(
                 id: object.id,
                 offset: object.offset,
                 kind: "w:drawing".into(),
-                data: drawing_xml(&entry.relationship, drawing_id, file_name, emu(w), emu(h)),
+                data: drawing_xml(
+                    &entry.relationship,
+                    drawing_id,
+                    file_name,
+                    &image.alt,
+                    emu(w),
+                    emu(h),
+                ),
             }),
         });
     }
@@ -186,6 +225,8 @@ pub struct ImportedPicture {
     pub width_emu: u64,
     pub height_emu: u64,
     pub format: ImageFormat,
+    /// Alternative text (`wp:docPr/@descr`), empty when absent.
+    pub alt: String,
     /// The media part, byte for byte as stored.
     pub bytes: Vec<u8>,
     /// Name of the media part.
@@ -202,7 +243,22 @@ fn element_attr(xml: &str, element: &str, attr: &str) -> Option<String> {
     let mut at = 0;
     while let Some(found) = xml[at..].find('<') {
         let start = at + found + 1;
-        let tag_end = xml[start..].find('>').map(|e| start + e)?;
+        // The end of the tag is the first `>` outside a quoted attribute value
+        // (a serialized value may hold a bare `>`).
+        let mut quote = None;
+        let mut tag_end = None;
+        for (i, c) in xml[start..].char_indices() {
+            match (quote, c) {
+                (None, '"' | '\'') => quote = Some(c),
+                (Some(q), c) if c == q => quote = None,
+                (None, '>') => {
+                    tag_end = Some(start + i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let tag_end = tag_end?;
         let tag = &xml[start..tag_end];
         let name_end = tag
             .find(|c: char| c.is_ascii_whitespace() || c == '/')
@@ -287,6 +343,9 @@ pub fn read_pictures(imported: &ImportedDocx) -> Vec<ImportedPicture> {
                 width_emu: parse("cx"),
                 height_emu: parse("cy"),
                 format,
+                alt: element_attr(xml, "docPr", "descr")
+                    .map(|v| unescape_attr(&v))
+                    .unwrap_or_default(),
                 bytes: part.bytes.clone(),
                 part: target.to_string(),
             });
