@@ -60,12 +60,12 @@
     "date": "2026-10-17",
     "tooling": "cfg(test) ledger in webview.rs/webview-resources.rs; crates/desktop-win/src/webview/leak_probe.rs",
     "reference_ledger_100_cycles": {
-      "interface_refs_acquired": 715,
-      "interface_refs_released": 715,
-      "our_objects_AddRef": 1310,
-      "our_objects_Release": 1310,
+      "interface_refs_acquired": 4946,
+      "interface_refs_released": 4946,
+      "our_objects_AddRef": 2882,
+      "our_objects_Release": 2882,
       "live_callback_objects": "0->0",
-      "result": "balanced; no leak in our COM references"
+      "result": "balance on all instrumented paths exercised by the test (environment, controller, core, settings, ICoreWebView2_22, events, resource request/stream/response, PostWebMessageAsString, ExecuteScript, MoveFocus, Close); error-HRESULT paths and refused navigation/new-window handlers not covered"
     },
     "handle_growth_probe_100_cycles_hidden_STATIC_parent": [
       {"variant": "envonly", "description": "environment created and released, no controller", "baseline": 182, "final": 182, "growth_per_cycle": 0},
@@ -75,6 +75,6 @@
     "growing_handle_type": "Process only (full 3->103, noconfig 4->301); GDI=0 and USER constant across cycles; Event/Section/Thread +1 once",
     "process_handle_detail_30_cycles": "all growth is access=0x1fffff (PROCESS_ALL_ACCESS, the CreateProcess hProcess mask) on processes that have exited; this process never calls CreateProcess",
     "atelier_strict_check_100_cycles": {"baseline": 237, "cycle1": 241, "cycle10": 297, "cycle100": 835, "growth_per_cycle": 6.0, "shape": "linear"},
-    "conclusion": "growth starts at controller creation, is independent of our configuration code, and consists of leaked hProcess handles to exited runtime child processes; no ceiling observed up to 100 cycles. Criterion not ticked."
+    "conclusion": "growth starts at controller creation, is independent of our configuration code, and consists of leaked hProcess handles to exited runtime child processes; no ceiling observed up to 100 cycles. Attribution to the runtime is consistent with the measurements, not demonstrated. Criterion not ticked."
   }
 }
