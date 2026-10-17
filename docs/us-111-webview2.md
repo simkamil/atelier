@@ -52,3 +52,33 @@ le rapport conserve séparément l'échec strict des handles et US-111 reste ouv
 La [revue indépendante](../_bmad-output/implementation-artifacts/frontend-host-review.md)
 conserve un point IME natif de gravité moyenne non vérifiée à trancher sur matériel.
 Les tests musl sont compilés localement ; leur exécution appartient à la CI Linux.
+
+## Audit des références et caractérisation de la croissance — 2026-10-17
+
+US-111 reste **en cours** ; le critère n'est pas coché.
+
+**Nos références COM sont équilibrées.** Des compteurs compilés uniquement en test (`ledger` dans `webview.rs`, par thread STA) comptent chaque référence d'interface acquise (AddRef explicite ou pointeur sortant détenu : environnement, contrôleur, `get_CoreWebView2`, `get_Settings`, `ICoreWebView2_22`, requête, flux et réponse de ressource) et chaque `release_interface`, ainsi que AddRef/Release de nos objets callback (rappels d'initialisation et gestionnaires d'événements). Le test `com_reference_ledger_balances_over_100_cycles` exécute 100 cycles réels : 715 références acquises et 715 relâchées, 1310 AddRef et 1310 Release sur nos objets, objets callback vivants 0 puis 0. Aucune fuite de références de notre côté.
+
+**La croissance concerne uniquement des handles `Process`.** La sonde ignorée `handle_growth_probe` (`webview/leak_probe.rs`, fenêtre parente masquée) classe les handles par type via `NtQuerySystemInformation`/`NtQueryObject`, relève GDI/USER (`GetGuiResources`) et décrit les handles Process :
+
+| variante (100 cycles) | départ | fin | par cycle | type qui croît |
+|---|---|---|---|---|
+| `envonly` : environnement créé puis relâché, aucun contrôleur | 182 | 182 | 0 | aucun |
+| `full` : notre cycle complet (réglages, événements, ressources, navigation, Close) | 227 | 330 | ~1 | Process 3 vers 103 |
+| `noconfig` : contrôleur nu puis Close, sans aucun code de configuration de notre part | 228 | 528 | ~3 | Process 4 vers 301 |
+| `--webview-self-check` (page embarquée chargée, 1/10/100) | 237 | 835 | ~6 | non typé |
+
+La croissance est linéaire (par exemple `full` : +7 au cycle 10, +50 au cycle 50, +103 au cycle 100) ; aucun plafond jusqu'à 100 cycles. GDI reste à 0 et USER constant. Sur 30 cycles, tous les handles ajoutés ont le masque d'accès `0x1fffff` (PROCESS_ALL_ACCESS, celui du `hProcess` renvoyé par `CreateProcess`) et visent des processus déjà terminés ; notre processus n'appelle jamais `CreateProcess`.
+
+**Lecture.** La croissance apparaît à la création du contrôleur, existe sans notre code de configuration, dépend de l'activité du runtime (plus de processus enfants avec la page embarquée) et consiste en handles de processus enfants terminés détenus dans notre processus par le code client du runtime. C'est cohérent avec le signalement #5704, sans en établir la cause interne. Aucun handle de propriétaire inconnu n'est fermé de force.
+
+**Reproduction.**
+
+```powershell
+cargo test -p atelier-desktop-win --lib --locked --offline com_reference_ledger -- --nocapture
+$env:ATELIER_PROBE_VARIANT='envonly'   # full | noconfig | envonly
+$env:ATELIER_PROBE_CYCLES='100'
+cargo test -p atelier-desktop-win --lib --locked --offline handle_growth_probe -- --ignored --nocapture
+```
+
+**Proposition de reformulation (décision du propriétaire du produit).** Remplacer le critère par : « Tables virtuelles des interfaces nécessaires déclarées en Rust ; comptage de références correct : après 100 ouvertures/fermetures, zéro objet callback vivant et chaque référence COM acquise relâchée (test de registre) ; la croissance du nombre de handles Process attribuée au runtime WebView2 est mesurée, documentée et suivie en amont (WebView2Feedback #5704). » Le contrôle strict des handles du processus hôte resterait un indicateur publié, non bloquant, tant que le runtime n'est pas corrigé.
