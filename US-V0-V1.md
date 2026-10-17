@@ -461,9 +461,9 @@ En cours (2026-10-11) : [module Canvas](docs/us-101-canvas-renderer.md) raccord�
 *En tant que* développeur, *je veux* un catalogue de chaînes *afin qu'aucun* texte d'interface ne soit en dur.
 - [x] Catalogue `web/i18n/fr-FR.txt` (clé = valeur), paramètres nommés, pluriels.
 - [x] Outil de vérification : clés manquantes, inutilisées, chaînes en dur détectées dans le JS.
-- [x] Formatage des nombres, dates et unités selon fr-FR (hors pourcentage de zoom, voir l’avancement).
+- [x] Formatage des nombres, dates et unités selon fr-FR.
 
-Avancement US-102 (2026-10-17) : `web/i18n.mjs` branché dans `web/app.mjs` (catalogue chargé au démarrage, `i18n` injecté dans la navigation, la barre d’état et le dialogue des symboles), `/i18n.mjs` embarqué ; la référence de `tests/check-i18n.mjs` est vide (0 écart, exemptions justifiées) ; [contrat](docs/us-102-i18n.md). Reste hors périmètre : le pourcentage de zoom (`web/zoom-controls.mjs`, « 150% » écrit à la main) n’utilise pas encore `formatPercent`, et la WebView embarquée n’a pas été relancée (vérification faite avec Edge sur les suites navigateur).
+Avancement US-102 (2026-10-17) : `web/i18n.mjs` branché dans `web/app.mjs` (catalogue chargé au démarrage, `i18n` injecté dans la navigation, la barre d’état et le dialogue des symboles), `/i18n.mjs` embarqué ; la référence de `tests/check-i18n.mjs` est vide (0 écart, exemptions justifiées) ; [contrat](docs/us-102-i18n.md). La WebView embarquée n’a pas été relancée (vérification faite avec Edge sur les suites navigateur).
 
 Réf : D12, §6.15 · Taille : S · Dépend de : US-001
 

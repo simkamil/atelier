@@ -620,8 +620,21 @@ ${text}
 // i18n-ignore-end`), ["invalid-exemption:1", "invalid-exemption:3", "hardcoded:2"]);
   assert.deepEqual(found(`// i18n-ignore-start: repli
 ${text}`), ["invalid-exemption:1", "hardcoded:2"], "an open region is reported and exempts nothing");
+  assert.deepEqual(found(`// i18n-ignore-start: a
+// i18n-ignore-start: b
+${text}
+// i18n-ignore-end`), ["invalid-exemption:2"], "a nested start is reported, the outer region stays valid");
   assert.deepEqual(found(`${text}
 // i18n-ignore-end`), ["invalid-exemption:2", "hardcoded:1"]);
+});
+
+test("limits: the JS text size limit equals MAX_TEXT of the Rust editor", () => {
+  const rust = readFileSync(join(root, "crates/core-wasm/src/editor.rs"), "utf8");
+  const app = readFileSync(join(root, "web/app.mjs"), "utf8");
+  const rustLimit = /const MAX_TEXT: usize = (\d+) \* 1024;/.exec(rust);
+  const jsLimit = /const MAX_TEXT_FILE_BYTES = (\d+) \* 1024;/.exec(app);
+  assert(rustLimit && jsLimit, "both constants are written as N * 1024");
+  assert.equal(Number(jsLimit[1]), Number(rustLimit[1]));
 });
 
 test("fallback: the French fallback of app.mjs equals the catalogue", () => {

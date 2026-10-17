@@ -308,6 +308,7 @@ function exemptions(comments, tokenLines, file, findings, marker = /\bi18n-ignor
         region = null;
       } else if (reasonless(edge[2])) finding(comment.line, "i18n-ignore-start", "exemption sans raison : écrire « i18n-ignore-start: raison »");
       else if (region === null) region = comment.line;
+      else finding(comment.line, "i18n-ignore-start", "i18n-ignore-start imbriqué : fermer la région ouverte ligne " + region + " d’abord");
       continue;
     }
     const match = marker.exec(comment.text);
