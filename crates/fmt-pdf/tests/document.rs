@@ -371,6 +371,58 @@ fn uncompressed_output_is_readable() {
     assert!(extract_text(&pdf, pg).contains(&LINES[0].to_owned()));
 }
 
+/// US-328: the six document properties a DOCX supplies (title, subject, author,
+/// keywords, creation and modification dates) all reach the Info dictionary.
+#[test]
+fn info_carries_title_author_subject_keywords_and_both_dates() {
+    let mut res = Res::default();
+    let page = typical_page(&mut res);
+    let date = |day: u8, hour: u8| PdfDate {
+        year: 2026,
+        month: 10,
+        day,
+        hour,
+        minute: 30,
+        second: 0,
+        utc_offset_minutes: 0,
+    };
+    let options = PdfOptions {
+        info: atelier_fmt_pdf::PdfInfo {
+            title: Some("Rapport « Œuvre »".to_owned()),
+            author: Some("Élodie Müller".to_owned()),
+            subject: Some("Sujet".to_owned()),
+            keywords: Some("un; deux; trois".to_owned()),
+            creator: Some("Atelier".to_owned()),
+            creation_date: Some(date(12, 8)),
+            modification_date: Some(date(13, 9)),
+            ..Default::default()
+        },
+        ..PdfOptions::default()
+    };
+    let pdf = open(&render_pdf(&[page], &res, &options).unwrap().bytes);
+    let info = pdf.resolve(pdf.trailer.get("Info").unwrap());
+    let text = |name: &str| {
+        let b = info.dict()[name].str_bytes();
+        assert_eq!(&b[..2], [0xFE, 0xFF], "{name} is UTF-16BE");
+        String::from_utf16(
+            &b[2..]
+                .chunks(2)
+                .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap()
+    };
+    assert_eq!(text("Title"), "Rapport « Œuvre »");
+    assert_eq!(text("Author"), "Élodie Müller");
+    assert_eq!(info.dict()["Subject"].str_bytes(), b"Sujet");
+    assert_eq!(info.dict()["Keywords"].str_bytes(), b"un; deux; trois");
+    assert_eq!(
+        info.dict()["CreationDate"].str_bytes(),
+        b"D:20261012083000Z"
+    );
+    assert_eq!(info.dict()["ModDate"].str_bytes(), b"D:20261013093000Z");
+}
+
 #[test]
 fn metadata_links_and_bookmarks() {
     let mut res = Res::default();
