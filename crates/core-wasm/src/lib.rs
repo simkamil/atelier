@@ -17,6 +17,7 @@ mod editor_queries;
 pub mod protocol;
 pub mod rich_preview;
 pub mod rich_session;
+pub mod staged;
 
 pub const MAX_BUFFER_BYTES: usize = 64 * 1024 * 1024;
 /// Maximum number of bytes owned by the ABI at one time (128 MiB).
@@ -212,6 +213,12 @@ fn registry() -> &'static Mutex<AllocationRegistry> {
 }
 
 #[cfg(target_arch = "wasm32")]
+fn staged_engine() -> &'static Mutex<staged::StagedEngine> {
+    static STAGED: OnceLock<Mutex<staged::StagedEngine>> = OnceLock::new();
+    STAGED.get_or_init(|| Mutex::new(staged::StagedEngine::default()))
+}
+
+#[cfg(target_arch = "wasm32")]
 fn editor_session() -> &'static Mutex<editor::EditorSession> {
     static SESSION: OnceLock<Mutex<editor::EditorSession>> = OnceLock::new();
     SESSION.get_or_init(|| Mutex::new(editor::EditorSession::default()))
@@ -323,7 +330,14 @@ fn dispatch_editor(
     let mut state = editor_session()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let (mut candidate, response) = state.prepare_message(message);
+    let (mut candidate, response) = if staged::is_staged(&message.payload) {
+        let mut staged = staged_engine()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        (None, staged.respond(message))
+    } else {
+        state.prepare_message(message)
+    };
     let frame = match protocol::encode(&response) {
         Ok(frame) => frame,
         Err(_) => {

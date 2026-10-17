@@ -5,7 +5,10 @@ import { MessageChannel, Worker } from "node:worker_threads";
 import { resolve } from "node:path";
 import { createEngineClient } from "../web/engine-client.mjs";
 import { createWasmEngine, EngineInputError } from "../web/wasm-loader.mjs";
-import { MessageType, ProtocolError, encodeMessage } from "../web/wasm-protocol.mjs";
+import {
+  MessageType, ProtocolError, StagedKind, decodeMessage, decodeStagedExport, encodeMessage, encodeStagedBegin, encodeStagedStep,
+} from "../web/wasm-protocol.mjs";
+import { decodeEditorResponse } from "../web/editor-protocol.mjs";
 
 const wasmPath = resolve(process.argv[2] ?? "target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm");
 const wasmBytes = await readFile(wasmPath);
@@ -200,6 +203,76 @@ try {
 } finally {
   globalThis.setTimeout = originalSetTimeout;
   globalThis.clearTimeout = originalClearTimeout;
+}
+
+
+// Cooperative open/export (US-092): bounded engine steps, monotonic progress, abort between steps.
+{
+  const stagedHarness = spawnWorker();
+  const staged = await createEngineClient({ worker: stagedHarness.worker, bytes: wasmBytes });
+  const docx = new Uint8Array(await readFile(new URL("./docx-reference/basic.docx", import.meta.url)));
+  const previewFrame = (requestId) => {
+    const payload = new Uint8Array(8 + docx.byteLength);
+    payload.set(new TextEncoder().encode("ATED"));
+    new DataView(payload.buffer).setUint16(4, 1, true);
+    new DataView(payload.buffer).setUint16(6, 18, true);
+    payload.set(docx, 8);
+    return encodeMessage({ type: MessageType.Editor, requestId, payload });
+  };
+  const resultOf = (bytes) => decodeMessage(bytes, "event");
+  const stepEvents = [];
+  const track = (events) => (progress) => { if (progress.phase === "step") events.push(progress); };
+  const assertMonotonic = (events) => {
+    assert.ok(events.length >= 2, `at least two step progress events (${events.length})`);
+    assert.ok(events.every((event, index) => event.totalBytes === 1000 && (index === 0 || event.copiedBytes >= events[index - 1].copiedBytes)), "step progress is monotonic on a fixed scale");
+  };
+
+  const oneShot = resultOf(await staged.request(previewFrame(900n)));
+  const open = resultOf(await staged.request(encodeStagedBegin(901n, StagedKind.OpenDocx, docx), { onProgress: track(stepEvents) }));
+  assertMonotonic(stepEvents);
+  assert.equal(stepEvents.at(-1).copiedBytes < 1000, true, "the last progress precedes the final result");
+  assert.deepEqual(open.payload, oneShot.payload, "uncancelled staged open is byte-identical to the one-shot preview");
+  assert.equal(open.requestId, 901n);
+
+  const exportEvents = [];
+  const exported = decodeStagedExport(resultOf(await staged.request(encodeStagedBegin(902n, StagedKind.ExportDocx, docx), { onProgress: track(exportEvents) })).payload);
+  assertMonotonic(exportEvents);
+  const reopened = decodeEditorResponse(0x8020, resultOf(await staged.request(encodeStagedBegin(903n, StagedKind.OpenDocx, exported.bytes))).payload);
+  const original = decodeEditorResponse(0x8020, oneShot.payload);
+  assert.equal(reopened.text, original.text, "an exported DOCX reopens with the same text");
+  const exportedAgain = decodeStagedExport(resultOf(await staged.request(encodeStagedBegin(904n, StagedKind.ExportDocx, docx))).payload);
+  assert.deepEqual(exportedAgain.bytes, exported.bytes, "staged export is deterministic");
+
+  async function abortAfter(kind, requestId, abortAtEvent) {
+    const controller = new AbortController();
+    const events = [];
+    const pending = staged.request(encodeStagedBegin(requestId, kind, docx), {
+      signal: controller.signal,
+      onProgress(progress) {
+        if (progress.phase !== "step") return;
+        events.push(progress);
+        if (events.length === abortAtEvent) controller.abort();
+      },
+    });
+    await assert.rejects(pending, { name: "AbortError" });
+    assert.ok(events.length >= abortAtEvent, "cancelled after the requested progress event");
+    assert.ok(events.at(-1).copiedBytes < 1000, "cancelled before completion");
+    assert.equal(typeof events[0].jobId, "bigint", "step progress carries the job id");
+    const stale = resultOf(await staged.request(encodeStagedStep(requestId + 100n, events[0].jobId)));
+    assert.equal(stale.type, MessageType.Failed, "the engine job was freed by the abort");
+    assert.equal(new TextDecoder().decode(stale.payload), "EDITOR_JOB_UNKNOWN");
+  }
+  await abortAfter(StagedKind.OpenDocx, 905n, 2);
+  assert.deepEqual(await staged.request(command(MessageType.Ping, 906n)), command(MessageType.Ping, 906n), "engine answers after a cancelled open");
+  assert.deepEqual(resultOf(await staged.request(encodeStagedBegin(907n, StagedKind.OpenDocx, docx))).payload, oneShot.payload, "a new open after cancellation matches the one-shot preview");
+  await abortAfter(StagedKind.ExportDocx, 908n, 1);
+  assert.deepEqual(decodeStagedExport(resultOf(await staged.request(encodeStagedBegin(909n, StagedKind.ExportDocx, docx))).payload).bytes, exported.bytes, "export after a cancelled export is unchanged");
+  const failed = resultOf(await staged.request(encodeStagedBegin(910n, StagedKind.OpenDocx, Uint8Array.of(1, 2, 3))));
+  assert.equal(failed.type, MessageType.Failed, "a malformed DOCX fails the staged job with a Failed frame");
+  assert.equal(new TextDecoder().decode(failed.payload), "EDITOR_PREVIEW_FAILED");
+  assert.deepEqual(await staged.request(command(MessageType.Ping, 911n)), command(MessageType.Ping, 911n), "engine answers after a failed staged job");
+  staged.close();
+  stagedHarness.observer.close();
 }
 
 const fatalHarness = spawnWorker({ fatalOnRequest: true });

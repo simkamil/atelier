@@ -135,3 +135,65 @@ export function decodeMessage(bytes, direction) {
   checkEmptyPayload(type, payloadLength);
   return { type, requestId, payload: Uint8Array.from(frame.subarray(HEADER_BYTES, expected)) };
 }
+
+/** Cooperative job kinds of the staged Editor opcodes (see crates/core-wasm/src/staged.rs). */
+export const StagedKind = Object.freeze({ OpenDocx: 1, ExportDocx: 2 });
+export const STAGED_PROGRESS_TOTAL = 1000;
+const STAGED_OPCODE = Object.freeze({ Begin: 23, Step: 24, Cancel: 25 });
+
+function stagedFrame(requestId, opcode, body) {
+  const payload = new Uint8Array(8 + body.byteLength);
+  const view = new DataView(payload.buffer);
+  payload.set([0x41, 0x54, 0x45, 0x44], 0);
+  view.setUint16(4, 1, true);
+  view.setUint16(6, opcode, true);
+  payload.set(body, 8);
+  return encodeMessage({ type: MessageType.Editor, requestId, payload });
+}
+
+/** Returns the staged opcode (23..25) of a decoded Editor command, or 0. */
+export function stagedOpcodeOf(decoded) {
+  const { payload } = decoded;
+  if (decoded.type !== MessageType.Editor || payload.byteLength < 8
+      || payload[0] !== 0x41 || payload[1] !== 0x54 || payload[2] !== 0x45 || payload[3] !== 0x44) return 0;
+  const opcode = new DataView(payload.buffer, payload.byteOffset).getUint16(6, true);
+  return Object.values(STAGED_OPCODE).includes(opcode) ? opcode : 0;
+}
+
+/** Begin an abortable open (preview) or export of a DOCX; send the frame with `client.request`. */
+export function encodeStagedBegin(requestId, kind, docxBytes) {
+  if (kind !== StagedKind.OpenDocx && kind !== StagedKind.ExportDocx) fail("INVALID_ARGUMENT", "unknown staged job kind.");
+  if (!(docxBytes instanceof Uint8Array)) fail("INVALID_ARGUMENT", "docxBytes must be a Uint8Array.");
+  const body = new Uint8Array(4 + docxBytes.byteLength);
+  new DataView(body.buffer).setUint16(0, kind, true);
+  body.set(docxBytes, 4);
+  return stagedFrame(requestId, STAGED_OPCODE.Begin, body);
+}
+
+function jobFrame(requestId, opcode, jobId) {
+  const body = new Uint8Array(8);
+  new DataView(body.buffer).setBigUint64(0, jobId, true);
+  return stagedFrame(requestId, opcode, body);
+}
+export const encodeStagedStep = (requestId, jobId) => jobFrame(requestId, STAGED_OPCODE.Step, jobId);
+export const encodeStagedCancel = (requestId, jobId) => jobFrame(requestId, STAGED_OPCODE.Cancel, jobId);
+
+/** Decodes an `ATJB` progress payload; `undefined` when the payload is a final result. */
+export function decodeStagedProgress(payload) {
+  if (payload.byteLength !== 24 || payload[0] !== 0x41 || payload[1] !== 0x54 || payload[2] !== 0x4a || payload[3] !== 0x42) return undefined;
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  if (view.getUint16(4, true) !== 1) fail("UNSUPPORTED_VERSION", "unsupported staged progress version.");
+  const state = view.getUint16(6, true);
+  const done = view.getUint32(8, true);
+  const total = view.getUint32(12, true);
+  if (state > 1 || total !== STAGED_PROGRESS_TOTAL || done > total) fail("INVALID_RESPONSE", "malformed staged progress.");
+  return { state, done, total, jobId: view.getBigUint64(16, true) };
+}
+
+/** Decodes the final `ATSV` payload of an export job. */
+export function decodeStagedExport(payload) {
+  if (payload.byteLength < 12 || payload[0] !== 0x41 || payload[1] !== 0x54 || payload[2] !== 0x53 || payload[3] !== 0x56) fail("INVALID_RESPONSE", "not an export result.");
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  if (view.getUint16(4, true) !== 1) fail("UNSUPPORTED_VERSION", "unsupported export result version.");
+  return { noticeCount: view.getUint32(8, true), bytes: Uint8Array.from(payload.subarray(12)) };
+}
