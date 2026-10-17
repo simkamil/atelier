@@ -52,7 +52,7 @@ function validateCatalogue(catalogue) {
  * `narrowNoBreakSpace`, `nonBreakingHyphen`, `copyright`, `registered`,
  * `trademark`, `section`, `paragraph`, and `ellipsis` to localized names.
  */
-export function createSymbolDialog({ labels = {}, catalogue, onInsert } = {}) {
+export function createSymbolDialog({ labels = {}, i18n, catalogue, onInsert } = {}) {
   if (typeof onInsert !== "function") throw new TypeError("onInsert callback is required.");
   const { blocks, symbols } = validateCatalogue(catalogue);
   const doc = globalThis.document;
@@ -216,7 +216,7 @@ export function createSymbolDialog({ labels = {}, catalogue, onInsert } = {}) {
     const visible = matching.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
     renderGrid(visible, results);
     status.textContent = visible.length ? "" : labels.noResults;
-    pageStatus.textContent = labels.page.replace("{current}", String(page + 1)).replace("{total}", String(pages));
+    pageStatus.textContent = i18n ? i18n.t("symbols-page", { current: page + 1, total: pages }) : labels.page.replace("{current}", String(page + 1)).replace("{total}", String(pages));
     previous.disabled = page <= 0; next.disabled = page >= pages - 1;
     insertButton.disabled = pending || !selected;
   }

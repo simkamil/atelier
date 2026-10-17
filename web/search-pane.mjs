@@ -36,8 +36,10 @@ function safeExcerpt(doc, item) {
   return fragment;
 }
 
-export function createSearchPane({ document: doc = globalThis.document, labels, onQuery, onNavigate, onSelect, onClose } = {}) {
+export function createSearchPane({ document: doc = globalThis.document, labels, i18n, onQuery, onNavigate, onSelect, onClose } = {}) {
   if (!doc || !labels) throw new TypeError("A document and localized labels are required.");
+  // Named parameters and number formatting come from the injected translator; without it, labels are plain templates.
+  const tr = (key, values) => i18n ? i18n.t(key, values) : interpolate(label(labels, key), values);
 
   const root = doc.createElement("section");
   const paneId = ++nextPaneId;
@@ -125,7 +127,7 @@ export function createSearchPane({ document: doc = globalThis.document, labels, 
     const total = renderedItems.length;
     if (!total) return label(labels, "searchNoResults");
     const current = Number.isSafeInteger(state.index) && state.index >= 0 && state.index < total ? state.index + 1 : 0;
-    const count = interpolate(label(labels, "searchCount"), { count: current, total });
+    const count = tr("searchCount", { count: current, total });
     return [count, state.truncated ? label(labels, "searchTruncated") : "", state.wrapped ? label(labels, "searchWrapped") : ""].filter(Boolean).join(" — ");
   };
   const render = () => {
@@ -148,7 +150,7 @@ export function createSearchPane({ document: doc = globalThis.document, labels, 
         button.className = "search-pane-result";
         button.dataset.searchResult = String(index);
         const excerptText = typeof item?.excerpt?.text === "string" ? item.excerpt.text : "";
-        button.setAttribute("aria-label", interpolate(label(labels, "searchResult"), { index: index + 1, excerpt: excerptText }));
+        button.setAttribute("aria-label", tr("searchResult", { index: index + 1, excerpt: excerptText }));
         button.append(safeExcerpt(doc, item));
         listItem.append(button);
         results.append(listItem);

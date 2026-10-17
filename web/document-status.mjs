@@ -10,8 +10,10 @@ const format = (template, values) => template.replace(/\{(\w+)\}/g, (_, key) => 
 const validTotal = value => Number.isSafeInteger(value) && value > 0;
 const validPage = (value, total) => Number.isSafeInteger(value) && value >= 1 && value <= total;
 
-export function createDocumentStatus({ document: doc = globalThis.document, labels = {}, menuTarget, onGoToPage, onVisibilityChange } = {}) {
+export function createDocumentStatus({ document: doc = globalThis.document, labels = {}, i18n, menuTarget, onGoToPage, onVisibilityChange } = {}) {
   if (!doc) throw new TypeError("A document is required.");
+  // Named parameters and number formatting come from the injected translator; without it, labels are plain templates.
+  const tr = (key, values) => i18n ? i18n.t(key, values) : format(label(labels, key), values);
 
   const root = doc.createElement("div");
   root.className = "document-status";
@@ -132,7 +134,7 @@ export function createDocumentStatus({ document: doc = globalThis.document, labe
       return;
     }
     if (!validPage(parsed, state.totalPages)) {
-      error.textContent = format(label(labels, "statusGotoRange"), { total: state.totalPages });
+      error.textContent = tr("statusGotoRange", { total: state.totalPages });
       input.setAttribute("aria-invalid", "true");
       return;
     }
@@ -174,7 +176,7 @@ export function createDocumentStatus({ document: doc = globalThis.document, labe
     const pageIsValid = total !== null && validPage(state.page, total);
     if (pageValue) {
       const text = pageIsValid
-        ? format(label(labels, "statusPageCount"), { page: state.page, total })
+        ? tr("statusPageCount", { page: state.page, total })
         : label(labels, "statusPageUnavailable");
       if (pageValue.textContent !== text) pageValue.textContent = text;
       pageValue.setAttribute("aria-label", text);
@@ -184,7 +186,7 @@ export function createDocumentStatus({ document: doc = globalThis.document, labe
     const languageNode = nodes.get("language")?.value;
     if (languageNode) {
       const text = typeof state.language === "string" && state.language.length
-        ? format(label(labels, "statusLanguage"), { language: state.language })
+        ? tr("statusLanguage", { language: state.language })
         : label(labels, "statusLanguageUnknown");
       if (languageNode.textContent !== text) languageNode.textContent = text;
     }
