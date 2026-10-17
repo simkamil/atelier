@@ -1164,7 +1164,7 @@ Réf : F-TXT-032, F-TXT-040 · Taille : M · Dépend de : US-301, US-272
 - [x] `mc:Ignorable` respecté ; espaces de noms d'extension conservés.
 - [x] Test : sur le corpus, ouvrir puis enregistrer sans modifier → aucune perte d'élément (comparaison XML normalisée).
 
-Avancement US-306 (2026-10-13) : capture livrée dans `atelier-fmt-ooxml` (éléments, attributs et propriétés inconnus rattachés à leur nœud avec position et ordre, parties non interprétées identiques octet pour octet, balisage de compatibilité), relue par un agent indépendant et corrigée ; [contrat](docs/us-306-unknown-preservation.md). La complétude est prouvée par inventaire et reconstruction sur six documents. Aller-retour (US-307 fusionné) vérifié le 2026-10-17 : 66 documents (4 du dépôt, 62 synthétiques à éléments inconnus à chaque niveau), 0 perte en XML normalisé. Reste : commentaires XML et instructions de traitement non préservés dans les parties interprétées ; aucun fichier Word testé.
+Avancement US-306 (2026-10-13) : capture livrée dans `atelier-fmt-ooxml` (éléments, attributs et propriétés inconnus rattachés à leur nœud avec position et ordre, parties non interprétées identiques octet pour octet, balisage de compatibilité), relue par un agent indépendant et corrigée ; [contrat](docs/us-306-unknown-preservation.md). La complétude est prouvée par inventaire et reconstruction sur six documents. Aller-retour (US-307 fusionné) vérifié le 2026-10-17 : 67 documents (4 du dépôt, 63 synthétiques à éléments inconnus à chaque niveau), 0 perte en XML normalisé. Reste : commentaires XML et instructions de traitement non préservés dans les parties interprétées ; aucun fichier Word testé.
 
 Réf : §5.2 (1) · Taille : L · Dépend de : US-301, US-032
 

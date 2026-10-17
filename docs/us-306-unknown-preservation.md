@@ -253,11 +253,24 @@ du squelette). Le test écrit une ligne par document (`--nocapture`) et échoue 
   attributs inconnus (`w14:paraId`, `w15:*`, étranger, `w:rsid*`) sur ces éléments ; un document
   d'extensions et conteneurs (`sdt`, `ins`/`del`, champs, signets, commentaires, `permStart`) ; un
   document `styles.xml` + `settings.xml` avec éléments et attributs inconnus.
-* Résultat : 66 documents, 0 perte, 0 élément ajouté.
+  Un document ajoute `headerReference`/`footerReference` (parties en-tête et pied avec éléments inconnus), un
+  `numbering.xml` avec inconnus et des inconnus à la racine de `styles.xml` (parties réutilisées ou régénérées).
+* Contrôles propres au test : chaque préfixe de `mc:Ignorable` d'une partie de sortie doit être déclaré
+  (`xmlns`) sur l'élément qui le porte ou un ancêtre ; la normalisation garde les nœuds texte en ordre
+  parmi les enfants (élément mixte) ; le rapport compte toutes les parties XML comparées, octets
+  identiques compris.
+* Résultat : 67 documents (4 + 63), 0 perte, 0 élément ajouté.
 
 Défaut trouvé et corrigé : l'écrivain ajoutait un paragraphe vide à la fin d'un corps ou d'une cellule
 quand le dernier bloc du modèle était un élément inconnu (`Node::Opaque`), même après un paragraphe ;
 `ends_with_paragraph` ignore désormais les blocs opaques (sauf `mc:AlternateContent`).
+
+Règle du paragraphe final (Word) : un corps ou une cellule régénéré se termine par un `w:p` quand le
+dernier bloc **connu** est un tableau, y compris si des éléments inconnus (`Node::Opaque`) le suivent
+(le `w:p` est alors écrit après eux, avant `w:sectPr`) ou si le tableau est dans un `w:sdt` final. Une
+source déjà ainsi (tableau puis inconnu) est recopiée telle quelle tant que la partie n'est pas régénérée ;
+régénérée, la seule différence est ce `w:p`. Test `bodies_and_cells_end_with_a_paragraph_after_a_trailing_table`
+(5 cas : `[tbl, inconnu]` en fin de corps et de cellule, `[p, sdt(tbl)]` en corps et en cellule).
 
 Limites inchangées : commentaires XML et instructions de traitement des parties interprétées
 non préservés (ignorés par la normalisation) ; un tableau qui termine un corps ou une cellule reçoit
