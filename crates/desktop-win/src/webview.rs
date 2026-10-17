@@ -25,6 +25,42 @@ const E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 const WM_CLOSE_DRAIN_TIMEOUT_MS: u32 = 15_000;
 pub(super) static LIVE_CALLBACK_OBJECTS: AtomicUsize = AtomicUsize::new(0);
 
+/// Test-only reference ledger: every COM reference this module acquires (AddRef or owned
+/// out-parameter) and every reference it releases, plus AddRef/Release on the objects it implements.
+/// Counters are per thread (the STA thread of one test) so parallel tests cannot disturb each other.
+#[cfg(test)]
+pub(super) mod ledger {
+    use std::cell::Cell;
+    thread_local! {
+        pub(crate) static ACQUIRED: Cell<usize> = const { Cell::new(0) };
+        pub(crate) static RELEASED: Cell<usize> = const { Cell::new(0) };
+        pub(crate) static OUR_ADD_REF: Cell<usize> = const { Cell::new(0) };
+        pub(crate) static OUR_RELEASE: Cell<usize> = const { Cell::new(0) };
+    }
+    pub(crate) fn bump(counter: &'static std::thread::LocalKey<Cell<usize>>) {
+        counter.with(|value| value.set(value.get() + 1));
+    }
+    pub(crate) fn read(counter: &'static std::thread::LocalKey<Cell<usize>>) -> usize {
+        counter.with(Cell::get)
+    }
+}
+
+/// Records one owned COM reference obtained from an out-parameter (test builds only).
+#[inline(always)]
+pub(super) fn note_acquired() {
+    #[cfg(test)]
+    ledger::bump(&ledger::ACQUIRED);
+}
+
+/// Adds one reference to a borrowed interface that this module will release itself.
+pub(super) unsafe fn add_ref_interface(interface: *mut c_void) {
+    note_acquired();
+    // SAFETY: IUnknown::AddRef is vtable slot 1 for every COM interface; callers pass a live pointer.
+    unsafe {
+        call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(interface, 1)(interface)
+    };
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 struct WebRect {
@@ -293,6 +329,8 @@ unsafe extern "system" fn handler_add_ref(this: *mut Handler) -> u32 {
     if this.is_null() {
         return 0;
     }
+    #[cfg(test)]
+    ledger::bump(&ledger::OUR_ADD_REF);
     // SAFETY: COM invokes AddRef only on a live handler pointer.
     unsafe {
         (*this)
@@ -306,6 +344,8 @@ unsafe extern "system" fn handler_release(this: *mut Handler) -> u32 {
     if this.is_null() {
         return 0;
     }
+    #[cfg(test)]
+    ledger::bump(&ledger::OUR_RELEASE);
     // SAFETY: COM invokes Release only on a live handler pointer and each reference is released once.
     let remaining = unsafe {
         (*this)
@@ -379,23 +419,21 @@ unsafe extern "system" fn handler_invoke(
                         // Keep the environment alive for this host and allow subsequent controllers
                         // to share the same browser environment on the owning STA.
                         // SAFETY: Invoke supplies a live borrowed environment interface.
-                        unsafe {
-                            call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(env, 1)(
-                                env,
-                            )
-                        };
+                        unsafe { add_ref_interface(env) };
                         // The resource callback needs the environment independently of the host's
                         // initialization slot so it remains valid until callbacks are removed.
-                        unsafe {
-                            call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(env, 1)(
-                                env,
-                            );
-                        }
+                        unsafe { add_ref_interface(env) };
                         shared
                             .resource_environment
                             .store(env as usize, Ordering::Release);
                         *lock(&shared.environment) = Some(env as usize);
                         let hwnd = shared.hwnd.load(Ordering::Acquire) as *mut c_void;
+                        #[cfg(test)]
+                        if leak_probe::VARIANT.load(Ordering::Acquire) == 2 {
+                            // measurement variant: environment only, no controller is created
+                            shared.completed();
+                            return S_OK;
+                        }
                         if hwnd.is_null() {
                             callback_error = Some(
                                 "WebView2 parent window was destroyed during initialization"
@@ -436,11 +474,7 @@ unsafe extern "system" fn handler_invoke(
                     if shared.closing.load(Ordering::Acquire) {
                         // AddRef the borrowed completion result before Close/Release.
                         // SAFETY: result is the live non-null controller supplied by the callback.
-                        unsafe {
-                            call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(result, 1)(
-                                result,
-                            )
-                        };
+                        unsafe { add_ref_interface(result) };
                         // SAFETY: result is the live controller passed by the completion callback.
                         if let Err(error) = unsafe { close_and_release_controller(result) } {
                             callback_error = Some(error.to_string());
@@ -449,11 +483,7 @@ unsafe extern "system" fn handler_invoke(
                         if let Err(error) = configure_controller(result, shared) {
                             // AddRef the borrowed result so Close and Release balance locally.
                             // SAFETY: `result` is the valid controller supplied to Invoke.
-                            unsafe {
-                                call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(
-                                    result, 1,
-                                )(result)
-                            };
+                            unsafe { add_ref_interface(result) };
                             callback_error =
                                 Some(match unsafe { close_and_release_controller(result) } {
                                     Ok(()) => error.to_string(),
@@ -462,11 +492,7 @@ unsafe extern "system" fn handler_invoke(
                         } else {
                             // The result is borrowed by Invoke; AddRef it before storing beyond this call.
                             // SAFETY: IUnknown::AddRef is vtable slot 1 of this non-null COM interface.
-                            unsafe {
-                                call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(
-                                    result, 1,
-                                )(result)
-                            };
+                            unsafe { add_ref_interface(result) };
                             *lock(&shared.controller) = Some(result as usize);
                             shared.ready.store(true, Ordering::Release);
                         }
@@ -487,6 +513,8 @@ unsafe extern "system" fn handler_invoke(
 }
 
 fn new_handler(shared: Arc<Shared>, kind: CallbackKind) -> *mut Handler {
+    #[cfg(test)]
+    ledger::bump(&ledger::OUR_ADD_REF); // the creation reference
     shared.callback_objects.fetch_add(1, Ordering::AcqRel);
     LIVE_CALLBACK_OBJECTS.fetch_add(1, Ordering::AcqRel);
     shared.pending.fetch_add(1, Ordering::AcqRel);
@@ -508,6 +536,10 @@ fn new_handler(shared: Arc<Shared>, kind: CallbackKind) -> *mut Handler {
 }
 
 fn configure_controller(controller: *mut c_void, shared: &Shared) -> io::Result<()> {
+    #[cfg(test)]
+    if leak_probe::VARIANT.load(Ordering::Acquire) == 1 {
+        return Ok(()); // measurement variant: bare controller without our configuration
+    }
     // ICoreWebView2Controller::get_CoreWebView2 is SDK vtable slot 25.
     let mut core = null_mut();
     // SAFETY: controller is the live result argument from the completion callback.
@@ -517,6 +549,9 @@ fn configure_controller(controller: *mut c_void, shared: &Shared) -> io::Result<
         )(controller, &mut core)
     };
     check_hresult("ICoreWebView2Controller::get_CoreWebView2", hr)?;
+    if !core.is_null() {
+        note_acquired();
+    }
     if core.is_null() {
         return Err(io::Error::other(
             "ICoreWebView2Controller::get_CoreWebView2 returned null",
@@ -533,6 +568,9 @@ fn configure_controller(controller: *mut c_void, shared: &Shared) -> io::Result<
                 )(core, &mut settings)
             };
             check_hresult("ICoreWebView2::get_Settings", hr)?;
+            if !settings.is_null() {
+                note_acquired();
+            }
             if settings.is_null() {
                 return Err(io::Error::other(
                     "ICoreWebView2::get_Settings returned null",
@@ -625,6 +663,8 @@ fn copy_webview_string(value: *const u16) -> Option<String> {
 
 unsafe fn release_interface(interface: *mut c_void) {
     if !interface.is_null() {
+        #[cfg(test)]
+        ledger::bump(&ledger::RELEASED);
         // SAFETY: IUnknown::Release is vtable slot 2 for all COM interfaces.
         unsafe {
             call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(interface, 2)(interface)
@@ -1090,9 +1130,12 @@ pub(crate) fn validate_devtools(enabled: bool) -> io::Result<()> {
 }
 
 #[cfg(test)]
+mod leak_probe;
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    static CALLBACK_TEST_LOCK: Mutex<()> = Mutex::new(());
+    pub(super) static CALLBACK_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn debug_tools_expectation_tracks_build_profile() {
