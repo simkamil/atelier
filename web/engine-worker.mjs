@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createWasmEngine } from "./wasm-loader.mjs";
-import { decodeMessage, MessageType } from "./wasm-protocol.mjs";
+import {
+  decodeMessage, decodeStagedProgress, encodeStagedCancel, encodeStagedStep, MessageType, stagedOpcodeOf,
+} from "./wasm-protocol.mjs";
 
 export const MAX_QUEUED_REQUESTS = 32;
 export const MAX_QUEUED_BYTES = 128 * 1024 * 1024;
 
 function serializeError(error) {
   return { name: error?.name ?? "Error", message: String(error?.message ?? error), code: error?.code };
+}
+
+function yieldToTaskQueue() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function asAbortError() {
@@ -28,6 +34,41 @@ export function installEngineWorker(scope) {
     send({ kind: "cancelled", requestId: job.requestId });
   }
 
+  /**
+   * Drives a staged Begin frame: the engine does one bounded step per call, and
+   * the Worker yields to its task queue after each so a pending cancel message
+   * is seen before the next step. An abort or failure frees the engine job.
+   */
+  async function runStaged(job, options) {
+    // Byte counters restart with every dispatch: report the Begin input copy and only the large final result's output copy.
+    let reply = await engine.dispatchAsync(job.frame, { ...options, onProgress: (progress) => { if (progress.phase === "input") options.onProgress(progress); } });
+    let jobId;
+    let finished = false;
+    try {
+      for (;;) {
+        const response = decodeMessage(reply, "event");
+        const progress = response.type === MessageType.EditorResult ? decodeStagedProgress(response.payload) : undefined;
+        if (!progress) { finished = true; return reply; }
+        if (progress.state !== 0 || (jobId !== undefined && progress.jobId !== jobId)) {
+          throw Object.assign(new Error("WASM staged job reported an unexpected state."), { name: "WorkerProtocolError", code: "STAGED_STATE" });
+        }
+        jobId = progress.jobId;
+        send({ kind: "progress", requestId: job.requestId, phase: "step", copiedBytes: progress.done, totalBytes: progress.total });
+        await yieldToTaskQueue();
+        if (options.signal.aborted) throw asAbortError();
+        reply = await engine.dispatchAsync(encodeStagedStep(job.requestId, jobId), {
+          signal: options.signal,
+          chunkBytes: options.chunkBytes,
+          onProgress: (progress) => { if (progress.phase === "output" && progress.totalBytes > 256) options.onProgress(progress); },
+        });
+      }
+    } finally {
+      if (!finished && jobId !== undefined) {
+        try { await engine.dispatchAsync(encodeStagedCancel(job.requestId, jobId)); } catch { /* the engine drops the job on its next Begin */ }
+      }
+    }
+  }
+
   async function pump() {
     if (active || closed || !engine) return;
     const job = queue.shift();
@@ -36,13 +77,14 @@ export function installEngineWorker(scope) {
     active = job;
     try {
       if (job.controller.signal.aborted) throw asAbortError();
-      const bytes = await engine.dispatchAsync(job.frame, {
+      const dispatchOptions = {
         signal: job.controller.signal,
         chunkBytes: job.chunkBytes,
         onProgress(progress) {
           try { send({ kind: "progress", requestId: job.requestId, ...progress }); } catch { /* progress delivery must not stop dispatch */ }
         },
-      });
+      };
+      const bytes = job.staged ? await runStaged(job, dispatchOptions) : await engine.dispatchAsync(job.frame, dispatchOptions);
       if (job.controller.signal.aborted) throw asAbortError();
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > 64 * 1024 * 1024 - 4) {
         throw Object.assign(new Error("WASM dispatch returned an invalid or oversized frame."), { name: "WorkerProtocolError", code: "INVALID_RESPONSE" });
@@ -142,7 +184,7 @@ export function installEngineWorker(scope) {
         send({ kind: "error", requestId: decoded.requestId, error: serializeError(Object.assign(new Error("Request ID is already active."), { name: "DuplicateRequestIdError", code: "DUPLICATE_REQUEST_ID" })) });
         return;
       }
-      const job = { requestId: decoded.requestId, decoded, frame: message.frame, controller: new AbortController(), chunkBytes: message.chunkBytes };
+      const job = { requestId: decoded.requestId, decoded, frame: message.frame, controller: new AbortController(), chunkBytes: message.chunkBytes, staged: stagedOpcodeOf(decoded) === 23 };
       queue.push(job);
       jobsById.set(job.requestId, job);
       queuedBytes += message.frame.byteLength;

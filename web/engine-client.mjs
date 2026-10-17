@@ -92,14 +92,14 @@ export async function createEngineClient({ worker, workerUrl, module, bytes } = 
       return;
     }
     if (message.kind === "progress") {
-      if (!(["input", "output", "complete"].includes(message.phase)
-          && Number.isSafeInteger(message.copiedBytes) && message.copiedBytes >= entry.lastProgress
+      if (!(["input", "output", "complete", "step"].includes(message.phase)
+          && Number.isSafeInteger(message.copiedBytes) && message.copiedBytes >= (entry.lastProgress.get(message.phase) ?? 0)
           && Number.isSafeInteger(message.totalBytes) && message.totalBytes >= message.copiedBytes
           && message.copiedBytes <= MAX_MESSAGE_BYTES * 2)) {
         failAll(new WorkerClientError("Worker sent incompatible progress counters.", "WorkerProtocolError"));
         return;
       }
-      entry.lastProgress = message.copiedBytes;
+      entry.lastProgress.set(message.phase, message.copiedBytes);
       if (entry.onProgress) {
         try { entry.onProgress(Object.freeze({ phase: message.phase, copiedBytes: message.copiedBytes, totalBytes: message.totalBytes })); } catch { /* isolate user callbacks */ }
       }
@@ -182,7 +182,7 @@ export async function createEngineClient({ worker, workerUrl, module, bytes } = 
       if (decoded.type === MessageType.Cancel) throw new TypeError("Cancel frames are reserved for AbortSignal cancellation.");
       if (pending.has(decoded.requestId)) throw new WorkerClientError(`Request ID ${decoded.requestId} is already active.`, "DuplicateRequestIdError", "DUPLICATE_REQUEST_ID");
       return new Promise((resolve, reject) => {
-        const entry = { requestId: decoded.requestId, decoded, frame: ownedFrame, resolve, reject, signal, onProgress, lastProgress: 0, cancelRequested: false };
+        const entry = { requestId: decoded.requestId, decoded, frame: ownedFrame, resolve, reject, signal, onProgress, lastProgress: new Map(), cancelRequested: false };
         pending.set(entry.requestId, entry);
         outstandingBytes += ownedFrame.byteLength;
         if (signal) {

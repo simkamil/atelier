@@ -40,7 +40,7 @@ pub const STEP_BUDGET: StepBudget = StepBudget {
 
 enum Stage {
     Import,
-    Render(RenderJob),
+    Render(Box<RenderJob>),
     Write,
     Verify { bytes: Vec<u8>, notices: u32 },
     Finished,
@@ -186,7 +186,7 @@ fn advance(job: &mut Job) -> Result<Option<Vec<u8>>, EditorError> {
             if job.kind == KIND_OPEN {
                 let render = RenderJob::new(&imported).map_err(|_| failure)?;
                 job.progress = render.progress();
-                job.stage = Stage::Render(render);
+                job.stage = Stage::Render(Box::new(render));
             } else {
                 job.progress = 300;
                 job.stage = Stage::Write;

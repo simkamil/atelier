@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createEngineClient } from "../web/engine-client.mjs";
-import { encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
+import { decodeMessage, decodeStagedExport, encodeMessage, encodeStagedBegin, MessageType, StagedKind } from "../web/wasm-protocol.mjs";
 
 const result = document.querySelector("#result");
 let client;
@@ -48,6 +48,28 @@ try {
     if (!bytes.every((byte, i) => byte === expected[i])) throw new Error("reprise après annulation");
   }
   assert(true, "mémoire WASM réutilisable et budget libéré sur 41 commandes");
+  const docx = new Uint8Array(await (await fetch("./docx-reference/basic.docx")).arrayBuffer());
+  for (const [kind, id, name] of [[StagedKind.OpenDocx, 100n, "ouverture"], [StagedKind.ExportDocx, 101n, "export"]]) {
+    const events = [];
+    const stop = new AbortController();
+    try {
+      await client.request(encodeStagedBegin(id, kind, docx), {
+        signal: stop.signal,
+        onProgress(progress) {
+          if (progress.phase !== "step") return;
+          events.push(progress.copiedBytes);
+          if (events.length === 2) stop.abort();
+        },
+      });
+      throw new Error(`annulation ${name} non exécutée`);
+    } catch (error) {
+      assert(error.name === "AbortError" && events.length >= 2 && events.every((v, i) => i === 0 || v >= events[i - 1]),
+        `${name} annulée après au moins deux progressions monotones`);
+    }
+    const done = decodeMessage(await client.request(encodeStagedBegin(id + 10n, kind, docx)), "event");
+    assert(done.type === MessageType.EditorResult && (kind === StagedKind.OpenDocx || decodeStagedExport(done.payload).bytes.length > 0),
+      `${name} réussit après annulation`);
+  }
   report = { status: "passed", userAgent: navigator.userAgent,
     crossOriginIsolated: globalThis.crossOriginIsolated, checks };
 } catch (error) {

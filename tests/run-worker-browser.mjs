@@ -24,6 +24,7 @@ const files = new Map([
   ["/tests/worker-browser.mjs", "text/javascript; charset=utf-8"],
   ...["engine-client", "engine-worker", "wasm-loader", "wasm-protocol"].map(name =>
     [`/web/${name}.mjs`, "text/javascript; charset=utf-8"]),
+  ["/tests/docx-reference/basic.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
   ["/target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"],
 ]);
 let resolveReport;
@@ -68,7 +69,7 @@ const timer = setTimeout(() => rejectReport(new Error(`Browser check timed out. 
 try {
   const report = await reportPromise;
   assert.equal(report.status, "passed", JSON.stringify(report));
-  assert.equal(report.checks.length, 5, "Every browser scenario must complete.");
+  assert.equal(report.checks.length, 9, "Every browser scenario must complete.");
   assert.match(report.userAgent, /(?:Chrome|Edg)\//);
   assert.equal(report.crossOriginIsolated, false, "Worker must work without SharedArrayBuffer isolation.");
   console.log(JSON.stringify({ ...report, executable }));
