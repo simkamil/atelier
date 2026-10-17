@@ -11,6 +11,7 @@ pub mod borders;
 pub mod caret;
 pub mod flow;
 pub mod incremental;
+pub mod inline_object;
 pub mod pagination;
 
 use atelier_font::FontFace;
