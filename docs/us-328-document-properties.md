@@ -112,17 +112,55 @@ désormais `</Types>`. Tests : `tests/document_properties_files.rs` (absence de 
 déclaration unique dans les quatre types de parties, lecture de l'ancienne forme, propriété à graine fixe
 sur 400 jeux aléatoires de `core.xml`/`app.xml`).
 
-## À brancher par l'intégrateur
+## Branchement dans l'application (2026-10-17)
 
-1. **Dialogue Propriétés** : `let s = pkg.properties_snapshot()` ; champs modifiables depuis
-   `s.editable`, dates et statistiques en lecture seule depuis `s.read_only`, avis dans `s.notices`.
-   À OK : `pkg.apply_property_changes(&PropertyChanges::between(&s.editable, &nouveau))` ; gérer
-   `PropertyError::TooLong` (compteur de caractères dans les champs).
-2. **Enregistrement** : juste avant `pkg.write()`, `pkg.update_on_save(&SaveContext { now, user,
+Fait, sur l'aperçu DOCX (le seul chemin d'ouverture DOCX de l'application) :
+
+1. **Moteur** (`crates/core-wasm/src/properties.rs`, sans état : le DOCX est dans la commande, comme l'opcode 18).
+   Opcode 26 `PropertiesRead` (octets DOCX) répond `ATPP` : onze champs texte, leurs limites en caractères,
+   trois dates (absente, valide en W3CDTF, texte illisible), dernier auteur, révision, application, version,
+   modèle, durée, six compteurs, nombre d'avis. Opcode 27 `PropertiesApply` (`u32` taille, DOCX, onze champs
+   `u8 présent, u32 taille, UTF-8`) répond `ATPA` : statut 0 puis nombre de champs modifiés et le nouveau DOCX
+   (l'entrée inchangée octet pour octet quand rien ne change), ou statut 1 `TooLong` (indice du champ, maximum,
+   longueur), sans rien appliquer. Seul le paquet OPC est réécrit : le reste du fichier est conservé.
+   Format exact en tête du module ; ces opcodes suivent les existants (0 à 25).
+2. **Enregistrement** : `update_on_save` est appelé par l'export étagé de type 3 (`ExportDocxSave`, nouveau, les
+   types 1 et 2 sont inchangés), dont le préfixe d'entrée porte l'heure Unix, l'utilisateur et la version
+   (`encodeSaveStamp` côté JS). Statistiques écrites : mots, caractères, caractères avec espaces et paragraphes,
+   comptés par `atelier_text_model::statistics::document` (US-343) sur le texte du corps. **Pages et lignes ne
+   sont pas écrites** : l'export ne fait pas de mise en page, `app.xml` garde ce qu'il contenait. L'application
+   n'a aucun chemin d'enregistrement DOCX (le bouton Enregistrer écrit du TXT) : l'appel est vérifié par des tests
+   du moteur, pas par une action utilisateur.
+3. **Interface** : `web/properties-dialog.mjs` + `.css`, protocole dans `web/properties-protocol.mjs`. Commande
+   « Propriétés… » de l'onglet Fichier, active quand un aperçu DOCX est prêt. Six champs modifiables (titre, sujet,
+   auteur, mots-clés, commentaires, catégorie) avec compteur `n / max caractères` ; au-delà de la limite le champ est
+   `aria-invalid`, un message l'explique et OK est désactivé ; une réponse `TooLong` du moteur est affichée de la
+   même façon. Dates (création, modification, impression) et statistiques en lecture seule, formatées par
+   `formatDateTime`/`formatNumber`, « Non renseigné » si absentes. OK/Annuler/Échap (Échap ne ferme pas aussi
+   l'aperçu), focus piégé et rendu à la commande, étiquettes et compteurs reliés par `aria-describedby`. Les
+   modifications validées remplacent les octets DOCX gardés en mémoire pour l'aperçu courant : elles sont perdues à
+   la fermeture de l'aperçu tant qu'aucun enregistrement DOCX n'existe.
+4. **PDF** : non branché. Il n'y a pas d'export PDF dans l'application (US-332 non faite) et `atelier-core-wasm`
+   ne dépend pas de `atelier-fmt-pdf` ; relier les deux demande une dépendance dans un `Cargo.toml`. Vérifié de
+   chaque côté : `PdfMetadata` reprend champ par champ titre, auteur, sujet, mots-clés et dates
+   (`tests/document_properties.rs`) et l'écrivain PDF écrit ces six champs dans le dictionnaire Info
+   (`crates/fmt-pdf/tests/document.rs`, `info_carries_title_author_subject_keywords_and_both_dates`). La
+   conversion à écrire à l'export est celle du point 3 de la section suivante. Le critère « reprises dans les
+   métadonnées du PDF exporté » reste donc ouvert.
+
+Tests : `cargo test -p atelier-core-wasm --test properties` (lecture, aller-retour DOCX après modification,
+limites, entrées malformées, `update_on_save`), `node tests/properties-abi.mjs` (codecs JS contre le WASM réel,
+y compris l'enregistrement tamponné), `node tests/run-ui-browser.mjs` (dialogue isolé : dates, `TooLong`, échec du
+moteur, attente), `node tests/run-editor-browser.mjs` (application réelle : commande, saisie, limite, Annuler et
+Échap sans effet, OK puis relecture, focus). Non vérifié : lecteur d'écran réel, fichier écrit par Word.
+
+## Branchement restant (export PDF, enregistrement DOCX)
+
+1. **Enregistrement** (à relier à une commande utilisateur) : juste avant `pkg.write()`, `pkg.update_on_save(&SaveContext { now, user,
    application: Some("Atelier".into()), app_version, statistics })` avec `now` =
    `W3cDateTime::from_unix_seconds(..)`, `user` = nom d'utilisateur des Options (US-329) et
    `statistics` = `Statistics` de l'US-343 converti champ à champ (`usize` en `u64`). Rien à l'ouverture.
-3. **Export PDF** (US-332) :
+2. **Export PDF** (US-332) : à écrire quand l'export existera et que le crate pourra dépendre de `atelier-fmt-pdf` :
    ```rust
    let m = pkg.pdf_metadata();
    let date = |d: PdfDateFields| PdfDate { year: d.year, month: d.month, day: d.day, hour: d.hour,
@@ -133,7 +171,7 @@ sur 400 jeux aléatoires de `core.xml`/`app.xml`).
    ```
    Les champs de `PdfMetadata`/`PdfDateFields` sont ceux de `PdfInfo`/`PdfDate` ; un décalage de plus de
    14 h est ramené en UTC ; date invalide = pas de date.
-4. **Clés de catalogue proposées** : `properties.title`, `properties.tab.summary`,
+3. **Clés de catalogue** : le dialogue utilise des clés `properties-*` (voir `web/i18n/fr-FR.txt`) ; ci-dessous la proposition initiale : `properties.title`, `properties.tab.summary`,
    `properties.tab.statistics`, `properties.field.title|subject|author|manager|company|category|keywords|comments|hyperlink_base`,
    `properties.created|modified|last_modified_by|last_printed|revision|application|template|total_time`,
    `properties.stat.pages|words|characters|characters_with_spaces|lines|paragraphs`,
