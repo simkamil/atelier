@@ -213,3 +213,30 @@ pub fn oriented_source(width: u32, height: u32, orientation: u8, x: u32, y: u32)
         _ => (x, y),
     }
 }
+
+/// Points per CSS pixel: pictures without a resolution are laid out at 96 dpi.
+pub const POINTS_PER_PIXEL: f64 = 0.75;
+
+/// Natural size in points of a `width` x `height` pixel picture once its EXIF
+/// `orientation` is applied.
+pub fn natural_size_points(width: u32, height: u32, orientation: u8) -> (f64, f64) {
+    let (w, h) = oriented_size(width, height, orientation);
+    (
+        f64::from(w) * POINTS_PER_PIXEL,
+        f64::from(h) * POINTS_PER_PIXEL,
+    )
+}
+
+/// Shrinks `(width, height)` proportionally to fit `max_width` x `max_height`.
+/// Returns the input unchanged when it already fits; never enlarges. Invalid
+/// input (non-finite or non-positive) yields `None`.
+pub fn fit_within(width: f64, height: f64, max_width: f64, max_height: f64) -> Option<(f64, f64)> {
+    if ![width, height, max_width, max_height]
+        .iter()
+        .all(|v| v.is_finite() && *v > 0.0)
+    {
+        return None;
+    }
+    let scale = (max_width / width).min(max_height / height).min(1.0);
+    Some((width * scale, height * scale))
+}

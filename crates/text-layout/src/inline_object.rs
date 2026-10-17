@@ -6,33 +6,20 @@
 //! font descent below the baseline. When it is wider than the text area (or
 //! taller than a page) it shrinks proportionally; it never grows.
 
-use atelier_text_model::inline_image::oriented_size;
+use atelier_text_model::inline_image::{fit_within, natural_size_points};
 
-/// Points per CSS pixel: pictures without a resolution are laid out at 96 dpi.
-pub const POINTS_PER_PIXEL: f64 = 0.75;
+pub use atelier_text_model::inline_image::POINTS_PER_PIXEL;
 
 /// Natural size in points of a `width` x `height` pixel picture once its EXIF
 /// `orientation` is applied.
 pub fn natural_size(width: u32, height: u32, orientation: u8) -> (f64, f64) {
-    let (w, h) = oriented_size(width, height, orientation);
-    (
-        f64::from(w) * POINTS_PER_PIXEL,
-        f64::from(h) * POINTS_PER_PIXEL,
-    )
+    natural_size_points(width, height, orientation)
 }
 
-/// Shrinks `(width, height)` proportionally to fit `max_width` x `max_height`.
-/// Returns the input unchanged when it already fits; never enlarges. Invalid
-/// input (non-finite or non-positive) yields `None`.
+/// Shrinks `(width, height)` proportionally to fit `max_width` x `max_height`;
+/// see [`atelier_text_model::inline_image::fit_within`].
 pub fn fit(width: f64, height: f64, max_width: f64, max_height: f64) -> Option<(f64, f64)> {
-    if ![width, height, max_width, max_height]
-        .iter()
-        .all(|v| v.is_finite() && *v > 0.0)
-    {
-        return None;
-    }
-    let scale = (max_width / width).min(max_height / height).min(1.0);
-    Some((width * scale, height * scale))
+    fit_within(width, height, max_width, max_height)
 }
 
 /// Vertical extent of one line: distances above and below its baseline.
