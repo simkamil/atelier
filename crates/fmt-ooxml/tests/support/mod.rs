@@ -112,18 +112,28 @@ fn expanded(ns: &Option<String>, local: &str) -> String {
     format!("{{{}}}{local}", ns.as_deref().unwrap_or(""))
 }
 
-/// Normalized tree: attributes sorted, namespace-resolved names, text kept
-/// where an element has no element child (so a `w:t` of spaces counts),
-/// whitespace between elements dropped, comments and instructions skipped.
+/// Normalized tree: attributes sorted, namespace-resolved names, text nodes
+/// kept in order among the children (a mixed element keeps each segment),
+/// whitespace-only text dropped between elements but kept where an element has
+/// no element child (so a `w:t` of spaces counts), comments and instructions
+/// skipped.
 pub fn parse(bytes: &[u8]) -> C {
     let mut reader = Reader::new(bytes);
     let mut stack: Vec<(C, String)> = Vec::new();
     let mut root = None;
+    fn flush(top: &mut (C, String)) {
+        let text = std::mem::take(&mut top.1);
+        if let (C::E(_, _, kids), false) = (&mut top.0, text.is_empty()) {
+            kids.push(C::T(text));
+        }
+    }
     fn close(stack: &mut Vec<(C, String)>, root: &mut Option<C>) {
-        let (mut node, text) = stack.pop().unwrap();
+        let mut top = stack.pop().unwrap();
+        flush(&mut top);
+        let mut node = top.0;
         if let C::E(_, _, kids) = &mut node {
-            if (kids.is_empty() && !text.is_empty()) || !text.trim().is_empty() {
-                kids.push(C::T(text));
+            if kids.iter().any(|k| matches!(k, C::E(..))) {
+                kids.retain(|k| !matches!(k, C::T(t) if t.trim().is_empty()));
             }
         }
         match stack.last_mut() {
@@ -138,6 +148,9 @@ pub fn parse(bytes: &[u8]) -> C {
                 attributes,
                 empty,
             } => {
+                if let Some(top) = stack.last_mut() {
+                    flush(top);
+                }
                 let mut attrs: Vec<_> = attributes
                     .iter()
                     .map(|a| (expanded(&a.name.namespace, &a.name.local), a.value.clone()))
@@ -161,6 +174,102 @@ pub fn parse(bytes: &[u8]) -> C {
         }
     }
     root.unwrap()
+}
+
+/// Every prefix listed in an `Ignorable` attribute of the part must be
+/// declared (`xmlns:prefix`) on the element that carries it or an ancestor.
+/// Returns the undeclared ones as `prefix (at element)`.
+pub fn undeclared_ignorable(xml: &[u8]) -> Vec<String> {
+    let text = String::from_utf8_lossy(xml);
+    let b = text.as_bytes();
+    let mut problems = Vec::new();
+    let mut scopes: Vec<Vec<String>> = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        let rest = &text[i..];
+        if rest.starts_with("<!--") {
+            i += rest.find("-->").map_or(rest.len(), |n| n + 3);
+            continue;
+        }
+        if rest.starts_with("<![CDATA[") {
+            i += rest.find("]]>").map_or(rest.len(), |n| n + 3);
+            continue;
+        }
+        if rest.starts_with("<?") || rest.starts_with("<!") {
+            i += rest.find('>').map_or(rest.len(), |n| n + 1);
+            continue;
+        }
+        if rest.starts_with("</") {
+            scopes.pop();
+            i += rest.find('>').map_or(rest.len(), |n| n + 1);
+            continue;
+        }
+        // Start tag: scan to the closing `>` outside quotes.
+        let mut j = i + 1;
+        let mut quote = 0u8;
+        while j < b.len() {
+            match (quote, b[j]) {
+                (0, b'"' | b'\'') => quote = b[j],
+                (q, c) if q != 0 && c == q => quote = 0,
+                (0, b'>') => break,
+                _ => {}
+            }
+            j += 1;
+        }
+        let tag = &text[i + 1..j.min(b.len())];
+        let empty = tag.ends_with('/');
+        let tag = tag.trim_end_matches('/');
+        let mut declared = Vec::new();
+        let mut ignorable = Vec::new();
+        let name_end = tag.find(char::is_whitespace).unwrap_or(tag.len());
+        let element = &tag[..name_end];
+        let mut k = name_end;
+        let tb = tag.as_bytes();
+        while k < tb.len() {
+            while k < tb.len() && tb[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            let start = k;
+            while k < tb.len() && tb[k] != b'=' && !tb[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            let key = &tag[start..k];
+            while k < tb.len() && (tb[k] == b'=' || tb[k].is_ascii_whitespace()) {
+                k += 1;
+            }
+            if k >= tb.len() {
+                break;
+            }
+            let q = tb[k];
+            let v0 = k + 1;
+            k = v0;
+            while k < tb.len() && tb[k] != q {
+                k += 1;
+            }
+            let value = &tag[v0..k.min(tb.len())];
+            k += 1;
+            if let Some(p) = key.strip_prefix("xmlns:") {
+                declared.push(p.to_owned());
+            } else if key.rsplit(':').next() == Some("Ignorable") && key.contains(':') {
+                ignorable.extend(value.split_whitespace().map(str::to_owned));
+            }
+        }
+        scopes.push(declared);
+        for p in ignorable {
+            if !scopes.iter().any(|s| s.contains(&p)) {
+                problems.push(format!("{p} (at {element})"));
+            }
+        }
+        if empty {
+            scopes.pop();
+        }
+        i = j + 1;
+    }
+    problems
 }
 
 /// First difference between two trees, as a path and the two sides.

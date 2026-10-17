@@ -8,7 +8,7 @@ mod support;
 use atelier_fmt_ooxml::{DocxWriteOptions, ImportedDocx, Package, import_docx, write_docx};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use support::{C, MC, R, W, doc, first_diff, parse, round_trip};
+use support::{C, MC, R, W, doc, first_diff, parse, round_trip, undeclared_ignorable};
 
 const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
 const W15: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
@@ -150,7 +150,14 @@ fn check(name: &str, bytes: &[u8]) -> Report {
                 continue;
             };
             let is_xml = uri.as_str().ends_with(".xml") || uri.as_str().ends_with(".rels");
-            if part.bytes == o.bytes {
+            if is_xml && !uri.as_str().ends_with(".rels") {
+                for p in undeclared_ignorable(&o.bytes) {
+                    rep.losses.push(format!(
+                        "[{tag}] {uri}: mc:Ignorable prefix not declared: {p}"
+                    ));
+                }
+            }
+            if part.bytes == o.bytes && !(regenerate && is_xml) {
                 continue;
             }
             if !is_xml {
@@ -170,6 +177,7 @@ fn check(name: &str, bytes: &[u8]) -> Report {
                 }
             };
             if regenerate {
+                // Every XML part of the package, identical bytes included.
                 rep.parts += 1;
                 rep.items += count(&a);
             }
@@ -448,7 +456,94 @@ fn synthetic() -> Vec<(String, Vec<u8>)> {
         Some(styles),
         Some(settings),
     );
+    // Header and footer references, parts with unknown content, numbering,
+    // unknown content at the root of styles.xml (parts reused or regenerated).
+    let mut d = doc(root(
+        r#"<w:p><w:r><w:t>hf</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rel2"/><w:footerReference w:type="default" r:id="rel3"/><w14:ext/><w:pgSz w:w="1" w:h="1"/></w:sectPr>"#,
+    ));
+    let part = |tag: &str, inner: &str| {
+        format!(
+            r#"<w:{tag} xmlns:w="{W}" xmlns:w14="{W14}" xmlns:w15="{W15}" xmlns:mc="{MC}" xmlns:x="urn:foreign" mc:Ignorable="w14 x"><w:p w14:paraId="7"><w:pPr><w14:u/></w:pPr><w:r><w:t>{tag}</w:t></w:r><x:in w15:a="1"/></w:p>{inner}</w:{tag}>"#
+        )
+    };
+    d.styles = Some(format!(
+        r#"<w:styles xmlns:w="{W}" xmlns:w14="{W14}" xmlns:mc="{MC}" xmlns:x="urn:foreign" mc:Ignorable="w14 x" w14:rootAttr="1"><x:atRoot a="1"/><w14:atRoot2/><w:docDefaults/><w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style><x:last/></w:styles>"#
+    ));
+    d.extra = vec![
+        (
+            "word/header1.xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml",
+            part("hdr", "<x:tail/>").into_bytes(),
+            "header",
+        ),
+        (
+            "word/footer1.xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml",
+            part("ftr", "<w14:tail/>").into_bytes(),
+            "footer",
+        ),
+        (
+            "word/numbering.xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
+            format!(
+                r#"<w:numbering xmlns:w="{W}" xmlns:w14="{W14}" xmlns:mc="{MC}" xmlns:x="urn:foreign" mc:Ignorable="w14 x"><x:first/><w:abstractNum w:abstractNumId="0" w14:a="1"><w:lvl w:ilvl="0"><w:start w:val="1"/><x:inLvl/></w:lvl><w14:inAbstract/></w:abstractNum><w:num w:numId="1" x:b="2"><w:abstractNumId w:val="0"/><x:inNum/></w:num><w14:last/></w:numbering>"#
+            )
+            .into_bytes(),
+            "numbering",
+        ),
+    ];
+    out.push(("headers-footers-numbering".into(), d.bytes()));
     out
+}
+
+/// Bodies and cells whose last known block is a table followed by an unknown
+/// element, and a table inside a trailing `w:sdt`: Word requires a `w:p`
+/// last, the writer adds it (the only difference with the source).
+fn tail_cases() -> Vec<(String, Vec<u8>)> {
+    let tbl = r#"<w:tbl><w:tblGrid><w:gridCol w:w="1"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>"#;
+    let sect = r#"<w:sectPr><w:pgSz w:w="1" w:h="1"/></w:sectPr>"#;
+    let unk = unknown(0);
+    let cases = [
+        ("body-tbl-unknown", format!("<w:p/>{tbl}{unk}{sect}")),
+        ("body-tbl-unknown-no-sectPr", format!("<w:p/>{tbl}{unk}")),
+        (
+            "cell-tbl-unknown",
+            format!(
+                r#"<w:tbl><w:tblGrid><w:gridCol w:w="1"/></w:tblGrid><w:tr><w:tc>{tbl}{unk}</w:tc></w:tr></w:tbl><w:p/>{sect}"#
+            ),
+        ),
+        (
+            "body-p-sdt-tbl",
+            format!("<w:p/><w:sdt><w:sdtPr/><w:sdtContent>{tbl}</w:sdtContent></w:sdt>{sect}"),
+        ),
+        (
+            "cell-p-sdt-tbl",
+            format!(
+                r#"<w:tbl><w:tblGrid><w:gridCol w:w="1"/></w:tblGrid><w:tr><w:tc><w:p/><w:sdt><w:sdtPr/><w:sdtContent>{tbl}</w:sdtContent></w:sdt></w:tc></w:tr></w:tbl><w:p/>{sect}"#
+            ),
+        ),
+    ];
+    cases
+        .into_iter()
+        .map(|(n, b)| (n.to_owned(), doc(root(&b)).bytes()))
+        .collect()
+}
+
+fn last_block_is_paragraph(c: &C, out: &mut Vec<String>) {
+    let C::E(name, _, kids) = c else { return };
+    let local = name.rsplit('}').next().unwrap_or("");
+    if local == "body" || local == "tc" {
+        let last = kids.iter().rev().find_map(|k| match k {
+            C::E(n, _, _) if !n.ends_with("}sectPr") => Some(n.rsplit('}').next().unwrap_or("")),
+            _ => None,
+        });
+        if last != Some("p") {
+            out.push(format!("{local} ends with {last:?}"));
+        }
+    }
+    for k in kids {
+        last_block_is_paragraph(k, out);
+    }
 }
 
 // ---- Tests ---------------------------------------------------------------------
@@ -505,4 +600,61 @@ fn synthetic_documents_with_unknown_content_round_trip_without_loss() {
     assert!(docs.len() >= 60, "{} synthetic documents", docs.len());
     let failures = print("synthetic corpus", &run(&docs));
     assert_eq!(failures, 0, "documents with losses");
+}
+
+fn regenerate() -> DocxWriteOptions {
+    DocxWriteOptions {
+        regenerate_all: true,
+        ..DocxWriteOptions::default()
+    }
+}
+
+#[test]
+fn bodies_and_cells_end_with_a_paragraph_after_a_trailing_table() {
+    for (name, bytes) in tail_cases() {
+        let imp = import_docx(&bytes).unwrap();
+        let written = write_docx(&imp, &regenerate()).unwrap();
+        let out = Package::read(&written.bytes).unwrap();
+        let uri = imp
+            .package
+            .parts()
+            .keys()
+            .find(|u| u.as_str() == "word/document.xml")
+            .unwrap();
+        let (src, dst) = (
+            parse(&imp.package.part(uri).unwrap().bytes),
+            parse(&out.part(uri).unwrap().bytes),
+        );
+        let mut problems = Vec::new();
+        last_block_is_paragraph(&dst, &mut problems);
+        assert!(problems.is_empty(), "{name}: {problems:?}");
+        // Nothing lost; the only addition is the terminating paragraph.
+        let (lost, added) = balance(&src, &dst);
+        assert!(lost.is_empty(), "{name}: lost {lost:?}");
+        assert!(
+            added.iter().all(|a| a.ends_with("}p")) && added.len() == 1,
+            "{name}: added {added:?}"
+        );
+        // Written twice: the output is stable and reads back.
+        let again = write_docx(&import_docx(&written.bytes).unwrap(), &regenerate()).unwrap();
+        let again = Package::read(&again.bytes).unwrap();
+        let (a, b) = (
+            parse(&out.part(uri).unwrap().bytes),
+            parse(&again.part(uri).unwrap().bytes),
+        );
+        assert_eq!(first_diff(&a, &b, ""), None, "{name}: second round trip");
+        println!("  ok    {name}");
+    }
+}
+
+#[test]
+fn ignorable_check_flags_an_undeclared_prefix() {
+    let ok = format!(r#"<a xmlns:mc="{MC}" xmlns:p="u" mc:Ignorable="p"><b/></a>"#);
+    assert!(undeclared_ignorable(ok.as_bytes()).is_empty());
+    let inherited = format!(r#"<a xmlns:p="u"><b xmlns:mc="{MC}" mc:Ignorable="p"/></a>"#);
+    assert!(undeclared_ignorable(inherited.as_bytes()).is_empty());
+    let bad = format!(r#"<a xmlns:mc="{MC}" mc:Ignorable="p q" xmlns:q="u"><b/></a>"#);
+    assert_eq!(undeclared_ignorable(bad.as_bytes()), ["p (at a)"]);
+    let sibling = format!(r#"<a xmlns:mc="{MC}"><c xmlns:p="u"/><b mc:Ignorable="p"/></a>"#);
+    assert_eq!(undeclared_ignorable(sibling.as_bytes()).len(), 1);
 }
