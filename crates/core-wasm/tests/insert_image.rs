@@ -553,3 +553,70 @@ fn selection_rectangles_cover_the_whole_picture_line_height() {
         "selection height {tallest} for picture {y} {h}"
     );
 }
+
+fn export_docx(session: &EditorSession) -> Result<(u32, u32, Vec<u8>), &'static str> {
+    session
+        .transact(&command(28, &[]))
+        .map(|(_, r)| {
+            assert_eq!(&r[..4], b"ATDX");
+            (u32_at(&r, 8), u32_at(&r, 12), r[16..].to_vec())
+        })
+        .map_err(|e| e.0)
+}
+
+#[test]
+fn docx_export_stores_the_original_bytes_with_size_and_position() {
+    use atelier_fmt_ooxml::docx_image::read_pictures;
+    let original = png(400, 200, 21);
+    let session = caret_at(&load("ab\r\ncd"), 1);
+    let (session, _) = insert_image(&session, &original).unwrap();
+    let (_, pictures, bytes) = export_docx(&session).unwrap();
+    assert_eq!(pictures, 1);
+    let imported = atelier_fmt_ooxml::import_docx(&bytes).unwrap();
+    let found = read_pictures(&imported);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].bytes, original, "original bytes, not re-encoded");
+    assert_eq!(found[0].offset, 1);
+    // 400x200 px = 300x150 pt, within the 487.3 pt text width.
+    assert_eq!(
+        (found[0].width_emu, found[0].height_emu),
+        (3_810_000, 1_905_000)
+    );
+    let texts: Vec<String> = imported
+        .document
+        .paragraph_ids()
+        .iter()
+        .map(|p| imported.document.paragraph(*p).unwrap().text.clone())
+        .collect();
+    assert_eq!(texts, ["ab", "cd"]);
+}
+
+#[test]
+fn docx_export_keeps_the_format_and_orientation_bytes_of_a_jpeg() {
+    use atelier_fmt_ooxml::docx_image::read_pictures;
+    let original = jpeg_with_orientation(6);
+    let (session, _) = insert_image(&load("x"), &original).unwrap();
+    let (_, _, bytes) = export_docx(&session).unwrap();
+    let imported = atelier_fmt_ooxml::import_docx(&bytes).unwrap();
+    let found = read_pictures(&imported);
+    assert_eq!(found[0].bytes, original);
+    assert_eq!(found[0].part, "word/media/image1.jpeg");
+    // Stored 19x17 px, rotated: 17x19 px -> 12.75 x 14.25 pt.
+    assert_eq!(
+        (found[0].width_emu, found[0].height_emu),
+        (161_925, 180_975)
+    );
+}
+
+#[test]
+fn docx_export_of_plain_text_and_edge_cases_does_not_fail() {
+    assert!(export_docx(&load("")).is_ok());
+    assert!(export_docx(&load("a\n\n\nb")).is_ok());
+    // A picture before a combining mark moves to the next grapheme boundary.
+    let session = caret_at(&load("e\u{301}x"), 1);
+    let (session, _) = insert_image(&session, &png(4, 4, 22)).unwrap();
+    assert!(export_docx(&session).is_ok());
+    // Too many paragraphs are refused, not truncated.
+    let many = "\n".repeat(16_385);
+    assert_eq!(export_docx(&load(&many)).err(), Some("EDITOR_EXPORT_LIMIT"));
+}

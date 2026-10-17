@@ -126,6 +126,22 @@ impl EditorSession {
             out.bytes(&bitmap.rgba);
             return Ok((candidate, out.finish(MAX_RESPONSE)?));
         }
+        if opcode == 28 {
+            let text = candidate.ensure_document()?.text().to_owned();
+            let exported = crate::docx_export::export_docx(&text, &candidate.images)?;
+            let mut out = Writer::with_capacity(
+                16usize
+                    .checked_add(exported.bytes.len())
+                    .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?,
+            )?;
+            out.bytes(b"ATDX");
+            out.u16(1);
+            out.u16(0);
+            out.u32(exported.notices);
+            out.u32(exported.pictures);
+            out.bytes(&exported.bytes);
+            return Ok((candidate, out.finish(MAX_RESPONSE)?));
+        }
         if opcode == 19 {
             let mut r = Reader::new(body);
             let revision = r.u64()?;
@@ -947,7 +963,7 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
     let opcode = u16::from_le_bytes([payload[6], payload[7]]);
     let body = &payload[8..];
     let expected = match opcode {
-        0 | 5 | 6 | 10 => Some(0),
+        0 | 5 | 6 | 10 | 28 => Some(0),
         1 => None,
         2 => {
             if body.len() >= 8 {

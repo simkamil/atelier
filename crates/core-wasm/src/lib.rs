@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 #[cfg(target_arch = "wasm32")]
 use std::sync::{Mutex, OnceLock};
 
+mod docx_export;
 pub mod editor;
 #[path = "editor-layout.rs"]
 mod editor_layout;
