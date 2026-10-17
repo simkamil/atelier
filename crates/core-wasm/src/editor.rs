@@ -57,38 +57,7 @@ impl EditorSession {
         if opcode == 18 {
             let preview = crate::rich_preview::preview_docx(body)
                 .map_err(|_| EditorError("EDITOR_PREVIEW_FAILED"))?;
-            let response_base = 20usize
-                .checked_add(preview.text.len())
-                .and_then(|size| match preview.glyph_atlas.as_ref() {
-                    Some(atlas) => size.checked_add(4)?.checked_add(atlas.len()),
-                    None => Some(size),
-                })
-                .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?;
-            let size = preview
-                .pages
-                .iter()
-                .try_fold(response_base, |size, page| {
-                    size.checked_add(4)?.checked_add(page.len())
-                })
-                .filter(|size| *size <= MAX_RESPONSE)
-                .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?;
-            let mut out = Writer::with_capacity(size)?;
-            out.bytes(b"ATRP");
-            out.u16(if preview.glyph_atlas.is_some() { 2 } else { 1 });
-            out.u16(0);
-            out.u32(u32_len(preview.pages.len())?);
-            out.u32(u32_len(preview.text.len())?);
-            out.u32(preview.notice_count);
-            out.bytes(preview.text.as_bytes());
-            if let Some(atlas) = preview.glyph_atlas {
-                out.u32(u32_len(atlas.len())?);
-                out.bytes(&atlas);
-            }
-            for page in preview.pages {
-                out.u32(u32_len(page.len())?);
-                out.bytes(&page);
-            }
-            return Ok((candidate, out.finish(MAX_RESPONSE)?));
+            return Ok((candidate, encode_preview(preview)?));
         }
         if opcode == 10 {
             let document = candidate.ensure_document()?;
@@ -723,6 +692,43 @@ impl EditorSession {
         }
         out.finish(MAX_RESPONSE)
     }
+}
+
+pub(crate) fn encode_preview(
+    preview: crate::rich_preview::RichPreview,
+) -> Result<Vec<u8>, EditorError> {
+    let response_base = 20usize
+        .checked_add(preview.text.len())
+        .and_then(|size| match preview.glyph_atlas.as_ref() {
+            Some(atlas) => size.checked_add(4)?.checked_add(atlas.len()),
+            None => Some(size),
+        })
+        .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?;
+    let size = preview
+        .pages
+        .iter()
+        .try_fold(response_base, |size, page| {
+            size.checked_add(4)?.checked_add(page.len())
+        })
+        .filter(|size| *size <= MAX_RESPONSE)
+        .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?;
+    let mut out = Writer::with_capacity(size)?;
+    out.bytes(b"ATRP");
+    out.u16(if preview.glyph_atlas.is_some() { 2 } else { 1 });
+    out.u16(0);
+    out.u32(u32_len(preview.pages.len())?);
+    out.u32(u32_len(preview.text.len())?);
+    out.u32(preview.notice_count);
+    out.bytes(preview.text.as_bytes());
+    if let Some(atlas) = preview.glyph_atlas {
+        out.u32(u32_len(atlas.len())?);
+        out.bytes(&atlas);
+    }
+    for page in preview.pages {
+        out.u32(u32_len(page.len())?);
+        out.bytes(&page);
+    }
+    out.finish(MAX_RESPONSE)
 }
 
 fn limits() -> PlainTextLimits {
