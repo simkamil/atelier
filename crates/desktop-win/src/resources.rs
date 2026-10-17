@@ -181,6 +181,11 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/app.css"),
     },
     Resource {
+        path: "/i18n.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/i18n.mjs"),
+    },
+    Resource {
         path: "/i18n/fr-FR.txt",
         mime: "text/plain; charset=utf-8",
         bytes: include_bytes!("../../../web/i18n/fr-FR.txt"),

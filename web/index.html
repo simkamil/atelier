@@ -5,6 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
+    <!-- i18n-ignore: titre de fenêtre avant l’exécution du script ; app.mjs le reprend tel quel (textWindowTitle) -->
     <title>Atelier — Document texte</title>
     <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="/ui-components.css">
@@ -57,12 +58,12 @@
           </div>
         </div>
       </section>
-      <section id="rich-workspace" class="workspace rich-workspace" aria-label="Aperçu DOCX en lecture seule" hidden>
+      <section id="rich-workspace" class="workspace rich-workspace" aria-label="Aperçu DOCX en lecture seule" data-i18n-aria-label="rich-workspace-label" hidden>
         <p class="preview-caption" data-i18n="preview-caption">Lecture seule · A4 simplifié. Tableaux, images, en-têtes, pieds de page, puces et numéros de liste omis ; sauts de page Word non reproduits ; liens inactifs.</p>
-        <div id="rich-scroll" class="document-scroll" tabindex="0" aria-label="Pages de l’aperçu DOCX">
+        <div id="rich-scroll" class="document-scroll" tabindex="0" aria-label="Pages de l’aperçu DOCX" data-i18n-aria-label="rich-pages-label">
           <div class="page-stack">
-            <div id="rich-text" class="accessible-document" role="region" aria-label="Texte de l’aperçu DOCX"></div>
-            <canvas id="rich-canvas" role="img" aria-label="Pages de l’aperçu DOCX"></canvas>
+            <div id="rich-text" class="accessible-document" role="region" aria-label="Texte de l’aperçu DOCX" data-i18n-aria-label="rich-text-label"></div>
+            <canvas id="rich-canvas" role="img" aria-label="Pages de l’aperçu DOCX" data-i18n-aria-label="rich-pages-label"></canvas>
             <div id="rich-spacer" aria-hidden="true"></div>
           </div>
         </div>
@@ -70,7 +71,7 @@
       <footer><span class="footer-brand" data-i18n="footer">Atelier · démonstrateur de texte brut</span><div id="document-status-slot"></div><div id="statistics-slot"></div><div id="document-zoom"></div></footer>
     </main>
     <div class="diagnostics" hidden aria-hidden="true">
-      <h2 id="status-title">En attente</h2><p id="status-detail">Initialisation</p>
+      <h2 id="status-title" data-i18n="status-waiting">En attente</h2><p id="status-detail" data-i18n="status-initializing">Initialisation</p>
       <span id="status-indicator"></span><span id="engine-state"></span>
     </div>
     <noscript data-i18n="no-script">Atelier nécessite JavaScript pour ouvrir le document.</noscript>
