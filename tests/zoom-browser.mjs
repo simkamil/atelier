@@ -90,9 +90,9 @@ export async function checkAppZoom({ app, scrollport, assert, waitFor }) {
   const dialog = document.querySelector("[data-zoom-dialog]");
   const value = dialog.querySelector("[data-zoom-value]");
   const apply = () => dialog.querySelector("form").dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
-  assert(!range.disabled && percent.textContent === "100%", "status zoom controls initialize from the real document view");
+  assert(!range.disabled && percent.textContent === "100\u202f%", "status zoom controls initialize from the real document view");
   range.value = "250"; range.dispatchEvent(new Event("input", { bubbles: true }));
-  assert(app.editor.getZoom() === 2.5 && percent.textContent === "250%", "status slider changes Canvas factor and displayed percentage together");
+  assert(app.editor.getZoom() === 2.5 && percent.textContent === "250\u202f%", "status slider changes Canvas factor and displayed percentage together");
   percent.focus(); percent.click();
   assert(dialog.open && document.activeElement === value, "zoom percentage opens a named modal with focused number field");
   value.value = "501"; apply();
@@ -102,7 +102,7 @@ export async function checkAppZoom({ app, scrollport, assert, waitFor }) {
   assert(!behindModal.defaultPrevented && app.editor.getZoom() === 2.5, "document wheel zoom is blocked behind a modal");
   value.value = "125";
   dialog.querySelector('input[value="custom"]').checked = true; apply();
-  assert(!dialog.open && app.editor.getZoom() === 1.25 && percent.textContent === "125%" && document.activeElement === percent,
+  assert(!dialog.open && app.editor.getZoom() === 1.25 && percent.textContent === "125\u202f%" && document.activeElement === percent,
     "valid dialog submission applies once and restores the trigger focus");
   percent.click(); value.value = "450";
   dialog.querySelector(".zoom-dialog-cancel").click();
@@ -119,6 +119,6 @@ export async function checkAppZoom({ app, scrollport, assert, waitFor }) {
   assert(!dialog.open && app.editor.getZoomMode() === "pages",
     "fractional fit percentage can switch directly to the two-page mode");
   app.editor.setZoom(1.5);
-  await waitFor(() => percent.textContent === "150%", "external view changes synchronize the status controls");
+  await waitFor(() => percent.textContent === "150\u202f%", "external view changes synchronize the status controls");
   app.ribbon.selectTab("file");
 }

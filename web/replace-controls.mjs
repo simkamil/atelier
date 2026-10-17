@@ -3,12 +3,8 @@
 const label = (labels, key) => String(labels?.[key] ?? key);
 let nextControlsId = 0;
 
-function interpolateCount(value, count) {
-  return value.replace(/\{count\}/g, String(count));
-}
-
 export function createReplaceControls({ document: doc = globalThis.document, labels, i18n, onReplace, onReplaceAll } = {}) {
-  if (!doc || !labels) throw new TypeError("A document and localized labels are required.");
+  if (!doc || !labels || typeof i18n?.t !== "function") throw new TypeError("A document, localized labels and an i18n translator are required.");
 
   const root = doc.createElement("section");
   root.className = "replace-controls";
@@ -67,11 +63,8 @@ export function createReplaceControls({ document: doc = globalThis.document, lab
     else if (state.busy) setStatus(label(labels, "replaceBusy"));
     else if (state.count === null || state.count === undefined) setStatus("");
     else if (state.count === 0) setStatus(label(labels, "replaceNone"));
-    else if (i18n && Number.isSafeInteger(state.count) && state.count > 0) setStatus(i18n.t("replaceCount", { count: state.count }));
-    else if (state.count === 1) setStatus(label(labels, "replaceCountOne"));
-    else if (Number.isSafeInteger(state.count) && state.count > 1) {
-      setStatus(interpolateCount(label(labels, "replaceCountMany"), state.count));
-    } else setStatus("");
+    else if (Number.isSafeInteger(state.count) && state.count > 0) setStatus(i18n.t("replaceCount", { count: state.count }));
+    else setStatus("");
   };
 
   const requestReplace = () => {

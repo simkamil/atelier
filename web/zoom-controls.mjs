@@ -25,10 +25,12 @@ const make = (document, tag, className, text) => {
   return node;
 };
 
-export function createZoomControls({ document = globalThis.document, labels, onChange } = {}) {
-  if (!document || !labels || typeof onChange !== "function") {
-    throw new TypeError("A document, labels, and onChange callback are required.");
+export function createZoomControls({ document = globalThis.document, labels, i18n, onChange } = {}) {
+  if (!document || !labels || typeof i18n?.formatPercent !== "function" || typeof onChange !== "function") {
+    throw new TypeError("A document, labels, an i18n translator, and onChange callback are required.");
   }
+  // Displayed percentage in the locale's style ("150 %", "12,5 %"); the input field keeps the plain number.
+  const shownPercent = factor => i18n.formatPercent(factor, { maxDecimals: 2 });
   for (const key of ["group", "range", "percent", "title", "value", "custom", "width", "page", "pages", "apply", "cancel", "close", "invalid"]) {
     if (typeof labels[key] !== "string") throw new TypeError(`Missing zoom label: ${key}`);
   }
@@ -113,9 +115,9 @@ export function createZoomControls({ document = globalThis.document, labels, onC
   const render = () => {
     const percentValue = percentFor(zoom);
     range.value = String(percentValue);
-    range.setAttribute("aria-valuetext", `${formatPercent(zoom)}%`);
-    percent.textContent = `${formatPercent(zoom)}%`;
-    const description = `${labels[mode]} — ${formatPercent(zoom)}%`;
+    range.setAttribute("aria-valuetext", shownPercent(zoom));
+    percent.textContent = shownPercent(zoom);
+    const description = `${labels[mode]} — ${shownPercent(zoom)}`;
     percent.title = description;
     percent.setAttribute("aria-label", description);
     percent.disabled = disabled;

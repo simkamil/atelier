@@ -13,19 +13,16 @@ const FIELDS = Object.freeze([
 let nextStatisticsId = 0;
 
 const label = (labels, key) => String(labels?.[key] ?? key);
-const format = (template, values) => String(template).replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
 const updateText = (node, value) => { if (node.textContent !== value) node.textContent = value; };
 const validCount = value => Number.isSafeInteger(value) && value >= 0;
-const countText = (value, locale) => validCount(value) ? new Intl.NumberFormat(locale || undefined).format(value) : "—";
 
 export function createStatisticsControls({ document: doc = globalThis.document, labels, i18n, onOpen } = {}) {
-  if (!doc || !labels) throw new TypeError("A document and localized labels are required.");
-  // With the injected translator, numbers use its locale and the word count agrees in number ("1 mot").
-  const number = (value, locale) => i18n && validCount(value) ? i18n.formatNumber(value) : countText(value, locale);
-  const wordsText = (selectedValue, wordsValue, hasSelection, locale) => {
+  if (!doc || !labels || typeof i18n?.t !== "function") throw new TypeError("A document, localized labels and an i18n translator are required.");
+  // Numbers use the translator's locale and the word count agrees in number ("1 mot").
+  const number = value => validCount(value) ? i18n.formatNumber(value) : "—";
+  const wordsText = (selectedValue, wordsValue, hasSelection) => {
     const key = hasSelection ? "statusSelection" : "statusDocument";
-    if (i18n) return i18n.t(key, hasSelection ? { selected: selectedValue, words: wordsValue } : { words: wordsValue });
-    return format(label(labels, key), { selected: countText(selectedValue, locale), words: countText(wordsValue, locale) });
+    return i18n.t(key, hasSelection ? { selected: selectedValue, words: wordsValue } : { words: wordsValue });
   };
 
   const root = doc.createElement("div");
@@ -114,7 +111,6 @@ export function createStatisticsControls({ document: doc = globalThis.document, 
 
   const render = () => {
     const { document: docCounts, selection, hasSelection, busy, disabled, error } = state;
-    const locale = doc.documentElement.lang || undefined;
     const missing = !docCounts || (hasSelection && !selection) || !validCount(docCounts.words) || (hasSelection && !validCount(selection.words));
     if (busy) {
       status.textContent = label(labels, "statisticsLoading");
@@ -126,10 +122,10 @@ export function createStatisticsControls({ document: doc = globalThis.document, 
       status.textContent = label(labels, "statisticsUnavailableData");
       updateText(live, label(labels, "statisticsUnavailableData"));
     } else if (hasSelection) {
-      status.textContent = wordsText(selection.words, docCounts.words, true, locale);
+      status.textContent = wordsText(selection.words, docCounts.words, true);
       updateText(live, status.textContent);
     } else {
-      status.textContent = wordsText(null, docCounts.words, false, locale);
+      status.textContent = wordsText(null, docCounts.words, false);
       updateText(live, status.textContent);
     }
     status.setAttribute("aria-label", busy ? label(labels, "statisticsLoading") : error
@@ -137,14 +133,14 @@ export function createStatisticsControls({ document: doc = globalThis.document, 
       : missing
       ? label(labels, "statisticsUnavailableData")
       : hasSelection
-        ? wordsText(selection.words, docCounts.words, true, locale)
-        : wordsText(null, docCounts.words, false, locale));
+        ? wordsText(selection.words, docCounts.words, true)
+        : wordsText(null, docCounts.words, false));
     status.disabled = Boolean(disabled);
     status.setAttribute("aria-disabled", String(status.disabled));
 
     for (const [field] of FIELDS) {
-      valueNodes.get(`document:${field}`).textContent = number(docCounts?.[field], locale);
-      valueNodes.get(`selection:${field}`).textContent = hasSelection ? number(selection?.[field], locale) : "—";
+      valueNodes.get(`document:${field}`).textContent = number(docCounts?.[field]);
+      valueNodes.get(`selection:${field}`).textContent = hasSelection ? number(selection?.[field]) : "—";
     }
     if (busy) updateText(dialogStatus, label(labels, "statisticsLoading"));
     else if (error) updateText(dialogStatus, label(labels, "statisticsError"));

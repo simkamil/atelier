@@ -19,9 +19,7 @@ export async function run({ assert, fixture }) {
     statisticsClose: "Fermer",
     statisticsScopeDocument: "Document",
     statisticsScopeSelection: "Sélection",
-    statusDocument: "{words} mots",
-    statusSelection: "{selected} / {words} mots",
-    statisticsFieldPages: "Pages",
+        statisticsFieldPages: "Pages",
     statisticsFieldWords: "Mots",
     statisticsFieldCharacters: "Caractères sans espaces",
     statisticsFieldCharactersWithSpaces: "Caractères avec espaces",
@@ -33,8 +31,13 @@ export async function run({ assert, fixture }) {
     statisticsNotesTextBoxes: "Notes et zones de texte",
     statisticsNotesUnavailable: "Indisponibles dans le modèle actuel.",
   };
+  const { createI18n } = await import("/i18n.mjs");
+  const i18n = createI18n({ catalog: {
+    statusDocument: "{words, plural, one {# mot} other {# mots}}",
+    statusSelection: "{selected} / {words, plural, one {# mot} other {# mots}}",
+  } });
   let refreshes = 0;
-  const controls = createStatisticsControls({ document, labels, onOpen: () => refreshes++ });
+  const controls = createStatisticsControls({ document, labels, i18n, onOpen: () => refreshes++ });
   fixture.append(controls.element);
   const status = controls.element.querySelector("[data-statistics-status]");
   const live = controls.element.querySelector(".statistics-live");
@@ -51,8 +54,8 @@ export async function run({ assert, fixture }) {
   controls.setState({ busy: false, document: { words: 12, pages: 2, characters: 51, charactersWithSpaces: 63, paragraphs: 4, lines: 9 } });
   assert(status.textContent === "12 mots" && count("document", "words").textContent === "12", "document word count appears in status and table");
   controls.setState({ document: { words: 12345, pages: 2, characters: 12345, charactersWithSpaces: 12345, paragraphs: 4, lines: 9 } });
-  const frenchNumber = new Intl.NumberFormat("fr").format(12345);
-  assert(status.textContent === `${frenchNumber} mots` && count("document", "characters").textContent === frenchNumber, "counts use the document language instead of the browser locale");
+  const frenchNumber = i18n.formatNumber(12345);
+  assert(status.textContent === `${frenchNumber} mots` && count("document", "characters").textContent === frenchNumber, "counts use the translator locale (fr-FR) instead of the browser locale");
   let liveMutations = 0;
   const liveObserver = new MutationObserver(records => { liveMutations += records.length; });
   liveObserver.observe(live, { childList: true, characterData: true, subtree: true });

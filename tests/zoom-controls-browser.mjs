@@ -11,6 +11,7 @@ export async function run({ assert, fixture }) {
   });
 
   const { createZoomControls } = await import("/zoom-controls.mjs");
+  const { createI18n } = await import("/i18n.mjs");
   const labels = {
     group: "Zoom",
     range: "Niveau de zoom",
@@ -27,7 +28,7 @@ export async function run({ assert, fixture }) {
     invalid: "Saisissez une valeur comprise entre 10 et 500.",
   };
   const changes = [];
-  const controls = createZoomControls({ document, labels, onChange: change => changes.push(change) });
+  const controls = createZoomControls({ document, labels, i18n: createI18n(), onChange: change => changes.push(change) });
   fixture.append(controls.element);
 
   const range = controls.element.querySelector("[data-zoom-range]");
@@ -43,11 +44,14 @@ export async function run({ assert, fixture }) {
   const count = () => changes.length;
 
   controls.setState({ zoom: 1, mode: "custom" });
-  assert(percent.textContent === "100%", "factor 1 displays 100 percent");
+  assert(percent.textContent === "100\u202f%", "factor 1 displays 100 percent");
   controls.setState({ zoom: 1.25, mode: "width" });
-  assert(percent.textContent === "125%", "fractional view factor displays its real percentage");
-  assert(percent.title === "Largeur — 125%" && percent.getAttribute("aria-label") === "Largeur — 125%", "percentage button names its current mode and real percentage");
-  assert(range.getAttribute("aria-valuetext") === "125%", "range accessible value reports the real factor when its step rounds");
+  assert(percent.textContent === "125\u202f%", "fractional view factor displays its real percentage");
+  assert(percent.title === "Largeur — 125\u202f%" && percent.getAttribute("aria-label") === "Largeur — 125\u202f%", "percentage button names its current mode and real percentage");
+  assert(range.getAttribute("aria-valuetext") === "125\u202f%", "range accessible value reports the real factor when its step rounds");
+  controls.setState({ zoom: 0.125, mode: "custom" });
+  assert(percent.textContent === "12,5\u202f%" && range.getAttribute("aria-valuetext") === "12,5\u202f%", "fractional percentage uses the decimal comma");
+  controls.setState({ zoom: 1.25, mode: "width" });
   range.value = "250";
   range.dispatchEvent(new Event("input", { bubbles: true }));
   assert(changes.at(-1)?.zoom === 2.5 && changes.at(-1)?.mode === "custom", "slider at 250 percent emits factor 2.5 in custom mode");

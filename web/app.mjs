@@ -218,7 +218,7 @@ async function start() {
   }
   const zoomLabels = Object.fromEntries(["group", "range", "percent", "title", "value", "custom", "width", "page", "pages", "apply", "cancel", "close", "invalid"]
     .map(key => [key, messages.get(`zoom-${key}`) ?? key]));
-  zoomControls = createZoomControls({ document, labels: zoomLabels, onChange: ({ zoom, mode }) => {
+  zoomControls = createZoomControls({ document, labels: zoomLabels, i18n, onChange: ({ zoom, mode }) => {
     if (disposed || !initialized || (previewActive ? !previewReady : busy)) return;
     const view = previewActive ? preview : editor;
     if (mode === "custom") view.setZoom(zoom);
