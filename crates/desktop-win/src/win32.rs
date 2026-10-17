@@ -1651,9 +1651,10 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
            const catalogue=(await import('/symbol-catalogue.mjs')).SYMBOL_CATALOGUE;
            ready.about.open({returnFocusTo:editor.element});
            const aboutText=ready.about.element.textContent;
+           const expectedDate=(await import('/i18n.mjs')).createI18n({locale:'fr-FR'}).formatDate(new Date(buildInfo.buildDate+'T00:00:00Z'),{timeZone:'UTC'});
            const utilitiesOk=/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(buildInfo.buildDate)
              &&aboutText.includes(buildInfo.version)
-             &&[...ready.about.element.querySelectorAll('time[datetime]')].some(t=>t.getAttribute('datetime')===buildInfo.buildDate&&t.textContent.trim()!==''&&t.textContent!==buildInfo.buildDate)
+             &&[...ready.about.element.querySelectorAll('time[datetime]')].some(t=>t.getAttribute('datetime')===buildInfo.buildDate&&t.textContent===expectedDate)
              &&aboutText.includes(legal.agpl)&&aboutText.includes(legal.unicode)
              &&legal.fonts.every(font=>aboutText.includes(font.text))&&catalogue.symbols.length>2000&&!!ready.symbols&&!!ready.contextMenu;
            ready.about.close();

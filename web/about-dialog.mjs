@@ -80,13 +80,11 @@ export function createAboutDialog(options) {
   ]) {
     const term = element("dt", "about-dialog-metadata-label", label);
     const detail = element("dd", "about-dialog-metadata-value");
-    const code = element("code", "about-dialog-metadata-text");
     if (typeof isoDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(isoDay)) {
-      const time = element("time", "", value);
+      const time = element("time", "about-dialog-metadata-text", value);
       time.dateTime = isoDay;
-      code.append(time);
-    } else code.textContent = value;
-    detail.append(code);
+      detail.append(time);
+    } else detail.append(element("code", "about-dialog-metadata-text", value));
     metadataList.append(term, detail);
   }
   overviewPanel.append(overviewHeading, metadataList);
