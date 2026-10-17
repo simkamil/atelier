@@ -16,7 +16,7 @@ function querySeed(text) {
 }
 
 /** Coordinates revisioned search, replacement and statistics views. */
-export function createNavigationTools({ document: doc = globalThis.document, editor, paneSlot, statusSlot, labels }) {
+export function createNavigationTools({ document: doc = globalThis.document, editor, paneSlot, statusSlot, labels, i18n }) {
   let disposed = false, enabled = false, opened = false;
   let currentState = null, query = "", options = {};
   let searchResult = null, index = -1, searchGeneration = 0, searchTimer = 0;
@@ -29,7 +29,7 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
     const generation = searchGeneration;
     navigationQueue = navigationQueue.then(() => !disposed && generation === searchGeneration ? run() : undefined).catch(() => {});
   };
-  const pane = createSearchPane({ document: doc, labels,
+  const pane = createSearchPane({ document: doc, labels, i18n,
     onQuery: change => { query = change.query; options = { ...change.options }; resetReplacement(); scheduleSearch(); },
     onNavigate: direction => enqueueNavigation(() => navigate(direction)),
     onSelect: selected => enqueueNavigation(() => select(selected)),
@@ -38,12 +38,12 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
     },
   });
   paneSlot.append(pane.element); paneSlot.hidden = true;
-  const replacement = createReplaceControls({ document: doc, labels,
+  const replacement = createReplaceControls({ document: doc, labels, i18n,
     onReplace: ({ replacement: value }) => enqueueNavigation(() => replaceMatches(false, value)),
     onReplaceAll: ({ replacement: value }) => enqueueNavigation(() => replaceMatches(true, value)),
   });
   pane.replacementSlot.append(replacement.element);
-  const statistics = createStatisticsControls({ document: doc, labels, onOpen: () => scheduleStatistics(0) });
+  const statistics = createStatisticsControls({ document: doc, labels, i18n, onOpen: () => scheduleStatistics(0) });
   statusSlot.append(statistics.element);
 
   function invalidateSearch() {

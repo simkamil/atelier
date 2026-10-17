@@ -69,6 +69,7 @@ export function attachTextInput({
   onComposition = () => {},
   onUnhandled,
   onError = () => {},
+  label,
 } = {}) {
   if (!ownerDocument?.createElement) throw new TypeError("A DOM document is required.");
   if (typeof getSelection !== "function" || typeof getCaret !== "function") {
@@ -94,7 +95,8 @@ export function attachTextInput({
   const target = container ?? ownerDocument.body;
   if (created) {
     if (!target?.append) throw new TypeError("container must accept DOM children.");
-    textarea.setAttribute("aria-label", "Saisie du texte du document");
+    // i18n-ignore: libellé par défaut d’un composant autonome ; l’éditeur transmet le texte du catalogue (input-label)
+    textarea.setAttribute("aria-label", label || "Saisie du texte du document");
     textarea.setAttribute("autocomplete", "off");
     textarea.setAttribute("autocapitalize", "off");
     textarea.setAttribute("spellcheck", "false");

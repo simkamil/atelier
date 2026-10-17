@@ -23,7 +23,8 @@ function pageTop(renderer, pageIndex) {
 }
 
 /** Connects the editor protocol, ATDL renderer, hidden native text input and file host. */
-export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {} } = {}) {
+// i18n-ignore: valeur par défaut d’un composant autonome ; l’application transmet le texte du catalogue (confirm-discard, input-label)
+export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, inputLabel, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {} } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.open !== "function"
       || typeof host.save !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
   if (!canvas?.getBoundingClientRect || !scrollport?.addEventListener || !spacer?.style) throw new TypeError("Canvas, scrollport and spacer are required.");
@@ -66,7 +67,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   let mouseSelection;
   let textDragDrop;
   const input = attachTextInput({
-    container: document.body,
+    container: document.body, label: inputLabel,
     getSelection: () => state ? { anchor: state.anchor, focus: state.focus } : { anchor: 0, focus: 0 },
     getCaret: () => caretScreen(),
     getClipboardSnapshot: () => {

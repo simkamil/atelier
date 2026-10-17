@@ -290,19 +290,34 @@ const KEY_POSITION = new Set(["(", "?", ":", "??", "||", "&&"]);
 const clip = text => (text.length > MAX_DETAIL ? `${text.slice(0, MAX_DETAIL - 1)}…` : text);
 const staticText = token => (token.type === "template" ? token.quasis.join("\u0001") : token.value);
 
-/** Lignes exemptées par `i18n-ignore: raison`, plus les exemptions sans raison. */
-function exemptions(comments, tokenLines, file, findings, marker = /\bi18n-ignore\b(?::\s*(\S[^]*))?/) {
+/**
+ * Lignes exemptées par `i18n-ignore: raison` (la ligne et la suivante) ou par une région
+ * `i18n-ignore-start: raison` ... `i18n-ignore-end`, plus les exemptions sans raison.
+ */
+function exemptions(comments, tokenLines, file, findings, marker = /\bi18n-ignore(?!-)\b(?::\s*(\S[^]*))?/) {
   const lines = new Set();
+  const finding = (line, detail, message) => findings.push({ category: "invalid-exemption", file, line, detail, message });
+  const reasonless = reason => !reason || !reason.replace(/-->|\*\/$/g, "").trim();
+  let region = null;
   for (const comment of comments) {
-    const match = marker.exec(comment.text);
-    if (!match) continue;
-    if (!match[1] || !match[1].replace(/-->|\*\/$/g, "").trim()) {
-      findings.push({ category: "invalid-exemption", file, line: comment.line, detail: "i18n-ignore", message: "exemption sans raison : écrire « i18n-ignore: raison »" });
+    const edge = /\bi18n-ignore-(start|end)\b(?::\s*(\S[^]*))?/.exec(comment.text);
+    if (edge) {
+      if (edge[1] === "end") {
+        if (region === null) finding(comment.line, "i18n-ignore-end", "i18n-ignore-end sans i18n-ignore-start");
+        else for (let line = region; line <= comment.endLine; line += 1) lines.add(line);
+        region = null;
+      } else if (reasonless(edge[2])) finding(comment.line, "i18n-ignore-start", "exemption sans raison : écrire « i18n-ignore-start: raison »");
+      else if (region === null) region = comment.line;
+      else finding(comment.line, "i18n-ignore-start", "i18n-ignore-start imbriqué : fermer la région ouverte ligne " + region + " d’abord");
       continue;
     }
+    const match = marker.exec(comment.text);
+    if (!match) continue;
+    if (reasonless(match[1])) { finding(comment.line, "i18n-ignore", "exemption sans raison : écrire « i18n-ignore: raison »"); continue; }
     for (let line = comment.line; line <= comment.endLine; line += 1) lines.add(line);
     if (!tokenLines.has(comment.endLine)) lines.add(comment.endLine + 1);
   }
+  if (region !== null) finding(region, "i18n-ignore-start", "i18n-ignore-start sans i18n-ignore-end");
   return lines;
 }
 

@@ -36,8 +36,10 @@ export async function run({ assert, fixture }) {
     searchError: "Search failed", searchDisabled: "Unavailable", searchWrapped: "Wrapped", searchResult: "Result {index}: {excerpt}",
     replaceTitle: "Replace", replaceText: "Replacement text", replaceOne: "Replace", replaceAll: "Replace all",
     replaceBusy: "Replacing…", replaceError: "Replacement failed", replaceNone: "No matches replaced",
-    replaceCountOne: "1 occurrence replaced", replaceCountMany: "{count} occurrences replaced",
+    replaceCount: "{count, plural, one {# occurrence replaced} other {# occurrences replaced}}",
   };
+  const { createI18n } = await import("/i18n.mjs");
+  const i18n = createI18n({ catalog: { ...labels, statusDocument: "{words} words", statusSelection: "{selected} / {words} words" } });
 
   let state = { revision: 5, anchor: 0, focus: 4, textBytes: new TextEncoder().encode("word other word") };
   const searches = [], currentReplacements = [], allReplacements = [], highlights = [];
@@ -70,7 +72,7 @@ export async function run({ assert, fixture }) {
   };
 
   const { createNavigationTools } = await import("/navigation-tools.mjs");
-  const tools = createNavigationTools({ document, editor, paneSlot, statusSlot, labels });
+  const tools = createNavigationTools({ document, editor, paneSlot, statusSlot, labels, i18n });
   tools.update(state);
   tools.setEnabled(true);
   const queryInput = () => paneSlot.querySelector("[data-search-query]");

@@ -1605,7 +1605,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/rich-preview.mjs','text/javascript'],
             ['/text-drag-drop.mjs','text/javascript'],
             ['/french-spacing.mjs','text/javascript'],
-            ['/i18n/fr-FR.txt','text/plain'], ['/engine-worker.mjs','text/javascript'],
+            ['/i18n.mjs','text/javascript'], ['/i18n/fr-FR.txt','text/plain'], ['/engine-worker.mjs','text/javascript'],
             ['/engine-client.mjs','text/javascript'], ['/wasm-loader.mjs','text/javascript'],
             ['/editor-protocol.mjs','text/javascript'], ['/editor.mjs','text/javascript'],
             ['/native-host.mjs','text/javascript'], ['/display-list.mjs','text/javascript'],

@@ -604,10 +604,10 @@ try {
   assert(bluePixels > 20, "real DOCX preview paints the blue styled heading as visible Canvas pixels");
   const richScroll = document.querySelector("#rich-scroll");
   const previewZoomRange = document.querySelector("[data-zoom-range]");
-  assert(!previewZoomRange.disabled && document.querySelector("[data-zoom-percent]").textContent === "100%",
+  assert(!previewZoomRange.disabled && document.querySelector("[data-zoom-percent]").textContent === "100\u202f%",
     "DOCX preview has its own enabled zoom controls starting at 100 percent");
   previewZoomRange.value = "200"; previewZoomRange.dispatchEvent(new Event("input", { bubbles: true }));
-  assert(document.querySelector("[data-zoom-percent]").textContent === "200%" && app.editor.getZoom() === 1.5,
+  assert(document.querySelector("[data-zoom-percent]").textContent === "200\u202f%" && app.editor.getZoom() === 1.5,
     "preview zoom changes independently of the suspended TXT view");
   previewZoomRange.value = "100"; previewZoomRange.dispatchEvent(new Event("input", { bubbles: true }));
   richScroll.style.width = "360px"; window.dispatchEvent(new Event("resize"));
@@ -645,7 +645,7 @@ try {
     "Escape returns to exact TXT state and restores trigger focus");
   assert(document.querySelector("#page-title").textContent === "Document texte" && document.querySelector("#document-state").textContent.includes("non enregistrées"),
     "closing preview restores TXT identity and dirty badge");
-  assert(app.editor.getZoom() === 1.5 && document.querySelector("[data-zoom-percent]").textContent === "150%",
+  assert(app.editor.getZoom() === 1.5 && document.querySelector("[data-zoom-percent]").textContent === "150\u202f%",
     "returning from DOCX restores the TXT session zoom in the status controls");
   await app.editor.undo(); assert(app.getState().text !== beforePreview.text, "TXT undo history remains available after preview");
   await app.editor.redo(); assert(app.getState().text === beforePreview.text && app.getState().dirty === beforePreview.dirty, "TXT redo restores exact content and dirty after preview");

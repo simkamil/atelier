@@ -14,12 +14,13 @@ export async function run({ assert, fixture }) {
   const labels = {
     replaceTitle: "Replace", replaceText: "Replacement text", replaceOne: "Replace",
     replaceAll: "Replace all", replaceBusy: "Replacing…", replaceError: "Replacement failed",
-    replaceNone: "No matches replaced", replaceCountOne: "1 occurrence replaced",
-    replaceCountMany: "{count} occurrences replaced",
+    replaceNone: "No matches replaced",
   };
+  const { createI18n } = await import("/i18n.mjs");
+  const i18n = createI18n({ catalog: { replaceCount: "{count, plural, one {# occurrence replaced} other {# occurrences replaced}}" } });
   const oneCalls = [], allCalls = [];
   const controls = createReplaceControls({
-    document,
+    document, i18n,
     labels,
     onReplace: value => oneCalls.push(value),
     onReplaceAll: value => allCalls.push(value),
@@ -49,7 +50,7 @@ export async function run({ assert, fixture }) {
     "replacement result is exposed through a polite live status");
 
   controls.setState({ count: 1 });
-  assert(status.textContent === labels.replaceCountOne, "one occurrence uses its dedicated localized count label");
+  assert(status.textContent === "1 occurrence replaced", "one occurrence uses the singular of the plural message");
   let statusMutations = 0;
   const statusObserver = new MutationObserver(records => { statusMutations += records.length; });
   statusObserver.observe(status, { childList: true, characterData: true, subtree: true });

@@ -459,11 +459,11 @@ En cours (2026-10-11) : [module Canvas](docs/us-101-canvas-renderer.md) raccord�
 
 #### US-102 — Internationalisation
 *En tant que* développeur, *je veux* un catalogue de chaînes *afin qu'aucun* texte d'interface ne soit en dur.
-- [ ] Catalogue `web/i18n/fr-FR.txt` (clé = valeur), paramètres nommés, pluriels.
+- [x] Catalogue `web/i18n/fr-FR.txt` (clé = valeur), paramètres nommés, pluriels.
 - [x] Outil de vérification : clés manquantes, inutilisées, chaînes en dur détectées dans le JS.
-- [ ] Formatage des nombres, dates et unités selon fr-FR.
+- [x] Formatage des nombres, dates et unités selon fr-FR.
 
-Avancement US-102 (2026-10-13) : module `web/i18n.mjs` (paramètres nommés, pluriels français, formatage fr-FR) et outil `tests/check-i18n.mjs` livrés, relus par un agent indépendant et corrigés ; [contrat](docs/us-102-i18n.md). L'outil tourne en CI contre une référence de 80 écarts connus dans les modules existants. Reste ouvert : brancher le module dans `web/app.mjs`, le déclarer dans les ressources embarquées, résorber les écarts (chaînes en dur, clés absentes), et vérifier le formatage dans la WebView.
+Avancement US-102 (2026-10-17) : `web/i18n.mjs` branché dans `web/app.mjs` (catalogue chargé au démarrage, `i18n` injecté dans la navigation, la barre d’état et le dialogue des symboles), `/i18n.mjs` embarqué ; la référence de `tests/check-i18n.mjs` est vide (0 écart, exemptions justifiées) ; [contrat](docs/us-102-i18n.md). La WebView embarquée n’a pas été relancée (vérification faite avec Edge sur les suites navigateur).
 
 Réf : D12, §6.15 · Taille : S · Dépend de : US-001
 

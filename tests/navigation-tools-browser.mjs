@@ -27,6 +27,7 @@ function searchResult(revision, start, text) {
 }
 
 export async function run({ assert, fixture }) {
+  const { createI18n } = await import("/i18n.mjs");
   const response = await within(fetch("/i18n/fr-FR.txt"), "French labels response");
   assert(response.ok, "French labels are loaded from the app catalog");
   const source = await within(response.text(), "French labels text");
@@ -64,7 +65,7 @@ export async function run({ assert, fixture }) {
     selectSearchResult() { return Promise.resolve(); },
   };
   const { createNavigationTools } = await import("/navigation-tools.mjs");
-  const tools = createNavigationTools({ document, editor, paneSlot, statusSlot, labels });
+  const tools = createNavigationTools({ document, editor, paneSlot, statusSlot, labels, i18n: createI18n({ catalog: source }) });
   tools.update(editor.state);
   tools.setEnabled(true);
   const queryInput = () => paneSlot.querySelector("[data-search-query]");

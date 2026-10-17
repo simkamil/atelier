@@ -72,24 +72,24 @@ test("catalogue: the real fr-FR catalogue loads exactly like the historic loader
   // problems are the duplicate keys the historic loader silently accepted.
   assert.deepEqual(parsed.problems.filter(problem => problem.code !== "duplicate-key"), []);
   assert.equal(parsed.entries.size, legacy.size);
-  for (const key of ["zoom-title", "searchTitle", "statisticsDialogTitle", "i18n.words-count"]) {
+  for (const key of ["zoom-title", "searchTitle", "statisticsDialogTitle", "statusDocument"]) {
     assert(parsed.entries.has(key), `merged feature catalog preserves ${key}`);
   }
 });
 
-test("catalogue: the 80 historic keys keep their values, the examples render", () => {
+test("catalogue: the historic keys keep their values, plural and parameterised messages render", () => {
   const parsed = parseCatalog(readFileSync(join(root, "web/i18n/fr-FR.txt"), "utf8"));
   assert.equal(parsed.entries.get("action-open").value, "Ouvrir…");
   assert.equal(parsed.entries.get("status-opened").value, "Document ouvert.");
   const i18n = createI18n({ catalog: parsed });
-  assert.equal(i18n.t("i18n.words-count", { n: 1 }), "1 mot");
-  assert.equal(i18n.t("i18n.words-count", { n: 1234 }), `1${NN}234 mots`);
-  assert.equal(i18n.t("i18n.pages-count", { n: 1000000 }), `1${NN}000${NN}000 de pages`);
-  assert.equal(i18n.t("i18n.page-of", { page: 3, total: 12 }), "Page 3 sur 12");
-  assert.equal(i18n.t("i18n.search-occurrences", { n: 0 }), "Aucune occurrence");
-  assert.equal(i18n.t("i18n.search-occurrences", { n: 2 }), "2 occurrences");
-  assert.equal(i18n.t("i18n.file-too-large", { size: i18n.formatFileSize(3e6), limit: i18n.formatFileSize(131072, { binary: true }) }),
-    `Le fichier (3${NN}Mo) dépasse la taille maximale de 128${NN}Kio.`);
+  assert.equal(i18n.t("statusDocument", { words: 1 }), "1 mot");
+  assert.equal(i18n.t("statusDocument", { words: 1234 }), `1${NN}234 mots`);
+  assert.equal(i18n.t("statusSelection", { selected: 2, words: 4 }), "2 / 4 mots");
+  assert.equal(i18n.t("statusPageCount", { page: 3, total: 12 }), "Page 3 sur 12");
+  assert.equal(i18n.t("replaceCount", { count: 1 }), "1 occurrence remplacée.");
+  assert.equal(i18n.t("replaceCount", { count: 2000 }), `2${NN}000 occurrences remplacées.`);
+  assert.equal(i18n.t("files.error.too_large", { limit: i18n.formatFileSize(131072, { binary: true }) }),
+    `Le fichier dépasse la taille maximale de 128${NN}Kio.`);
   assert.equal(i18n.issues.length, 0);
 });
 
@@ -605,6 +605,46 @@ test("hardcoded: exemptions need a reason, on the line or on the comment line ab
   assert.deepEqual(found('x.textContent = "Bonjour le monde"; // i18n-ignore'), ["invalid-exemption:1", "hardcoded:1"]);
   assert.deepEqual(found('x.textContent = "Bonjour le monde"; // i18n-ignore:   '), ["invalid-exemption:1", "hardcoded:1"]);
   assert.deepEqual(found('const a = `ligne un\nligne deux ${x}`; // i18n-ignore: gabarit multi-ligne'), []);
+});
+
+test("hardcoded: exemption regions need a reason and must be closed", () => {
+  const found = source => analyzeScript(source, "x.mjs").findings.map(f => `${f.category}:${f.line}`);
+  const text = 'x.textContent = "Bonjour le monde";';
+  assert.deepEqual(found(`// i18n-ignore-start: repli
+${text}
+${text}
+// i18n-ignore-end
+${text}`), ["hardcoded:5"]);
+  assert.deepEqual(found(`// i18n-ignore-start
+${text}
+// i18n-ignore-end`), ["invalid-exemption:1", "invalid-exemption:3", "hardcoded:2"]);
+  assert.deepEqual(found(`// i18n-ignore-start: repli
+${text}`), ["invalid-exemption:1", "hardcoded:2"], "an open region is reported and exempts nothing");
+  assert.deepEqual(found(`// i18n-ignore-start: a
+// i18n-ignore-start: b
+${text}
+// i18n-ignore-end`), ["invalid-exemption:2"], "a nested start is reported, the outer region stays valid");
+  assert.deepEqual(found(`${text}
+// i18n-ignore-end`), ["invalid-exemption:2", "hardcoded:1"]);
+});
+
+test("limits: the JS text size limit equals MAX_TEXT of the Rust editor", () => {
+  const rust = readFileSync(join(root, "crates/core-wasm/src/editor.rs"), "utf8");
+  const app = readFileSync(join(root, "web/app.mjs"), "utf8");
+  const rustLimit = /const MAX_TEXT: usize = (\d+) \* 1024;/.exec(rust);
+  const jsLimit = /const MAX_TEXT_FILE_BYTES = (\d+) \* 1024;/.exec(app);
+  assert(rustLimit && jsLimit, "both constants are written as N * 1024");
+  assert.equal(Number(jsLimit[1]), Number(rustLimit[1]));
+});
+
+test("fallback: the French fallback of app.mjs equals the catalogue", () => {
+  const app = readFileSync(join(root, "web/app.mjs"), "utf8");
+  const start = app.indexOf("new Map(Object.entries({", app.indexOf("const FALLBACK"));
+  const end = app.indexOf("}));", start);
+  const fallback = Object.entries(new Function(`return ({${app.slice(app.indexOf("{", start) + 1, end)}})`)());
+  const catalogue = parseCatalog(readFileSync(join(root, "web/i18n/fr-FR.txt"), "utf8")).entries;
+  assert(fallback.length > 50);
+  for (const [key, value] of fallback) assert.equal(catalogue.get(key)?.value, value, `fallback of ${key} matches the catalogue`);
 });
 
 test("keys: every real form of use is recognised", () => {

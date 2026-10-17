@@ -14,6 +14,7 @@ import { createEditorContextMenu } from "/editor-context-menu.mjs";
 import { createAboutDialog } from "/about-dialog.mjs";
 import { ABOUT_LICENSES } from "/about-licenses.mjs";
 import { BUILD_INFO } from "/build-info.mjs";
+import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -25,6 +26,7 @@ const nodes = {
   openDocx: byId("open-docx"), closePreview: byId("close-preview"),
   textWorkspace: byId("text-workspace"), richWorkspace: byId("rich-workspace"),
 };
+// i18n-ignore-start: dernier recours quand web/i18n/fr-FR.txt est indisponible ; texte identique au catalogue (contrôlé par tests/i18n.mjs)
 const FALLBACK = new Map(Object.entries({
   "status-a11y-ok": "Écho confirmé", "status-a11y-failed": "Échec", "status-ok": "Le moteur a renvoyé l’écho Ping.",
   "status-failed": "Le contrôle du moteur a échoué.", "status-success-detail": "Worker WebAssembly : transport vérifié, écho Ping reçu.",
@@ -35,7 +37,7 @@ const FALLBACK = new Map(Object.entries({
   "status-host-unavailable": "Le dialogue de fichiers est indisponible.", "status-open-error": "Le document n’a pas pu être ouvert.",
   "status-save-error": "Le document n’a pas pu être enregistré.", "status-editor-error": "L’opération n’a pas pu être effectuée.",
   "files.error.invalid_text": "Le fichier ne contient pas de texte UTF-8 valide.",
-  "files.error.too_large": "Le fichier dépasse la taille maximale de 128 Kio.",
+  "files.error.too_large": "Le fichier dépasse la taille maximale de {limit}.",
   "files.error.queue_full": "Une autre opération sur les fichiers est en cours.",
   "status-stale-save": "Le document a changé pendant l’enregistrement. Enregistrez-le à nouveau.",
   "status-unsupported-input": "Cette commande de saisie n’est pas disponible.", "status-invalid-document": "Le document ou sa mise en page est invalide.",
@@ -55,7 +57,9 @@ const FALLBACK = new Map(Object.entries({
   "zoom-width": "Largeur de page", "zoom-page": "Page entière", "zoom-pages": "Deux pages",
   "zoom-apply": "Appliquer", "zoom-cancel": "Annuler", "zoom-close": "Fermer",
   "zoom-invalid": "Saisissez un pourcentage entier entre 10 et 500.",
+  "input-label": "Saisie du texte du document",
 }));
+// i18n-ignore-end
 
 document.addEventListener("securitypolicyviolation", event => {
   const blocked = event.blockedURI || "";
@@ -64,27 +68,47 @@ document.addEventListener("securitypolicyviolation", event => {
   if (message.length <= 768) globalThis.chrome?.webview?.postMessage(message);
 });
 
+const FILE_ERROR_KEYS = ["files.error.invalid_text", "files.error.too_large", "files.error.queue_full"];
+const MAX_TEXT_FILE_BYTES = 128 * 1024;
+
+/** Loads the catalogue and returns the translator plus `messages`, the reader used to build module labels. */
 async function loadCatalog() {
   const entries = new Map(FALLBACK);
   try {
     const response = await fetch("/i18n/fr-FR.txt", { cache: "no-store" });
-    if (response.ok) {
-      for (const line of (await response.text()).split(/\r?\n/)) {
-        if (!line || line.startsWith("#")) continue;
-        const separator = line.indexOf("=");
-        if (separator > 0) entries.set(line.slice(0, separator), line.slice(separator + 1));
-      }
-    }
+    if (response.ok) for (const [key, entry] of parseCatalog(await response.text()).entries) entries.set(key, entry.value);
   } catch { /* French fallback keeps the shell understandable without the catalog. */ }
+  const i18n = createI18n({ locale: "fr-FR", catalog: entries });
+  const hasParams = new Map();
+  /** Plain messages are translated; messages with parameters stay templates for modules that cannot receive `i18n`. */
+  const messages = Object.freeze({
+    has: key => i18n.has(key),
+    get(key) {
+      if (!i18n.has(key)) return undefined;
+      if (!hasParams.has(key)) hasParams.set(key, analyzeMessage(entries.get(key)).params.size > 0);
+      return hasParams.get(key) ? entries.get(key) : i18n.t(key);
+    },
+  });
   for (const element of document.querySelectorAll("[data-i18n]")) {
-    const value = entries.get(element.dataset.i18n);
-    if (value !== undefined) element.textContent = value;
+    if (i18n.has(element.dataset.i18n)) element.textContent = messages.get(element.dataset.i18n);
   }
   for (const element of document.querySelectorAll("[data-i18n-aria-label]")) {
-    const value = entries.get(element.dataset.i18nAriaLabel);
-    if (value !== undefined) element.setAttribute("aria-label", value);
+    if (i18n.has(element.dataset.i18nAriaLabel)) element.setAttribute("aria-label", messages.get(element.dataset.i18nAriaLabel));
   }
-  return entries;
+  return { i18n, messages };
+}
+
+/** Build date (UTC day, YYYY-MM-DD) written the French way; any other value is shown unchanged. */
+function buildDateText(value, i18n, messages) {
+  if (value === null || value === undefined) return messages.get("about-buildUnavailable");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00Z`) : null;
+  return day && !Number.isNaN(day.getTime()) ? i18n.formatDate(day, { timeZone: "UTC" }) : value;
+}
+
+/** Message of a rejected file operation: catalogue key from the host, with its named parameters. */
+function fileErrorMessage(key, i18n, messages) {
+  if (!FILE_ERROR_KEYS.includes(key)) return messages.get(key);
+  return i18n.t(key, key === "files.error.too_large" ? { limit: i18n.formatFileSize(MAX_TEXT_FILE_BYTES, { binary: true }) } : {});
 }
 
 function showPing(ok, messages) {
@@ -111,7 +135,7 @@ function showEditorMessage(text, isError = false) {
 }
 
 async function start() {
-  const messages = await loadCatalog();
+  const { i18n, messages } = await loadCatalog();
   const toolKeys = ["searchTitle", "searchQuery", "searchMatchCase", "searchWholeWord", "searchIgnoreAccents", "searchMatchNbsp",
     "searchPrevious", "searchNext", "searchClose", "searchCount", "searchEmptyQuery", "searchNoResults", "searchTruncated",
     "searchBusy", "searchError", "searchDisabled", "searchWrapped", "searchResult", "searchOptions", "searchResults",
@@ -119,7 +143,7 @@ async function start() {
     "statisticsScopeSelection", "statisticsFieldPages", "statisticsFieldWords", "statisticsFieldCharacters",
     "statisticsFieldCharactersWithSpaces", "statisticsFieldParagraphs", "statisticsFieldLines", "statisticsLoading",
     "statisticsError", "statisticsUnavailableData", "statisticsNotesTextBoxes", "statisticsNotesUnavailable",
-    "replaceTitle", "replaceText", "replaceOne", "replaceAll", "replaceBusy", "replaceError", "replaceNone", "replaceCountOne", "replaceCountMany"];
+    "replaceTitle", "replaceText", "replaceOne", "replaceAll", "replaceBusy", "replaceError", "replaceNone", "replaceCount"];
   const toolsAvailable = toolKeys.every(key => messages.has(key));
   const statusKeys = ["statusPageCount", "statusPageUnavailable", "statusLanguage", "statusLanguageUnknown", "statusViewText", "statusViewPreview",
     "statusSaved", "statusUnsaved", "statusReadOnly", "statusConfigure", "statusShowPage", "statusShowWords", "statusShowLanguage", "statusShowView",
@@ -181,7 +205,7 @@ async function start() {
     const footer = document.querySelector("footer");
     footer.tabIndex = 0;
     footer.setAttribute("aria-label", messages.get("statusConfigure"));
-    documentStatus = createDocumentStatus({ document, labels: Object.fromEntries(statusKeys.map(key => [key, messages.get(key)])), menuTarget: footer,
+    documentStatus = createDocumentStatus({ document, i18n, labels: Object.fromEntries(statusKeys.map(key => [key, messages.get(key)])), menuTarget: footer,
       onGoToPage: page => {
         if (disposed || !initialized || (previewActive ? !previewReady : busy)) return;
         try { (previewActive ? preview : editor).goToPage(page); } catch (error) { onError(error); }
@@ -194,7 +218,7 @@ async function start() {
   }
   const zoomLabels = Object.fromEntries(["group", "range", "percent", "title", "value", "custom", "width", "page", "pages", "apply", "cancel", "close", "invalid"]
     .map(key => [key, messages.get(`zoom-${key}`) ?? key]));
-  zoomControls = createZoomControls({ document, labels: zoomLabels, onChange: ({ zoom, mode }) => {
+  zoomControls = createZoomControls({ document, labels: zoomLabels, i18n, onChange: ({ zoom, mode }) => {
     if (disposed || !initialized || (previewActive ? !previewReady : busy)) return;
     const view = previewActive ? preview : editor;
     if (mode === "custom") view.setZoom(zoom);
@@ -262,7 +286,7 @@ async function start() {
     editor = createEditor({
       client, host, canvas: nodes.canvas, scrollport: nodes.scrollport, spacer: nodes.spacer,
       frenchSpacing: nodes.frenchSpacing.checked,
-      confirmDiscard: messages.get("confirm-discard"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
+      confirmDiscard: messages.get("confirm-discard"), inputLabel: messages.get("input-label"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
       onZoom: () => { if (!previewActive) updateZoom(); },
       onViewport: () => { if (!previewActive) updateStatus(); },
     });
@@ -279,7 +303,7 @@ async function start() {
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
       spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
       onZoom: () => { if (previewActive) updateZoom(); }, onViewport: () => { if (previewActive) updateStatus(); } });
-    if (toolsAvailable) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"),
+    if (toolsAvailable) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
     async function openDocx() {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
@@ -315,7 +339,7 @@ async function start() {
     const state = await editor.initialize();
     initialized = true;
     if (symbolsAvailable) {
-      symbols = createSymbolDialog({ catalogue: SYMBOL_CATALOGUE,
+      symbols = createSymbolDialog({ catalogue: SYMBOL_CATALOGUE, i18n,
         labels: { ...Object.fromEntries(symbolKeys.map(key => [key, messages.get(`symbols-${key}`)])),
           specialNames: Object.fromEntries(specialKeys.map(key => [key, messages.get(`symbols-${key}`)])) },
         onInsert: async text => {
@@ -327,7 +351,7 @@ async function start() {
     }
     if (aboutAvailable) {
       about = createAboutDialog({ labels: Object.fromEntries(aboutKeys.map(key => [key, messages.get(`about-${key}`)])),
-        metadata: { ...BUILD_INFO, buildDate: BUILD_INFO.buildDate ?? messages.get("about-buildUnavailable") }, licenseTexts: ABOUT_LICENSES });
+        metadata: { ...BUILD_INFO, buildDate: buildDateText(BUILD_INFO.buildDate, i18n, messages) }, licenseTexts: ABOUT_LICENSES });
       document.body.append(about.element);
     }
     if (contextAvailable) {
@@ -369,7 +393,7 @@ async function start() {
         const result = await editor.openDocument();
         if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
-        else showEditorMessage(messages.get(result.key) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
+        else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
       } catch (error) { onError(error); }
     }, { signal: listeners.signal });
     nodes.save.addEventListener("click", async () => {
@@ -377,7 +401,7 @@ async function start() {
         const result = await editor.saveAs();
         if (result.kind === "ok") showEditorMessage(messages.get("status-saved"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
-        else showEditorMessage(messages.get(result.key) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
+        else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
       } catch (error) { onError(error); }
     }, { signal: listeners.signal });
     nodes.undo.addEventListener("click", () => { void editor.undo().catch(onError); }, { signal: listeners.signal });
