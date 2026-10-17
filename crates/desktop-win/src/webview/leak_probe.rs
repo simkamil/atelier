@@ -172,9 +172,23 @@ fn run_cycle(dir: &Path, dwell: bool) {
         });
         assert!(ready, "controller timed out");
         if dwell && VARIANT.load(Ordering::Acquire) == 0 {
+            // Exercise the resource request/stream/response path, the web-message, script and
+            // focus calls, and the DevTools getter on every cycle.
             pump_for(Duration::from_secs(3), &mut || {
                 !view.resource_log_snapshot().is_empty()
             });
+            assert!(
+                !view.resource_log_snapshot().is_empty(),
+                "no embedded resource request served before close"
+            );
+            view.post_web_message_as_string("us111-ledger")
+                .expect("PostWebMessageAsString");
+            view.execute_script("1+1").expect("ExecuteScript");
+            pump_for(Duration::from_secs(5), &mut || {
+                view.take_script_result().is_some()
+            });
+            view.move_focus_programmatic().expect("MoveFocus");
+            view.devtools_enabled().expect("DevTools getter");
         }
     }
     view.close_for_check().expect("close");
@@ -311,8 +325,14 @@ fn process_handles() -> BTreeMap<String, usize> {
     result
 }
 
-fn runtime_installed() -> bool {
-    matches!(probe_runtime(), Ok(Some(_)))
+fn runtime_installed(test: &str) -> bool {
+    let installed = matches!(probe_runtime(), Ok(Some(_)));
+    if !installed {
+        eprintln!(
+            "SKIPPED {test}: WebView2 Evergreen runtime is not installed; nothing was measured"
+        );
+    }
+    installed
 }
 
 fn probe_dir(tag: &str) -> std::path::PathBuf {
@@ -325,7 +345,7 @@ fn probe_dir(tag: &str) -> std::path::PathBuf {
 
 #[test]
 fn com_reference_ledger_balances_over_100_cycles() {
-    if !runtime_installed() {
+    if !runtime_installed("com_reference_ledger_balances_over_100_cycles") {
         return;
     }
     let _guard = CALLBACK_TEST_LOCK
@@ -335,14 +355,20 @@ fn com_reference_ledger_balances_over_100_cycles() {
     let _apartment = ComApartment::initialize_sta().expect("STA");
     let dir = probe_dir("ledger");
     let baseline = LIVE_CALLBACK_OBJECTS.load(Ordering::Acquire);
-    for cycle in 0..100 {
-        run_cycle(&dir, cycle < 3);
+    let (acquired0, released0) = (
+        ledger::read(&ledger::ACQUIRED),
+        ledger::read(&ledger::RELEASED),
+    );
+    let added0 = ledger::read_ours(&ledger::OUR_ADD_REF);
+    let dropped0 = ledger::read_ours(&ledger::OUR_RELEASE);
+    for _ in 0..100 {
+        run_cycle(&dir, true);
     }
     pump_for(Duration::from_millis(500), &mut || false);
-    let acquired = ledger::read(&ledger::ACQUIRED);
-    let released = ledger::read(&ledger::RELEASED);
-    let added = ledger::read(&ledger::OUR_ADD_REF);
-    let dropped = ledger::read(&ledger::OUR_RELEASE);
+    let acquired = ledger::read(&ledger::ACQUIRED) - acquired0;
+    let released = ledger::read(&ledger::RELEASED) - released0;
+    let added = ledger::read_ours(&ledger::OUR_ADD_REF) - added0;
+    let dropped = ledger::read_ours(&ledger::OUR_RELEASE) - dropped0;
     let live = LIVE_CALLBACK_OBJECTS.load(Ordering::Acquire);
     println!(
         "ledger: held acquired={acquired} released={released}; ours AddRef={added} Release={dropped}; live callbacks {baseline}->{live}"
@@ -361,7 +387,7 @@ fn com_reference_ledger_balances_over_100_cycles() {
 #[test]
 #[ignore = "slow measurement against the installed WebView2 runtime"]
 fn handle_growth_probe() {
-    if !runtime_installed() {
+    if !runtime_installed("handle_growth_probe") {
         return;
     }
     let variant = std::env::var("ATELIER_PROBE_VARIANT").unwrap_or_else(|_| "full".into());

@@ -94,7 +94,7 @@ unsafe extern "system" fn event_add_ref(this: *mut EventHandler) -> u32 {
         return 0;
     }
     #[cfg(test)]
-    ledger::bump(&ledger::OUR_ADD_REF);
+    ledger::bump_ours(&ledger::OUR_ADD_REF);
     unsafe {
         (*this)
             .refs
@@ -107,7 +107,7 @@ unsafe extern "system" fn event_release(this: *mut EventHandler) -> u32 {
         return 0;
     }
     #[cfg(test)]
-    ledger::bump(&ledger::OUR_RELEASE);
+    ledger::bump_ours(&ledger::OUR_RELEASE);
     let count = unsafe {
         (*this)
             .refs
@@ -128,7 +128,7 @@ unsafe extern "system" fn event_release(this: *mut EventHandler) -> u32 {
 
 fn new_event(shared: &Shared, kind: EventKind) -> *mut EventHandler {
     #[cfg(test)]
-    ledger::bump(&ledger::OUR_ADD_REF); // the creation reference
+    ledger::bump_ours(&ledger::OUR_ADD_REF); // the creation reference
     shared.callback_objects.fetch_add(1, Ordering::AcqRel);
     LIVE_CALLBACK_OBJECTS.fetch_add(1, Ordering::AcqRel);
     let iid = match kind {

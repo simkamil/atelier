@@ -25,23 +25,32 @@ const E_NOINTERFACE: i32 = 0x8000_4002u32 as i32;
 const WM_CLOSE_DRAIN_TIMEOUT_MS: u32 = 15_000;
 pub(super) static LIVE_CALLBACK_OBJECTS: AtomicUsize = AtomicUsize::new(0);
 
-/// Test-only reference ledger: every COM reference this module acquires (AddRef or owned
-/// out-parameter) and every reference it releases, plus AddRef/Release on the objects it implements.
-/// Counters are per thread (the STA thread of one test) so parallel tests cannot disturb each other.
+/// Test-only reference ledger. `ACQUIRED`/`RELEASED` count the COM references this module obtains
+/// (AddRef or owned out-parameter) and releases; they are per thread (the STA thread of one test) so
+/// parallel tests cannot disturb each other. `OUR_ADD_REF`/`OUR_RELEASE` count calls on the objects
+/// this module implements and are process-wide because the runtime may call them from any thread;
+/// tests measure deltas while holding `CALLBACK_TEST_LOCK`.
 #[cfg(test)]
 pub(super) mod ledger {
     use std::cell::Cell;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     thread_local! {
         pub(crate) static ACQUIRED: Cell<usize> = const { Cell::new(0) };
         pub(crate) static RELEASED: Cell<usize> = const { Cell::new(0) };
-        pub(crate) static OUR_ADD_REF: Cell<usize> = const { Cell::new(0) };
-        pub(crate) static OUR_RELEASE: Cell<usize> = const { Cell::new(0) };
     }
+    pub(crate) static OUR_ADD_REF: AtomicUsize = AtomicUsize::new(0);
+    pub(crate) static OUR_RELEASE: AtomicUsize = AtomicUsize::new(0);
     pub(crate) fn bump(counter: &'static std::thread::LocalKey<Cell<usize>>) {
         counter.with(|value| value.set(value.get() + 1));
     }
     pub(crate) fn read(counter: &'static std::thread::LocalKey<Cell<usize>>) -> usize {
         counter.with(Cell::get)
+    }
+    pub(crate) fn bump_ours(counter: &AtomicUsize) {
+        counter.fetch_add(1, Ordering::AcqRel);
+    }
+    pub(crate) fn read_ours(counter: &AtomicUsize) -> usize {
+        counter.load(Ordering::Acquire)
     }
 }
 
@@ -53,6 +62,11 @@ pub(super) fn note_acquired() {
 }
 
 /// Adds one reference to a borrowed interface that this module will release itself.
+///
+/// # Safety
+///
+/// `interface` must be a non-null pointer to a live COM object, so that vtable slot 1 is `AddRef`.
+/// The caller then owns one reference and must release it exactly once with `release_interface`.
 pub(super) unsafe fn add_ref_interface(interface: *mut c_void) {
     note_acquired();
     // SAFETY: IUnknown::AddRef is vtable slot 1 for every COM interface; callers pass a live pointer.
@@ -330,7 +344,7 @@ unsafe extern "system" fn handler_add_ref(this: *mut Handler) -> u32 {
         return 0;
     }
     #[cfg(test)]
-    ledger::bump(&ledger::OUR_ADD_REF);
+    ledger::bump_ours(&ledger::OUR_ADD_REF);
     // SAFETY: COM invokes AddRef only on a live handler pointer.
     unsafe {
         (*this)
@@ -345,7 +359,7 @@ unsafe extern "system" fn handler_release(this: *mut Handler) -> u32 {
         return 0;
     }
     #[cfg(test)]
-    ledger::bump(&ledger::OUR_RELEASE);
+    ledger::bump_ours(&ledger::OUR_RELEASE);
     // SAFETY: COM invokes Release only on a live handler pointer and each reference is released once.
     let remaining = unsafe {
         (*this)
@@ -514,7 +528,7 @@ unsafe extern "system" fn handler_invoke(
 
 fn new_handler(shared: Arc<Shared>, kind: CallbackKind) -> *mut Handler {
     #[cfg(test)]
-    ledger::bump(&ledger::OUR_ADD_REF); // the creation reference
+    ledger::bump_ours(&ledger::OUR_ADD_REF); // the creation reference
     shared.callback_objects.fetch_add(1, Ordering::AcqRel);
     LIVE_CALLBACK_OBJECTS.fetch_add(1, Ordering::AcqRel);
     shared.pending.fetch_add(1, Ordering::AcqRel);
@@ -828,6 +842,9 @@ impl WebView {
             )(controller as *mut c_void, &mut core)
         };
         check_hresult("ICoreWebView2Controller::get_CoreWebView2", hr)?;
+        if !core.is_null() {
+            note_acquired();
+        }
         if core.is_null() {
             return Err(io::Error::other("WebView2 core interface is null"));
         }
@@ -868,6 +885,9 @@ impl WebView {
             )(controller as *mut c_void, &mut core)
         };
         check_hresult("ICoreWebView2Controller::get_CoreWebView2", hr)?;
+        if !core.is_null() {
+            note_acquired();
+        }
         if core.is_null() {
             return Err(io::Error::other("WebView2 core interface is null"));
         }
@@ -913,6 +933,9 @@ impl WebView {
             )(controller as *mut c_void, &mut core)
         };
         check_hresult("ICoreWebView2Controller::get_CoreWebView2", hr)?;
+        if !core.is_null() {
+            note_acquired();
+        }
         if core.is_null() {
             return Err(io::Error::other("WebView2 core interface is null"));
         }
@@ -925,6 +948,9 @@ impl WebView {
                 )(core, &mut settings)
             };
             check_hresult("ICoreWebView2::get_Settings", hr)?;
+            if !settings.is_null() {
+                note_acquired();
+            }
             if settings.is_null() {
                 return Err(io::Error::other("WebView2 settings interface is null"));
             }
