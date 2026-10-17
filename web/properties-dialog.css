@@ -44,3 +44,4 @@ textarea.properties-input { resize: vertical; min-height: 5.5rem; }
   .properties-input:focus-visible { outline: 2px solid Highlight; }
   .properties-input[aria-invalid="true"] { border: 2px solid Mark; }
 }
+.properties-note { margin: 0 0 .5rem; font-size: .875rem; color: var(--chrome-muted, var(--muted, #5f716d)); }

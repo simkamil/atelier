@@ -237,6 +237,7 @@ properties-loadError=Les propriétés du document n’ont pas pu être lues.
 properties-applyError=Les propriétés n’ont pas pu être enregistrées. Vérifiez les champs et réessayez.
 properties-documentHeading=Description
 properties-readOnlyHeading=Dates et statistiques
+properties-readOnlyNote=Ces informations sont en lecture seule : elles ne peuvent pas être modifiées ici.
 properties-unavailable=Non renseigné
 properties-counter={count} / {max} caractères
 properties-tooLong={field} : {length} caractères, la limite est {max}.

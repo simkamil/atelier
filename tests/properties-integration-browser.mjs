@@ -32,13 +32,13 @@ export async function checkProperties({ app, assert, waitFor, key }) {
 
   // Over the limit: marked invalid, OK disabled, nothing is applied.
   type("title", "é".repeat(256));
-  assert(field("title").getAttribute("aria-invalid") === "true" && !error("title").hidden && /256 caractères.*255/.test(error("title").textContent) && ok().disabled,
+  assert(field("title").getAttribute("aria-invalid") === "true" && error("title").textContent !== "" && /256 caractères.*255/.test(error("title").textContent) && ok().disabled,
     "a 256-character title is refused with a message and OK disabled");
   assert(counter("title") === "256 / 255 caractères", "counter keeps counting past the limit");
   field("title").form.requestSubmit();
   assert(dialog.open, "submitting an invalid form keeps the dialog open");
   type("title", "é".repeat(255));
-  assert(field("title").getAttribute("aria-invalid") === "false" && error("title").hidden && !ok().disabled, "255 characters (the limit) is accepted");
+  assert(field("title").getAttribute("aria-invalid") === "false" && error("title").textContent === "" && !ok().disabled, "255 characters (the limit) is accepted");
 
   // Cancel leaves no trace.
   type("title", "Brouillon");

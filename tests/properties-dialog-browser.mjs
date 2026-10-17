@@ -49,7 +49,7 @@ export async function run({ assert, fixture }) {
   type("title", "Court");
   nextApply = () => Promise.reject(new Error("boom"));
   ok().click(); await tick();
-  assert(root.open && !root.querySelector(".properties-status").hidden && root.querySelector(".properties-status").getAttribute("role") === "alert" && !ok().disabled,
+  assert(root.open && root.querySelector(".properties-status").textContent !== "" && root.querySelector(".properties-status").getAttribute("role") === "alert" && !ok().disabled,
     "an engine failure is announced and the dialog stays editable");
   let release;
   nextApply = () => new Promise(resolve => { release = resolve; });

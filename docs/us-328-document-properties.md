@@ -154,6 +154,8 @@ y compris l'enregistrement tamponné), `node tests/run-ui-browser.mjs` (dialogue
 moteur, attente), `node tests/run-editor-browser.mjs` (application réelle : commande, saisie, limite, Annuler et
 Échap sans effet, OK puis relecture, focus). Non vérifié : lecteur d'écran réel, fichier écrit par Word.
 
+**Réserve** : dialogue et moteur livrés ; modifications non persistées tant que l'enregistrement DOCX n'existe pas dans l'application. Le critère 1 de `US-V0-V1.md` reste donc décoché.
+
 ## Branchement restant (export PDF, enregistrement DOCX)
 
 1. **Enregistrement** (à relier à une commande utilisateur) : juste avant `pkg.write()`, `pkg.update_on_save(&SaveContext { now, user,

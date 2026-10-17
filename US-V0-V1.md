@@ -1327,12 +1327,12 @@ Réf : F-COM-023 · Taille : M · Dépend de : US-092, US-320
 
 #### US-328 — Propriétés du document
 *En tant qu'*utilisateur, *je veux* renseigner les propriétés du document *afin de* le décrire et le retrouver.
-- [x] Titre, sujet, auteur, mots-clés, commentaires, catégorie ; dates et statistiques en lecture seule.
+- [ ] Titre, sujet, auteur, mots-clés, commentaires, catégorie ; dates et statistiques en lecture seule.
 - [ ] Lues et écrites dans `core.xml` / `app.xml` ; reprises dans les métadonnées du PDF exporté.
 
 Avancement US-328 (2026-10-13) : bibliothèque livrée dans `atelier_fmt_ooxml` (propriétés de base et étendues, dates W3CDTF, modification, mise à jour à l'enregistrement, conversion vers les métadonnées PDF, aller-retour sans modification identique octet pour octet), relue par un agent indépendant et corrigée ; [contrat](docs/us-328-document-properties.md). LibreOffice relit les paquets tels qu'ils sont écrits. Aucun fichier Word testé.
 
-Avancement US-328 (2026-10-17) : dialogue Propriétés livré sur l'aperçu DOCX (commande de l'onglet Fichier, six champs avec limites, dates et statistiques en lecture seule), lecture et écriture de `core.xml`/`app.xml` par les opcodes 26 et 27 du moteur, `update_on_save` appelé par l'export étagé de type 3 ; [branchement](docs/us-328-document-properties.md). Premier critère coché. Second critère ouvert : lecture et écriture vérifiées, mais ni l'application (aucun enregistrement DOCX utilisateur) ni l'export PDF (US-332) n'existent ; le dictionnaire Info du PDF est vérifié côté `atelier-fmt-pdf` seulement.
+Avancement US-328 (2026-10-17) : dialogue Propriétés livré sur l'aperçu DOCX (commande de l'onglet Fichier, six champs avec limites, dates et statistiques en lecture seule), lecture et écriture de `core.xml`/`app.xml` par les opcodes 26 et 27 du moteur, `update_on_save` appelé par l'export étagé de type 3 ; [branchement](docs/us-328-document-properties.md). Dialogue et moteur livrés ; modifications non persistées tant que l'enregistrement DOCX n'existe pas dans l'application (elles restent en mémoire et sont perdues à la fermeture de l'aperçu) : aucun critère coché. Second critère ouvert : lecture et écriture vérifiées, mais ni l'application (aucun enregistrement DOCX utilisateur) ni l'export PDF (US-332) n'existent ; le dictionnaire Info du PDF est vérifié côté `atelier-fmt-pdf` seulement.
 
 Réf : F-COM-017 · Taille : S · Dépend de : US-300
 

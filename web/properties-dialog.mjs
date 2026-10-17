@@ -4,7 +4,7 @@
 import { createDialog } from "./ui-components.mjs";
 
 export const PROPERTIES_LABEL_KEYS = Object.freeze([
-  "title", "close", "ok", "cancel", "loadError", "applyError", "documentHeading", "readOnlyHeading", "unavailable", "counter", "tooLong",
+  "title", "close", "ok", "cancel", "loadError", "applyError", "documentHeading", "readOnlyHeading", "readOnlyNote", "unavailable", "counter", "tooLong",
   "field-title", "field-subject", "field-author", "field-keywords", "field-comments", "field-category",
   "created", "modified", "lastPrinted", "lastModifiedBy", "revision", "application",
   "stat-pages", "stat-words", "stat-characters", "stat-charactersWithSpaces", "stat-lines", "stat-paragraphs",
@@ -37,7 +37,6 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
   form.noValidate = true;
   const status = make("p", "properties-status");
   status.setAttribute("role", "alert");
-  status.hidden = true;
   const documentSection = make("section", "properties-section");
   const documentHeading = make("h3", "properties-heading", text("documentHeading"));
   documentSection.append(documentHeading);
@@ -52,7 +51,7 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
     input.id = `${id}-${name}`; label.htmlFor = input.id;
     input.autocomplete = "off"; input.spellcheck = false;
     const counter = make("span", "properties-count"); counter.id = `${input.id}-count`;
-    const error = make("span", "properties-error"); error.id = `${input.id}-error`; error.hidden = true; error.setAttribute("aria-live", "polite");
+    const error = make("span", "properties-error"); error.id = `${input.id}-error`; error.setAttribute("role", "alert"); // permanent live region: only its text changes
     input.setAttribute("aria-describedby", `${counter.id} ${error.id}`);
     row.append(label, input, counter, error);
     documentSection.append(row);
@@ -75,7 +74,11 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
   addReadOnly("revision", "revision");
   addReadOnly("application", "application");
   for (const key of STATS) addReadOnly(`stat-${key}`, `stat-${key}`);
-  readOnlySection.append(readOnlyHeading, readOnly);
+  const readOnlyNote = make("p", "properties-note", text("readOnlyNote")); readOnlyNote.id = `${id}-readonly-note`;
+  readOnlySection.setAttribute("aria-labelledby", readOnlyHeading.id = `${id}-readonly-heading`);
+  readOnlySection.setAttribute("aria-describedby", readOnlyNote.id);
+  readOnly.setAttribute("aria-describedby", readOnlyNote.id);
+  readOnlySection.append(readOnlyHeading, readOnlyNote, readOnly);
 
   const actions = make("div", "properties-actions");
   const ok = make("button", "ui-button properties-ok", text("ok")); ok.type = "submit";
@@ -88,7 +91,7 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
 
   let busy = false, loading = false, disposed = false;
   const unavailable = () => text("unavailable");
-  const showStatus = text => { status.hidden = !text; status.textContent = text ?? ""; };
+  const showStatus = message => { status.textContent = message ?? ""; };
   const formatDate = date => {
     if (!date) return unavailable();
     const time = Date.parse(date.text);
@@ -102,8 +105,7 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
     const over = length > control.max;
     control.counter.textContent = text("counter", { count: length, max: control.max });
     control.input.setAttribute("aria-invalid", String(over));
-    control.error.hidden = !over;
-    control.error.textContent = over ? text("tooLong", { field: fieldLabel(name), max: control.max, length }) : "";
+        control.error.textContent = over ? text("tooLong", { field: fieldLabel(name), max: control.max, length }) : "";
     return over;
   }
   function refreshAll() {
@@ -144,7 +146,7 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
         // The engine counts differently (for example after cleaning control characters): show its figures until the next edit.
         control.counter.textContent = text("counter", { count: result.length, max: result.max });
         control.input.setAttribute("aria-invalid", "true");
-        control.error.hidden = false; control.error.textContent = text("tooLong", { field: fieldLabel(result.field), max: result.max, length: result.length });
+        control.error.textContent = text("tooLong", { field: fieldLabel(result.field), max: result.max, length: result.length });
         control.input.focus();
       } else if (result?.kind === "ok") { busy = false; dialog.close(); }
       else throw new Error("PROPERTIES_APPLY_FAILED");
