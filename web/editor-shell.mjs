@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, aboutAvailable = false, onSymbols = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
+export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, aboutAvailable = false, propertiesAvailable = false, onProperties = () => {}, onSymbols = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -30,6 +30,7 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
   const symbolsCommand = toolCommand("symbols-command","symbolsTitle",onSymbols);
   const aboutCommand = toolCommand("about-command","aboutTitle",onAbout);
   aboutCommand.disabled = false;
+  const propertiesCommand = toolCommand("properties-command","propertiesTitle",onProperties);
   const localizedNavigation = navigationAvailable && ["searchTitle", "replaceTitle", "statisticsDialogTitle", "statisticsScopeDocument"]
     .every(key => typeof messages.get(key) === "string");
   const stateRow = doc.createElement("div");
@@ -62,6 +63,7 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
       command("open", "action-open", "O", byId("open-document")),
       command("open-docx", "action-open-docx", "D", byId("open-docx")),
       command("save", "action-save", "S", byId("save-document")),
+      ...(propertiesAvailable ? [command("properties", "propertiesTitle", "R", propertiesCommand)] : []),
       ...(aboutAvailable ? [command("about", "aboutTitle", "P", aboutCommand)] : []),
     ] }] },
     { id: "home", label: t("ribbon-home"), keyTip: "A", groups: [
@@ -92,8 +94,9 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
     theme, ribbon,
     setZoomEnabled(enabled) { zoomCommand.disabled = !enabled; ribbon.refresh(); },
     setNavigationEnabled(enabled) { searchCommand.disabled = !enabled; replaceCommand.disabled = !enabled; statisticsCommand.disabled = !enabled; ribbon.refresh(); },
+    setPropertiesEnabled(enabled) { propertiesCommand.disabled = !enabled; ribbon.refresh(); },
     setSymbolsEnabled(enabled) { symbolsCommand.disabled = !enabled; ribbon.refresh(); },
     refresh: () => ribbon.refresh(),
-    dispose() { symbolsCommand.removeEventListener("click",onSymbols); aboutCommand.removeEventListener("click",onAbout); searchCommand.removeEventListener("click",onSearch); replaceCommand.removeEventListener("click",onReplace); statisticsCommand.removeEventListener("click",onStatistics); zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
+    dispose() { propertiesCommand.removeEventListener("click",onProperties); symbolsCommand.removeEventListener("click",onSymbols); aboutCommand.removeEventListener("click",onAbout); searchCommand.removeEventListener("click",onSearch); replaceCommand.removeEventListener("click",onReplace); statisticsCommand.removeEventListener("click",onStatistics); zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
   });
 }
