@@ -9,7 +9,8 @@
 //! a cancellation can change the editing session.
 //!
 //! Commands are `Editor` payloads (`ATED`, version 1) with these opcodes:
-//! * 23 `Begin`: `u16 kind` (1 open DOCX preview, 2 export DOCX), `u16 0`, DOCX bytes.
+//! * 23 `Begin`: `u16 kind` (1 open DOCX preview, 2 export DOCX, 3 export DOCX
+//!   stamped as a save: `properties::parse_stamp` prefix, then the DOCX), `u16 0`, DOCX bytes.
 //! * 24 `Step`: `u64 job id`.
 //! * 25 `Cancel`: `u64 job id`; id 0 drops whatever job is active (used when the
 //!   host aborted before it read the id); an unknown id is a no-op.
@@ -28,6 +29,7 @@ pub const OP_BEGIN: u16 = 23;
 pub const OP_STEP: u16 = 24;
 pub const OP_CANCEL: u16 = 25;
 pub const KIND_OPEN: u16 = 1;
+pub const KIND_EXPORT_SAVE: u16 = 3;
 pub const KIND_EXPORT: u16 = 2;
 
 const MAX_INPUT: usize = 8 * 1024 * 1024;
@@ -52,6 +54,7 @@ struct Job {
     kind: u16,
     input: Vec<u8>,
     imported: Option<ImportedDocx>,
+    stamp: Option<crate::properties::SaveStamp>,
     stage: Stage,
     progress: u32,
 }
@@ -133,16 +136,22 @@ impl StagedEngine {
             return Err(EditorError("EDITOR_INVALID_COMMAND"));
         }
         let kind = u16::from_le_bytes([body[0], body[1]]);
-        if kind != KIND_OPEN && kind != KIND_EXPORT {
+        if ![KIND_OPEN, KIND_EXPORT, KIND_EXPORT_SAVE].contains(&kind) {
             return Err(EditorError("EDITOR_INVALID_COMMAND"));
         }
         // A valid Begin replaces (and so frees) any abandoned job; an invalid
         // one is rejected above without touching the active job.
+        let (stamp, docx) = if kind == KIND_EXPORT_SAVE {
+            let (stamp, docx) = crate::properties::parse_stamp(&body[4..])?;
+            (Some(stamp), docx)
+        } else {
+            (None, &body[4..])
+        };
         let mut input = Vec::new();
         input
-            .try_reserve_exact(body.len() - 4)
+            .try_reserve_exact(docx.len())
             .map_err(|_| EditorError("EDITOR_LIMIT"))?;
-        input.extend_from_slice(&body[4..]);
+        input.extend_from_slice(docx);
         self.job = None;
         self.next_id = self.next_id.wrapping_add(1).max(1);
         let id = self.next_id;
@@ -151,6 +160,7 @@ impl StagedEngine {
             kind,
             input,
             imported: None,
+            stamp,
             stage: Stage::Import,
             progress: 0,
         });
@@ -208,7 +218,10 @@ fn advance(job: &mut Job) -> Result<Option<Vec<u8>>, EditorError> {
             }
         }
         Stage::Write => {
-            let imported = job.imported.take().ok_or(failure)?;
+            let mut imported = job.imported.take().ok_or(failure)?;
+            if let Some(stamp) = &job.stamp {
+                crate::properties::stamp(&mut imported, stamp)?;
+            }
             let written =
                 write_docx(&imported, &DocxWriteOptions::default()).map_err(|_| failure)?;
             let notices = u32::try_from(written.notices.len()).unwrap_or(u32::MAX);

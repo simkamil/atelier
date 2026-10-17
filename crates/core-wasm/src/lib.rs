@@ -14,6 +14,7 @@ pub mod editor;
 mod editor_layout;
 mod editor_queries;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
+pub mod properties;
 pub mod protocol;
 pub mod rich_preview;
 pub mod rich_session;
