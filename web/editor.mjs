@@ -7,6 +7,7 @@ import { decodeDisplayList } from "./display-list.mjs";
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
 import { decodeEditorResponse, EditorOpcode, encodeEditorCommand } from "./editor-protocol.mjs";
+import { attachImagePaste, createImageCache, insertImageFiles } from "./image-insert.mjs";
 import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
 import { visiblePage, pageScrollTop } from "./page-navigation.mjs";
 
@@ -24,7 +25,7 @@ function pageTop(renderer, pageIndex) {
 
 /** Connects the editor protocol, ATDL renderer, hidden native text input and file host. */
 // i18n-ignore: valeur par défaut d’un composant autonome ; l’application transmet le texte du catalogue (confirm-discard, input-label)
-export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, inputLabel, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {} } = {}) {
+export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, inputLabel, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {}, onImages = () => {} } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.open !== "function"
       || typeof host.save !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
   if (!canvas?.getBoundingClientRect || !scrollport?.addEventListener || !spacer?.style) throw new TypeError("Canvas, scrollport and spacer are required.");
@@ -33,7 +34,8 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   }
   if (![onState, onError, onBusy, onZoom, onViewport].every(callback => typeof callback === "function")) throw new TypeError("Editor callbacks must be functions.");
 
-  const renderer = new CanvasRenderer(canvas, { pageBackground: "#ffffff" });
+  const imageCache = createImageCache();
+  const renderer = new CanvasRenderer(canvas, { pageBackground: "#ffffff", resolveImage: id => imageCache.get(id) });
   const compositionPreview = document.createElement("span");
   compositionPreview.className = "composition-preview";
   compositionPreview.setAttribute("aria-hidden", "true");
@@ -196,7 +198,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
     if (documentReplaced || state?.revision !== nextState.revision) { searchHighlights = null; searchIndex = -1; }
     state = nextState;
     decodedPages = pages;
-    if (textRepresentation) textRepresentation.textContent = nextState.text;
+    if (textRepresentation) textRepresentation.textContent = nextState.text.replace(/[\u{100000}-\u{10fffd}]/gu, "￼");
     renderer.setPages(pages);
     updatePageLayout();
     const caret = viewportRect({ x: nextState.caret.x, y: nextState.caret.y, width: 1, height: nextState.caret.height }, nextState.caret.page);
@@ -288,14 +290,18 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       }
       const response = decodeEditorResponse(message.type, message.payload);
       if (response.kind === "failed") throw new EditorError(response.code);
-    if ([EditorOpcode.Load, EditorOpcode.InsertText, EditorOpcode.DropText, EditorOpcode.ReplaceRange, EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward,
+      if (opcode === EditorOpcode.Load) imageCache.clear();
+      const shown = response.kind === "replacement" ? response.state : response;
+      if (shown.imageIds?.size) await imageCache.prepare(shown.imageIds, id => dispatch(EditorOpcode.ImageBitmap, { id }));
+    if ([EditorOpcode.Load, EditorOpcode.InsertImage, EditorOpcode.InsertText, EditorOpcode.DropText, EditorOpcode.ReplaceRange, EditorOpcode.DeleteBackward, EditorOpcode.DeleteForward,
          EditorOpcode.DeleteWordBackward, EditorOpcode.DeleteWordForward, EditorOpcode.Undo, EditorOpcode.Redo, EditorOpcode.Replace, EditorOpcode.ReplaceAll].includes(opcode)) extensionMode = false;
       if (opcode === EditorOpcode.ProbePoint && response.kind !== "point") throw new EditorError("EDITOR_INVALID_RESPONSE");
        if (opcode === EditorOpcode.PreviewDocx && response.kind !== "preview") throw new EditorError("EDITOR_INVALID_RESPONSE");
        if (opcode === EditorOpcode.Search && response.kind !== "search") throw new EditorError("EDITOR_INVALID_RESPONSE");
         if (opcode === EditorOpcode.Statistics && response.kind !== "statistics") throw new EditorError("EDITOR_INVALID_RESPONSE");
         if ([EditorOpcode.Replace, EditorOpcode.ReplaceAll].includes(opcode) && response.kind !== "replacement") throw new EditorError("EDITOR_INVALID_RESPONSE");
-       if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx, EditorOpcode.Search, EditorOpcode.Statistics].includes(opcode)) {
+       if (![EditorOpcode.Export, EditorOpcode.ProbePoint, EditorOpcode.PreviewDocx, EditorOpcode.Search, EditorOpcode.Statistics,
+             EditorOpcode.ImageBitmap, EditorOpcode.ExportDocx].includes(opcode)) {
         if (opcode === EditorOpcode.Load || opcode === EditorOpcode.State && !state) {
           pageZoom = 1;
           zoomMode = "custom";
@@ -422,6 +428,24 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       width: page.bounds.width, height: page.bounds.height })),
     zoom: pageZoom, pageGap: renderer.pageGap,
   });
+  /** Inserts picture files at the caret, or at `target` (a text offset) for a drop. */
+  async function insertImages(files, { revision, target } = {}) {
+    const result = await insertImageFiles(files, {
+      insertBytes: bytes => enqueueTask(async () => {
+        if (busy || compositionStart || disposed) throw new EditorError(disposed ? "EDITOR_CLOSED" : "EDITOR_BUSY");
+        if (target !== undefined) {
+          if (revision !== state.revision) throw new EditorError("EDITOR_STALE_EDIT");
+          await dispatch(EditorOpcode.SetSelection, { anchor: target, focus: target });
+        }
+        return dispatch(EditorOpcode.InsertImage, { bytes, nowMs: nowMs() });
+      }),
+      onError: reportError,
+    });
+    try { onImages(result); } catch { /* UI callbacks are isolated */ }
+    return result;
+  }
+  const imagePaste = attachImagePaste({ target: input.element, onFiles: files => { void insertImages(files); },
+    isEnabled: () => Boolean(state && !busy && !compositionStart && !disposed) });
   textDragDrop = attachTextDragDrop({
     canvas, scrollport, getGeometry,
     getSelectionSnapshot: () => state ? { text: state.text, anchor: state.anchor,
@@ -446,6 +470,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
         sourceAnchor: drop.kind === "external" ? 0 : drop.sourceAnchor,
         sourceFocus: drop.kind === "external" ? 0 : drop.sourceFocus, nowMs: nowMs() });
     }),
+    onFilesDrop: drop => insertImages(drop.files, { revision: drop.revision, target: drop.target }),
     onClick: point => enqueueTask(() => {
       if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
       if (point.revision !== state.revision) throw new EditorError("EDITOR_STALE_EDIT");
@@ -564,6 +589,12 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
         return selected;
       });
     },
+    insertImages,
+    async exportDocx() {
+      const result = await enqueue(EditorOpcode.ExportDocx);
+      if (result.kind !== "docx") throw new EditorError("EDITOR_INVALID_EXPORT");
+      return { bytes: result.bytes, noticeCount: result.noticeCount, pictureCount: result.pictureCount };
+    },
     async exportDocument() {
       const result = await enqueue(EditorOpcode.Export);
       if (result.kind !== "export") throw new EditorError("EDITOR_INVALID_EXPORT");
@@ -616,6 +647,7 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       scrollport.removeEventListener("wheel", onWheel);
       mouseSelection.dispose();
       textDragDrop.dispose();
+      imagePaste.dispose(); imageCache.clear();
       globalThis.removeEventListener?.("resize", scheduleViewport);
       fitResizeObserver?.disconnect();
       globalThis.removeEventListener?.("resize", scheduleRefit);

@@ -74,7 +74,7 @@ fn insert_image(
     let mut body = 100u64.to_le_bytes().to_vec();
     body.extend_from_slice(bytes);
     session
-        .transact(&command(26, &body))
+        .transact(&command(28, &body))
         .map(|(s, r)| (s, parse(&r)))
         .map_err(|e| e.0)
 }
@@ -258,7 +258,7 @@ fn the_display_bitmap_is_oriented_and_matches_the_decoded_pixels() {
     let raw = decode_jpeg_with_metadata(&bytes, DecodeLimits::default()).unwrap();
     assert_eq!(raw.orientation, 6);
     let (session, _) = insert_image(&load(""), &bytes).unwrap();
-    let response = apply(&session, &command(27, &0u32.to_le_bytes())).1;
+    let response = apply(&session, &command(29, &0u32.to_le_bytes())).1;
     assert_eq!(&response[..4], b"ATIM");
     let (w, h) = (u32_at(&response, 12), u32_at(&response, 16));
     assert_eq!((w, h), (17, 19), "rotated 90 degrees: 19x17 stored");
@@ -277,7 +277,7 @@ fn the_display_bitmap_is_oriented_and_matches_the_decoded_pixels() {
     assert!(
         apply(&session, &command(5, &[]))
             .0
-            .transact(&command(27, &9u32.to_le_bytes()))
+            .transact(&command(29, &9u32.to_le_bytes()))
             .is_err()
     );
 }
@@ -286,7 +286,7 @@ fn the_display_bitmap_is_oriented_and_matches_the_decoded_pixels() {
 fn a_large_picture_gets_a_bounded_display_bitmap() {
     let big = png(3000, 1500, 6);
     let (session, _) = insert_image(&load(""), &big).unwrap();
-    let response = apply(&session, &command(27, &0u32.to_le_bytes())).1;
+    let response = apply(&session, &command(29, &0u32.to_le_bytes())).1;
     let (w, h) = (u32_at(&response, 12), u32_at(&response, 16));
     assert_eq!(w, 1600);
     assert_eq!(h, 800);
@@ -320,7 +320,7 @@ fn original_bytes_survive_in_every_supported_format() {
         let (session, st) =
             insert_image(&load(""), &bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(images(&st.pages[0]).len(), 1, "{name}");
-        let response = apply(&session, &command(27, &0u32.to_le_bytes())).1;
+        let response = apply(&session, &command(29, &0u32.to_le_bytes())).1;
         assert_eq!(&response[..4], b"ATIM", "{name}");
     }
 }
@@ -556,7 +556,7 @@ fn selection_rectangles_cover_the_whole_picture_line_height() {
 
 fn export_docx(session: &EditorSession) -> Result<(u32, u32, Vec<u8>), &'static str> {
     session
-        .transact(&command(28, &[]))
+        .transact(&command(30, &[]))
         .map(|(_, r)| {
             assert_eq!(&r[..4], b"ATDX");
             (u32_at(&r, 8), u32_at(&r, 12), r[16..].to_vec())

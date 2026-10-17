@@ -104,7 +104,7 @@ impl EditorSession {
             out.f64(caret.height);
             return Ok((candidate, out.finish(48)?));
         }
-        if opcode == 27 {
+        if opcode == 29 {
             let slot = Reader::new(body).u32()? as usize;
             let image = candidate
                 .images
@@ -126,7 +126,7 @@ impl EditorSession {
             out.bytes(&bitmap.rgba);
             return Ok((candidate, out.finish(MAX_RESPONSE)?));
         }
-        if opcode == 28 {
+        if opcode == 30 {
             let text = candidate.ensure_document()?.text().to_owned();
             let exported = crate::docx_export::export_docx(&text, &candidate.images)?;
             let mut out = Writer::with_capacity(
@@ -614,7 +614,7 @@ impl EditorSession {
                     .map_err(|_| EditorError("EDITOR_LIMIT"))?;
                 candidate.saved_bytes = candidate.images.plain_bytes(exported);
             }
-            26 => {
+            28 => {
                 let mut r = Reader::new(body);
                 let now = r.u64()?;
                 let image = images::analyze(r.rest()).map_err(map_image_error)?;
@@ -963,7 +963,7 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
     let opcode = u16::from_le_bytes([payload[6], payload[7]]);
     let body = &payload[8..];
     let expected = match opcode {
-        0 | 5 | 6 | 10 | 28 => Some(0),
+        0 | 5 | 6 | 10 | 30 => Some(0),
         1 => None,
         2 => {
             if body.len() >= 8 {
@@ -985,8 +985,8 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         18 if body.len() <= 8 * 1024 * 1024 => None,
         19 if (16..=16 + MAX_QUERY_BYTES).contains(&body.len()) => None,
         20 => Some(8),
-        26 if (9..=8 + images::MAX_IMAGE_BYTES).contains(&body.len()) => None,
-        27 => Some(4),
+        28 if (9..=8 + images::MAX_IMAGE_BYTES).contains(&body.len()) => None,
+        29 => Some(4),
         21 if (36..=36 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
         22 if (28..=28 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
         _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),

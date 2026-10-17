@@ -15,6 +15,7 @@ import { createAboutDialog } from "/about-dialog.mjs";
 import { ABOUT_LICENSES } from "/about-licenses.mjs";
 import { BUILD_INFO } from "/build-info.mjs";
 import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
+import { createImagePicker, imageMessageKey } from "/image-insert.mjs";
 
 const byId = id => document.getElementById(id);
 const nodes = {
@@ -122,11 +123,11 @@ function showPing(ok, messages) {
 }
 
 function messageForError(error, messages) {
-  const key = error?.code === "EDITOR_STALE_SAVE" ? "status-stale-save"
+  const key = imageMessageKey(error?.code) ?? (error?.code === "EDITOR_STALE_SAVE" ? "status-stale-save"
     : error?.code === "EDITOR_UNSUPPORTED_INPUT" ? "status-unsupported-input"
       : ["EDITOR_INVALID_STATE", "EDITOR_INVALID_EXPORT", "INVALID_RESPONSE"].includes(error?.code) ? "status-invalid-document"
-        : "status-editor-error";
-  return messages.get(key) ?? FALLBACK.get(key);
+        : "status-editor-error");
+  return messages.get(key) ?? FALLBACK.get(key) ?? FALLBACK.get("status-editor-error");
 }
 
 function showEditorMessage(text, isError = false) {
@@ -160,10 +161,12 @@ async function start() {
   const aboutKeys = ["dialogTitle", "close", "tabList", "overviewTab", "agplTab", "fontLicensePrefix", "unicodeTab", "version", "buildDate", "sourceUrl", "agplHeading", "unicodeHeading"];
   const contextKeys = ["menu", "undo", "redo", "cut", "copy", "paste", "selectAll"];
   const symbolsAvailable = [...symbolKeys.map(key => `symbols-${key}`), ...specialKeys.map(key => `symbols-${key}`), "symbolsTitle"].every(key => messages.has(key));
+  const imageKeys = ["image-error-unsupported", "image-error-corrupt", "image-error-too-large", "image-error-limit", "image-error-read", "image-inserted", "ribbon-image"];
+  const imageAvailable = imageKeys.every(key => messages.has(key));
   const aboutAvailable = [...aboutKeys.map(key => `about-${key}`), "aboutTitle", "about-buildUnavailable"].every(key => messages.has(key));
   const contextAvailable = contextKeys.every(key => messages.has(`context-${key}`));
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
-    symbolsAvailable, aboutAvailable, onSymbols: () => {
+    symbolsAvailable, imageAvailable, aboutAvailable, onImage: () => { void insertPickedImages(); }, onSymbols: () => {
       if (!symbols || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
       symbolSnapshot = editor.getState(); symbols.open({ returnFocusTo: editor.element });
     },
@@ -179,6 +182,13 @@ async function start() {
   let previewGeneration = 0;
   let previewAbort;
   let disposed = false;
+  const imagePicker = imageAvailable ? createImagePicker() : null;
+  async function insertPickedImages() {
+    if (!imagePicker || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
+    const files = await imagePicker.open();
+    if (files.length > 0) await editor.insertImages(files);
+    editor.focus();
+  }
   const listeners = new AbortController();
   const identityNodes = [byId("page-title"), document.querySelector('[data-i18n="eyebrow"]'), document.querySelector('[data-i18n="footer"]')];
   const textIdentity = identityNodes.map(node => node.textContent);
@@ -192,7 +202,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    symbols?.dispose(); about?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -245,6 +255,7 @@ async function start() {
     navigation?.setEnabled(toolsEnabled, { preview: previewActive });
     shell.setNavigationEnabled(toolsEnabled && toolsAvailable);
     shell.setSymbolsEnabled(toolsEnabled && symbolsAvailable);
+    shell.setImageEnabled(toolsEnabled && imageAvailable);
     if (!toolsEnabled) { symbols?.close(); contextMenu?.close({ restoreFocus: false }); }
     shell.refresh();
   };
@@ -289,6 +300,7 @@ async function start() {
       confirmDiscard: messages.get("confirm-discard"), inputLabel: messages.get("input-label"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
       onZoom: () => { if (!previewActive) updateZoom(); },
       onViewport: () => { if (!previewActive) updateStatus(); },
+      onImages: ({ inserted, failed }) => { if (inserted > 0 && failed === 0) showEditorMessage(i18n.t("image-inserted", { count: inserted })); },
     });
     function closePreview() {
       if (!previewActive || disposed) return;

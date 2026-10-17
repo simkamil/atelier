@@ -227,3 +227,10 @@ engine-error=Indisponible
 rich-workspace-label=Aperçu DOCX en lecture seule
 rich-pages-label=Pages de l’aperçu DOCX
 rich-text-label=Texte de l’aperçu DOCX
+# US-270 : insertion d'images
+image-error-unsupported=Format d’image non pris en charge. Utilisez un fichier PNG, JPEG, GIF ou BMP.
+image-error-corrupt=Cette image est corrompue ou illisible ; elle n’a pas été insérée.
+image-error-too-large=Cette image est trop volumineuse (8 Mio et 16 millions de pixels au maximum).
+image-error-limit=Le document contient déjà le nombre maximal d’images.
+image-error-read=Le fichier image n’a pas pu être lu.
+image-inserted={count, plural, one {# image insérée.} other {# images insérées.}}

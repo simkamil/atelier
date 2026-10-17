@@ -6,7 +6,7 @@ export const EditorOpcode = Object.freeze({
   Undo: 5, Redo: 6, SetSelection: 7, Move: 8, HitTest: 9, Export: 10, MarkSaved: 11,
   DeleteWordBackward: 12, DeleteWordForward: 13, SelectPoint: 14,
   ProbePoint: 15, DropText: 16, ReplaceRange: 17, PreviewDocx: 18, Search: 19, Statistics: 20,
-  Replace: 21, ReplaceAll: 22,
+  Replace: 21, ReplaceAll: 22, InsertImage: 28, ImageBitmap: 29, ExportDocx: 30,
 });
 
 export const EDITOR_LIMITS = Object.freeze({
@@ -22,6 +22,9 @@ export const EDITOR_LIMITS = Object.freeze({
   maxQueryRects: 8192,
   maxExcerptBytes: 128 * 1024,
   maxReplacementCount: 128 * 1024,
+  maxImageBytes: 8 * 1024 * 1024,
+  maxBitmapSide: 1600,
+  maxDocxExportBytes: 32 * 1024 * 1024,
 });
 
 const MAX_U64 = (1n << 64n) - 1n;
@@ -32,6 +35,8 @@ const MAX_PREVIEW_ATLAS_ENTRIES = 4096;
 const EDITOR_MAGIC = [0x41, 0x54, 0x45, 0x44];
 const STATE_MAGIC = [0x41, 0x54, 0x45, 0x53];
 const EXPORT_MAGIC = [0x41, 0x54, 0x45, 0x58];
+const BITMAP_MAGIC = "ATIM";
+const DOCX_EXPORT_MAGIC = "ATDX";
 const DIRECTIONS = new Map([
   ["left", 0], ["right", 1], ["up", 2], ["down", 3], ["home", 4],
   ["end", 5], ["documentStart", 6], ["documentEnd", 7],
@@ -91,7 +96,7 @@ function boolByte(value, name) {
 
 /** Encode an ATED v1 command payload as defined by the shared editor contract. */
 export function encodeEditorCommand(opcode, values = {}) {
-  if (!Number.isInteger(opcode) || opcode < 0 || opcode > 22 || values === null || typeof values !== "object") {
+  if (!Number.isInteger(opcode) || opcode < 0 || (opcode > 22 && opcode < 28) || opcode > 30 || values === null || typeof values !== "object") {
     fail("INVALID_ARGUMENT", "Invalid editor opcode or arguments.");
   }
   let body;
@@ -136,6 +141,15 @@ export function encodeEditorCommand(opcode, values = {}) {
     }
     body.set(query, prefix);
     body.set(replacement, prefix + query.byteLength);
+  } else if (opcode === EditorOpcode.InsertImage) {
+    if (!isBytes(values.bytes) || values.bytes.byteLength === 0) fail("INVALID_ARGUMENT", "Image bytes are required.");
+    if (values.bytes.byteLength > EDITOR_LIMITS.maxImageBytes) fail("MESSAGE_TOO_LARGE", "Image exceeds the picture size limit.");
+    body = new Uint8Array(8 + values.bytes.byteLength);
+    new DataView(body.buffer).setBigUint64(0, u64(values.nowMs, "nowMs"), true);
+    body.set(values.bytes, 8);
+  } else if (opcode === EditorOpcode.ImageBitmap) {
+    body = new Uint8Array(4);
+    new DataView(body.buffer).setUint32(0, u32(values.id, "id"), true);
   } else if (opcode === EditorOpcode.Statistics) {
     body = new Uint8Array(8);
     new DataView(body.buffer).setBigUint64(0, u64(values.revision, "revision"), true);
@@ -214,7 +228,7 @@ export function encodeEditorCommand(opcode, values = {}) {
   } else if (opcode === EditorOpcode.MarkSaved) {
     body = new Uint8Array(8);
     new DataView(body.buffer).setBigUint64(0, u64(values.revision, "revision"), true);
-  } else if ([EditorOpcode.State, EditorOpcode.Undo, EditorOpcode.Redo, EditorOpcode.Export].includes(opcode)) {
+  } else if ([EditorOpcode.State, EditorOpcode.Undo, EditorOpcode.Redo, EditorOpcode.Export, EditorOpcode.ExportDocx].includes(opcode)) {
     body = new Uint8Array();
   } else fail("INVALID_ARGUMENT", "Unknown editor opcode.");
 
@@ -244,6 +258,8 @@ export function decodeEditorResponse(type, payload) {
   if (type !== 0x8020) fail("INVALID_RESPONSE", "Unexpected editor response type.");
   if (payload.byteLength < 8) fail("TRUNCATED", "Truncated editor response.");
   const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === BITMAP_MAGIC) return decodeBitmapResponse(view, payload);
+  if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === DOCX_EXPORT_MAGIC) return decodeDocxExportResponse(view, payload);
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQF") return decodeSearchResponse(view, payload);
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQT") return decodeStatisticsResponse(view, payload);
   if (payload.length >= 4 && ascii(payload.subarray(0, 4)) === "ATQR") return decodeReplacementResponse(view, payload);
@@ -312,6 +328,7 @@ export function decodeEditorResponse(type, payload) {
   if (view.getUint16(4, true) !== 1) fail("UNSUPPORTED_VERSION", "Unsupported editor state version.");
   const flags = view.getUint16(6, true);
   if ((flags & ~0x0f) !== 0) fail("INVALID_RESPONSE", "Unknown editor state flags.");
+  const imageIds = new Set();
   if (payload.byteLength < 64) fail("TRUNCATED", "Truncated editor state header.");
   const revision = view.getBigUint64(8, true);
   const anchor = view.getUint32(16, true);
@@ -349,6 +366,7 @@ export function decodeEditorResponse(type, payload) {
     const bytes = payload.slice(offset, offset + length);
     try { decodedPages.push(decodeDisplayList(bytes)); }
     catch { fail("INVALID_RESPONSE", "Editor returned an invalid ATDL page."); }
+    for (const command of decodedPages[page].commands) if (command.type === "drawImage") imageIds.add(Number(command.imageId));
     pages.push(bytes); offset += length;
   }
   const caretBounds = decodedPages[caretPage].page.bounds;
@@ -374,8 +392,22 @@ export function decodeEditorResponse(type, payload) {
   return {
     kind: "state", revision, flags,
     canUndo: Boolean(flags & 1), canRedo: Boolean(flags & 2), dirty: Boolean(flags & 4), bom: Boolean(flags & 8),
-    anchor, focus, text, textBytes: textBytes.slice(), pages, caret: { page: caretPage, x: caretX, y: caretY, height: caretHeight }, selectionRects,
+    anchor, focus, text, textBytes: textBytes.slice(), pages, imageIds, caret: { page: caretPage, x: caretX, y: caretY, height: caretHeight }, selectionRects,
   };
+}
+
+function decodeBitmapResponse(view, payload) {
+  if (payload.byteLength < 24 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0) fail("INVALID_RESPONSE", "Invalid image bitmap header.");
+  const id = view.getUint32(8, true), width = view.getUint32(12, true), height = view.getUint32(16, true), length = view.getUint32(20, true);
+  if (width < 1 || height < 1 || width > EDITOR_LIMITS.maxBitmapSide || height > EDITOR_LIMITS.maxBitmapSide
+      || length !== width * height * 4 || length !== payload.byteLength - 24) fail("INVALID_RESPONSE", "Invalid image bitmap geometry.");
+  return { kind: "imageBitmap", id, width, height, rgba: payload.slice(24) };
+}
+
+function decodeDocxExportResponse(view, payload) {
+  if (payload.byteLength < 16 || view.getUint16(4, true) !== 1 || view.getUint16(6, true) !== 0
+      || payload.byteLength > 16 + EDITOR_LIMITS.maxDocxExportBytes) fail("INVALID_RESPONSE", "Invalid DOCX export response.");
+  return { kind: "docx", noticeCount: view.getUint32(8, true), pictureCount: view.getUint32(12, true), bytes: payload.slice(16) };
 }
 
 function decodeReplacementResponse(view, payload) {
