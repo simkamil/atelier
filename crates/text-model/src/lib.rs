@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod inline_image;
 pub mod navigation;
 pub mod plain_io;
 pub mod rich;
