@@ -502,10 +502,7 @@ impl<'a> Gen<'a> {
             let blocks = c.blocks.to_vec();
             self.emit_container(&el.children, &blocks, Some(id));
             // A cell must end with a paragraph.
-            if !blocks
-                .last()
-                .is_some_and(|b| matches!(self.doc.node(*b), Some(Node::Paragraph(_))))
-            {
+            if !self.ends_with_paragraph(&blocks) {
                 let w = self.p.w.clone();
                 self.out.empty(&format!("{w}:p"), std::iter::empty());
             }
@@ -555,9 +552,7 @@ impl<'a> Gen<'a> {
         let children: &[super::super::preserve::PreservedChild] = skel.map_or(&[], |e| &e.children);
         self.emit_container(children, &blocks, None);
         // A cell must end with a paragraph.
-        let last_is_paragraph = blocks
-            .last()
-            .is_some_and(|b| matches!(self.doc.node(*b), Some(Node::Paragraph(_))));
+        let last_is_paragraph = self.ends_with_paragraph(&blocks);
         if !last_is_paragraph {
             self.out.empty(&format!("{w}:p"), std::iter::empty());
         }
