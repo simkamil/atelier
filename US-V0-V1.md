@@ -431,13 +431,13 @@ Réf : §6.7 · Taille : M · Dépend de : US-090
 - [x] File de commandes, réponses associées par identifiant.
 - [x] Les listes d'affichage sont copiées une fois depuis la mémoire WASM vers un `ArrayBuffer` JS indépendant, puis ce tampon est transféré au fil principal sans copie supplémentaire. `WebAssembly.Memory.buffer` n'est jamais placé dans la liste de transfert.
 - [x] Test : après réception et transfert d'une liste, le moteur traite une nouvelle commande ; le tampon JS transféré est détaché côté émetteur, la mémoire WASM reste utilisable et les octets reçus correspondent à la sortie initiale. V0/V1 fonctionnent sans `SharedArrayBuffer`.
-- [ ] Une opération longue (ouverture, export) peut être annulée et signale sa progression.
+- [x] Une opération longue (ouverture, export) peut être annulée et signale sa progression.
 
 Réf : §6.7 · Taille : S · Dépend de : US-091
 
 ## E0.11 — Socle du front-end
 
-US-092 en cours (2026-10-11) : [transport et limites](docs/us-092-worker.md). Progression/annulation des copies vérifiées ; le critère opération métier ouverture/export reste ouvert.
+US-092 terminée (2026-10-17) : [transport, limites et opérations annulables](docs/us-092-worker.md). Ouverture et export DOCX par étapes bornées, progression monotone, annulation entre étapes ; l'annulation est au niveau API (aucun bouton d'interface raccordé).
 
 #### US-100 — Interface Host
 *En tant que* développeur, *je veux* une interface `Host` *afin que* le front-end soit identique sur le desktop et le web.
