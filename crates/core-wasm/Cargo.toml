@@ -18,6 +18,7 @@ abi-test-hooks = []
 atelier-font = { path = "../font" }
 atelier-fmt-ooxml = { path = "../fmt-ooxml" }
 atelier-geom = { path = "../geom" }
+atelier-image = { path = "../image" }
 atelier-model = { path = "../model" }
 atelier-render = { path = "../render" }
 atelier-shape = { path = "../shape" }

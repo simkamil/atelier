@@ -5,14 +5,18 @@ use atelier_font::FontFace;
 use atelier_geom::{FlattenedSubpath, Point, Rect};
 use atelier_render::{Color, Command, DisplayList, DisplayPath, FillRule, PageInfo, PathElement};
 use atelier_shape::{LatinShaper, ShapeOptions};
+use atelier_text_layout::inline_object::{self, LineBox};
 use atelier_unicode::segmentation::grapheme_boundaries;
 use std::collections::BTreeMap;
+
+use crate::images::ImageStore;
 
 const PAGE_WIDTH: f64 = 595.276;
 const PAGE_HEIGHT: f64 = 841.89;
 const MARGIN: f64 = 54.0;
 const FONT_SIZE: f64 = 11.0;
 const LINE_HEIGHT: f64 = 14.0;
+const DESCENT: f64 = LINE_HEIGHT - FONT_SIZE;
 const MAX_PAGES: usize = 1024;
 const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ATDL_BYTES: usize = 26 * 1024 * 1024;
@@ -29,12 +33,15 @@ pub(crate) struct CaretPoint {
     pub page: usize,
     pub x: f64,
     pub y: f64,
+    pub height: f64,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct LineMap {
     pub page: usize,
     pub top: f64,
+    /// Line box height: the text line height, or more when a picture is on it.
+    pub height: f64,
     pub baseline: f64,
     pub start: usize,
     pub end: usize,
@@ -58,8 +65,32 @@ pub(crate) enum LayoutError {
     TooLarge,
 }
 
+struct Chunk {
+    from: usize,
+    to: usize,
+    display: String,
+    width: f64,
+    /// Picture slot and its drawn height, for an inline picture.
+    image: Option<(usize, f64)>,
+}
+
+/// Drawn size (points) of a picture: natural size at 96 dpi, shrunk
+/// proportionally to the text width and to the page height.
+fn picture_size(
+    image: &atelier_text_model::inline_image::InlineImage,
+    available: f64,
+) -> Option<(f64, f64)> {
+    let (w, h) = inline_object::natural_size(image.width, image.height, image.orientation);
+    inline_object::fit(w, h, available, PAGE_HEIGHT - 2.0 * MARGIN - DESCENT)
+}
+
 impl Layout {
-    pub fn new(text: &str, anchor: usize, focus: usize) -> Result<Self, LayoutError> {
+    pub fn new(
+        text: &str,
+        anchor: usize,
+        focus: usize,
+        images: &ImageStore,
+    ) -> Result<Self, LayoutError> {
         let font_bytes = include_bytes!("../../../data/fonts/carlito/Carlito-Regular.ttf");
         let face = FontFace::parse(font_bytes).map_err(|_| LayoutError::Font)?;
         let shaper = LatinShaper::new(&face).map_err(|_| LayoutError::Shape)?;
@@ -70,7 +101,7 @@ impl Layout {
         let mut estimated_atdl = 44usize;
         let mut page_path_elements = vec![0usize];
         let mut page = 0usize;
-        let mut baseline = MARGIN + FONT_SIZE;
+        let mut cursor = MARGIN;
         let available = PAGE_WIDTH - 2.0 * MARGIN;
         let mut paragraph_start = 0usize;
         let mut i = 0usize;
@@ -92,7 +123,8 @@ impl Layout {
                     &mut commands,
                     &mut lines,
                     &mut page,
-                    &mut baseline,
+                    &mut cursor,
+                    images,
                     &mut outlines,
                     &mut estimated_atdl,
                     &mut page_path_elements,
@@ -115,7 +147,8 @@ impl Layout {
             &mut commands,
             &mut lines,
             &mut page,
-            &mut baseline,
+            &mut cursor,
+            images,
             &mut outlines,
             &mut estimated_atdl,
             &mut page_path_elements,
@@ -133,7 +166,7 @@ impl Layout {
                             pair[0].1,
                             line.top,
                             (pair[1].1 - pair[0].1).max(0.5),
-                            LINE_HEIGHT,
+                            line.height,
                         ));
                     }
                 }
@@ -142,7 +175,7 @@ impl Layout {
                 if break_range.start < range_end && break_range.end > range_start {
                     let line = &lines[line_index];
                     let x = line.slots.last().map_or(MARGIN, |slot| slot.1);
-                    selection_rects.push((line.page, x, line.top, 1.5, LINE_HEIGHT));
+                    selection_rects.push((line.page, x, line.top, 1.5, line.height));
                 }
             }
         }
@@ -193,16 +226,33 @@ impl Layout {
         commands: &mut Vec<Vec<Command>>,
         lines: &mut Vec<LineMap>,
         page: &mut usize,
-        baseline: &mut f64,
+        cursor: &mut f64,
+        images: &ImageStore,
         outlines: &mut BTreeMap<u16, Vec<FlattenedSubpath>>,
         estimated_atdl: &mut usize,
         page_path_elements: &mut Vec<usize>,
     ) -> Result<(), LayoutError> {
         let paragraph = &text[range.clone()];
         let bounds = grapheme_boundaries(paragraph);
-        let mut chunks: Vec<(usize, usize, String, f64)> = Vec::new();
+        let mut chunks: Vec<Chunk> = Vec::new();
         for g in bounds.segments() {
             let source = &paragraph[g.clone()];
+            if let Some((slot, size)) = source
+                .chars()
+                .next()
+                .filter(|_| source.chars().count() == 1)
+                .and_then(|c| images.slot_of(c))
+                .and_then(|slot| Some((slot, picture_size(images.get(slot)?, available)?)))
+            {
+                chunks.push(Chunk {
+                    from: range.start + g.start,
+                    to: range.start + g.end,
+                    display: String::new(),
+                    width: size.0,
+                    image: Some((slot, size.1)),
+                });
+                continue;
+            }
             let display = if source == "\t" {
                 "    ".to_owned()
             } else {
@@ -212,18 +262,24 @@ impl Layout {
                 .shape_text(&display, ShapeOptions::default())
                 .map_err(|_| LayoutError::Shape)?;
             let width = shaped.x_advance as f64 / 64.0;
-            chunks.push((range.start + g.start, range.start + g.end, display, width));
+            chunks.push(Chunk {
+                from: range.start + g.start,
+                to: range.start + g.end,
+                display,
+                width,
+                image: None,
+            });
         }
-        let mut rows: Vec<Vec<(usize, usize, String, f64)>> = Vec::new();
+        let mut rows: Vec<Vec<Chunk>> = Vec::new();
         let mut row = Vec::new();
         let mut width = 0.0;
         for chunk in chunks {
-            if !row.is_empty() && width + chunk.3 > available {
+            if !row.is_empty() && width + chunk.width > available {
                 rows.push(row);
                 row = Vec::new();
                 width = 0.0;
             }
-            width += chunk.3;
+            width += chunk.width;
             row.push(chunk);
         }
         if row.is_empty() {
@@ -232,7 +288,17 @@ impl Layout {
             rows.push(row);
         }
         for row in rows {
-            if *baseline > PAGE_HEIGHT - MARGIN {
+            let line_box = inline_object::line_box(
+                FONT_SIZE,
+                DESCENT,
+                row.iter().filter_map(|c| c.image.map(|(_, h)| h)),
+            );
+            let has_picture = row.iter().any(|c| c.image.is_some());
+            let overflows = *cursor + line_box.ascent > PAGE_HEIGHT - MARGIN
+                || (has_picture
+                    && *cursor > MARGIN
+                    && *cursor + line_box.height() > PAGE_HEIGHT - MARGIN);
+            if overflows {
                 *page += 1;
                 if *page >= MAX_PAGES {
                     return Err(LayoutError::TooManyPages);
@@ -246,21 +312,41 @@ impl Layout {
                 commands.push(Vec::new());
                 page_path_elements.push(0);
                 *estimated_atdl = next_estimate;
-                *baseline = MARGIN + FONT_SIZE;
+                *cursor = MARGIN;
             }
-            let top = *baseline - FONT_SIZE;
+            let LineBox { ascent, descent } = line_box;
+            let baseline = *cursor + ascent;
+            let top = *cursor;
             let mut x = MARGIN;
-            let start = row.first().map_or(range.start, |c| c.0);
-            let end = row.last().map_or(range.end, |c| c.1);
+            let start = row.first().map_or(range.start, |c| c.from);
+            let end = row.last().map_or(range.end, |c| c.to);
             let mut slots = vec![(start, x)];
-            for (from, to, display, _) in row {
+            for chunk in row {
+                let (to, display) = (chunk.to, chunk.display);
+                if let Some((slot, height)) = chunk.image {
+                    let next_estimate = estimated_atdl
+                        .checked_add(41)
+                        .ok_or(LayoutError::TooLarge)?;
+                    if next_estimate > MAX_ATDL_BYTES {
+                        return Err(LayoutError::TooLarge);
+                    }
+                    *estimated_atdl = next_estimate;
+                    commands[*page].push(Command::DrawImage {
+                        image_id: slot as u64,
+                        bounds: Rect::from_xywh(x, baseline - height, chunk.width, height)
+                            .map_err(|_| LayoutError::DisplayList)?,
+                    });
+                    x += chunk.width;
+                    slots.push((to, x));
+                    continue;
+                }
                 let shaped = shaper
                     .shape_text(&display, ShapeOptions::default())
                     .map_err(|_| LayoutError::Shape)?;
                 let mut pen = x;
                 for glyph in shaped.glyphs {
                     let gx = pen + glyph.x_offset as f64 / 64.0;
-                    let gy = *baseline - glyph.y_offset as f64 / 64.0;
+                    let gy = baseline - glyph.y_offset as f64 / 64.0;
                     let scale = FONT_SIZE / f64::from(face.metrics().units_per_em);
                     if let std::collections::btree_map::Entry::Vacant(entry) =
                         outlines.entry(glyph.glyph_id)
@@ -330,7 +416,6 @@ impl Layout {
                 }
                 x += shaped.x_advance as f64 / 64.0;
                 slots.push((to, x));
-                let _ = from;
             }
             if slots.len() == 1 {
                 slots.push((end, x));
@@ -338,12 +423,13 @@ impl Layout {
             lines.push(LineMap {
                 page: *page,
                 top,
-                baseline: *baseline,
+                height: line_box.height(),
+                baseline,
                 start,
                 end,
                 slots,
             });
-            *baseline += LINE_HEIGHT;
+            *cursor = baseline + descent;
         }
         Ok(())
     }
@@ -361,6 +447,7 @@ impl Layout {
             page: line.page,
             x,
             y: line.top,
+            height: line.height,
         }
     }
 
@@ -369,7 +456,7 @@ impl Layout {
             .lines
             .iter()
             .filter(|line| line.page == page)
-            .min_by(|a, b| (a.baseline - y).abs().total_cmp(&(b.baseline - y).abs()))?;
+            .min_by(|a, b| line_distance(a, y).total_cmp(&line_distance(b, y)))?;
         line.slots
             .iter()
             .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))
@@ -450,6 +537,16 @@ impl Layout {
                     .map(|(index, _)| index)
             })
             .unwrap_or(0)
+    }
+}
+
+/// Distance from `y` to a line: to its baseline for a text line, to its box
+/// for a taller line holding a picture (so a click inside the picture hits it).
+fn line_distance(line: &LineMap, y: f64) -> f64 {
+    if line.height > LINE_HEIGHT {
+        (line.top - y).max(y - (line.top + line.height)).max(0.0)
+    } else {
+        (line.baseline - y).abs()
     }
 }
 

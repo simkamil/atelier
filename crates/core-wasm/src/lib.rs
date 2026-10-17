@@ -13,6 +13,7 @@ pub mod editor;
 #[path = "editor-layout.rs"]
 mod editor_layout;
 mod editor_queries;
+mod images;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod protocol;
 pub mod rich_preview;

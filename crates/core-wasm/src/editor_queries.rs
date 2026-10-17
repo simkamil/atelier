@@ -289,7 +289,7 @@ fn range_rects(
                 rects
                     .try_reserve(1)
                     .map_err(|_| EditorError("EDITOR_LIMIT"))?;
-                rects.push((line.page, x, line.top, width, 14.0));
+                rects.push((line.page, x, line.top, width, line.height));
             }
         }
     }
