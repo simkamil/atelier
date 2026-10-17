@@ -93,6 +93,8 @@ unsafe extern "system" fn event_add_ref(this: *mut EventHandler) -> u32 {
     if this.is_null() {
         return 0;
     }
+    #[cfg(test)]
+    ledger::bump_ours(&ledger::OUR_ADD_REF);
     unsafe {
         (*this)
             .refs
@@ -104,6 +106,8 @@ unsafe extern "system" fn event_release(this: *mut EventHandler) -> u32 {
     if this.is_null() {
         return 0;
     }
+    #[cfg(test)]
+    ledger::bump_ours(&ledger::OUR_RELEASE);
     let count = unsafe {
         (*this)
             .refs
@@ -123,6 +127,8 @@ unsafe extern "system" fn event_release(this: *mut EventHandler) -> u32 {
 }
 
 fn new_event(shared: &Shared, kind: EventKind) -> *mut EventHandler {
+    #[cfg(test)]
+    ledger::bump_ours(&ledger::OUR_ADD_REF); // the creation reference
     shared.callback_objects.fetch_add(1, Ordering::AcqRel);
     LIVE_CALLBACK_OBJECTS.fetch_add(1, Ordering::AcqRel);
     let iid = match kind {
@@ -380,6 +386,7 @@ fn resource_requested(shared: &Shared, args: *mut c_void) -> i32 {
     if hr < 0 {
         let refusal = refuse_resource_request(shared, args);
         if !request.is_null() {
+            note_acquired();
             unsafe { release_interface(request) };
         }
         return refusal;
@@ -387,6 +394,7 @@ fn resource_requested(shared: &Shared, args: *mut c_void) -> i32 {
     if request.is_null() {
         return refuse_resource_request(shared, args);
     }
+    note_acquired();
     let mut uri = null_mut();
     let mut method = null_mut();
     let result = (|| {
@@ -492,6 +500,7 @@ fn make_response(
     if stream.is_null() {
         return 0x8007_000e_u32 as i32;
     }
+    note_acquired();
     let reason_w: Vec<u16> = reason.encode_utf16().chain(Some(0)).collect();
     let headers = format!(
         "Content-Type: {mime}\r\nContent-Length: {}\r\nContent-Security-Policy: {}\r\nX-Content-Type-Options: nosniff\r\n",
@@ -529,6 +538,7 @@ fn make_response(
     if response.is_null() {
         return E_POINTER;
     }
+    note_acquired();
     // ICoreWebView2WebResourceRequestedEventArgs::put_Response is SDK slot 5.
     let result = unsafe {
         call_vtable::<unsafe extern "system" fn(*mut c_void, *mut c_void) -> i32>(args, 5)(
@@ -564,9 +574,7 @@ pub(super) struct Registrations {
 
 pub(super) fn install(core: *mut c_void, shared: &Shared) -> io::Result<()> {
     // Keep one core reference for event removal, always before Close.
-    unsafe {
-        call_vtable::<unsafe extern "system" fn(*mut c_void) -> u32>(core, 1)(core);
-    }
+    unsafe { add_ref_interface(core) };
     let mut regs = Registrations {
         core: core as usize,
         ..Registrations::default()
@@ -592,6 +600,7 @@ pub(super) fn install(core: *mut c_void, shared: &Shared) -> io::Result<()> {
             "ICoreWebView2_22 returned a null interface",
         ));
     }
+    note_acquired();
     regs.core22 = core22 as usize;
     let wildcard: Vec<u16> = "*".encode_utf16().chain(Some(0)).collect();
     // Request-source All is 0xffffffff; resource context 0 is All (SDK slot 123).
