@@ -46,7 +46,7 @@ function validateOptions({ labels, metadata, licenseTexts } = {}) {
  * fontLicensePrefix, unicodeTab, version, buildDate, sourceUrl, agplHeading,
  * and unicodeHeading. A font tab is named `${fontLicensePrefix} ${font.name}`.
  *
- * @param {{labels:Record<string,string>,metadata:{version:string,buildDate:string,sourceUrl:string},licenseTexts:{agpl:string,fonts:Array<{name:string,text:string}>,unicode:string}}} options
+ * @param {{labels:Record<string,string>,metadata:{version:string,buildDate:string,buildDateIso?:string,sourceUrl:string},licenseTexts:{agpl:string,fonts:Array<{name:string,text:string}>,unicode:string}}} options
  * @returns {{element:HTMLDialogElement,open:Function,close:Function,dispose:Function}}
  */
 export function createAboutDialog(options) {
@@ -73,14 +73,19 @@ export function createAboutDialog(options) {
   const overviewPanel = element("section", "about-dialog-panel about-dialog-overview");
   const overviewHeading = element("h3", "about-dialog-panel-heading", labels.overviewTab);
   const metadataList = element("dl", "about-dialog-metadata");
-  for (const [label, value] of [
+  for (const [label, value, isoDay] of [
     [labels.version, metadata.version],
-    [labels.buildDate, metadata.buildDate],
+    [labels.buildDate, metadata.buildDate, metadata.buildDateIso],
     [labels.sourceUrl, metadata.sourceUrl],
   ]) {
     const term = element("dt", "about-dialog-metadata-label", label);
     const detail = element("dd", "about-dialog-metadata-value");
-    const code = element("code", "about-dialog-metadata-text", value);
+    const code = element("code", "about-dialog-metadata-text");
+    if (typeof isoDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(isoDay)) {
+      const time = element("time", "", value);
+      time.dateTime = isoDay;
+      code.append(time);
+    } else code.textContent = value;
     detail.append(code);
     metadataList.append(term, detail);
   }

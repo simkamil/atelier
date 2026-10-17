@@ -1652,7 +1652,8 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
            ready.about.open({returnFocusTo:editor.element});
            const aboutText=ready.about.element.textContent;
            const utilitiesOk=/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(buildInfo.buildDate)
-             &&aboutText.includes(buildInfo.version)&&aboutText.includes(buildInfo.buildDate)
+             &&aboutText.includes(buildInfo.version)
+             &&[...ready.about.element.querySelectorAll('time[datetime]')].some(t=>t.getAttribute('datetime')===buildInfo.buildDate&&t.textContent.trim()!==''&&t.textContent!==buildInfo.buildDate)
              &&aboutText.includes(legal.agpl)&&aboutText.includes(legal.unicode)
              &&legal.fonts.every(font=>aboutText.includes(font.text))&&catalogue.symbols.length>2000&&!!ready.symbols&&!!ready.contextMenu;
            ready.about.close();

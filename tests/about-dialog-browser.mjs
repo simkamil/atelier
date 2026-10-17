@@ -62,6 +62,11 @@ export async function run({ assert = (condition, message) => { if (!condition) t
 
     const textFor = value => [...controller.element.querySelectorAll(".about-dialog-metadata-value code")].find(node => node.textContent === value);
     verify(textFor(metadata.version)?.textContent === metadata.version && textFor(metadata.buildDate)?.textContent === metadata.buildDate && textFor(metadata.sourceUrl)?.textContent === metadata.sourceUrl, "version, build date, and source address are displayed exactly and remain selectable text");
+    const plainTime = controller.element.querySelector(".about-dialog-metadata-value time");
+    verify(plainTime === null, "a build date without an ISO day is shown as plain text without a time element");
+    const isoController = createAboutDialog({ labels, metadata: { ...metadata, buildDate: "13 octobre 2026", buildDateIso: "2026-10-13" }, licenseTexts });
+    const isoTime = isoController.element.querySelector(".about-dialog-metadata-value code time");
+    verify(isoTime?.getAttribute("datetime") === "2026-10-13" && isoTime.textContent === "13 octobre 2026", "build date is rendered as a semantic time element with the ISO day and the formatted visible text");
     verify(!controller.element.querySelector("a[href]") && !controller.element.querySelector("[data-about-external-link]"), "source address is displayed without creating navigation");
 
     const tabs = [...controller.element.querySelectorAll('[role="tab"]')];
