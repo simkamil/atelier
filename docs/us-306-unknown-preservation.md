@@ -5,8 +5,9 @@
 interprète (`document.xml`, `styles.xml`, `settings.xml`). Ce qu'il ne lit pas
 est copié comme sous-arbre opaque (US-032) pendant l'analyse, rattaché à son
 nœud avec sa position, et le résultat est rendu dans `ImportedDocx::preserved`.
-Il n'existe pas encore d'écrivain (US-307) : cette story livre la **capture** et
-la preuve qu'elle est complète. Le code est dans
+L'écrivain (US-307, `docs/us-307-docx-writer.md`) réémet ces nœuds à leur place :
+cette story livre la **capture**, la preuve qu'elle est complète et le test d'aller-retour
+(« Aller-retour sur le corpus »). Le code est dans
 `crates/fmt-ooxml/src/docx/preserve.rs` ; `docx.rs` et `tables.rs` n'ont que les
 points d'appel.
 
@@ -229,3 +230,48 @@ limites sur document hostile, contexte d'espaces de noms ; bancs `#[ignore]`).
 Provenance : `basic.docx` est synthétique ; `tests/docx-reference/libreoffice/rich.docx`
 vient de LibreOffice 26.8 ; les autres sont construits à la main. **Aucun fichier
 Word** n'a été testé (Word n'est pas installé).
+
+## Aller-retour sur le corpus
+
+`crates/fmt-ooxml/tests/docx_roundtrip_corpus.rs` : ouvrir (`import_docx`), enregistrer sans
+modifier (`write_docx`, parties réutilisées puis `regenerate_all`), comparer **chaque partie XML**
+au source en forme normalisée (noms résolus en espace de noms, attributs triés, déclarations
+`xmlns` ignorées, espaces entre éléments ignorés, texte conservé), ordre des éléments compris
+(`first_diff`). En cas d'écart le rapport donne le premier écart et le bilan des éléments et
+attributs perdus et ajoutés (multi-ensemble par chemin) ; une partie binaire doit rester identique
+octet pour octet. Les contrôles de `support::round_trip` s'y ajoutent (réimport égal du modèle et
+du squelette). Le test écrit une ligne par document (`--nocapture`) et échoue au premier écart.
+
+* Corpus du dépôt : tous les `.docx/.dotx/.docm/.dotm` sous `tests/` (4 documents lisibles :
+  `basic.docx`, `libreoffice/rich.docx`, `libreoffice/properties.docx`, `encrypted-reference/plain.docx`) ;
+  `encrypted-reference/encrypted.docx` est signalé et ignoré (conteneur chiffré, ouverture sans mot de
+  passe impossible).
+* 62 documents synthétiques générés par le test : un élément inconnu (extension `w14`/`w15`, espace
+  de noms étranger avec déclaration locale, élément `w:` futur, `mc:AlternateContent`) inséré à chaque
+  position parmi les enfants de `w:p`, `w:r`, `w:pPr`, `w:rPr` (de run et de marque de paragraphe),
+  `w:tbl`, `w:tr`, `w:tc`, `w:tblPr`, `w:trPr`, `w:tcPr`, `w:sectPr` (final et de paragraphe), `w:body` ;
+  attributs inconnus (`w14:paraId`, `w15:*`, étranger, `w:rsid*`) sur ces éléments ; un document
+  d'extensions et conteneurs (`sdt`, `ins`/`del`, champs, signets, commentaires, `permStart`) ; un
+  document `styles.xml` + `settings.xml` avec éléments et attributs inconnus.
+  Un document ajoute `headerReference`/`footerReference` (parties en-tête et pied avec éléments inconnus), un
+  `numbering.xml` avec inconnus et des inconnus à la racine de `styles.xml` (parties réutilisées ou régénérées).
+* Contrôles propres au test : chaque préfixe de `mc:Ignorable` d'une partie de sortie doit être déclaré
+  (`xmlns`) sur l'élément qui le porte ou un ancêtre ; la normalisation garde les nœuds texte en ordre
+  parmi les enfants (élément mixte) ; le rapport compte toutes les parties XML comparées, octets
+  identiques compris.
+* Résultat : 67 documents (4 + 63), 0 perte, 0 élément ajouté.
+
+Défaut trouvé et corrigé : l'écrivain ajoutait un paragraphe vide à la fin d'un corps ou d'une cellule
+quand le dernier bloc du modèle était un élément inconnu (`Node::Opaque`), même après un paragraphe ;
+`ends_with_paragraph` ignore désormais les blocs opaques (sauf `mc:AlternateContent`).
+
+Règle du paragraphe final (Word) : un corps ou une cellule régénéré se termine par un `w:p` quand le
+dernier bloc **connu** est un tableau, y compris si des éléments inconnus (`Node::Opaque`) le suivent
+(le `w:p` est alors écrit après eux, avant `w:sectPr`) ou si le tableau est dans un `w:sdt` final. Une
+source déjà ainsi (tableau puis inconnu) est recopiée telle quelle tant que la partie n'est pas régénérée ;
+régénérée, la seule différence est ce `w:p`. Test `bodies_and_cells_end_with_a_paragraph_after_a_trailing_table`
+(5 cas : `[tbl, inconnu]` en fin de corps et de cellule, `[p, sdt(tbl)]` en corps et en cellule).
+
+Limites inchangées : commentaires XML et instructions de traitement des parties interprétées
+non préservés (ignorés par la normalisation) ; un tableau qui termine un corps ou une cellule reçoit
+un paragraphe vide ; aucun fichier produit par Word n'est dans le corpus.

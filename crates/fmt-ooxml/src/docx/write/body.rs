@@ -328,6 +328,19 @@ impl<'a> Gen<'a> {
 
     // ----- block containers -------------------------------------------------
 
+    /// Whether the last block that is not an unknown element (`Node::Opaque`,
+    /// except `mc:AlternateContent`, whose branch is edited) is a paragraph: the container then already ends with one (US-306).
+    pub fn ends_with_paragraph(&self, blocks: &[NodeId]) -> bool {
+        blocks
+            .iter()
+            .rev()
+            .find(|b| match self.doc.node(**b) {
+                Some(Node::Opaque(o)) => local_of(&o.kind) == "AlternateContent",
+                _ => true,
+            })
+            .is_some_and(|b| matches!(self.doc.node(*b), Some(Node::Paragraph(_))))
+    }
+
     /// Writes the children of a container: the skeleton `children` in their
     /// order, with the model blocks `model` (the current list of the container)
     /// deciding what exists and where new ones go.
@@ -389,10 +402,9 @@ impl<'a> Gen<'a> {
             owner,
             // A body must end with a paragraph (Word's rule): a body without
             // blocks, or ending with a table, gets an empty one.
-            empty_paragraph: terminate
-                && model
-                    .last()
-                    .is_none_or(|b| !matches!(self.doc.node(*b), Some(Node::Paragraph(_)))),
+            // Unknown elements (`Node::Opaque`) do not count: a paragraph
+            // before them is still the last block (US-306, round trip).
+            empty_paragraph: terminate && !self.ends_with_paragraph(model),
             pending: Vec::new(),
         };
         self.walk(children, &mut state);
