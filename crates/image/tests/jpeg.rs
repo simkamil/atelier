@@ -106,17 +106,24 @@ fn rejects_truncation_bad_markers_bad_segments_and_over_budget_dimensions() {
 }
 
 #[test]
-fn malformed_exif_orientation_is_a_typed_error() {
+fn malformed_exif_orientation_means_as_stored() {
     let jpeg = fixture("baseline-444", "jpg");
     let mut with_exif = add_exif(&jpeg, 1, true);
     // The orientation value is the TIFF SHORT stored inline in the APP1 IFD entry.
     let marker = with_exif.windows(6).position(|w| w == b"Exif\0\0").unwrap();
     with_exif[marker + 6 + 8 + 2 + 8] = 9;
     with_exif[marker + 6 + 8 + 2 + 9] = 0;
-    assert!(matches!(
-        decode_jpeg_with_metadata(&with_exif, DecodeLimits::default()),
-        Err(ImageError::InvalidData(_))
-    ));
+    let decoded = decode_jpeg_with_metadata(&with_exif, DecodeLimits::default()).unwrap();
+    assert_eq!(decoded.orientation, 1);
+    assert_eq!((decoded.image.width, decoded.image.height), (19, 17));
+    // Orientation 0 and a bad entry type are equally ignored.
+    with_exif[marker + 6 + 8 + 2 + 8] = 0;
+    assert_eq!(
+        decode_jpeg_with_metadata(&with_exif, DecodeLimits::default())
+            .unwrap()
+            .orientation,
+        1
+    );
 }
 
 #[test]
@@ -131,14 +138,12 @@ fn exif_maximum_offset_and_truncated_ifd_never_panic() {
     let result = std::panic::catch_unwind(|| {
         decode_jpeg_with_metadata(&maximal_offset, DecodeLimits::default())
     });
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_err());
+    assert_eq!(result.unwrap().unwrap().orientation, 1);
 
     let truncated = add_truncated_exif(&jpeg);
     let result =
         std::panic::catch_unwind(|| decode_jpeg_with_metadata(&truncated, DecodeLimits::default()));
-    assert!(result.is_ok());
-    assert!(result.unwrap().is_err());
+    assert_eq!(result.unwrap().unwrap().orientation, 1);
 }
 
 #[test]
