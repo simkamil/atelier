@@ -82,6 +82,13 @@ Réf : §6.16 · Taille : S · Dépend de : US-001
 
 Validation US-005 (2026-10-09) : [preuves et limites](docs/DEVELOPMENT.md#preuve-us-005--2026-10-09).
 
+#### US-006 — Budget WASM séparé entre code et polices
+*En tant que* développeur, *je veux* mesurer séparément le code et les polices du moteur WASM *afin que* la tolérance de croissance porte sur le code et non sur des données figées.
+- [ ] `tests/check-wasm-size.mjs` contrôle deux budgets : les polices embarquées (liste figée, empreinte par police) et le code (référence propre, tolérance de 10 %).
+- [ ] La référence est enregistrée dans `tools/bench/references/wasm-size.json` et la CI échoue si l'un des deux budgets est dépassé ou si une police change sans mise à jour explicite.
+
+Réf : §8, [plan de bascule](docs/rich-editor-migration.md) · Taille : S · Dépend de : US-090
+
 ## E0.2 — Unicode et encodages
 
 #### US-010 — Générateur de tables Unicode
@@ -704,6 +711,61 @@ Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 
 
 Réf : F-TXT-012 · Taille : S · Dépend de : US-212
 
+## E1.3a — Bascule vers l'éditeur riche
+
+Stories techniques du [plan de bascule](docs/rich-editor-migration.md) validé le 2026-10-18 : un seul éditeur fondé sur le modèle riche remplace l'éditeur texte brut d'US-120.
+
+#### US-203 — Protocole de l'éditeur riche (v2)
+*En tant que* développeur, *je veux* un protocole d'édition versionné et incrémental *afin que* l'éditeur riche n'échange que ce qui change.
+- [ ] Enveloppe ATED v2 : identifiant de document u32, positions plates en octets UTF-8 avec `
+` entre paragraphes, réponse limitée aux pages modifiées, à une fenêtre de texte et à la révision ; v1 inchangée.
+- [ ] Codec de référence Rust et JS figé, tests de troncature et de limites ; `web/rich-editor-protocol.mjs` et cache de pages `web/editor-page-cache.mjs`.
+
+Réf : §6.7 · Taille : M · Dépend de : US-091
+
+#### US-204 — Modèle riche éditable à positions plates
+*En tant que* développeur, *je veux* éditer le modèle riche en place par positions plates *afin que* la saisie reste rapide sur un long document.
+- [ ] Index de sommes préfixes par paragraphe (O(log n)) ; conversions position plate ↔ (paragraphe, décalage) cohérentes.
+- [ ] Édition multi-paragraphes (Entrée scinde avec le style suivant, suppression qui fusionne) appliquée en place avec son inverse, sans clone ; 10 000 séquences aléatoires reviennent à l'état initial après inversion.
+- [ ] Une édition au milieu d'un document de 300 pages coûte moins de 1 ms côté modèle (banc).
+
+Réf : §6.4 · Taille : M · Dépend de : US-200, US-203
+
+#### US-216 — Mise en page et rendu incrémentaux de l'éditeur
+*En tant que* développeur, *je veux* brancher la mise en page incrémentale et la géométrie du curseur dans le moteur *afin de* ne recalculer et n'émettre que les pages modifiées.
+- [ ] `rich_layout.rs` et `rich_paint.rs` : incrémental identique au calcul complet, cache par page, profils TXT et document.
+- [ ] Curseur, test de position et rectangles de sélection testés ; l'aperçu DOCX utilise le même dessin.
+
+Réf : §6.5 · Taille : M · Dépend de : US-203, US-214
+
+#### US-217 — Édition riche dans le moteur
+*En tant que* développeur, *je veux* un éditeur riche complet dans le moteur *afin de* remplacer l'éditeur texte brut.
+- [ ] Saisie, suppression par graphème et par mot, sélection, déplacement, test de position, annuler/rétablir ; tables annexes remappées par `position_map`.
+- [ ] Les scénarios de `tests/editor-abi.mjs` passent en v2.
+
+Réf : §6.4, §6.7 · Taille : M · Dépend de : US-204, US-216
+
+#### US-218 — Ouvrir et enregistrer dans l'éditeur riche
+*En tant que* développeur, *je veux* ouvrir, créer et enregistrer des documents TXT et DOCX dans l'éditeur riche *afin que* la bascule ne perde aucun format.
+- [ ] TXT ouvert, modifié puis enregistré : fins de ligne et BOM conservés, octet pour octet sur le corpus ; aller-retour DOCX sans nouvel avertissement d'écriture.
+- [ ] Nouveau document riche ; images de l'éditeur TXT converties en objets ancrés.
+
+Réf : §5 · Taille : M · Dépend de : US-217, US-307, US-316
+
+#### US-209 — Miroir DOM accessible du document
+*En tant qu'*utilisateur de lecteur d'écran, *je veux* que le document affiché sur le Canvas soit exposé dans le DOM *afin de* le lire et de suivre la sélection.
+- [ ] `web/document-mirror.mjs` : portion visible (paragraphes, titres, listes, texte alternatif) synchronisée avec le curseur et la sélection.
+- [ ] Essai consigné avec NVDA et Narrateur : lecture de la ligne et de la sélection.
+
+Réf : D13, §6.14 · Taille : M · Dépend de : US-203, US-217
+
+#### US-219 — Bascule et retrait de l'éditeur texte brut
+*En tant qu'*utilisateur, *je veux* un seul éditeur riche *afin que* tous mes documents bénéficient des mêmes fonctions.
+- [ ] Suites navigateur exécutées en v1 et v2, v2 par défaut ; latence de frappe inférieure à 16 ms de bout en bout dans Edge sur 300 pages.
+- [ ] Éditeur v1 retiré (`editor-layout.rs`, branches TXT de `editor.rs`, `PlainTextDocument` dans l'éditeur) ; budget WASM mesuré avant et après.
+
+Réf : [plan de bascule](docs/rich-editor-migration.md) · Taille : M · Dépend de : US-217, US-218, US-209, US-006
+
 ## E1.3 — Édition
 
 #### US-220 — Saisir du texte
@@ -718,7 +780,7 @@ Préparation DOCX du 2026-10-14 : [session riche conservée](docs/us-220-rich-se
 
 Tranche TXT validée le 2026-10-11 : Ctrl+Retour arrière/Suppr par mot et annulation ; voir [navigation](docs/us-221-keyboard-editing.md). Les critères de saisie riche/physique restent ouverts.
 
-Réf : F-TXT-001 · Taille : M · Dépend de : US-103, US-200, US-214
+Réf : F-TXT-001 · Taille : M · Dépend de : US-103, US-200, US-214, US-202, US-213, US-217
 
 #### US-221 — Déplacer le curseur au clavier
 *En tant qu'*utilisateur, *je veux* naviguer au clavier *afin de* me déplacer rapidement dans le texte.
@@ -727,7 +789,7 @@ Réf : F-TXT-001 · Taille : M · Dépend de : US-103, US-200, US-214
 
 Tranche TXT validée le 2026-10-11 : Ctrl+flèches par mot/paragraphe, maintien du X ; voir [contrat](docs/us-221-keyboard-editing.md). Navigation entre objets riches encore absente.
 
-Réf : F-TXT-002 · Taille : S · Dépend de : US-214
+Réf : F-TXT-002 · Taille : S · Dépend de : US-214, US-217
 
 #### US-222 — Sélectionner à la souris
 *En tant qu'*utilisateur, *je veux* sélectionner à la souris *afin de* modifier une partie du texte.
@@ -737,7 +799,7 @@ Réf : F-TXT-002 · Taille : S · Dépend de : US-214
 
 Tranche TXT validée le 2026-10-11 : glisser, auto-scroll, Maj+clic, double-clic mot et triple-clic paragraphe ; voir [contrat](docs/us-222-mouse-selection.md). Phrase, marge et bloc rectangulaire restent ouverts.
 
-Réf : F-TXT-002 · Taille : M · Dépend de : US-214
+Réf : F-TXT-002 · Taille : M · Dépend de : US-214, US-217
 
 #### US-223 — Sélectionner au clavier
 *En tant qu'*utilisateur, *je veux* sélectionner au clavier *afin de* travailler sans souris.
@@ -745,7 +807,7 @@ Réf : F-TXT-002 · Taille : M · Dépend de : US-214
 
 Tranche TXT validée le 2026-10-11 : Ctrl+A, Maj+mouvements disponibles et F8/Échap ; Ctrl+A quitte F8. Les combinaisons liées aux objets riches restent ouvertes.
 
-Réf : F-TXT-002 · Taille : S · Dépend de : US-221
+Réf : F-TXT-002 · Taille : S · Dépend de : US-221, US-217
 
 #### US-224 — Glisser-déposer du texte
 *En tant qu'*utilisateur, *je veux* déplacer du texte en le faisant glisser *afin de* réorganiser mon document.
@@ -768,7 +830,7 @@ Réf : F-TXT-003 · Taille : M · Dépend de : US-222
 
 Tranche TXT validée le 2026-10-11 : copy/cut/paste text/plain synchrones, Ctrl+Maj+V, sélection UTF-8 et coupe annulable ; voir [contrat](docs/us-225-plain-clipboard.md). HTML/interne riche, images et options restent ouverts.
 
-Réf : F-COM-016 · Taille : L · Dépend de : US-200, US-270
+Réf : F-COM-016 · Taille : L · Dépend de : US-200, US-270, US-240
 
 #### US-226 — Annuler et rétablir
 
@@ -778,7 +840,7 @@ Préparation DOCX du 2026-10-14 : session riche Rust, remplacement dans un parag
 - [ ] Le curseur et la vue reviennent à l'endroit de l'action.
 - [ ] L'historique est conservé après un enregistrement.
 
-Réf : F-COM-009 · Taille : S · Dépend de : US-072, US-220
+Réf : F-COM-009 · Taille : S · Dépend de : US-072, US-220, US-322
 
 #### US-227 — Caractères spéciaux
 *En tant qu'*utilisateur, *je veux* insérer des symboles *afin d'écrire* des caractères absents du clavier.
@@ -839,7 +901,7 @@ Réf : F-COM-020 · Taille : M · Dépend de : US-106
 - [ ] L'état des boutons reflète la sélection (état mixte affiché).
 - [ ] Si la police demandée est absente, la police de remplacement est indiquée (info-bulle).
 
-Réf : F-TXT-010 · Taille : M · Dépend de : US-106, US-201
+Réf : F-TXT-010 · Taille : M · Dépend de : US-106, US-201, US-219
 
 #### US-241 — Dialogue Police
 *En tant qu'*utilisateur, *je veux* un dialogue Police complet *afin d'accéder* aux options avancées.
@@ -859,7 +921,7 @@ Réf : F-TXT-010 · Taille : S · Dépend de : US-013, US-240
 - [ ] Alignements, augmenter/diminuer le retrait, interligne (valeurs courantes + options), ajout/suppression de l'espacement avant/après, trame de fond, bordures (menu), afficher les marques de mise en forme.
 - [ ] S'applique à tous les paragraphes touchés par la sélection.
 
-Réf : F-TXT-011 · Taille : M · Dépend de : US-106, US-201
+Réf : F-TXT-011 · Taille : M · Dépend de : US-106, US-201, US-219
 
 #### US-244 — Dialogue Paragraphe
 *En tant qu'*utilisateur, *je veux* un dialogue Paragraphe *afin de* régler précisément retraits, espacements et enchaînements.
@@ -903,7 +965,7 @@ Réf : F-TXT-014 · Taille : S · Dépend de : US-240
 - [ ] Volet Styles : liste (styles utilisés / tous), aperçu, indication du style courant ; raccourcis Titre 1–3 de Word.
 - [ ] Appliquer un style de paragraphe conserve la mise en forme directe de caractère, comme dans Word.
 
-Réf : F-TXT-020 · Taille : M · Dépend de : US-201, US-106
+Réf : F-TXT-020 · Taille : M · Dépend de : US-201, US-106, US-219
 
 #### US-251 — Gérer les styles
 *En tant qu'*utilisateur, *je veux* créer et modifier des styles *afin d'adapter* la présentation à mes besoins.
@@ -1283,7 +1345,7 @@ Réf : F-COM-002 · Taille : S · Dépend de : US-113, US-115, US-307
 - [ ] À la fermeture d'un document modifié : Enregistrer / Ne pas enregistrer / Annuler ; fermeture de l'application avec plusieurs documents modifiés gérée.
 - [ ] Document ouvert depuis un format en lecture seule (odt, doc) → Enregistrer propose docx.
 
-Réf : F-COM-003 · Taille : M · Dépend de : US-307, US-323
+Réf : F-COM-003 · Taille : M · Dépend de : US-307, US-323, US-217
 
 #### US-323 — Enregistrement atomique
 *En tant qu'*utilisateur, *je veux* que mon fichier ne soit jamais corrompu à l'enregistrement *afin de* ne jamais perdre de travail.
@@ -1324,7 +1386,7 @@ Réf : F-COM-008 · Taille : S · Dépend de : US-113
 - [ ] Chaque document a son historique d'annulation, sa vue et son zoom.
 - [ ] Copier-coller entre documents sans perte (format interne).
 
-Réf : F-COM-023 · Taille : M · Dépend de : US-092, US-320
+Réf : F-COM-023 · Taille : M · Dépend de : US-092, US-320, US-217
 
 #### US-328 — Propriétés du document
 *En tant qu'*utilisateur, *je veux* renseigner les propriétés du document *afin de* le décrire et le retrouver.
