@@ -751,10 +751,12 @@ Stories techniques du [plan de bascule](docs/rich-editor-migration.md) validé l
 #### US-203 — Protocole de l'éditeur riche (v2)
 *En tant que* développeur, *je veux* un protocole d'édition versionné et incrémental *afin que* l'éditeur riche n'échange que ce qui change.
 - [x] Enveloppe ATED v2 : identifiant de document u32, positions plates en octets UTF-8 avec `\n` entre paragraphes, réponse limitée aux pages modifiées, à une fenêtre de texte et à la révision ; v1 inchangée.
-- [ ] Codec de référence Rust et JS figé, tests de troncature et de limites ; `web/rich-editor-protocol.mjs` et cache de pages `web/editor-page-cache.mjs`.
+- [x] Codec de référence Rust et JS figé, tests de troncature et de limites ; `web/rich-editor-protocol.mjs` et cache de pages `web/editor-page-cache.mjs`.
 - [ ] Les positions plates n'existent que dans le protocole et la vue : le modèle, le journal de récupération (US-074, US-325) et tout ancrage persistant utilisent identifiant de nœud + décalage (§6.3) ; un test vérifie qu'un journal rejoué après insertion de paragraphes en amont retrouve ses positions.
 
 Réf : §6.3, §6.7 · Taille : M · Dépend de : US-091
+
+Validation US-203 second critère (2026-10-18) : `web/editor-page-cache.mjs` et `web/rich-editor-client.mjs` (sans branchement dans l'éditeur, lot R7) vérifiés par `node tests/editor-page-cache.mjs`, `node tests/rich-editor-client.mjs` (transport simulé, dont 300 pages et 400 mises à jour), `node tests/rich-editor-protocol.mjs` et `node tests/check-i18n.mjs --strict` ; [contrat](docs/us-203-rich-editor-protocol.md). Le troisième critère (journal) reste ouvert.
 
 #### US-204 — Modèle riche éditable à positions plates
 *En tant que* développeur, *je veux* éditer le modèle riche en place par positions plates *afin que* la saisie reste rapide sur un long document.
