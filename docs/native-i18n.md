@@ -10,10 +10,14 @@ Les textes visibles affichés par `crates/desktop-win` passent par le catalogue 
 - `t(clé, &[("nom", valeur)])` ne panique jamais : clé absente ou message invalide rend `⟦clé⟧` (comme le JS) ; paramètre manquant laisse `{nom}` visible ; les valeurs sont insérées telles quelles, jamais réinterprétées.
 - Les clés d'opération de `DataError::StorageUnavailable` (`operation`) sont des clés du catalogue, traduites à l'affichage.
 
+## Typographie
+
+Dans le bloc natif, l'espace avant `?`, `:`, `;` et à l'intérieur des guillemets `« »` est une espace fine insécable U+202F ; seule la largeur des espaces change par rapport aux anciens textes (U+0020), le texte reste le même. Le reste du catalogue (hors bloc natif, non modifié) utilise encore U+0020 avant `:`, `;` et `?` : à harmoniser dans une story dédiée.
+
 ## Contrôles
 
 - `cargo test -p atelier-desktop-win` : vecteurs communs `tests/i18n-vectors.txt` (lus aussi par `tests/i18n.mjs`), analyse du catalogue (lignes invalides, clés invalides, doublons, BOM/CRLF), paramètres et échappements, et `every_native_key_used_exists` (toute clé `"native.…"` écrite dans `src/**/*.rs` existe dans le catalogue et se compile).
-- `node tests/check-i18n.mjs` lit aussi les littéraux `"native.…"` de `crates/desktop-win/src/**/*.rs` (hors `i18n.rs`, dont les littéraux sont des cas de test) : une clé native n'est donc pas « inutilisée », une clé manquante est `missing-key`, et les paramètres littéraux de `t("clé", &[("nom", …)])` sont comparés à ceux du message (`param-missing`, `param-extra`). Tests dans `tests/i18n.mjs`.
+- `node tests/check-i18n.mjs` lit aussi les littéraux `"native.…"` de `crates/desktop-win/src/**/*.rs` (hors `i18n.rs` et hors éléments `#[cfg(test)]` : une clé utilisée seulement en test reste « inutilisée »)  : une clé native utilisée par le code de production n'est donc pas « inutilisée », une clé manquante est `missing-key`, et les paramètres littéraux de `t("clé", &[("nom", …)])` sont comparés à ceux du message (`param-missing`, `param-extra`). Tests dans `tests/i18n.mjs`.
 
 ## Inventaire (fichier:ligne, après migration)
 
@@ -44,6 +48,6 @@ Les titres et filtres des boîtes ouvertes par le pont de fichiers (`bridge_ops.
 - Clés `files.error.*`, `url.error.*` : déjà des clés de catalogue transmises à la page, hors périmètre.
 - Aucun repli en dur n'a été nécessaire pour les échecs très précoces : le catalogue est embarqué dans l'exécutable, donc toujours lisible ; seul un message invalide ou absent donnerait `⟦clé⟧` (les tests l'empêchent pour les clés utilisées).
 
-## Réserve connue (hors périmètre, comportement inchangé)
+## Clés brutes jamais montrées
 
-`win32.rs:1635` convertit une erreur de `FileRuntime::new` en `io::Error::other(error.message_key)` : si cette erreur survenait au démarrage, `show_error` afficherait la clé brute (`files.error.…`) au lieu d'un texte. À traiter en passant la clé par `i18n::t` au point d'affichage, dans une story dédiée.
+`win32.rs` : l'échec de `FileRuntime::new` au démarrage passe par `startup_file_error`, qui affiche `t(message_key)` (test `startup_file_errors_show_the_catalogue_text_not_the_key`). Les autres usages de `message_key` (`win32.rs:529`, `2760`, `2779`) renvoient la clé à la page, qui la traduit ; aucun autre chemin natif ne l'affiche.

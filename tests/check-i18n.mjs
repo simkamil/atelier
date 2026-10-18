@@ -621,6 +621,31 @@ function listFiles(directory, accept) {
 }
 
 /**
+ * Remplace par des lignes vides les éléments `#[cfg(test)]` (module, fonction ou `use`) : une clé qui
+ * n'apparaît que dans un test reste « inutilisée ». Les accolades sont comptées hors littéraux.
+ * @param {string[]} lines
+ */
+function blankTestBlocks(lines) {
+  const result = [...lines];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].trimStart().startsWith("#[cfg(test)]")) continue;
+    let depth = 0;
+    let opened = false;
+    let end = index;
+    for (; end < lines.length; end += 1) {
+      const bare = lines[end].replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/'(?:\\.|[^'\\])'/g, "''").replace(/\/\/.*$/, "");
+      for (const char of bare) {
+        if (char === "{") { depth += 1; opened = true; } else if (char === "}") depth -= 1;
+      }
+      if (opened ? depth <= 0 : end > index && bare.includes(";")) break;
+    }
+    for (let at = index; at <= Math.min(end, lines.length - 1); at += 1) result[at] = "";
+    index = end;
+  }
+  return result;
+}
+
+/**
  * Clés du shell natif : littéraux `"native.…"` des sources Rust (hors `i18n.rs`, dont les littéraux
  * sont des cas de test) et paramètres littéraux des appels `t("clé", &[("nom", …)])`.
  * @param {string} root
@@ -634,7 +659,7 @@ export function analyzeRustSources(root, rel) {
   for (const path of listFiles(srcDir, name => name.endsWith(".rs") && name !== "i18n.rs")) {
     const file = rel(path);
     const lines = readFileSync(path, "utf8").split(/\r?\n/);
-    const code = lines.map(line => (line.trimStart().startsWith("//") ? "" : line));
+    const code = blankTestBlocks(lines).map(line => (line.trimStart().startsWith("//") ? "" : line));
     code.forEach((line, index) => {
       for (const match of line.matchAll(/"(native\.[A-Za-z0-9._-]+)"/g)) uses.push({ key: match[1], line: index + 1, file, kind: "rust" });
     });

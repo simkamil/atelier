@@ -748,6 +748,26 @@ try {
     ]);
   });
 
+  test("repository: Rust literals inside #[cfg(test)] blocks are ignored (test-only key stays unused)", () => {
+    const base = repo({
+      "web/i18n/fr-FR.txt": "native.real=Réel\nnative.testonly=Test seul\n",
+      "web/app.mjs": "",
+      "crates/desktop-win/src/a.rs": [
+        'let a = t("native.real", &[]);',
+        "#[cfg(test)]",
+        "mod tests {",
+        '    fn x() { let s = "{"; t("native.testonly", &[]); t("native.absent-in-test", &[]); }',
+        "    mod inner { fn y() { t(\"native.absent-too\", &[]); } }",
+        "}",
+        'let b = t("native.absent-after", &[]);',
+      ].join("\n"),
+    });
+    assert.deepEqual(summarize(checkRepository({ root: base })), [
+      "missing-key|crates/desktop-win/src/a.rs:7|native.absent-after",
+      "unused-key|web/i18n/fr-FR.txt:2|native.testonly",
+    ]);
+  });
+
   test("shared message vectors: web parser agrees with tests/i18n-vectors.txt (the Rust module reads the same file)", () => {
     const unescape = text => text.replace(/\\(.)/g, (_, char) => (char === "n" ? "\n" : char));
     let checked = 0;
