@@ -84,10 +84,12 @@ Validation US-005 (2026-10-09) : [preuves et limites](docs/DEVELOPMENT.md#preuve
 
 #### US-006 — Budget WASM séparé entre code et polices
 *En tant que* développeur, *je veux* mesurer séparément le code et les polices du moteur WASM *afin que* la tolérance de croissance porte sur le code et non sur des données figées.
-- [ ] `tests/check-wasm-size.mjs` contrôle deux budgets : les polices embarquées (liste figée, empreinte par police) et le code (référence propre, tolérance de 10 %).
-- [ ] La référence est enregistrée dans `tools/bench/references/wasm-size.json` et la CI échoue si l'un des deux budgets est dépassé ou si une police change sans mise à jour explicite.
+- [x] `tests/check-wasm-size.mjs` contrôle deux budgets : les polices embarquées (liste figée, empreinte par police) et le code (référence propre, tolérance de 10 %).
+- [x] La référence est enregistrée dans `tools/bench/references/wasm-size.json` et la CI échoue si l'un des deux budgets est dépassé ou si une police change sans mise à jour explicite.
 
 Réf : §8, [plan de bascule](docs/rich-editor-migration.md) · Taille : S · Dépend de : US-090
+
+Terminée (2026-10-18) : code 1 919 145 octets pour une limite de 2 111 059 (+10 %), polices Carlito 2 734 244 octets figées par empreinte ; échecs vérifiés pour une police dupliquée et un code trop gros. `node tests/check-wasm-size.mjs --measure <wasm>` affiche la répartition.
 
 ## E0.2 — Unicode et encodages
 

@@ -1,12 +1,34 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "artifact": "atelier_core_wasm.wasm",
   "target": "wasm32-unknown-unknown",
   "profile": "wasm-release",
   "features": [],
-  "reference_bytes": 4280188,
+  "code_reference_bytes": 1919145,
   "allowed_growth_percent": 10,
-  "measured_on": "2026-10-13",
-  "previous_reference_bytes": 3883549,
-  "rebaseline_reason": "The DOCX import linked into the product WASM now preserves unknown elements, attributes and properties (US-306), and the text model gained the search, statistics, plain-text and navigation modules used by the editor. Intentional feature growth measured after integration (previous shipped artifact 4215005 bytes, +65183 bytes for the preservation code); the 10% regression allowance remains unchanged."
+  "fonts": [
+    {
+      "path": "data/fonts/carlito/Carlito-Bold.ttf",
+      "bytes": 682468,
+      "sha256": "bb5d20f79b82599ec72983597437373a80f2d2085fa91fc144fd74e876a594db"
+    },
+    {
+      "path": "data/fonts/carlito/Carlito-BoldItalic.ttf",
+      "bytes": 808508,
+      "sha256": "b32928186c119599e03ca6a1ffc680fdcb7fac95772f4b95d989cf6cd3861517"
+    },
+    {
+      "path": "data/fonts/carlito/Carlito-Italic.ttf",
+      "bytes": 615236,
+      "sha256": "0b019225e58d702bfedcbd35c21696769f8ee115cb6343f84c2f240312450d1c"
+    },
+    {
+      "path": "data/fonts/carlito/Carlito-Regular.ttf",
+      "bytes": 628032,
+      "sha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595"
+    }
+  ],
+  "measured_on": "2026-10-18",
+  "previous_reference_bytes": 4280188,
+  "rebaseline_reason": "US-006: the 10% allowance now applies to code only. Embedded fonts (2734244 bytes, 58.8% of the 4653389-byte artifact) are frozen by path, size and SHA-256 and must appear exactly once; the code reference is the measured artifact minus fonts after the 2026-10-18 integration (US-270, US-328). See docs/rich-editor-migration.md."
 }
