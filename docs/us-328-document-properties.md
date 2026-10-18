@@ -188,3 +188,7 @@ FILETIME par `filetime_to_unix_seconds` puis `W3cDateTime::from_unix_seconds`, t
 `W3cDateTime::parse`. Un `DocumentMetadata { editable: EditableProperties, created, modified:
 Option<PropertyDate>, last_modified_by, application }` suffirait aux trois formats et à
 `PdfMetadata::from_snapshot`.
+
+## Éditeur riche (R7b-2, 2026-10-18)
+
+L'éditeur v2 lit et applique les propriétés du document ouvert (commandes `PropertiesRead` `0x0135` et `PropertiesApply` `0x0136`, contrat : [us-340-search.md](us-340-search.md)) sans passer par l'aperçu DOCX : sur le paquet du DOCX importé, ou, pour un document neuf ou un fichier texte, sur un paquet du profil par défaut recopié dans le DOCX enregistré. Un changement rend le document modifié jusqu'à l'enregistrement qui le contient. Même boîte de dialogue, mêmes limites (`TooLong` rendu par `status` 1). Les compteurs en lecture seule sont ceux du document vivant. Les critères de la story ne sont pas cochés par cette tranche.

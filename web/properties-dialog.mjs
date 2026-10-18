@@ -40,6 +40,10 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
   const documentSection = make("section", "properties-section");
   const documentHeading = make("h3", "properties-heading", text("documentHeading"));
   documentSection.append(documentHeading);
+  // Shown when the document is not a DOCX (rich editor): the properties are kept only in a DOCX file.
+  const docxNote = make("p", "properties-note", i18n.has("properties-docxOnly") ? text("docxOnly") : "");
+  docxNote.hidden = true;
+  documentSection.append(docxNote);
 
   const controls = new Map();
   for (const name of FIELDS) {
@@ -114,6 +118,7 @@ export function createPropertiesDialog({ i18n, load, apply } = {}) {
     ok.disabled = invalid || busy;
   }
   function populate(snapshot) {
+    docxNote.hidden = !(snapshot.docxOnly === true && docxNote.textContent !== "");
     for (const name of FIELDS) {
       const control = controls.get(name);
       control.original = snapshot.editable[name] ?? "";

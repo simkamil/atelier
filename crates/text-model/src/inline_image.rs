@@ -195,6 +195,20 @@ impl InlineImage {
         out
     }
 
+    /// Stored width, height and EXIF orientation of an object payload, read
+    /// from its header without copying the picture bytes.
+    pub fn peek_object_data(data: &[u8]) -> Result<(u32, u32, u8), ImageModelError> {
+        if data.len() < 16 || &data[..4] != MAGIC {
+            return Err(ImageModelError::InvalidObjectData);
+        }
+        let width = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
+        let height = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
+        if width == 0 || height == 0 || !(1..=8).contains(&data[5]) {
+            return Err(ImageModelError::InvalidObjectData);
+        }
+        Ok((width, height, data[5]))
+    }
+
     /// Inverse of [`Self::to_object_data`]; never panics on foreign data.
     pub fn from_object_data(data: &[u8]) -> Result<Self, ImageModelError> {
         if data.len() < 16 || &data[..4] != MAGIC {

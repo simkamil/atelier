@@ -23,6 +23,14 @@ pub use history::{EditKind, History, HistoryAction, HistoryError};
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeId(u64);
 
+impl NodeId {
+    /// The identity as a number, stable for the lifetime of its tree: the
+    /// wire name of an element (R7b, `ImageBitmap`).
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
 /// An invalid position or exhausted identity space.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndexedTreeError {

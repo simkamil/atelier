@@ -15,8 +15,17 @@ const REPLY_TYPE = {
   undo: "state", redo: "state", markSaved: "state", layout: "state", resync: "state", textWindow: "textWindow", pages: "pages", close: "closed",
   // US-217 / US-218: replies that carry no page data and never reach the page cache.
   accessibleWindow: "accessibleWindow", save: "saveData", makeEditableCopy: "saveData", insertImage: "state",
+  // R7b-1: selection highlight, picture bitmaps, double and triple click.
+  selectionRects: "selectionRects", imageBitmap: "imageBitmap", selectUnit: "state",
+  // R7b-2: search, replace, statistics, properties. `replaced` and `propertiesApplied` carry a State (applied to the cache).
+  search: "searchResult", statistics: "statistics", searchRects: "searchRects", replace: "replaced", replaceAll: "replaced",
+  propertiesRead: "properties", propertiesApply: "propertiesApplied",
 };
-const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData"]);
+const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData", "selectionRects", "imageBitmap", "searchResult", "statistics", "searchRects", "properties"]);
+/** Replies whose result changes the document or the state the cache holds. */
+const STATEFUL = new Set(["state", "replaced", "propertiesApplied"]);
+
+const RICH_MAX_PAGES_PER_REQUEST = 16;
 
 function abortError() { return new DOMException("The operation was aborted.", "AbortError"); }
 const isAbort = (error) => error?.name === "AbortError";
@@ -45,15 +54,25 @@ function linkSignals(signals) {
  * @param {AbortSignal} [options.signal] aborting it disposes the client
  * @param {() => Promise<void>} [options.yieldTurn] gives control back between two pump steps
  * @param {(error: Error) => void} [options.onError] background failures (pump, visible page fetch)
+ * @param {(highlight: {revision: bigint, rects: object[]}) => void} [options.onSelectionRects] the selection rectangles
+ *   (points of the page, `{page, x, y, width, height}`) of the visible pages, asked after each State whose selection is not
+ *   empty (one request per State, cancelled when a newer State arrives, a reply of another revision is dropped) and
+ *   published empty as soon as the selection is
+ * @param {(id: bigint) => boolean} [options.hasImage] true when the bitmap of a picture is already held (R7b-1)
+ * @param {(bitmap: {objectId: bigint, width: number, height: number, rgba: Uint8Array}) => void} [options.onImageBitmap] a bitmap
+ *   asked for by `setWantedImages` arrived (the pixels are a copy)
  */
 export function createRichEditorClient({
   transport, docId, cache = new EditorPageCache(), layoutBudget = 16, signal, yieldTurn = defaultYield,
-  onError = () => {}, maxLayoutRetries = 4096,
+  onError = () => {}, maxLayoutRetries = 4096, onSelectionRects = () => {}, hasImage = () => false, onImageBitmap = () => {},
 } = {}) {
   if (!transport || typeof transport.request !== "function") throw new TypeError("transport must provide request().");
   if (!Number.isInteger(docId) || docId < 1 || docId > 0xffffffff) throw new TypeError("docId must be a non-zero u32.");
   if (!Number.isInteger(layoutBudget) || layoutBudget < 1 || layoutBudget > 4096) throw new TypeError("layoutBudget must be 1 to 4096.");
   if (typeof yieldTurn !== "function" || typeof onError !== "function") throw new TypeError("yieldTurn and onError must be functions.");
+  if (typeof onSelectionRects !== "function" || typeof hasImage !== "function" || typeof onImageBitmap !== "function") {
+    throw new TypeError("onSelectionRects, hasImage and onImageBitmap must be functions.");
+  }
 
   let disposed = false;
   let opened = false;
@@ -71,9 +90,39 @@ export function createRichEditorClient({
   const lifetime = new AbortController();
   let pumpController = new AbortController();
   const clientLink = linkSignals([signal]);
+  // R7b-1: the highlight job of the latest State, and the pictures wanted by the pages shown.
+  let selectionJob = null; // {revision, done, controller}
+  let selectionBlockedVersion = -1;
+  let highlighted = false; // the last published highlight had rectangles
+  let wantedImages = [];
+  const imageBlocked = new Map(); // id -> cache version at which the fetch failed
 
   const closedError = () => new RichClientError("CLIENT_CLOSED", "Rich editor client is closed.");
   const report = (error) => { try { onError(error); } catch { /* isolate user callbacks */ } };
+
+  function publishSelection(revision, rects) {
+    if (rects.length === 0 && !highlighted) return;
+    highlighted = rects.length > 0;
+    try { onSelectionRects({ revision, rects }); } catch { /* isolate user callbacks */ }
+  }
+
+  /** A State was applied: the highlight of the previous one is out of date. */
+  function noteState(state) {
+    selectionJob?.controller?.abort();
+    selectionBlockedVersion = -1;
+    if (state.anchor === state.focus) {
+      selectionJob = { revision: state.revision, empty: true, done: true, controller: null };
+      publishSelection(state.revision, []);
+    } else {
+      selectionJob = { revision: state.revision, empty: false, done: false, controller: null };
+    }
+  }
+
+  function dropSelection() {
+    selectionJob?.controller?.abort();
+    selectionJob = null;
+    publishSelection(null, []);
+  }
 
   function settleLayoutWaiters(error) {
     if (!error && !cache.layoutComplete) return;
@@ -113,12 +162,13 @@ export function createRichEditorClient({
     if (response.type !== expected) throw new RichClientError("CLIENT_BAD_REPLY", `Unexpected ${response.type} reply to ${command.type}.`);
     if (response.type === "closed") {
       opened = false; cache.reset(); pumpHalt = "stopped";
+      dropSelection();
       settleLayoutWaiters(closedError());
       return { response, change: null };
     }
     if (NOT_CACHE_INPUT.has(response.type)) { settleLayoutWaiters(); return { response, change: null }; }
     let change;
-    try { change = cache.apply(response); } catch (error) {
+    try { change = cache.apply(response.type === "replaced" || response.type === "propertiesApplied" ? response.state : response); } catch (error) {
       // Glyph atlas entries were lost (an abandoned reply the engine counted as sent): the pages that
       // refer to them cannot be trusted, so a `Resync` (new atlas epoch) is requested.
       if (error?.cause?.atlas === true && !disposed) { cache.dropPages(); needsResync = true; }
@@ -136,6 +186,7 @@ export function createRichEditorClient({
       throw error;
     }
     if (command.type !== "resync") overflows = 0;
+    if (response.type === "state" && !change.ignored) noteState(response);
     settleLayoutWaiters();
     return { response, change };
   }
@@ -150,8 +201,8 @@ export function createRichEditorClient({
       // RICH_FRAME_TOO_LARGE is not a refusal: the engine applied the command, then lost the reply (mark_resync).
       const refused = typeof error?.code === "string" && error.code.startsWith("RICH_") && error.code !== "RICH_FRAME_TOO_LARGE";
       const type = REPLY_TYPE[command.type];
-      if (!refused && (type === "state" || type === "pages") && !disposed && error?.code !== "CLIENT_CLOSED" && error?.code !== "CLIENT_ATLAS_FULL") {
-        if (type === "state") cache.dropPages();
+      if (!refused && (STATEFUL.has(type) || type === "pages") && !disposed && error?.code !== "CLIENT_CLOSED" && error?.code !== "CLIENT_ATLAS_FULL") {
+        if (STATEFUL.has(type)) cache.dropPages();
         needsResync = true;
       }
       throw error;
@@ -215,6 +266,45 @@ export function createRichEditorClient({
         return true;
       }
     }
+    if (selectionJob && !selectionJob.done && visible && opened && selectionBlockedVersion !== cache.version) {
+      const job = selectionJob;
+      const version = cache.version;
+      job.controller = new AbortController();
+      try {
+        const count = Math.min(RICH_MAX_PAGES_PER_REQUEST, Math.max(1, visible.end - visible.first));
+        const { response } = await exchange({ type: "selectionRects", first: visible.first, count }, job.controller.signal);
+        // A newer State (or a changed viewport) replaced the job while the request ran: the reply is stale.
+        if (selectionJob === job && job.controller && response.revision === job.revision && cache.revision === job.revision) {
+          job.done = true;
+          publishSelection(response.revision, response.rects);
+        } else if (selectionJob === job) selectionBlockedVersion = version;
+      } catch (error) {
+        if (disposed) return false;
+        if (isAbort(error)) return true; // superseded
+        if (selectionJob === job) selectionBlockedVersion = version;
+        // The pages of the viewport are not laid out yet: asked again when the cache changes.
+        if (error?.code !== "RICH_NOT_READY" && error?.code !== "RICH_PAGE_RANGE") report(error);
+      }
+      return true;
+    }
+    const missingImage = opened ? wantedImages.find((id) => !hasImage(id) && imageBlocked.get(id) !== cache.version) : undefined;
+    if (missingImage !== undefined) {
+      const version = cache.version;
+      try {
+        const { response } = await exchange({ type: "imageBitmap", objectId: missingImage }, undefined);
+        const rgba = response.rgba.slice();
+        try { onImageBitmap({ objectId: response.objectId, width: response.width, height: response.height, rgba }); } catch (error) { report(error); }
+        // Held now, or the owner refused it: do not ask again until the cache changes.
+        imageBlocked.set(missingImage, version);
+      } catch (error) {
+        if (disposed) return false;
+        if (isAbort(error)) return true;
+        imageBlocked.set(missingImage, version);
+        // A picture that is gone (a page about to be replaced) is no failure.
+        if (error?.code !== "RICH_UNKNOWN_OBJECT") report(error);
+      }
+      return true;
+    }
     if (pumpWanted()) {
       try {
         await guarded({ type: "layout", budget: layoutBudget }, pumpController.signal);
@@ -277,6 +367,8 @@ export function createRichEditorClient({
     if (taskSignal !== undefined && taskSignal !== null && typeof taskSignal.addEventListener !== "function") {
       return Promise.reject(new TypeError("signal must be an AbortSignal."));
     }
+    // A command is waiting: a highlight request in flight is dropped (asked again if no State follows).
+    selectionJob?.controller?.abort();
     return new Promise((resolve, reject) => {
       queue.push({ run, resolve, reject, signal: taskSignal, replaces });
       kick();
@@ -317,6 +409,8 @@ export function createRichEditorClient({
         fillBlockedVersion = -1;
         needsResync = false;
         pumpController = new AbortController();
+        dropSelection();
+        imageBlocked.clear();
         let result;
         try { result = await exchange({ type: "open", ...spec }, callerSignal); } catch (error) {
           // The engine keeps the previous document when it refuses an Open (and holds either one when the
@@ -355,6 +449,21 @@ export function createRichEditorClient({
       visible = { first, end };
       cache.setVisible(first, end);
       fillBlockedVersion = -1;
+      // Other pages are shown: the highlight is asked again for them.
+      if (selectionJob && !selectionJob.empty) {
+        selectionJob.controller?.abort();
+        selectionJob = { revision: selectionJob.revision, empty: false, done: false, controller: null };
+      }
+      selectionBlockedVersion = -1;
+      kick();
+    },
+    /**
+     * Declare the pictures the pages shown draw (`bigint` object ids); the ones `hasImage` does not hold are fetched
+     * in the background, one reply at a time, and handed to `onImageBitmap`.
+     */
+    setWantedImages(ids) {
+      wantedImages = [...ids];
+      for (const id of wantedImages) if (typeof id !== "bigint") throw new TypeError("Picture identities must be BigInt.");
       kick();
     },
     closeDocument({ signal: callerSignal } = {}) { return enqueue(() => closeExchange(callerSignal), callerSignal, true); },

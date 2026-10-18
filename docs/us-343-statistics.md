@@ -125,3 +125,7 @@ Conclusion honnête : l'écart « mots » contre LibreOffice dépasse 0,5 % sur 
 `crates/text-model/tests/` : `statistics.rs` (29 cas calculés à la main), `statistics_property.rs` (propriétés à graine fixe : somme des paragraphes = global, cache incrémental = recomptage, sélections adjacentes cohérentes avec leur union, cache texte brut), `statistics_oracle.rs` (LibreOffice + contrôle local), `statistics_perf.rs` (mesure, ignoré par défaut). Données : `statistics-data/*.stats.txt` générées par `tools/extract-statistics-oracle.py`.
 
 Intégration (2026-10-13) : le correctif de revue `c4e0539` est fusionné. Plusieurs plages disjointes du même paragraphe comptent ce paragraphe une seule fois; la régression est vérifiée dans `statistics.rs` et la passe complète après fusion. Le dialogue et la comparaison à Word restent ouverts.
+
+## Éditeur riche (R7b-2, 2026-10-18)
+
+La commande `Statistics` (`0x0131`) de l'éditeur v2 rend les mêmes six compteurs pour le document et pour la sélection que le TXT de v1 (mots, caractères, caractères avec espaces, paragraphes, lignes, pages), calculés sur le modèle riche (`statistics::document` et les règles de `statistics::selection`) et sur la mise en page (`PageCache::line_count`, `lines_in_range`) ; contrat : [us-340-search.md](us-340-search.md). Lignes et pages restent provisoires tant que la mise en page n'est pas terminée (`layout_complete`), l'interface les affiche alors « — ». En-têtes, pieds, notes et zones de texte ne sont pas comptés, comme dans l'option par défaut.

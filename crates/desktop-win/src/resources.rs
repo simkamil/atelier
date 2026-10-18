@@ -301,6 +301,11 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/rich-editor-client.mjs"),
     },
     Resource {
+        path: "/rich-image-cache.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/rich-image-cache.mjs"),
+    },
+    Resource {
         path: "/rich-editor-protocol.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/rich-editor-protocol.mjs"),

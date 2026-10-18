@@ -462,7 +462,10 @@ fn undo_redo_and_mark_saved() {
     let s = h.redo();
     assert_eq!((s.revision, s.doc_len), (5, 4));
     assert_eq!(h.text(), "abcd");
-    assert!(s.modified, "back at the saved text, but a later revision");
+    assert!(
+        !s.modified,
+        "back at the saved point of the history, whatever the revision"
+    );
     // A new edit clears the redo stack.
     h.insert("!");
     assert!(!h.state(Command::Layout { budget: 1 }).can_redo);

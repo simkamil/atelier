@@ -151,6 +151,14 @@ try {
     return dark;
   };
   const pageRect = () => ({ left: 0, top: 0 });
+  // R7b-1: colour of one Canvas pixel (page points at zoom 1, scrolled to the top).
+  const pixelAt = (x, y) => {
+    const view = document.createElement("canvas");
+    view.width = canvas.width; view.height = canvas.height;
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    return [...ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data];
+  };
+  const near = (rgb, expected, tolerance = 40) => expected.every((v, i) => Math.abs(rgb[i] - v) <= tolerance);
   assert(darkPixels(60, 20, 300, 80) === 0, "blank page area (beside the caret) is white");
 
   // --- typing, selection, undo/redo through the hidden input -------------------------------------------------
@@ -331,26 +339,177 @@ try {
   assert(!state().dirty, "the held save marked the document saved");
   assert(await editor.exportDocument().then(r => r.bytes.length > 0 && typeof r.revision === "bigint"), "exportDocument returns the TXT bytes and the revision");
 
-  // --- disabled functions ------------------------------------------------------------------------------------------
+  // --- search, replace, statistics, properties (R7b-2) -----------------------------------------------------------------
   app.ribbon.selectTab("home");
   for (const id of ["search-command", "replace-command", "statistics-command", "properties-command"]) {
     const button = document.querySelector(`#${id}`);
-    assert(button && !button.disabled && button.getAttribute("aria-disabled") === "true" && /nouvel éditeur/.test(button.title)
-      && document.getElementById(button.getAttribute("aria-describedby"))?.textContent === button.title, `${id} is aria-disabled, focusable and described by its reason in v2`);
     for (const tab of ["home", "view", "file"]) { if (button.offsetParent !== null) break; app.ribbon.selectTab(tab); }
-    button.focus();
-    assert(document.activeElement === button, `${id} can take the keyboard focus`);
-    status.textContent = "";
-    button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    button.click();
-    assert(status.textContent === button.title && document.querySelector("#search-slot").hidden && !document.querySelector("dialog[open]"), `${id} activation executes nothing and announces its reason in the status region`);
+    assert(button && !button.disabled && !button.hasAttribute("aria-disabled") && !/nouvel éditeur/.test(button.title), `${id} is enabled in v2`);
   }
-  assert(await editor.search("a").catch(error => error.code) === "EDITOR_UNSUPPORTED_V2" && await editor.statistics().catch(error => error.code) === "EDITOR_UNSUPPORTED_V2"
-    && await editor.replaceAll({}).catch(error => error.code) === "EDITOR_UNSUPPORTED_V2" && editor.setSearchHighlights(null) === true && editor.setSearchHighlights({}) === false,
-    "search, statistics and replace reject with a typed error, never silently");
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
-  assert(document.querySelector("#search-slot").hidden && !document.querySelector(".search-pane"), "Ctrl+F opens no search pane in v2");
-  assert(JSON.stringify(editor.capabilities) === JSON.stringify({ search: false, replace: false, statistics: false, textDragDrop: false, preview: false, properties: false, wordSelect: false }), "capabilities list what v2 does not offer");
+  assert(editor.capabilities.search && editor.capabilities.replace && editor.capabilities.statistics && editor.capabilities.properties
+    && !editor.capabilities.textDragDrop && !editor.capabilities.preview, "capabilities list what v2 offers now");
+  const tintOf = () => {
+    const view = document.createElement("canvas");
+    view.width = canvas.width; view.height = canvas.height;
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    const { data } = ctx.getImageData(0, 0, view.width, view.height);
+    let yellow = 0; let orange = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] >= 250 && data[i + 1] >= 225 && data[i + 1] <= 245 && data[i + 2] >= 165 && data[i + 2] <= 195) yellow += 1;
+      else if (data[i] >= 240 && data[i + 1] >= 195 && data[i + 1] <= 212 && data[i + 2] >= 150 && data[i + 2] <= 175) orange += 1;
+      // The current occurrence is also the selection (R7b-1 draws its green highlight over the orange one).
+      else if (data[i] >= 188 && data[i] <= 208 && data[i + 1] >= 171 && data[i + 1] <= 191 && data[i + 2] >= 133 && data[i + 2] <= 153) orange += 1;
+    }
+    return { yellow, orange };
+  };
+  const searchSlot = document.querySelector("#search-slot");
+  const queryNode = () => document.querySelector("[data-search-query]");
+  const replaceShown = () => document.querySelector("[data-replace-text]").offsetParent !== null;
+  const setQuery = value => { queryNode().value = value; queryNode().dispatchEvent(new Event("input", { bubbles: true })); };
+  const found = (count, name) => waitFor(() => app.navigation.searchResult?.revision === state().revision && app.navigation.searchResult.items.length === count, name);
+  const findText = "pomme poire pomme\nPOMME fin";
+  bridge.nextOpen = { name: "find.txt", format: "txt", bytes: encoder.encode(findText) };
+  await clickAndWait(openButton, () => {}, () => message() === "Document ouvert." && state().docLen === byteLengthOf(findText));
+
+  key(editor.element, "f", { ctrlKey: true });
+  await waitFor(() => !searchSlot.hidden && document.activeElement === queryNode(), "Ctrl+F opens and focuses the search pane");
+  assert(!replaceShown(), "Ctrl+F shows no replacement controls");
+  setQuery("pomme");
+  await found(3, "three occurrences of pomme");
+  assert(document.querySelector("[data-search-count]").textContent.includes("3"), "the pane shows the number of occurrences");
+  await waitFor(() => tintOf().yellow > 0, "every occurrence of the pane is highlighted on the Canvas");
+  document.querySelector("[data-search-next]").click();
+  await waitFor(() => state().anchor === 0 && state().focus === 5, "Next selects the first occurrence from the caret");
+  await waitFor(() => tintOf().orange > 0, "the current occurrence is highlighted in another colour");
+  document.querySelector("[data-search-next]").click();
+  await waitFor(() => state().anchor === 12 && state().focus === 17, "Next selects the second occurrence");
+  document.querySelector("[data-search-previous]").click();
+  await waitFor(() => state().anchor === 0 && state().focus === 5, "Previous goes back");
+  const matchCase = document.querySelector('[data-search-option="matchCase"]');
+  matchCase.checked = true; matchCase.dispatchEvent(new Event("change", { bubbles: true }));
+  await found(2, "match case leaves two occurrences");
+  matchCase.checked = false; matchCase.dispatchEvent(new Event("change", { bubbles: true }));
+  await found(3, "three occurrences again");
+  key(queryNode(), "Escape");
+  await waitFor(() => searchSlot.hidden, "Escape closes the pane");
+  await waitFor(() => { const t = tintOf(); return t.yellow === 0 && t.orange === 0; }, "closing the pane clears the highlights");
+
+  // Replace one, then all, from Ctrl+H; one undo takes the whole replacement back.
+  key(editor.element, "h", { ctrlKey: true });
+  await waitFor(() => !searchSlot.hidden && replaceShown(), "Ctrl+H opens the replacement controls");
+  setQuery("pomme");
+  await found(3, "occurrences for the replacement");
+  document.querySelector("[data-search-result=\"0\"]").click();
+  await waitFor(() => state().anchor === 0 && state().focus === 5, "choosing a result selects it");
+  document.querySelector("[data-replace-text]").value = "kiwi";
+  document.querySelector("[data-replace-one]").click();
+  await waitFor(async () => await text() === "kiwi poire pomme\nPOMME fin", "the selected occurrence is replaced");
+  await waitFor(() => document.querySelector("[data-replace-status]").textContent.replace(/\D/g, "") === "1", "the replacement count is announced");
+  assert(state().dirty && state().canUndo, "replacing one occurrence is a dirty, undoable edit");
+  await found(2, "the search follows the new revision");
+  document.querySelector("[data-replace-all]").click();
+  await waitFor(async () => await text() === "kiwi poire kiwi\nkiwi fin", "Replace all replaces every occurrence, case-insensitively");
+  await waitFor(() => document.querySelector("[data-replace-status]").textContent.replace(/\D/g, "") === "2", "Replace all announces its count");
+  document.querySelector("#undo").click();
+  await waitFor(async () => await text() === "kiwi poire pomme\nPOMME fin", "one Undo takes Replace all back");
+  setQuery("introuvable");
+  await found(0, "no occurrence");
+  const beforeNone = state().revision;
+  document.querySelector("[data-replace-all]").click();
+  await waitFor(() => /Aucune/i.test(document.querySelector("[data-replace-status]").textContent), "zero matches report none");
+  assert(state().revision === beforeNone, "Replace all without occurrence changes nothing");
+  key(queryNode(), "Escape");
+  await waitFor(() => searchSlot.hidden, "pane closed");
+
+  // Statistics: footer status and dialog.
+  await waitFor(() => /mots?/.test(document.querySelector("[data-statistics-status]").textContent), "the footer shows the word count");
+  const wordsStatus = document.querySelector("[data-statistics-status]").textContent;
+  assert(/5 mots?/.test(wordsStatus.replace(/\s/g, " ")), `the footer counts the words of the document (${wordsStatus})`);
+  const statisticsCommand = document.querySelector("#statistics-command");
+  key(editor.element, "ArrowRight");
+  await waitFor(() => state().anchor === state().focus, "a caret, no selection");
+  statisticsCommand.click();
+  await waitFor(() => document.querySelector("[data-statistics-dialog]")?.open, "the statistics dialog opens");
+  const stat = name => document.querySelector(`[data-statistics-count="${name}"]`).textContent.replace(/\s/g, " ").trim();
+  await waitFor(() => stat("document:words") === "5", "document words");
+  assert(stat("document:paragraphs") === "2" && stat("document:lines") === "2" && stat("document:pages") === "1"
+      && stat("document:characters") === "22" && stat("document:charactersWithSpaces") === "25", "document counts: paragraphs, lines, pages, characters, with spaces");
+  assert(stat("selection:words") === "—" || stat("selection:words") === "0", "no selection, no selection count");
+  document.querySelector("[data-statistics-dialog] .ui-dialog-close").click();
+  await waitFor(() => !document.querySelector("[data-statistics-dialog]").open, "the statistics dialog closes");
+  key(editor.element, "a", { ctrlKey: true });
+  await waitFor(() => state().anchor === 0 && state().focus === state().docLen, "select all for the selection counts");
+  await waitFor(() => /sélection|\//i.test(document.querySelector("[data-statistics-status]").textContent), "the footer shows the selection");
+  key(editor.element, "ArrowLeft");
+  await waitFor(() => state().anchor === state().focus, "selection collapsed");
+
+  // Properties: dialog on the open document, apply, modified, saved with the file.
+  bridge.nextOpen = { name: "proprietes.txt", format: "txt", bytes: encoder.encode("un deux trois quatre cinq") };
+  await clickAndWait(openButton, () => {}, () => message() === "Document ouvert." && state().docLen === 25 && !state().dirty);
+  const propertyDialog = app.properties?.element;
+  assert(propertyDialog instanceof HTMLDialogElement, "the properties dialog is part of the app");
+  const propertiesCommand = document.querySelector("#properties-command");
+  const propertyField = name => document.querySelector(`#${propertyDialog.querySelector(`label[for$="-${name}"]`).htmlFor}`);
+  const typeProperty = (name, value) => { const input = propertyField(name); input.value = value; input.dispatchEvent(new Event("input", { bubbles: true })); };
+  const openProperties = async () => { propertiesCommand.focus(); propertiesCommand.click(); await waitFor(() => propertyDialog.open, "properties dialog opens"); };
+  const closedProperties = () => waitFor(() => !propertyDialog.open, "properties dialog closes");
+  await openProperties();
+  assert(document.activeElement === propertyField("title") && propertyField("title").value === "", "focus lands on the Title field, empty for a document without properties");
+  assert(propertyDialog.querySelector(".properties-readonly").textContent.includes("5"), "the read-only counts follow the live document");
+  typeProperty("title", "é".repeat(256));
+  assert(propertyField("title").getAttribute("aria-invalid") === "true" && propertyDialog.querySelector(".properties-ok").disabled, "a title over the limit is refused, OK disabled");
+  typeProperty("title", "Rapport « Œuvre »");
+  typeProperty("author", "Élodie");
+  propertyDialog.querySelector(".properties-cancel").click();
+  await closedProperties();
+  assert(document.activeElement === propertiesCommand && !state().dirty, "Cancel keeps the document clean and restores the focus");
+  await openProperties();
+  assert(propertyField("title").value === "" && propertyField("author").value === "", "Cancel applied nothing");
+  typeProperty("title", "Rapport « Œuvre »");
+  typeProperty("keywords", "un; deux");
+  propertyDialog.querySelector(".properties-ok").click();
+  await closedProperties();
+  assert(state().dirty && state().revision === 0n && document.querySelector("#document-state").textContent === "Modifications non enregistrées",
+    "applying properties marks the document modified without a text edit");
+  await openProperties();
+  assert(propertyField("title").value === "Rapport « Œuvre »" && propertyField("keywords").value === "un; deux", "reopening reads the values back");
+  propertyDialog.querySelector(".properties-cancel").click();
+  await closedProperties();
+  bridge.nextSave = { format: "docx", name: "find.docx" };
+  const savedBefore = bridge.files.length;
+  await clickAndWait(saveButton, () => {}, () => bridge.files.length === savedBefore + 1 && message() === "Document enregistré.");
+  assert(!state().dirty, "saving clears the modified state raised by the properties");
+  bridge.nextOpen = { name: "find.docx", format: "docx", bytes: bridge.files.at(-1).bytes };
+  await clickAndWait(openDocxButton, () => {}, () => message() === "Document ouvert.");
+  await openProperties();
+  assert(propertyField("title").value === "Rapport « Œuvre »" && propertyField("keywords").value === "un; deux", "the properties were written in the saved DOCX");
+  propertyDialog.querySelector(".properties-cancel").click();
+  await closedProperties();
+
+  // A read-only document is searched, never replaced.
+  bridge.nextOpen = { name: "revisions.docx", format: "docx", bytes: await fixture("revisions.docx") };
+  await clickAndWait(openDocxButton, () => {}, () => state().readOnly);
+  key(editor.element, "h", { ctrlKey: true });
+  await waitFor(() => !searchSlot.hidden, "Ctrl+H opens the pane in a read-only document");
+  assert(!replaceShown(), "no replacement controls are offered in a read-only document");
+  setQuery("fin");
+  await waitFor(() => app.navigation.searchResult?.revision === state().revision && app.navigation.searchResult.items.length >= 1, "a read-only document is searched");
+  const readOnlyHit = app.navigation.searchResult.items[0];
+  await editor.selectSearchResult(app.navigation.searchResult, 0);
+  assert(state().anchor === readOnlyHit.start && state().focus === readOnlyHit.end, "a result of a read-only document can be selected");
+  const failure = await editor.replaceAll({ revision: state().revision, query: "fin", replacement: "x", options: {} }).catch(error => error.code);
+  assert(failure === "EDITOR_READ_ONLY" && !state().dirty, "the engine refuses the replacement of a read-only document");
+  key(queryNode(), "Escape");
+  await waitFor(() => searchSlot.hidden, "pane closed in read-only");
+  bridge.nextOpen = { name: "essai.txt", format: "txt", bytes: encoder.encode("retour") };
+  await clickAndWait(openButton, () => {}, () => !state().readOnly && !bannerActive());
+
+  key(editor.element, "a", { ctrlKey: true });
+  await waitFor(() => state().anchor === 0 && state().focus === 6, "select all of the text");
+  key(editor.element, "f", { ctrlKey: true });
+  await waitFor(() => !searchSlot.hidden && queryNode().value === "retour", "Ctrl+F seeds the query with the selected text");
+  key(queryNode(), "Escape");
+  await waitFor(() => searchSlot.hidden, "pane closed after the seed check");
   const dropLength = state().docLen;
   const textDrop = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: (() => { const t = new DataTransfer(); t.setData("text/plain", "déposé"); return t; })(), clientX: 100, clientY: 100 });
   canvas.dispatchEvent(textDrop);
@@ -378,6 +537,16 @@ try {
   const before = state().docLen;
   imageCommand.click();
   await waitFor(() => state().docLen === before + 3, "InsertImage adds one three-byte object at the caret");
+  // R7b-1: the page draws the picture (its bitmap comes from the engine) at its size, on the line of the text.
+  scrollport.scrollTop = 0;
+  await waitFor(() => editor.pictureBoxes().length === 1, "the page draws the inserted picture");
+  {
+    const box = editor.pictureBoxes()[0].bounds;
+    assert(Math.abs(box.width - 30) < 0.05 && Math.abs(box.height - 15) < 0.05, "a 40 x 20 px picture is drawn 30 x 15 pt (96 dpi)");
+    await waitFor(() => near(pixelAt(box.min.x + box.width / 2, box.min.y + box.height / 2), [255, 0, 0]), "the picture pixels are painted on the Canvas");
+    assert(editor.pictureBitmaps >= 1, "the bitmap of the picture is held by the client");
+    assert(near(pixelAt(box.min.x + box.width + 40, box.min.y + 2), [255, 255, 255], 8), "the page beside the picture stays white");
+  }
   assert(message().includes("image insérée") && !status.classList.contains("error"), "success is announced");
   assert(state().dirty && state().canUndo && state().focus === 4, "image insertion is undoable and moves the caret after the object");
   assert(document.activeElement === editor.element, "focus returns to the document after the picker");
@@ -446,12 +615,36 @@ try {
   pointer("pointermove", end.x - 1, end.y, 1);
   pointer("pointerup", end.x - 1, end.y, 1);
   await waitFor(() => state().anchor === 0 && state().focus >= 22, "drag selects the line (HitTest extend)");
+  // R7b-1: the selection is highlighted (rectangles from the engine, drawn by the overlay).
+  await waitFor(() => editor.selectionRects.length >= 1, "the engine sends the rectangles of the selection");
+  {
+    const [rect] = editor.selectionRects;
+    assert(rect.page === 0 && rect.width > 100 && rect.height > 5, "the highlight covers the selected line");
+    await waitFor(() => near(pixelAt(rect.x + 2, rect.y + rect.height - 1), [202, 220, 215], 14), "the highlight is visible at the pixel (selection colour over white)");
+    assert(near(pixelAt(rect.x + rect.width + 30, rect.y + rect.height - 1), [255, 255, 255], 6), "the page beyond the selection stays white");
+  }
   assert(await editor.selectedText(state()) === (await text()).slice(0, state().focus), "the dragged selection reads back through the window");
+  // R7b-1: double click selects the word, triple click the paragraph, dragging after a double click grows by words.
+  pointer("pointerdown", start.x + 20, start.y, 1);
+  pointer("pointerup", start.x + 20, start.y, 1);
+  await waitFor(() => state().anchor === state().focus && state().focus > 0, "a click inside the first word");
   pointer("pointerdown", start.x + 20, start.y, 2);
   pointer("pointerup", start.x + 20, start.y, 2);
-  await sleep(100);
-  assert(state().anchor === state().focus, "double-click is a plain click in v2 (no word selection: documented limit)");
-  skipped.push("double-click word and triple-click paragraph selection: absent in v2 (docs/r7-ui-parity.md §7)");
+  await waitFor(() => state().anchor === 0 && state().focus === 7, "double click selects the word under the pointer");
+  assert(await editor.selectedText(state()) === "premier", "the selected word reads back");
+  await waitFor(() => editor.selectionRects.length === 1, "the word is highlighted");
+  pointer("pointerdown", start.x + 20, start.y, 3);
+  pointer("pointerup", start.x + 20, start.y, 3);
+  await waitFor(() => state().anchor === 0 && state().focus === 25, "triple click selects the paragraph with its break");
+  assert(await editor.selectedText(state()) === "premier mot deuxieme mot\n", "the selected paragraph reads back");
+  pointer("pointerdown", start.x + 20, start.y, 2);
+  pointer("pointermove", end.x - 12, end.y, 2);
+  pointer("pointerup", end.x - 12, end.y, 2);
+  await waitFor(() => state().anchor === 0 && state().focus === 24, "dragging after a double click grows the selection by words");
+  pointer("pointerdown", start.x + 20, start.y, 1);
+  pointer("pointerup", start.x + 20, start.y, 1);
+  await waitFor(() => state().anchor === state().focus, "a single click collapses the selection again");
+  await waitFor(() => editor.selectionRects.length === 0, "the highlight goes with the selection");
 
   // --- clipboard ----------------------------------------------------------------------------------------------------------------
   const clipboard = (type, { fail = false } = {}) => {

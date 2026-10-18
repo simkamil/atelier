@@ -34,6 +34,18 @@ export const RICH_LIMITS = Object.freeze({
   maxNoticeBytes: 255,
   maxStampChars: 255,
   maxSaveBytes: 32 * 1024 * 1024 - HEADER_BYTES - (8 + 4 + 2) - 64 * (4 + 255),
+  // R7b-1: selection rectangles and picture bitmaps.
+  maxSelectionRects: 4096,
+  maxBitmapSide: 1600,
+  // R7b-2: search, replace, statistics, properties.
+  maxQueryBytes: 1024,
+  maxSearchItems: 1000,
+  searchCountCap: 10000,
+  maxExcerptBytes: 4096,
+  maxHighlightRanges: 1000,
+  maxHighlightRects: 8192,
+  maxPropertyBytes: 64 * 1024,
+  maxReplaceMatches: 5000,
 });
 export const NO_CARET = 0xffffffff;
 
@@ -45,11 +57,18 @@ export const RichOpcode = Object.freeze({
   Save: 0x0110, InsertImage: 0x0111, MakeEditableCopy: 0x0112,
   // R2b
   Resync: 0x0118,
+  // R7b-1
+  SelectionRects: 0x0120, ImageBitmap: 0x0121, SelectUnit: 0x0122,
+  // R7b-2: search, replace, statistics, properties.
+  Search: 0x0130, Statistics: 0x0131, SearchRects: 0x0132, Replace: 0x0133, ReplaceAll: 0x0134,
+  PropertiesRead: 0x0135, PropertiesApply: 0x0136,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
   AccessibleWindow: 0x8105,
   SaveData: 0x8106,
+  SelectionRects: 0x8110, ImageBitmap: 0x8111,
+  SearchResult: 0x8120, Statistics: 0x8121, SearchRects: 0x8122, Replaced: 0x8123, Properties: 0x8125, PropertiesApplied: 0x8126,
 });
 
 export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
@@ -60,6 +79,10 @@ export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
   RICH_STALE_REVISION: 16, RICH_OPEN_FAILED: 17, RICH_INTERNAL: 18, RICH_LIMIT: 19, RICH_NOT_READY: 20,
   // US-218 (R3b)
   RICH_READ_ONLY: 21, RICH_SAVE_FAILED: 22, RICH_IMAGE_INVALID: 23, RICH_REVISIONS_UNSUPPORTED: 24,
+  // R7b-1
+  RICH_UNKNOWN_OBJECT: 30,
+  // R7b-2 (codes 40 to 49)
+  RICH_EMPTY_QUERY: 40, RICH_STALE_MATCH: 41, RICH_QUERY_TOO_LARGE: 42, RICH_PROPERTIES_FAILED: 43, RICH_TOO_MANY_MATCHES: 44,
 }));
 const ERROR_NAMES = new Map(Object.entries(RichErrorCode).map(([name, code]) => [code, name]));
 
@@ -71,6 +94,8 @@ export const RICH_DIRECTIONS = Object.freeze([
 ]);
 const UNITS = ["grapheme", "word"];
 const HIT_MODES = ["probe", "setCaret", "extend"];
+/** Units of `selectUnit`, by wire value. */
+export const SELECTION_UNITS = Object.freeze(["word", "paragraph"]);
 /** Formats of `save`, by wire value (1..4). */
 export const SAVE_FORMATS = Object.freeze([null, "txt", "docx", "docm", "dotx"]);
 
@@ -301,6 +326,28 @@ function parseCommand(opcode, body) {
       break;
     }
     case RichOpcode.MakeEditableCopy: command = { type: "makeEditableCopy", ...readStamp(r) }; break;
+    case RichOpcode.SelectionRects: {
+      const first = r.u32();
+      const count = r.u32();
+      if (count === 0) fail("RICH_INVALID_BODY");
+      if (count > RICH_LIMITS.maxPagesPerResponse) fail("RICH_TOO_MANY_PAGES");
+      if (first >= RICH_LIMITS.maxPages) fail("RICH_PAGE_RANGE");
+      command = { type: "selectionRects", first, count };
+      break;
+    }
+    case RichOpcode.ImageBitmap: command = { type: "imageBitmap", objectId: r.u64() }; break;
+    case RichOpcode.SelectUnit: {
+      const position = r.u64();
+      const unit = SELECTION_UNITS[r.u8()];
+      if (unit === undefined) fail("RICH_INVALID_BODY");
+      const extend = r.flag();
+      r.zero(2);
+      command = { type: "selectUnit", position, unit, extend };
+      break;
+    }
+    case RichOpcode.Search: case RichOpcode.Statistics: case RichOpcode.SearchRects: case RichOpcode.Replace:
+    case RichOpcode.ReplaceAll: case RichOpcode.PropertiesRead: case RichOpcode.PropertiesApply:
+      command = readFindCommand(opcode, r); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   r.finish();
@@ -368,6 +415,12 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
       if (!(command.bytes instanceof Uint8Array)) fail("RICH_INVALID_BODY");
       writeText16(w, command.alt ?? ""); w.raw(command.bytes); opcode = RichOpcode.InsertImage; break;
     case "makeEditableCopy": writeStamp(w, command); opcode = RichOpcode.MakeEditableCopy; break;
+    case "selectionRects": w.u32(u32(command.first)); w.u32(u32(command.count)); opcode = RichOpcode.SelectionRects; break;
+    case "imageBitmap": w.u64(u64(command.objectId)); opcode = RichOpcode.ImageBitmap; break;
+    case "selectUnit": w.u64(u64(command.position)); w.u8(enumIndex(SELECTION_UNITS, command.unit), command.extend ? 1 : 0, 0, 0); opcode = RichOpcode.SelectUnit; break;
+    case "search": case "statistics": case "searchRects": case "replace": case "replaceAll":
+    case "propertiesRead": case "propertiesApply":
+      opcode = writeFindCommand(w, command); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
@@ -555,6 +608,49 @@ function writeSaveData(w, response) {
   }
 }
 
+/** `SelectionRects` (R7b-1): {revision (BigInt), rects: [{page, x, y, width, height}]} in points of the page. */
+function readSelectionRects(r) {
+  const revision = r.u64();
+  const count = r.u32();
+  if (count > RICH_LIMITS.maxSelectionRects) fail("RICH_INVALID_BODY");
+  const rects = [];
+  for (let i = 0; i < count; i += 1) {
+    const page = r.u32();
+    const x = r.f64(); const y = r.f64(); const width = r.f64(); const height = r.f64();
+    if (page >= RICH_LIMITS.maxPages || width < 0 || height < 0) fail("RICH_INVALID_BODY");
+    rects.push({ page, x, y, width, height });
+  }
+  return { type: "selectionRects", revision, rects };
+}
+
+function writeSelectionRects(w, response) {
+  if (!Array.isArray(response.rects) || response.rects.length > RICH_LIMITS.maxSelectionRects) fail("RICH_INVALID_BODY");
+  w.u64(u64(response.revision)); w.u32(response.rects.length);
+  for (const rect of response.rects) {
+    w.u32(u32(rect.page)); w.f64(rect.x); w.f64(rect.y); w.f64(rect.width); w.f64(rect.height);
+  }
+}
+
+function checkBitmap(width, height, length) {
+  const side = (v) => Number.isInteger(v) && v >= 1 && v <= RICH_LIMITS.maxBitmapSide;
+  if (!side(width) || !side(height) || length !== width * height * 4) fail("RICH_INVALID_BODY");
+}
+
+/** `ImageBitmap` (R7b-1): {objectId (BigInt), width, height, rgba (Uint8Array, a view into the frame)}. */
+function readImageBitmap(r) {
+  const objectId = r.u64();
+  const width = r.u32(); const height = r.u32();
+  const len = r.u32();
+  checkBitmap(width, height, len);
+  return { type: "imageBitmap", objectId, width, height, rgba: r.take(len) };
+}
+
+function writeImageBitmap(w, response) {
+  if (!(response.rgba instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+  checkBitmap(response.width, response.height, response.rgba.length);
+  w.u64(u64(response.objectId)); w.u32(response.width); w.u32(response.height); w.u32(response.rgba.length); w.raw(response.rgba);
+}
+
 /** Items: {paraStart, paraEnd (BigInt), role, level, label, text, inlines: [{offset (BigInt), kind, value}]}, one inline per U+FFFC. */
 function readAccessible(r) {
   const count = r.u32();
@@ -613,6 +709,342 @@ function writeAccessible(w, items) {
   }
 }
 
+// ---- R7b-2: search, replace, statistics, properties -----------------------------------------------------
+// Contract: docs/us-340-search.md ("Rich editor protocol"). Positions and revisions are BigInt, counts are numbers.
+
+/** Editable properties, in wire order (the names of the properties dialog). */
+export const PROPERTY_FIELDS = Object.freeze(["title", "subject", "author", "manager", "company", "category", "keywords", "comments",
+  "hyperlinkBase", "contentStatus", "language"]);
+const SEARCH_FLAGS = Object.freeze(["matchCase", "wholeWord", "ignoreAccents", "matchNbsp"]);
+const STAT_FIELDS = Object.freeze(["words", "characters", "charactersWithSpaces", "paragraphs", "lines", "pages"]);
+const PROPERTY_STATS = Object.freeze(["pages", "words", "characters", "charactersWithSpaces", "lines", "paragraphs"]);
+
+function readSearchFlags(r) {
+  const byte = r.u8();
+  if ((byte & ~0x0f) !== 0) fail("RICH_INVALID_BODY");
+  return Object.fromEntries(SEARCH_FLAGS.map((name, bit) => [name, (byte & (1 << bit)) !== 0]));
+}
+
+function searchFlagsByte(flags) {
+  if (flags === undefined) return 0;
+  if (flags === null || typeof flags !== "object") fail("RICH_INVALID_BODY");
+  for (const key of Object.keys(flags)) if (!SEARCH_FLAGS.includes(key)) fail("RICH_INVALID_BODY");
+  let byte = 0;
+  SEARCH_FLAGS.forEach((name, bit) => {
+    if (flags[name] !== undefined && typeof flags[name] !== "boolean") fail("RICH_INVALID_BODY");
+    if (flags[name]) byte |= 1 << bit;
+  });
+  return byte;
+}
+
+function wellFormed(text) {
+  if (typeof text !== "string") fail("RICH_INVALID_BODY");
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const d = text.charCodeAt(i + 1);
+      if (!(d >= 0xdc00 && d <= 0xdfff)) fail("RICH_INVALID_UTF8");
+      i += 1;
+    } else if (c >= 0xdc00 && c <= 0xdfff) fail("RICH_INVALID_UTF8");
+  }
+}
+
+function decodeUtf8(bytes) {
+  try { return decoder.decode(bytes); } catch { return fail("RICH_INVALID_UTF8"); }
+}
+
+function readQuery(r, emptyAllowed) {
+  const len = r.u32();
+  if (len > RICH_LIMITS.maxQueryBytes) fail("RICH_QUERY_TOO_LARGE");
+  const text = decodeUtf8(r.take(len));
+  if (text.length === 0 && !emptyAllowed) fail("RICH_EMPTY_QUERY");
+  return text;
+}
+
+function writeQuery(w, query) {
+  wellFormed(query);
+  const bytes = encoder.encode(query);
+  if (bytes.length > RICH_LIMITS.maxQueryBytes) fail("RICH_QUERY_TOO_LARGE");
+  w.u32(bytes.length); w.raw(bytes);
+}
+
+function readFindCommand(opcode, r) {
+  switch (opcode) {
+    case RichOpcode.Search: {
+      const revision = r.u64();
+      const flags = readSearchFlags(r);
+      r.zero(3);
+      return { type: "search", revision, flags, query: readQuery(r, true) };
+    }
+    case RichOpcode.Statistics: return { type: "statistics" };
+    case RichOpcode.SearchRects: {
+      const revision = r.u64();
+      const firstPage = r.u32(); const pageCount = r.u32();
+      if (pageCount === 0) fail("RICH_INVALID_BODY");
+      if (pageCount > RICH_LIMITS.maxPagesPerResponse) fail("RICH_TOO_MANY_PAGES");
+      if (firstPage >= RICH_LIMITS.maxPages) fail("RICH_PAGE_RANGE");
+      const count = r.u32();
+      if (count === 0 || count > RICH_LIMITS.maxHighlightRanges) fail("RICH_INVALID_BODY");
+      const ranges = [];
+      for (let i = 0; i < count; i += 1) {
+        const start = r.u64(); const end = r.u64();
+        if (start > end) fail("RICH_INVALID_RANGE");
+        ranges.push({ start, end });
+      }
+      return { type: "searchRects", revision, firstPage, pageCount, ranges };
+    }
+    case RichOpcode.Replace: case RichOpcode.ReplaceAll: {
+      const current = opcode === RichOpcode.Replace;
+      const revision = r.u64();
+      const flags = readSearchFlags(r);
+      r.zero(3);
+      let start; let end;
+      if (current) {
+        start = r.u64(); end = r.u64();
+        if (start > end) fail("RICH_INVALID_RANGE");
+      }
+      const query = readQuery(r, false);
+      if (query.includes("\ufffc")) fail("RICH_INVALID_TEXT");
+      const replacement = r.text(RICH_LIMITS.maxTextBytes, "RICH_FRAME_TOO_LARGE");
+      validateEditText(replacement);
+      return current ? { type: "replace", revision, flags, start, end, query, replacement }
+        : { type: "replaceAll", revision, flags, query, replacement };
+    }
+    case RichOpcode.PropertiesRead: return { type: "propertiesRead" };
+    default: {
+      const changes = {};
+      for (const name of PROPERTY_FIELDS) {
+        const present = r.flag();
+        const len = r.u32();
+        if (len > RICH_LIMITS.maxPropertyBytes) fail("RICH_FRAME_TOO_LARGE");
+        const raw = r.take(len);
+        if (present) changes[name] = decodeUtf8(raw);
+        else if (len !== 0) fail("RICH_INVALID_BODY");
+      }
+      return { type: "propertiesApply", changes };
+    }
+  }
+}
+
+function writeFindCommand(w, command) {
+  switch (command.type) {
+    case "search":
+      w.u64(u64(command.revision)); w.u8(searchFlagsByte(command.flags), 0, 0, 0); writeQuery(w, command.query);
+      return RichOpcode.Search;
+    case "statistics": return RichOpcode.Statistics;
+    case "searchRects":
+      w.u64(u64(command.revision)); w.u32(u32(command.firstPage)); w.u32(u32(command.pageCount));
+      if (!Array.isArray(command.ranges)) fail("RICH_INVALID_BODY");
+      w.u32(command.ranges.length);
+      for (const range of command.ranges) { w.u64(u64(range.start)); w.u64(u64(range.end)); }
+      return RichOpcode.SearchRects;
+    case "replace": case "replaceAll": {
+      const current = command.type === "replace";
+      w.u64(u64(command.revision)); w.u8(searchFlagsByte(command.flags), 0, 0, 0);
+      if (current) { w.u64(u64(command.start)); w.u64(u64(command.end)); }
+      writeQuery(w, command.query);
+      validateEditText(command.replacement); w.text(command.replacement);
+      return current ? RichOpcode.Replace : RichOpcode.ReplaceAll;
+    }
+    case "propertiesRead": return RichOpcode.PropertiesRead;
+    default: {
+      const changes = command.changes ?? {};
+      for (const name of Object.keys(changes)) if (!PROPERTY_FIELDS.includes(name)) fail("RICH_INVALID_BODY");
+      for (const name of PROPERTY_FIELDS) {
+        const value = changes[name];
+        if (value !== undefined) wellFormed(value);
+        const bytes = encoder.encode(value ?? "");
+        w.u8(value === undefined ? 0 : 1); w.u32(bytes.length); w.raw(bytes);
+      }
+      return RichOpcode.PropertiesApply;
+    }
+  }
+}
+
+function readCounts(r) {
+  const counts = Object.fromEntries(STAT_FIELDS.map((name) => [name, r.u32()]));
+  if (counts.pages > RICH_LIMITS.maxPages) fail("RICH_TOO_MANY_PAGES");
+  return counts;
+}
+
+function writeCounts(w, counts) {
+  if (counts === null || typeof counts !== "object") fail("RICH_INVALID_BODY");
+  for (const name of STAT_FIELDS) w.u32(u32(counts[name]));
+}
+
+function readPropertyText(r) { return r.text(RICH_LIMITS.maxPropertyBytes, "RICH_FRAME_TOO_LARGE"); }
+
+function readOptionalText(r) {
+  const present = r.flag();
+  const text = readPropertyText(r);
+  if (!present && text.length > 0) fail("RICH_INVALID_BODY");
+  return present ? text : null;
+}
+
+function readOptionalNumber(r) {
+  const present = r.flag();
+  const value = r.u64();
+  if (!present && value !== 0n) fail("RICH_INVALID_BODY");
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) fail("RICH_INVALID_BODY");
+  return present ? Number(value) : null;
+}
+
+function writeOptionalText(w, value) {
+  if (value !== null && value !== undefined) wellFormed(value);
+  const bytes = encoder.encode(value ?? "");
+  if (bytes.length > RICH_LIMITS.maxPropertyBytes) fail("RICH_FRAME_TOO_LARGE");
+  w.u8(value === null || value === undefined ? 0 : 1); w.u32(bytes.length); w.raw(bytes);
+}
+
+function writeOptionalNumber(w, value) {
+  w.u8(value === null || value === undefined ? 0 : 1);
+  w.u64(value === null || value === undefined ? 0n : BigInt(value));
+}
+
+/** Snapshot of the properties: the shape of the properties dialog (web/properties-protocol.mjs, without `kind`). */
+function readSnapshot(r) {
+  const editable = {}; const limits = {};
+  for (const name of PROPERTY_FIELDS) editable[name] = readPropertyText(r);
+  for (const name of PROPERTY_FIELDS) limits[name] = r.u32();
+  const dates = [];
+  for (let i = 0; i < 3; i += 1) {
+    const kind = r.u8();
+    const text = readPropertyText(r);
+    if (kind === 0 && text.length === 0) dates.push(null);
+    else if (kind === 1 || kind === 2) dates.push({ valid: kind === 1, text });
+    else fail("RICH_INVALID_BODY");
+  }
+  const [lastModifiedBy, revision, application, appVersion, template] = [0, 1, 2, 3, 4].map(() => readOptionalText(r));
+  const totalTime = readOptionalNumber(r);
+  const statistics = Object.fromEntries(PROPERTY_STATS.map((name) => [name, readOptionalNumber(r)]));
+  const noticeCount = r.u32();
+  return { editable, limits, created: dates[0], modified: dates[1], lastPrinted: dates[2], lastModifiedBy, revision, application, appVersion, template, totalTime, statistics, noticeCount };
+}
+
+function writeSnapshot(w, s) {
+  for (const name of PROPERTY_FIELDS) {
+    wellFormed(s.editable[name]);
+    const bytes = encoder.encode(s.editable[name]);
+    if (bytes.length > RICH_LIMITS.maxPropertyBytes) fail("RICH_FRAME_TOO_LARGE");
+    w.u32(bytes.length); w.raw(bytes);
+  }
+  for (const name of PROPERTY_FIELDS) w.u32(u32(s.limits[name]));
+  for (const date of [s.created, s.modified, s.lastPrinted]) {
+    if (date === null || date === undefined) { w.u8(0); w.u32(0); continue; }
+    wellFormed(date.text);
+    const bytes = encoder.encode(date.text);
+    w.u8(date.valid ? 1 : 2); w.u32(bytes.length); w.raw(bytes);
+  }
+  for (const value of [s.lastModifiedBy, s.revision, s.application, s.appVersion, s.template]) writeOptionalText(w, value);
+  writeOptionalNumber(w, s.totalTime);
+  for (const name of PROPERTY_STATS) writeOptionalNumber(w, s.statistics[name]);
+  w.u32(u32(s.noticeCount));
+}
+
+function readFindReply(opcode, r) {
+  switch (opcode) {
+    case RichReplyOpcode.SearchResult: {
+      const revision = r.u64(); const total = r.u32();
+      const flags = r.u8();
+      r.zero(3);
+      if ((flags & ~3) !== 0) fail("RICH_INVALID_BODY");
+      const count = r.u32();
+      if (count > RICH_LIMITS.maxSearchItems || count > total) fail("RICH_INVALID_BODY");
+      const items = [];
+      for (let i = 0; i < count; i += 1) {
+        const start = r.u64(); const end = r.u64();
+        const len = r.u32(); const from = r.u32(); const to = r.u32();
+        const eflags = r.u8();
+        r.zero(3);
+        if (len > RICH_LIMITS.maxExcerptBytes || (eflags & ~3) !== 0) fail("RICH_INVALID_BODY");
+        const raw = r.take(len);
+        const text = decodeUtf8(raw);
+        const boundary = (at) => at === len || (raw[at] & 0xc0) !== 0x80;
+        const previous = items[items.length - 1];
+        if (start >= end || !(from < to && to <= len && boundary(from) && boundary(to)) || (previous && start < previous.end)) fail("RICH_INVALID_BODY");
+        items.push({ start, end, excerpt: { text, start: from, end: to, truncatedBefore: (eflags & 1) !== 0, truncatedAfter: (eflags & 2) !== 0 } });
+      }
+      return { type: "searchResult", revision, total, truncated: (flags & 1) !== 0, totalCapped: (flags & 2) !== 0, items };
+    }
+    case RichReplyOpcode.Statistics: {
+      const revision = r.u64(); const anchor = r.u64(); const focus = r.u64();
+      const layoutComplete = r.flag();
+      r.zero(3);
+      return { type: "statistics", revision, anchor, focus, layoutComplete, document: readCounts(r), selection: readCounts(r) };
+    }
+    case RichReplyOpcode.SearchRects: {
+      const revision = r.u64(); const count = r.u32();
+      if (count > RICH_LIMITS.maxHighlightRects) fail("RICH_INVALID_BODY");
+      const rects = [];
+      for (let i = 0; i < count; i += 1) {
+        const rect = { item: r.u32(), page: r.u32(), x: r.f64(), y: r.f64(), width: r.f64(), height: r.f64() };
+        const previous = rects[rects.length - 1];
+        if (rect.page >= RICH_LIMITS.maxPages || rect.width < 0 || rect.height < 0 || (previous && rect.item < previous.item)) fail("RICH_INVALID_BODY");
+        rects.push(rect);
+      }
+      return { type: "searchRects", revision, rects };
+    }
+    case RichReplyOpcode.Replaced: {
+      const count = r.u32();
+      return { type: "replaced", count, state: { type: "state", ...parseState(r) } };
+    }
+    case RichReplyOpcode.Properties: return { type: "properties", revision: r.u64(), snapshot: readSnapshot(r) };
+    default: {
+      const status = r.u8();
+      if (status > 1) fail("RICH_INVALID_BODY");
+      r.zero(1);
+      const changed = r.u16(); const field = r.u8();
+      r.zero(3);
+      const max = r.u32(); const length = r.u32();
+      const consistent = status === 0 ? field === 0 && max === 0 && length === 0
+        : field < PROPERTY_FIELDS.length && length > max && changed === 0;
+      if (!consistent || changed > PROPERTY_FIELDS.length) fail("RICH_INVALID_BODY");
+      return { type: "propertiesApplied", status: status === 0 ? "applied" : "tooLong", changed,
+        field: status === 0 ? null : PROPERTY_FIELDS[field], max, length, state: { type: "state", ...parseState(r) } };
+    }
+  }
+}
+
+function writeFindReply(w, response) {
+  switch (response.type) {
+    case "searchResult": {
+      if (!Array.isArray(response.items) || response.items.length > RICH_LIMITS.maxSearchItems) fail("RICH_INVALID_BODY");
+      w.u64(u64(response.revision)); w.u32(u32(response.total));
+      w.u8((response.truncated ? 1 : 0) | (response.totalCapped ? 2 : 0), 0, 0, 0);
+      w.u32(response.items.length);
+      for (const item of response.items) {
+        const e = item.excerpt;
+        wellFormed(e.text);
+        const bytes = encoder.encode(e.text);
+        if (bytes.length > RICH_LIMITS.maxExcerptBytes) fail("RICH_INVALID_BODY");
+        w.u64(u64(item.start)); w.u64(u64(item.end)); w.u32(bytes.length); w.u32(u32(e.start)); w.u32(u32(e.end));
+        w.u8((e.truncatedBefore ? 1 : 0) | (e.truncatedAfter ? 2 : 0), 0, 0, 0); w.raw(bytes);
+      }
+      return RichReplyOpcode.SearchResult;
+    }
+    case "statistics":
+      w.u64(u64(response.revision)); w.u64(u64(response.anchor)); w.u64(u64(response.focus));
+      w.u8(response.layoutComplete ? 1 : 0, 0, 0, 0);
+      writeCounts(w, response.document); writeCounts(w, response.selection);
+      return RichReplyOpcode.Statistics;
+    case "searchRects":
+      if (!Array.isArray(response.rects) || response.rects.length > RICH_LIMITS.maxHighlightRects) fail("RICH_INVALID_BODY");
+      w.u64(u64(response.revision)); w.u32(response.rects.length);
+      for (const rect of response.rects) { w.u32(u32(rect.item)); w.u32(u32(rect.page)); w.f64(rect.x); w.f64(rect.y); w.f64(rect.width); w.f64(rect.height); }
+      return RichReplyOpcode.SearchRects;
+    case "replaced": w.u32(u32(response.count)); writeState(w, response.state); return RichReplyOpcode.Replaced;
+    case "properties": w.u64(u64(response.revision)); writeSnapshot(w, response.snapshot); return RichReplyOpcode.Properties;
+    default: {
+      const tooLong = response.status === "tooLong";
+      w.u8(tooLong ? 1 : 0, 0); w.u16(u32(response.changed));
+      w.u8(tooLong ? enumIndex(PROPERTY_FIELDS, response.field) : 0, 0, 0, 0);
+      w.u32(u32(response.max)); w.u32(u32(response.length));
+      writeState(w, response.state);
+      return RichReplyOpcode.PropertiesApplied;
+    }
+  }
+}
+
 /** @returns {{docId:number, requestId:number, response:object}} */
 export function decodeRichReply(bytes) {
   const { opcode, context, body } = split(bytes);
@@ -657,6 +1089,11 @@ export function decodeRichReply(bytes) {
         break;
       }
       case RichReplyOpcode.SaveData: response = readSaveData(r); break;
+      case RichReplyOpcode.SelectionRects: response = readSelectionRects(r); break;
+      case RichReplyOpcode.ImageBitmap: response = readImageBitmap(r); break;
+      case RichReplyOpcode.SearchResult: case RichReplyOpcode.Statistics: case RichReplyOpcode.SearchRects:
+      case RichReplyOpcode.Replaced: case RichReplyOpcode.Properties: case RichReplyOpcode.PropertiesApplied:
+        response = readFindReply(opcode, r); break;
       default: return fail("RICH_UNKNOWN_OPCODE");
     }
     r.finish();
@@ -680,6 +1117,10 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     case "closed": opcode = RichReplyOpcode.Closed; break;
     case "accessibleWindow": w.u64(u64(response.revision)); writeAccessible(w, response.items); opcode = RichReplyOpcode.AccessibleWindow; break;
     case "saveData": writeSaveData(w, response); opcode = RichReplyOpcode.SaveData; break;
+    case "selectionRects": writeSelectionRects(w, response); opcode = RichReplyOpcode.SelectionRects; break;
+    case "imageBitmap": writeImageBitmap(w, response); opcode = RichReplyOpcode.ImageBitmap; break;
+    case "searchResult": case "statistics": case "searchRects": case "replaced": case "properties": case "propertiesApplied":
+      opcode = writeFindReply(w, response); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());

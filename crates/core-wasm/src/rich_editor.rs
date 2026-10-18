@@ -26,7 +26,11 @@ use crate::rich_protocol::{
 };
 
 mod accessible;
+mod find;
+#[cfg(test)]
+mod find_tests;
 mod io;
+mod sel;
 #[cfg(test)]
 mod tests;
 
@@ -59,11 +63,17 @@ struct Session {
     base: u64,
     /// Revision (relative) of the last `MarkSaved`.
     saved: u64,
+    /// History position at the last `MarkSaved` (or at `Open`): the document is
+    /// clean when undo and redo bring the history back to it.
+    saved_point: (u64, u64),
     anchor: usize,
     focus: usize,
     upstream: bool,
     /// X kept across vertical moves.
     preferred_x: Option<f64>,
+    /// Span of the unit gesture in progress (double or triple click and its
+    /// drag, R7b-1); any other selection change forgets it.
+    unit_base: Option<(usize, usize)>,
     txt: bool,
     /// Where the document comes from, read-only state, pictures (US-218).
     origin: io::Origin,
@@ -256,16 +266,19 @@ impl Session {
     ) -> Result<Self, ErrorCode> {
         let cache = PageCache::new(&doc, txt).map_err(|_| ErrorCode::OpenFailed)?;
         let base = doc.revision();
+        let saved_point = doc.history_position();
         Ok(Self {
             id,
             doc,
             cache,
             base,
             saved: 0,
+            saved_point,
             anchor: 0,
             focus: 0,
             upstream: false,
             preferred_x: None,
+            unit_base: None,
             txt,
             origin,
             pending: PageDelta::default(),
@@ -457,6 +470,8 @@ impl Session {
                     return Err(ErrorCode::StaleRevision);
                 }
                 self.saved = revision;
+                self.saved_point = self.doc.history_position();
+                self.origin.props.mark_saved();
                 Ok(Response::State(self.state(PageDelta::default(), false)?))
             }
             Command::Layout { budget } => self.finish(PageDelta::default(), budget, false),
@@ -469,6 +484,41 @@ impl Session {
             Command::Save { format, stamp } => self.save(format, &stamp),
             Command::InsertImage { alt, bytes } => self.insert_image(&alt, &bytes),
             Command::MakeEditableCopy { stamp } => self.editable_copy(&stamp),
+            Command::SelectionRects { first, count } => self.selection_rects(first, count),
+            Command::ImageBitmap { object_id } => self.image_bitmap(object_id),
+            Command::SelectUnit {
+                position,
+                unit,
+                extend,
+            } => self.select_unit(position, unit, extend),
+            Command::Search {
+                revision,
+                flags,
+                query,
+            } => self.search(revision, flags, &query),
+            Command::Statistics => self.statistics(),
+            Command::SearchRects {
+                revision,
+                first_page,
+                page_count,
+                ranges,
+            } => self.search_rects(revision, first_page, page_count, &ranges),
+            Command::Replace {
+                revision,
+                flags,
+                start,
+                end,
+                query,
+                replacement,
+            } => self.replace_current(revision, flags, (start, end), &query, &replacement),
+            Command::ReplaceAll {
+                revision,
+                flags,
+                query,
+                replacement,
+            } => self.replace_all(revision, flags, &query, &replacement),
+            Command::PropertiesRead => self.properties_read(),
+            Command::PropertiesApply { changes } => self.properties_apply(changes),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(
@@ -485,6 +535,7 @@ impl Session {
         self.focus = focus;
         self.upstream = upstream;
         self.preferred_x = preferred_x;
+        self.unit_base = None;
     }
 
     /// Replaces `start..end` and lays the change out.
@@ -740,7 +791,7 @@ impl Session {
             focus: self.focus as u64,
             focus_upstream: self.upstream,
             doc_len: self.doc.len() as u64,
-            modified: revision != self.saved,
+            modified: self.doc.history_position() != self.saved_point || self.origin.props.dirty(),
             can_undo: self.doc.can_undo(),
             can_redo: self.doc.can_redo(),
             layout_complete: delta.layout_complete,

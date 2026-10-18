@@ -228,7 +228,8 @@ async function start() {
   const contextAvailable = contextKeys.every(key => messages.has(`context-${key}`));
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
     symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, onImage: () => { void insertPickedImages(); }, onProperties: () => {
-      if (!properties || !previewReady || !previewDocxBytes || document.querySelector("dialog:modal")) return;
+      if (!properties || document.querySelector("dialog:modal")) return;
+      if (v2 ? !initialized || busy || !editor?.capabilities?.properties : !previewReady || !previewDocxBytes) return;
       properties.open({ returnFocusTo: document.activeElement }).catch(() => showEditorMessage(messages.get("status-properties-loadError"), true));
     }, onSymbols: () => {
       if (!symbols || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
@@ -315,7 +316,7 @@ async function start() {
     const disabled = !initialized || (previewActive ? !previewReady : busy);
     zoomControls.setState({ zoom: view?.getZoom() ?? 1, mode: view?.getZoomMode() ?? "custom", disabled });
     shell.setZoomEnabled(!disabled);
-    shell.setPropertiesEnabled(propertiesAvailable && previewActive && !disabled && previewDocxBytes !== null);
+    shell.setPropertiesEnabled(propertiesAvailable && !disabled && (v2 ? Boolean(editor?.capabilities?.properties) : previewActive && previewDocxBytes !== null));
     updateStatus();
   };
   updateZoom();
@@ -330,7 +331,7 @@ async function start() {
     const toolsEnabled = !blocked && !previewActive;
     const writable = !state?.readOnly;
     navigation?.setEnabled(toolsEnabled, { preview: previewActive });
-    shell.setNavigationEnabled(toolsEnabled && toolsAvailable && !v2);
+    shell.setNavigationEnabled(toolsEnabled && toolsAvailable && (!v2 || Boolean(editor?.capabilities?.search)));
     shell.setSymbolsEnabled(toolsEnabled && symbolsAvailable && writable);
     shell.setImageEnabled(toolsEnabled && imageAvailable && writable);
     if (!toolsEnabled) { symbols?.close(); contextMenu?.close({ restoreFocus: false }); }
@@ -396,7 +397,9 @@ async function start() {
       const { createReaderModeToggle } = await import("/document-mirror.mjs");
       const toggle = createReaderModeToggle({ container: nodes.options, input: editor.input, t: (key, values) => i18n.t(key, values) });
       listeners.signal.addEventListener("abort", () => toggle.dispose(), { once: true });
-      shell.setUnavailable?.(messages.get("v2-unavailable-search"), messages.get("v2-unavailable-properties"));
+      // What the rich editor offers is enabled like in v1; a command it lacks stays greyed with its reason.
+      shell.setUnavailable?.(editor.capabilities.search ? null : messages.get("v2-unavailable-search"),
+        editor.capabilities.properties ? null : messages.get("v2-unavailable-properties"));
     } else editor = createEditor(editorOptions);
     function closePreview() {
       if (!previewActive || disposed) return;
@@ -412,7 +415,7 @@ async function start() {
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
       spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
       onZoom: () => { if (previewActive) updateZoom(); }, onViewport: () => { if (previewActive) updateStatus(); } });
-    if (toolsAvailable && !v2) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
+    if (toolsAvailable && (!v2 || editor.capabilities.search)) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
     async function openDocxInEditor(source) {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
@@ -476,8 +479,16 @@ async function start() {
     }
     if (propertiesAvailable) {
       properties = createPropertiesDialog({ i18n,
-        load: () => { if (!previewDocxBytes) throw new EditorError("EDITOR_BUSY"); return readProperties(client, previewDocxBytes); },
+        load: () => {
+          if (v2) return editor.readProperties();
+          if (!previewDocxBytes) throw new EditorError("EDITOR_BUSY");
+          return readProperties(client, previewDocxBytes);
+        },
         apply: async changes => {
+          if (v2) {
+            const applied = await editor.applyProperties(changes);
+            return applied.kind === "tooLong" ? applied : { kind: "ok" };
+          }
           if (!previewDocxBytes) throw new EditorError("EDITOR_BUSY");
           const result = await applyProperties(client, previewDocxBytes, changes);
           if (result.kind === "tooLong") return result;

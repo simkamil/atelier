@@ -2,15 +2,16 @@
 // US-270 dans le vrai produit : ruban, sélecteur, collage, glisser-déposer, rendu Canvas, EXIF, refus, annulation.
 import { decodeDisplayList } from "/display-list.mjs";
 
-// R7a : `?engine=v2` lance le même scénario avec l'éditeur v2. Ce que v2 ne fait pas encore (aucune commande drawImage dans
-// ses pages : géométrie et pixels des images) est listé dans `skipped` avec la raison ; le reste (sélecteur, collage, dépôt,
-// annuler et rétablir, refus, enregistrement DOCX) est vérifié à l'identique.
+// R7a : `?engine=v2` lance le même scénario avec l'éditeur v2. R7b-1 : les pages v2 dessinent les images (`drawImage`,
+// bitmaps demandés au moteur) : géométrie, pixels, EXIF, annuler et rétablir, réduction sont vérifiés comme en v1 (aux
+// arrondis de 1/64 pt près pour v2) ; plus rien n'est sauté.
 const v2 = new URLSearchParams(location.search).get("engine") === "v2";
 const checks = [];
 const skipped = [];
 function assert(value, name) { if (!value) throw new Error(name); checks.push(name); }
-function skip(name, reason) { skipped.push(`${name} (${reason})`); }
-const NO_DRAW_IMAGE = "v2 pages carry no drawImage command yet: pictures are in the model and the DOCX, not painted";
+// Tolerances: v2 lays out in 1/64 pt, v1 in exact floats.
+const EPS = v2 ? 0.05 : 1e-6;
+const RATIO_EPS = v2 ? 2e-3 : 1e-6;
 async function waitFor(predicate, name, timeoutMs = 8000) {
   const end = performance.now() + timeoutMs;
   while (performance.now() < end) { if (await predicate()) return; await new Promise(r => setTimeout(r, 10)); }
@@ -96,12 +97,16 @@ try {
     return [...ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data];
   };
   const pictures = () => {
+    if (v2) return editor.pictureBoxes().filter(p => p.page === 0).map(p => p.bounds);
     const out = [];
     for (const page of state().pages) {
       for (const c of decodeDisplayList(page).commands) if (c.type === "drawImage") out.push(c.bounds);
     }
     return out;
   };
+  // v2 asks the engine for the bitmaps after the page arrives: the pixels show a moment later.
+  const showsColor = (box, fx, fy, expected, tolerance = 40) => near(pixelAt(0, box.min.x + box.width * fx, box.min.y + box.height * fy), expected, tolerance);
+  const waitForColor = (getBox, fx, fy, expected, name, tolerance) => waitFor(() => { scrollTop(); const box = getBox(); return box && showsColor(box, fx, fy, expected, tolerance); }, name);
   const near = (rgb, expected, tolerance = 40) => expected.every((v, i) => Math.abs(rgb[i] - v) <= tolerance);
   const scrollTop = () => { document.querySelector("#document-scroll").scrollTop = 0; };
 
@@ -116,16 +121,15 @@ try {
   await waitFor(async () => await picturesIn() === 1, "picture inserted through the ribbon picker");
   const chars = [...await textOf()];
   assert(chars.length === 3 && chars[0] === "A" && chars[2] === "B", "picture sits exactly at the caret between the letters");
-  if (v2) {
-    assert(state().dirty && state().canUndo, "state is undoable and dirty after the picture");
-    skip("200x100 px laid out at 96 dpi (150 x 75 pt)", NO_DRAW_IMAGE);
-    skip("the Canvas shows the decoded picture pixels", NO_DRAW_IMAGE);
-  } else {
-    assert(state().imageIds.size === 1 && state().dirty && state().canUndo, "state lists the picture and is undoable and dirty");
+  if (v2) assert(state().dirty && state().canUndo, "state is undoable and dirty after the picture");
+  else assert(state().imageIds.size === 1 && state().dirty && state().canUndo, "state lists the picture and is undoable and dirty");
+  await waitFor(() => pictures().length === 1, "the page draws the picture");
+  {
     const [box] = pictures();
-    assert(Math.abs(box.width - 150) < 1e-6 && Math.abs(box.height - 75) < 1e-6, "200x100 px is laid out at 96 dpi (150 x 75 pt)");
-    scrollTop();
-    assert(near(pixelAt(0, box.min.x + box.width / 2, box.min.y + box.height / 2), [255, 0, 0]), "the Canvas shows the decoded picture pixels");
+    assert(Math.abs(box.width - 150) < EPS && Math.abs(box.height - 75) < EPS, "200x100 px is laid out at 96 dpi (150 x 75 pt)");
+    // The picture sits on the line of the letters: it starts after the "A" and no further left than the margin.
+    assert(box.min.x > 54 && box.min.x < 54 + 12, "the picture is placed right after the letter A");
+    await waitForColor(() => pictures()[0], 0.5, 0.5, [255, 0, 0], "the Canvas shows the decoded picture pixels");
   }
   assert(status.textContent.includes("image insérée") && !status.classList.contains("error"), "success is announced in the status line");
   if (v2) {
@@ -138,16 +142,12 @@ try {
   // --- annuler / rétablir ----------------------------------------------------------
   document.querySelector("#undo").click();
   await waitFor(async () => await picturesIn() === 0 && await textOf() === "AB", "undo removes the picture");
-  if (v2) { await waitFor(() => document.querySelectorAll(".document-mirror [role=img]").length === 0, "mirror drops the picture"); skip("undo removes the picture from the display list", NO_DRAW_IMAGE); }
-  else assert(pictures().length === 0, "undo removes the picture from the display list");
+  if (v2) await waitFor(() => document.querySelectorAll(".document-mirror [role=img]").length === 0, "mirror drops the picture");
+  await waitFor(() => pictures().length === 0, "undo removes the picture from the display list");
   document.querySelector("#redo").click();
   await waitFor(async () => await picturesIn() === 1, "redo restores the picture");
-  if (v2) skip("redo repaints the picture", NO_DRAW_IMAGE);
-  else {
-    scrollTop();
-    const [again] = pictures();
-    assert(near(pixelAt(0, again.min.x + again.width / 2, again.min.y + again.height / 2), [255, 0, 0]), "redo repaints the picture");
-  }
+  await waitForColor(() => pictures()[0], 0.5, 0.5, [255, 0, 0], "redo repaints the picture");
+  assert(true, "redo repaints the picture");
 
   // --- collage ---------------------------------------------------------------------
   const pasteEvent = (types, files, text = "") => {
@@ -182,26 +182,20 @@ try {
   const dropText = await textOf();
   assert(v2 ? [...dropText][0] === "\ufffc" : [...dropText][0].codePointAt(0) >= 0x100000, "drop inserts at the pointed text offset (start of the line)");
   assert(dropText.endsWith("premiere ligne"), "dropped file leaves the text intact");
-  if (v2) skip("dropped picture is painted", NO_DRAW_IMAGE);
-  else {
-    scrollTop();
-    const [dropped] = pictures();
-    assert(near(pixelAt(0, dropped.min.x + dropped.width / 2, dropped.min.y + dropped.height / 2), [0, 200, 0]), "dropped picture is painted");
-  }
+  await waitForColor(() => pictures()[0], 0.5, 0.5, [0, 200, 0], "dropped picture is painted");
+  assert(true, "dropped picture is painted");
 
   // --- réduction à la largeur de la zone de texte -----------------------------------
   const wide = await canvasBytes(2000, 1000, solid("rgb(10,10,10)"));
   pickerFiles = [file(wide, "large.png", "image/png")];
   command.click();
   await waitFor(async () => await picturesIn() === 2, "wide picture inserted");
-  if (v2) {
-    skip("a picture wider than the text area shrinks proportionally", NO_DRAW_IMAGE);
-    skip("the reduced picture keeps its aspect ratio in height", NO_DRAW_IMAGE);
-  } else {
+  await waitFor(() => pictures().length === 2, "the page draws both pictures");
+  {
     const widest = pictures().reduce((a, b) => (b.width > a.width ? b : a));
-    assert(Math.abs(widest.width - (595.276 - 108)) < 0.01 && Math.abs(widest.width / widest.height - 2) < 1e-6,
+    assert(Math.abs(widest.width - (595.276 - 108)) < Math.max(0.01, EPS) && Math.abs(widest.width / widest.height - 2) < RATIO_EPS,
       "a picture wider than the text area shrinks proportionally to its width");
-    assert(Math.abs(widest.height - (595.276 - 108) / 2) < 1e-6, "the reduced picture keeps its aspect ratio in height");
+    assert(Math.abs(widest.height - (595.276 - 108) / 2) < Math.max(1e-6, EPS), "the reduced picture keeps its aspect ratio in height");
   }
 
   // --- EXIF -------------------------------------------------------------------------
@@ -211,16 +205,13 @@ try {
   pickerFiles = [file(withExifOrientation(jpeg, 6), "photo.jpg", "image/jpeg")];
   command.click();
   await waitFor(async () => await picturesIn() === 1, "EXIF picture inserted");
-  if (v2) {
-    skip("orientation 6 swaps the laid-out dimensions", NO_DRAW_IMAGE);
-    skip("orientation 6 is applied to the rendered pixels", NO_DRAW_IMAGE);
-  } else {
-    scrollTop();
+  await waitFor(() => pictures().length === 1, "the page draws the EXIF picture");
+  {
     const [photo] = pictures();
-    assert(Math.abs(photo.width - 22.5) < 1e-6 && Math.abs(photo.height - 45) < 1e-6, "orientation 6 swaps the laid-out dimensions (60x30 -> 30x60 px)");
-    const topPixel = pixelAt(0, photo.min.x + photo.width / 2, photo.min.y + photo.height * 0.2);
-    const bottomPixel = pixelAt(0, photo.min.x + photo.width / 2, photo.min.y + photo.height * 0.8);
-    assert(near(topPixel, [255, 0, 0], 60) && near(bottomPixel, [0, 0, 255], 60), "orientation 6 is applied to the rendered pixels (left half becomes the top)");
+    assert(Math.abs(photo.width - 22.5) < EPS && Math.abs(photo.height - 45) < EPS, "orientation 6 swaps the laid-out dimensions (60x30 -> 30x60 px)");
+    await waitForColor(() => pictures()[0], 0.5, 0.2, [255, 0, 0], "orientation 6 puts the left half on top", 60);
+    const lower = () => showsColor(pictures()[0], 0.5, 0.8, [0, 0, 255], 60);
+    assert(lower(), "orientation 6 is applied to the rendered pixels (left half becomes the top)");
   }
 
   // --- cache invalidé au changement de document : l'identifiant 0 est réutilisé ----------
@@ -230,13 +221,8 @@ try {
   pickerFiles = [file(orange, "orange.png", "image/png")];
   command.click();
   await waitFor(async () => await picturesIn() === 1, "picture in the new document");
-  if (v2) skip("a new document never shows the previous document's picture for the same id", NO_DRAW_IMAGE);
-  else {
-    scrollTop();
-    const [fresh] = pictures();
-    assert(near(pixelAt(0, fresh.min.x + fresh.width / 2, fresh.min.y + fresh.height / 2), [255, 128, 0]),
-      "a new document never shows the previous document's picture for the same id");
-  }
+  await waitForColor(() => pictures()[0], 0.5, 0.5, [255, 128, 0], "a new document never shows the previous document's picture for the same id");
+  assert(true, "a new document never shows the previous document's picture for the same id");
 
   // --- refus --------------------------------------------------------------------------
   const refused = async (files, fragment, name) => {

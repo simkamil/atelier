@@ -27,13 +27,15 @@ use atelier_text_layout::pagination::{PaginationOptions, ParagraphRules};
 use atelier_text_layout::stream::{
     PageStream, RunLimit, StreamParagraph, StreamStats, StreamUpdate,
 };
-use atelier_text_layout::{LayoutError as ShapeError, LayoutOptions, layout_paragraph};
+use atelier_text_layout::{
+    InlineBox, LayoutError as ShapeError, LayoutOptions, layout_paragraph, layout_paragraph_boxes,
+};
 use atelier_text_model::rich::flat::{
     EditOutcome, LayoutContext, LayoutScope, OBJECT_LEN, PageSetup,
 };
 use atelier_text_model::rich::{CharAttrs, CharRun, Paragraph, ResolvedProperties};
 
-use super::prepare::{Mark, Prepared, page_break_lines, prepare};
+use super::prepare::{Mark, Picture, PictureFit, Prepared, page_break_lines, prepare};
 use super::rich_paint::{FastLine, GlyphCache, PageWriter, StyleTable, paint_line_fast};
 use super::{CaretGeometry, LayoutError, PageDelta, RichPageCache};
 use crate::rich_preview::build_fonts;
@@ -53,6 +55,9 @@ const MAX_PAGES: usize = 100_000;
 const TXT_MARGIN_TWIPS: u32 = 1_080;
 /// Carlito 11 pt, in half-points.
 const TXT_SIZE_HALF_POINTS: u32 = 22;
+
+/// Descent kept below a picture that fills a page, points (US-270).
+const PICTURE_DESCENT: f64 = 3.0;
 
 const CARET_OPTIONS: CaretOptions = CaretOptions {
     max_lines: 1 << 20,
@@ -87,6 +92,8 @@ struct ParaInfo {
     flat_len: usize,
     /// Inline items: place in the flat text and in the laid-out text.
     marks: Vec<Mark>,
+    /// Pictures laid out as inline boxes, in text order.
+    pictures: Vec<Picture>,
     /// The paragraph could not be laid out and stands for an empty line.
     degraded: bool,
     /// The text and runs that were laid out, for painting and caret queries.
@@ -196,12 +203,16 @@ fn txt_defaults() -> ResolvedProperties {
 }
 
 /// Replaces each character no registered font covers by as many `?` as it has
-/// bytes, so that every byte offset keeps its meaning.
-fn sanitize(text: &str, fonts: &FontManager<'_>) -> String {
+/// bytes, so that every byte offset keeps its meaning. The stand-ins of the
+/// inline boxes stay.
+fn sanitize(text: &str, fonts: &FontManager<'_>, boxes: &[InlineBox]) -> String {
     let request = FontRequest::new(["Carlito"], 400, FontStyle::Normal);
-    text.chars()
-        .map(|c| {
-            if c.is_ascii() || fonts.resolve_for_char(&request, c).is_ok() {
+    text.char_indices()
+        .map(|(at, c)| {
+            if c.is_ascii()
+                || boxes.binary_search_by_key(&at, |b| b.offset).is_ok()
+                || fonts.resolve_for_char(&request, c).is_ok()
+            {
                 c.to_string()
             } else {
                 "?".repeat(c.len_utf8())
@@ -292,8 +303,24 @@ impl PageCache {
         let (mut prepared, flat_len) = match &resolved_source {
             Some(p) => {
                 let items = p.anchored.len() + p.breaks.len() + p.symbols.len();
+                // Both profiles: a new document of the interface is a TXT-profile one and takes pictures.
+                // The paragraph's indents narrow the line: left, right and (the widest case, a picture
+                // leading the paragraph) a positive first-line indent.
+                let mut props = defaults.paragraph.clone();
+                if !self.txt {
+                    props.overlay(&p.props);
+                }
+                let indent = |v: Option<i32>| twips(i64::from(v.unwrap_or(0)));
+                let taken = indent(props.indent_left)
+                    + indent(props.indent_right)
+                    + indent(props.indent_first_line).max(0);
+                let fit = Some(PictureFit {
+                    max_width: ((self.geometry.content_width - taken).max(64)) as f64 / 64.0,
+                    // The line keeps the descent of the text below the picture (US-270).
+                    max_height: self.geometry.content_height as f64 / 64.0 - PICTURE_DESCENT,
+                });
                 (
-                    prepare(p, &self.fonts, !self.txt),
+                    prepare(p, &self.fonts, !self.txt, fit),
                     p.text.len() + OBJECT_LEN * items,
                 )
             }
@@ -306,6 +333,7 @@ impl PageCache {
                         len: 0,
                     }],
                     page_breaks: Vec::new(),
+                    pictures: Vec::new(),
                 },
                 OBJECT_LEN,
             ),
@@ -316,20 +344,37 @@ impl PageCache {
         let mut paragraph = std::mem::take(&mut prepared.paragraph);
         let had_text = !paragraph.text.is_empty();
         let options = LayoutOptions::new(self.geometry.content_width);
-        let layout = match layout_paragraph(&paragraph, &defaults, &self.fonts, options) {
-            Ok(layout) => layout,
-            Err(_) => {
-                paragraph.text = sanitize(&paragraph.text, &self.fonts);
-                match layout_paragraph(&paragraph, &defaults, &self.fonts, options) {
-                    Ok(layout) => layout,
-                    Err(_) => {
-                        paragraph.text.clear();
-                        paragraph.runs.clear();
-                        layout_paragraph(&paragraph, &defaults, &self.fonts, options)?
+        let mut boxes: Vec<InlineBox> = prepared
+            .pictures
+            .iter()
+            .map(|p| InlineBox {
+                offset: p.layout,
+                width: p.width,
+                height: p.height,
+            })
+            .collect();
+        let layout =
+            match layout_paragraph_boxes(&paragraph, &defaults, &self.fonts, options, &boxes) {
+                Ok(layout) => layout,
+                Err(_) => {
+                    paragraph.text = sanitize(&paragraph.text, &self.fonts, &boxes);
+                    match layout_paragraph_boxes(
+                        &paragraph,
+                        &defaults,
+                        &self.fonts,
+                        options,
+                        &boxes,
+                    ) {
+                        Ok(layout) => layout,
+                        Err(_) => {
+                            paragraph.text.clear();
+                            paragraph.runs.clear();
+                            boxes.clear();
+                            layout_paragraph(&paragraph, &defaults, &self.fonts, options)?
+                        }
                     }
                 }
-            }
-        };
+            };
         let degraded = had_text && paragraph.text.is_empty();
         let mut rules = rules_of(&defaults, &paragraph);
         if !degraded {
@@ -340,6 +385,11 @@ impl PageCache {
         let info = ParaInfo {
             flat_len,
             marks: if degraded { Vec::new() } else { prepared.marks },
+            pictures: if degraded {
+                Vec::new()
+            } else {
+                prepared.pictures
+            },
             degraded,
             painted: Paragraph {
                 text: paragraph.text,
@@ -584,6 +634,14 @@ impl PageCache {
         (points * 64.0).round() as i64
     }
 
+    /// Index of the laid-out paragraph that holds the picture `id` (the
+    /// `DrawImage` identity of the display lists).
+    pub fn picture_paragraph(&self, id: u64) -> Option<usize> {
+        self.infos
+            .iter()
+            .position(|info| info.pictures.iter().any(|p| p.id == id))
+    }
+
     /// Selection rectangles of `start..end` on one page.
     pub fn selection_rects(
         &self,
@@ -599,8 +657,6 @@ impl PageCache {
             return Err(LayoutError::NotReady);
         };
         let (start, end) = (start.min(end), start.max(end));
-        let a = self.text_position(start)?;
-        let b = self.text_position(end)?;
         let (w0, w1) = (first.paragraph_index, last.paragraph_index);
         let window_start = TextPosition {
             paragraph_index: w0,
@@ -609,6 +665,18 @@ impl PageCache {
         let window_end = TextPosition {
             paragraph_index: w1,
             byte_offset: self.infos.get(w1).ok_or(LayoutError::NotReady)?.text_len(),
+        };
+        // A bound past the laid-out paragraphs lies after this page: a start
+        // there selects nothing here, an end covers the page to its last line.
+        let a = match self.text_position(start) {
+            Ok(a) => a,
+            Err(LayoutError::NotReady) => return Ok(Vec::new()),
+            Err(other) => return Err(other),
+        };
+        let b = match self.text_position(end) {
+            Ok(b) => b,
+            Err(LayoutError::NotReady) => window_end,
+            Err(other) => return Err(other),
         };
         let (a, b) = (a.max(window_start), b.min(window_end));
         if a >= b {
@@ -629,6 +697,116 @@ impl PageCache {
                 height: r.height as f64 / 64.0,
             })
             .collect())
+    }
+
+    /// Highlight rectangles of several flat ranges on one page (find and
+    /// replace): the caret window of the page is built once. Returns
+    /// `(index in ranges, rectangle)` in range order and stops after `limit`
+    /// rectangles. A range that is not laid out yet, or that does not touch
+    /// the page, gives nothing.
+    pub fn range_rects(
+        &self,
+        page: u32,
+        ranges: &[(usize, usize)],
+        limit: usize,
+    ) -> Result<Vec<(usize, SelectionRect)>, LayoutError> {
+        if page >= self.page_count() {
+            return Err(LayoutError::PageOutOfRange);
+        }
+        let placements = self.stream.page_placements(page as usize);
+        let (Some(first), Some(last)) = (placements.first(), placements.last()) else {
+            return Err(LayoutError::NotReady);
+        };
+        let (w0, w1) = (first.paragraph_index, last.paragraph_index);
+        let window_start = TextPosition {
+            paragraph_index: w0,
+            byte_offset: 0,
+        };
+        let window_end = TextPosition {
+            paragraph_index: w1,
+            byte_offset: self.infos.get(w1).ok_or(LayoutError::NotReady)?.text_len(),
+        };
+        let layout = self.caret_window(w0, w1)?;
+        let mut out = Vec::new();
+        for (index, &(start, end)) in ranges.iter().enumerate() {
+            let (start, end) = (start.min(end), start.max(end));
+            let (Ok(a), Ok(b)) = (self.text_position(start), self.text_position(end)) else {
+                continue;
+            };
+            let (a, b) = (a.max(window_start), b.min(window_end));
+            if a >= b {
+                continue;
+            }
+            let Ok(rects) = layout.selection_rects(a..b) else {
+                continue;
+            };
+            for r in rects.into_iter().filter(|r| r.page_index == page as usize) {
+                if out.len() >= limit {
+                    return Ok(out);
+                }
+                out.push((
+                    index,
+                    SelectionRect {
+                        page,
+                        x: r.x as f64 / 64.0,
+                        y: r.y as f64 / 64.0,
+                        width: r.width as f64 / 64.0,
+                        height: r.height as f64 / 64.0,
+                    },
+                ));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Lines laid out so far (all of them once the layout is complete).
+    pub fn line_count(&self) -> usize {
+        (0..self.stream.paginated_paragraphs())
+            .map(|p| self.stream.layout(p).map_or(0, |l| l.lines.len()))
+            .sum()
+    }
+
+    /// Lines and pages that the flat range `start..end` touches: a line
+    /// counts when the range holds one of its characters or the paragraph
+    /// break that ends it.
+    pub fn lines_in_range(&self, start: usize, end: usize) -> Result<(usize, usize), LayoutError> {
+        let (start, end) = (start.min(end), start.max(end));
+        let a = self.text_position(start)?;
+        let b = self.text_position(end)?;
+        let mut pages = std::collections::BTreeSet::new();
+        let mut lines = 0usize;
+        for paragraph in a.paragraph_index..=b.paragraph_index {
+            let layout = self.stream.layout(paragraph).ok_or(LayoutError::NotReady)?;
+            let placed = self.stream.placements_of(paragraph);
+            if placed.len() != layout.lines.len() {
+                return Err(LayoutError::NotReady);
+            }
+            let text_len = self
+                .infos
+                .get(paragraph)
+                .ok_or(LayoutError::NotReady)?
+                .text_len();
+            let from = if paragraph == a.paragraph_index {
+                a.byte_offset
+            } else {
+                0
+            };
+            let to = if paragraph == b.paragraph_index {
+                b.byte_offset
+            } else {
+                text_len
+            };
+            let separator = paragraph < b.paragraph_index;
+            for (line, placement) in layout.lines.iter().zip(placed) {
+                let content = line.source.start < to && line.source.end > from;
+                let ends = separator && line.final_line && line.source.end >= from;
+                if content || ends {
+                    lines += 1;
+                    pages.insert(placement.page_index);
+                }
+            }
+        }
+        Ok((lines, pages.len()))
     }
 
     /// Keeps a copy of a painted page; the buffer of the page it evicts is
@@ -703,6 +881,7 @@ impl PageCache {
                 &mut writer,
                 FastLine {
                     styles: &info.styles,
+                    pictures: &info.pictures,
                     paragraph: &info.painted,
                     line,
                     baseline: placed.baseline,
@@ -1392,10 +1571,11 @@ mod tests {
                 data: Vec::new(),
             });
         }
-        let prepared = prepare(&paragraph, &FontManager::new(), true);
+        let prepared = prepare(&paragraph, &FontManager::new(), true, None);
         let info = ParaInfo {
             flat_len: paragraph.text.len() + OBJECT_LEN * 4,
             marks: prepared.marks,
+            pictures: Vec::new(),
             degraded: false,
             painted: Paragraph::with_text(&paragraph.text),
             styles: StyleTable::build(&CharAttrs::default(), &Paragraph::default()).unwrap(),
