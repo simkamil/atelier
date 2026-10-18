@@ -21,6 +21,49 @@ pub const MAX_NOTICE_BYTES: usize = 255;
 pub const MAX_SAVE_BYTES: usize =
     MAX_FRAME_BYTES - HEADER_BYTES - (8 + 4 + 2) - MAX_NOTICES * (4 + MAX_NOTICE_BYTES);
 
+/// Longest user name or version of a [`Stamp`], in characters.
+pub const MAX_STAMP_CHARS: usize = 255;
+
+/// What the client supplies for the document properties (the engine has no
+/// clock): the time in milliseconds since the Unix epoch, the user who saves
+/// (`cp:lastModifiedBy`) and the application version.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Stamp {
+    pub now_ms: u64,
+    pub user: String,
+    pub version: String,
+}
+
+fn read_stamp(r: &mut Reader<'_>) -> Result<Stamp, ErrorCode> {
+    let now_ms = r.u64()?;
+    let user = r.text16()?;
+    let version = r.text16()?;
+    if user.chars().count() > MAX_STAMP_CHARS || version.chars().count() > MAX_STAMP_CHARS {
+        return Err(ErrorCode::InvalidText);
+    }
+    Ok(Stamp {
+        now_ms,
+        user,
+        version,
+    })
+}
+
+fn put_stamp(b: &mut Vec<u8>, stamp: &Stamp) -> Result<(), ErrorCode> {
+    put_u64(b, stamp.now_ms);
+    for text in [&stamp.user, &stamp.version] {
+        let len = u16::try_from(text.len()).map_err(|_| ErrorCode::InvalidText)?;
+        b.extend_from_slice(&len.to_le_bytes());
+        b.extend_from_slice(text.as_bytes());
+    }
+    Ok(())
+}
+
+/// A character the alternative text may not hold: a control character, or one
+/// that XML 1.0 forbids (the non-characters U+FFFE and U+FFFF).
+fn forbidden_in_alt(c: char) -> bool {
+    c < ' ' || c == '\u{7f}' || c == '\u{fffe}' || c == '\u{ffff}'
+}
+
 /// Format of a `Save`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveFormat {
@@ -59,8 +102,6 @@ pub mod notice {
     pub const LOSS_BASE: u16 = 0x0200;
     /// Text save: characters the encoding cannot hold were replaced by `?`.
     pub const REPLACED_CHARACTERS: u16 = 0x0210;
-    /// Text save: several kinds of line break, saved with the dominant one.
-    pub const LINE_BREAKS_NORMALISED: u16 = 0x0212;
     /// Text save: malformed sequences had been replaced when opening.
     pub const OPEN_REPLACED: u16 = 0x0213;
     /// Editable copy: tracked changes accepted.
@@ -69,6 +110,9 @@ pub mod notice {
     pub const COMMENTS_REMOVED: u16 = 0x0301;
     /// Editable copy: rows with a tracked deletion removed.
     pub const ROWS_REMOVED: u16 = 0x0302;
+    /// Some parts of the package could not be read (not UTF-8, malformed): their
+    /// tracked changes and comments, if any, were neither detected nor removed.
+    pub const PARTS_NOT_SCANNED: u16 = 0x0304;
     /// Further notices were dropped.
     pub const MORE: u16 = 0x03ff;
 }
@@ -78,11 +122,14 @@ pub(super) fn parse_command(opcode: u16, r: &mut Reader<'_>) -> Result<Command, 
         super::opcode::SAVE => {
             let format = SaveFormat::from_u8(r.u8()?).ok_or(ErrorCode::InvalidBody)?;
             r.zero(3)?;
-            Command::Save { format }
+            Command::Save {
+                format,
+                stamp: read_stamp(r)?,
+            }
         }
         super::opcode::INSERT_IMAGE => {
             let alt = r.text16()?;
-            if alt.len() > MAX_ALT_BYTES || alt.chars().any(|c| c < ' ' || c == '\u{7f}') {
+            if alt.len() > MAX_ALT_BYTES || alt.chars().any(forbidden_in_alt) {
                 return Err(ErrorCode::InvalidText);
             }
             let len = r.bytes.len() - r.at;
@@ -95,15 +142,18 @@ pub(super) fn parse_command(opcode: u16, r: &mut Reader<'_>) -> Result<Command, 
             let bytes = r.take(len)?.to_vec();
             Command::InsertImage { alt, bytes }
         }
-        super::opcode::MAKE_EDITABLE_COPY => Command::MakeEditableCopy,
+        super::opcode::MAKE_EDITABLE_COPY => Command::MakeEditableCopy {
+            stamp: read_stamp(r)?,
+        },
         _ => return Err(ErrorCode::UnknownOpcode),
     })
 }
 
 pub(super) fn encode_command(command: &Command, b: &mut Vec<u8>) -> Result<u16, ErrorCode> {
     Ok(match command {
-        Command::Save { format } => {
+        Command::Save { format, stamp } => {
             b.extend_from_slice(&[*format as u8, 0, 0, 0]);
+            put_stamp(b, stamp)?;
             super::opcode::SAVE
         }
         Command::InsertImage { alt, bytes } => {
@@ -113,7 +163,10 @@ pub(super) fn encode_command(command: &Command, b: &mut Vec<u8>) -> Result<u16, 
             b.extend_from_slice(bytes);
             super::opcode::INSERT_IMAGE
         }
-        Command::MakeEditableCopy => super::opcode::MAKE_EDITABLE_COPY,
+        Command::MakeEditableCopy { stamp } => {
+            put_stamp(b, stamp)?;
+            super::opcode::MAKE_EDITABLE_COPY
+        }
         _ => return Err(ErrorCode::Internal),
     })
 }

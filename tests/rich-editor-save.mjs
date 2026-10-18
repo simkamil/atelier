@@ -30,6 +30,7 @@ const fromHex = (h) => Uint8Array.from(Buffer.from(h, "hex"));
   const rows = readFileSync(here("rich-editor-save-vectors.txt"), "utf8")
     .split(/\r?\n/).filter((l) => l && !l.startsWith("#")).map((l) => l.split("\t"));
   const counts = { request: 0, reply: 0, "bad-request": 0, "bad-reply": 0 };
+  const stampText = (c) => `now_ms=${c.nowMs} user=${hex(new TextEncoder().encode(c.user))} version=${hex(new TextEncoder().encode(c.version))}`;
   const note = (n) => `${n.code.toString(16).padStart(4, "0")}:${hex(new TextEncoder().encode(n.text))}`;
   for (const [kind, name, frameHex, expected] of rows) {
     counts[kind] += 1;
@@ -38,9 +39,9 @@ const fromHex = (h) => Uint8Array.from(Buffer.from(h, "hex"));
       const d = decodeRichRequest(bytes);
       const c = d.command;
       const tail = {
-        save: () => `Save format=${["", "txt", "docx", "docm", "dotx"].indexOf(c.format)}`,
+        save: () => `Save format=${["", "txt", "docx", "docm", "dotx"].indexOf(c.format)} ${stampText(c)}`,
         insertImage: () => `InsertImage alt=${hex(new TextEncoder().encode(c.alt))} bytes=${hex(c.bytes)}`,
-        makeEditableCopy: () => "MakeEditableCopy",
+        makeEditableCopy: () => `MakeEditableCopy ${stampText(c)}`,
       }[c.type]();
       assert.equal(`doc=${d.docId} req=${d.requestId} ${tail}`, expected, name);
       assert.equal(hex(encodeRichRequest(d)), frameHex, `${name} re-encode`);
@@ -57,7 +58,7 @@ const fromHex = (h) => Uint8Array.from(Buffer.from(h, "hex"));
       assert.throws(() => decode(bytes), (e) => e instanceof RichProtocolError && e.code === expected, name);
     }
   }
-  assert.deepEqual(counts, { request: 7, reply: 6, "bad-request": 13, "bad-reply": 8 });
+  assert.deepEqual(counts, { request: 7, reply: 6, "bad-request": 18, "bad-reply": 8 });
   // Truncation of every valid frame is a typed error.
   for (const [kind, , frameHex] of rows.filter((r) => r[0] === "request" || r[0] === "reply")) {
     const decode = kind === "request" ? decodeRichRequest : decodeRichReply;
@@ -130,8 +131,9 @@ const text = () => {
 };
 const select = (anchor, focus = anchor) => state({ type: "setSelection", anchor: BigInt(anchor), focus: BigInt(focus), upstream: false });
 const insert = (t) => state({ type: "insertText", text: t });
+const STAMP = { nowMs: 1_700_000_000_000n, user: "Alice", version: "1.2" };
 const save = (format) => {
-  const r = send({ type: "save", format });
+  const r = send({ type: "save", format, ...STAMP });
   assert.equal(r.type, "saveData", JSON.stringify(r.code ?? r.type));
   return { bytes: r.bytes.slice(), notices: r.notices, revision: r.revision };
 };
@@ -187,10 +189,14 @@ check("text files: unmodified, then edited, saved byte for byte", () => {
 });
 
 check("text files: mixed breaks, unmappable characters, new document", () => {
-  openTxt(utf8("a\r\nb\r\nc\nd"));
+  const mixed = utf8("a\r\nb\r\nc\nd\re");
+  openTxt(mixed);
   let s = save("txt");
-  assert.equal(Buffer.from(s.bytes).toString(), "a\r\nb\r\nc\r\nd");
-  assert.deepEqual(codes(s.notices), [0x0212]);
+  assert.equal(hex(s.bytes), hex(mixed), "each line keeps its own break");
+  assert.deepEqual(s.notices, []);
+  select(1);
+  insert("!");
+  assert.equal(Buffer.from(save("txt").bytes).toString(), "a!\r\nb\r\nc\nd\re");
   openTxt(Uint8Array.from([0x61, 0xe9, 0x0a]));
   select(0);
   insert("中");
@@ -248,6 +254,46 @@ check("docx: every corpus file saves back without a notice, unmodified and edite
   assert.ok(replayed >= (hasCorpus ? 6 : 3), `replayed ${replayed} documents`);
 });
 
+check("text files: repository files and edge cases", () => {
+  const u16 = (t, bom) => Buffer.concat([Buffer.from(bom ? [0xff, 0xfe] : []), Buffer.from(t, "utf16le")]);
+  const real = ["mixed-utf8.txt", "repetitive.txt"].map((n) => [n, new Uint8Array(readFileSync(new URL(`../crates/compress/tests/corpus/${n}`, import.meta.url)))]);
+  const cases = [
+    ...real,
+    ["empty", new Uint8Array()],
+    ["bom only", Uint8Array.from([0xef, 0xbb, 0xbf])],
+    ["utf16 bom only", Uint8Array.from([0xff, 0xfe])],
+    ["utf16 without bom", u16("Bonjour le monde, ligne un\nligne deux\n", false)],
+    ["outside the BMP, utf8", utf8("pile \u{1f600} face \u{1d11e}\n")],
+    ["outside the BMP, utf16", u16("pile \u{1f600} face \u{1d11e}\n", true)],
+    ["only breaks", utf8("\n\n\r\n\r")],
+  ];
+  for (const [name, bytes] of cases) {
+    openTxt(bytes);
+    const saved = save("txt");
+    assert.equal(hex(saved.bytes), hex(bytes), name);
+    assert.deepEqual(saved.notices, [], name);
+  }
+  for (const [name, bytes] of real) {
+    openTxt(bytes);
+    select(0);
+    insert("!");
+    assert.equal(hex(save("txt").bytes), hex(Buffer.concat([Buffer.from("!"), bytes])), name);
+  }
+});
+
+check("properties: the client's time, user and version are stamped, not the engine's", () => {
+  // A time out of range is refused; the document is untouched.
+  open("blank", "document");
+  insert("abc");
+  assert.equal(errorOf({ type: "save", format: "docx", nowMs: 0xffffffffffffffffn, user: "", version: "" }), "RICH_INVALID_BODY");
+  assert.equal(text(), "abc");
+  assert.throws(() => encodeRichRequest({ docId: 1, requestId: 1, command: { type: "save", format: "docx", nowMs: 1n, user: "a".repeat(256), version: "" } }), (e) => e.code === "RICH_INVALID_TEXT");
+  // Same document, two clocks: the files differ, so the time comes from the request.
+  const one = save("docx").bytes;
+  const other = send({ type: "save", format: "docx", nowMs: 1_800_000_000_000n, user: "Bob", version: "9" }).bytes.slice();
+  assert.notEqual(hex(one), hex(other));
+});
+
 check("docx: new document saved as docx, docm and dotx", () => {
   open("blank", "document");
   insert("Titre\nCorps");
@@ -288,7 +334,7 @@ check("revisions and comments: read-only, accepted state, editable copy", () => 
     assert.equal(moved.modified, false);
     // What the user would save is the file as opened.
     assert.deepEqual(save("docx").notices, [], name);
-    const r = send({ type: "makeEditableCopy" });
+    const r = send({ type: "makeEditableCopy", ...STAMP });
     assert.equal(r.type, "saveData", name);
     assert.ok(r.notices.length > 0, `${name}: the copy comes with notices`);
     assert.ok(r.notices.every((n) => n.code >= 0x0300 && n.code < 0x0400), name);

@@ -281,7 +281,10 @@ pub fn write_docx_with_pictures(
     let prepared = {
         let package = &imported.package;
         let taken = |name: &str| {
-            package.parts().keys().any(|u| u.as_str() == name)
+            package
+                .parts()
+                .keys()
+                .any(|u| u.as_str().eq_ignore_ascii_case(name))
                 || package
                     .relationships(Some(&main))
                     .iter()

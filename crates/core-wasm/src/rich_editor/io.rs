@@ -2,6 +2,8 @@
 //! Origin, read-only state, saving and pictures of the rich editor session
 //! (US-218, tranche R3b). Layout of the messages: `rich_protocol/io.rs`.
 
+use std::collections::BTreeMap;
+
 use atelier_fmt_ooxml::docx_image::{write_docx_with_pictures, write_new_docx_with_pictures};
 use atelier_fmt_ooxml::{
     AcceptError, DocxVariant, DocxWriteOptions, ImportedDocx, NewDocument, RevisionReport,
@@ -10,18 +12,20 @@ use atelier_fmt_ooxml::{
 use atelier_model::Transaction;
 use atelier_text_model::inline_image::IMAGE_OBJECT_KIND;
 use atelier_text_model::plain_io::{
-    FileFormat, LineEndingChoice, LossCategory, SaveOptions, TextIoError, Unmappable,
+    Eol, FileFormat, LineEndingChoice, LossCategory, SaveOptions, TextIoError, Unmappable,
     formatting_loss, rich_to_text, save_text,
 };
 use atelier_text_model::rich::flat::FlatEdit;
-use atelier_text_model::rich::{RichDocument, RichOp, default_rich_document};
+use atelier_text_model::rich::{NodeId, RichDocument, RichOp, default_rich_document};
+use atelier_unicode::encode;
 
 use super::Session;
 use crate::images::{self, ImageInsertError};
+use crate::properties::{self, SaveStamp};
 use crate::rich_layout::{PageDelta, RichPageCache};
 use crate::rich_protocol::{
     self as proto, DEFAULT_LAYOUT_BUDGET, ErrorCode, MAX_NOTICE_BYTES, MAX_NOTICES, Notice,
-    Response, SaveFormat, notice,
+    Response, SaveFormat, Stamp, notice,
 };
 
 /// Distinct pictures one document may receive through `InsertImage` (US-270).
@@ -32,8 +36,11 @@ const MAX_IMAGE_STORE_BYTES: usize = 32 * 1024 * 1024;
 /// How a text file was found, to give it back as it was.
 pub(super) struct TextOrigin {
     pub format: FileFormat,
-    /// Several kinds of line break: saved with the dominant one.
-    pub mixed_breaks: bool,
+    /// Line break that follows each paragraph of a file with several kinds of
+    /// break (empty otherwise: the dominant style is used everywhere). A
+    /// paragraph created since the open has no entry and takes the dominant
+    /// style; a merge keeps the break of the first paragraph.
+    pub eols: BTreeMap<NodeId, Eol>,
     /// Malformed sequences were replaced by U+FFFD when opening.
     pub replaced_on_open: bool,
 }
@@ -56,8 +63,13 @@ pub(super) struct Origin {
     pub read_only: bool,
     /// The source had tracked changes or comments.
     pub has_revisions: bool,
-    /// Pictures inserted by `InsertImage` (count, encoded bytes).
+    /// Pictures inserted by `InsertImage` (count, encoded bytes). An upper
+    /// bound: an undo does not give a picture back, so a document that has
+    /// held 512 pictures stays full for the session (the limits protect the
+    /// engine, they are not a count of what the document shows).
     pub images: (usize, usize),
+    /// Some parts of the DOCX could not be read for tracked changes.
+    pub unreadable: bool,
 }
 
 impl Origin {
@@ -67,8 +79,45 @@ impl Origin {
             read_only: false,
             has_revisions: false,
             images: (0, 0),
+            unreadable: false,
         }
     }
+}
+
+fn not_scanned() -> Notice {
+    Notice {
+        code: notice::PARTS_NOT_SCANNED,
+        text: "some parts could not be read for tracked changes and comments".into(),
+    }
+}
+
+fn text_error(error: TextIoError) -> ErrorCode {
+    match error {
+        TextIoError::TooLarge { .. } | TextIoError::AllocationFailed => ErrorCode::Limit,
+        _ => ErrorCode::SaveFailed,
+    }
+}
+
+/// The line break that follows each line of a file, in order.
+pub(super) fn line_breaks(
+    bytes: &[u8],
+    opened: &atelier_text_model::plain_io::OpenedText,
+) -> Vec<Eol> {
+    let decoded = atelier_unicode::decode(bytes, opened.encoding);
+    let mut chars = decoded.chars().peekable();
+    let mut out = Vec::new();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' if chars.peek() == Some(&'\n') => {
+                chars.next();
+                out.push(Eol::CrLf);
+            }
+            '\r' => out.push(Eol::Cr),
+            '\n' => out.push(Eol::Lf),
+            _ => {}
+        }
+    }
+    out
 }
 
 fn clip(text: String) -> String {
@@ -165,6 +214,9 @@ fn revision_notices(report: &RevisionReport) -> Vec<Notice> {
             text: report.rows_removed.to_string(),
         });
     }
+    if report.unreadable > 0 {
+        out.push(not_scanned());
+    }
     out
 }
 
@@ -223,11 +275,15 @@ impl Session {
     }
 
     /// `Save`: the document as a file, with what the format does not keep.
-    pub(super) fn save(&mut self, format: SaveFormat) -> Result<Response, ErrorCode> {
+    pub(super) fn save(
+        &mut self,
+        format: SaveFormat,
+        stamp: &Stamp,
+    ) -> Result<Response, ErrorCode> {
         let (bytes, notices) = if format == SaveFormat::Txt {
             self.save_text()?
         } else {
-            self.save_docx(format)?
+            self.save_docx(format, stamp)?
         };
         if bytes.len() > proto::MAX_SAVE_BYTES {
             return Err(ErrorCode::Limit);
@@ -244,12 +300,6 @@ impl Session {
         let mut notices = Vec::new();
         let options = match &self.origin.source {
             Source::Text(origin) => {
-                if origin.mixed_breaks {
-                    notices.push(Notice {
-                        code: notice::LINE_BREAKS_NORMALISED,
-                        text: "mixed line breaks saved with the dominant style".into(),
-                    });
-                }
                 if origin.replaced_on_open {
                     notices.push(Notice {
                         code: notice::OPEN_REPLACED,
@@ -267,26 +317,93 @@ impl Session {
                 ..SaveOptions::default()
             },
         };
-        let saved = save_text(&text, &options).map_err(|error| match error {
-            TextIoError::TooLarge { .. } | TextIoError::AllocationFailed => ErrorCode::Limit,
-            _ => ErrorCode::SaveFailed,
-        })?;
+        let per_line = match &self.origin.source {
+            Source::Text(origin) if !origin.eols.is_empty() => self.save_per_line(origin, &text)?,
+            _ => None,
+        };
+        let (bytes, replaced) = match per_line {
+            Some(done) => done,
+            None => {
+                let saved = save_text(&text, &options).map_err(text_error)?;
+                (saved.bytes, saved.replaced)
+            }
+        };
         for (category, count) in formatting_loss(&self.doc).categories() {
             notices.push(Notice {
                 code: loss_code(category),
                 text: clip(format!("{}={count}", category.catalog_key())),
             });
         }
-        if saved.replaced > 0 {
+        if replaced > 0 {
             notices.push(Notice {
                 code: notice::REPLACED_CHARACTERS,
-                text: saved.replaced.to_string(),
+                text: replaced.to_string(),
             });
         }
-        Ok((saved.bytes, notices))
+        Ok((bytes, notices))
     }
 
-    fn save_docx(&mut self, format: SaveFormat) -> Result<(Vec<u8>, Vec<Notice>), ErrorCode> {
+    /// A text file with several kinds of line break: every line keeps the break
+    /// it had. `None` when the lines no longer match the paragraphs.
+    fn save_per_line(
+        &self,
+        origin: &TextOrigin,
+        text: &str,
+    ) -> Result<Option<(Vec<u8>, usize)>, ErrorCode> {
+        let ids = self.doc.paragraph_ids();
+        let lines: Vec<&str> = text.split('\n').collect();
+        if lines.len() != ids.len() {
+            return Ok(None);
+        }
+        let (mut out, mut replaced) = (Vec::new(), 0usize);
+        for (index, line) in lines.iter().enumerate() {
+            let mut origin_format = origin.format;
+            // Only the first line carries the BOM.
+            origin_format.bom &= index == 0;
+            let options = SaveOptions {
+                unmappable: Unmappable::Replace,
+                line_ending: LineEndingChoice::Lf,
+                ..SaveOptions::as_opened(origin_format)
+            };
+            let saved = save_text(line, &options).map_err(text_error)?;
+            out.extend_from_slice(&saved.bytes);
+            replaced += saved.replaced;
+            if index + 1 < lines.len() {
+                let eol = origin
+                    .eols
+                    .get(&ids[index])
+                    .copied()
+                    .unwrap_or(origin.format.eol);
+                out.extend_from_slice(
+                    &encode(eol.as_str(), origin.format.encoding)
+                        .map_err(|_| ErrorCode::SaveFailed)?,
+                );
+            }
+        }
+        Ok(Some((out, replaced)))
+    }
+
+    /// The `SaveStamp` of the client's time, user and version.
+    fn save_stamp(stamp: &Stamp) -> Result<SaveStamp, ErrorCode> {
+        let non_empty = |s: &str| (!s.is_empty()).then(|| s.to_owned());
+        let unix_seconds =
+            i64::try_from(stamp.now_ms / 1000).map_err(|_| ErrorCode::InvalidBody)?;
+        // A time the date type cannot hold is a malformed request.
+        atelier_fmt_ooxml::W3cDateTime::from_unix_seconds(unix_seconds)
+            .ok_or(ErrorCode::InvalidBody)?;
+        Ok(SaveStamp {
+            unix_seconds,
+            user: non_empty(&stamp.user),
+            app_version: non_empty(&stamp.version),
+        })
+    }
+
+    fn save_docx(
+        &mut self,
+        format: SaveFormat,
+        stamp: &Stamp,
+    ) -> Result<(Vec<u8>, Vec<Notice>), ErrorCode> {
+        let stamp = Self::save_stamp(stamp)?;
         let modified = self.revision() != 0 || self.origin.images.0 > 0;
         let mut options = DocxWriteOptions {
             variant: Some(variant_of(format)),
@@ -305,6 +422,7 @@ impl Session {
                 // never the session's own (the history stays).
                 options.regenerate_all = modified;
                 imported.document = self.doc.clone();
+                properties::stamp(imported, &stamp).map_err(|_| ErrorCode::SaveFailed)?;
                 let mut result = write_docx_with_pictures(imported, &options);
                 if result.is_err() && options.regenerate_all {
                     options.regenerate_all = false;
@@ -318,10 +436,13 @@ impl Session {
                 let defaults = default_rich_document();
                 let mut input = NewDocument::from_default(&defaults);
                 input.document = &self.doc;
+                options.save = Some(
+                    properties::context(&self.doc, &stamp).map_err(|_| ErrorCode::SaveFailed)?,
+                );
                 write_new_docx_with_pictures(&input, &options).map_err(failed)?
             }
         };
-        let notices = written
+        let mut notices: Vec<Notice> = written
             .notices
             .iter()
             .map(|n| Notice {
@@ -329,6 +450,9 @@ impl Session {
                 text: clip(format!("{n:?}")),
             })
             .collect();
+        if self.origin.unreadable {
+            notices.push(not_scanned());
+        }
         Ok((written.bytes, notices))
     }
 
@@ -336,19 +460,24 @@ impl Session {
     /// every tracked change is accepted and the comments are gone, with a
     /// notice for what was done. The session does not change: the client
     /// opens the bytes as a new document (`Open`), which is editable.
-    pub(super) fn editable_copy(&mut self) -> Result<Response, ErrorCode> {
+    pub(super) fn editable_copy(&mut self, stamp: &Stamp) -> Result<Response, ErrorCode> {
         // A document that is not read-only is its own editable copy: what is
         // saved includes the edits (a read-only session never has any).
         let Source::Docx(imported) = &self.origin.source else {
-            return self.save(SaveFormat::Docx);
+            return self.save(SaveFormat::Docx, stamp);
         };
         if !self.origin.read_only {
-            return self.save(SaveFormat::Docx);
+            return self.save(SaveFormat::Docx, stamp);
         }
-        let accepted = accept_all_revisions(&imported.package).map_err(|error| match error {
-            AcceptError::Unsupported(_) => ErrorCode::RevisionsUnsupported,
-            _ => ErrorCode::SaveFailed,
-        })?;
+        let stamp = Self::save_stamp(stamp)?;
+        let context = properties::context(&self.doc, &stamp).map_err(|_| ErrorCode::SaveFailed)?;
+        let mut accepted =
+            accept_all_revisions(&imported.package).map_err(|error| match error {
+                AcceptError::Unsupported(_) => ErrorCode::RevisionsUnsupported,
+                _ => ErrorCode::SaveFailed,
+            })?;
+        // The statistics of app.xml follow the accepted text (the model shows it).
+        accepted.package.update_on_save(&context);
         let bytes = accepted
             .package
             .write()

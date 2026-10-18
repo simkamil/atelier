@@ -81,7 +81,7 @@ fn describe_request(r: &Request) -> String {
             format!("AccessibleWindow start={start} end={end}")
         }
         // The vectors of these are in `io_tests` (tests/rich-editor-save-vectors.txt).
-        Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy => {
+        Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy { .. } => {
             "see io_tests".into()
         }
     };

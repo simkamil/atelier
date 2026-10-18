@@ -29,6 +29,7 @@ export const RICH_LIMITS = Object.freeze({
   maxAltBytes: 512,
   maxNotices: 64,
   maxNoticeBytes: 255,
+  maxStampChars: 255,
   maxSaveBytes: 32 * 1024 * 1024 - HEADER_BYTES - (8 + 4 + 2) - 64 * (4 + 255),
 });
 export const NO_CARET = 0xffffffff;
@@ -281,19 +282,19 @@ function parseCommand(opcode, body) {
       const format = SAVE_FORMATS[r.u8()];
       if (!format) fail("RICH_INVALID_BODY");
       r.zero(3);
-      command = { type: "save", format };
+      command = { type: "save", format, ...readStamp(r) };
       break;
     }
     case RichOpcode.InsertImage: {
       const alt = text16(r);
-      if (encoder.encode(alt).length > RICH_LIMITS.maxAltBytes || /[ -]/.test(alt)) fail("RICH_INVALID_TEXT");
+      if (encoder.encode(alt).length > RICH_LIMITS.maxAltBytes || /[\u0000-\u001f\u007f\ufffe\uffff]/.test(alt)) fail("RICH_INVALID_TEXT");
       const len = r.bytes.length - r.at;
       if (len === 0) fail("RICH_INVALID_BODY");
       if (len > RICH_LIMITS.maxImageBytes) fail("RICH_LIMIT");
       command = { type: "insertImage", alt, bytes: r.take(len) };
       break;
     }
-    case RichOpcode.MakeEditableCopy: command = { type: "makeEditableCopy" }; break;
+    case RichOpcode.MakeEditableCopy: command = { type: "makeEditableCopy", ...readStamp(r) }; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   r.finish();
@@ -355,11 +356,11 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "markSaved": w.u64(u64(command.revision)); opcode = RichOpcode.MarkSaved; break;
     case "layout": w.u32(u32(command.budget)); opcode = RichOpcode.Layout; break;
     case "accessibleWindow": w.u64(u64(command.start)); w.u64(u64(command.end)); opcode = RichOpcode.AccessibleWindow; break;
-    case "save": w.u8(enumIndex(SAVE_FORMATS, command.format), 0, 0, 0); opcode = RichOpcode.Save; break;
+    case "save": w.u8(enumIndex(SAVE_FORMATS, command.format), 0, 0, 0); writeStamp(w, command); opcode = RichOpcode.Save; break;
     case "insertImage":
       if (!(command.bytes instanceof Uint8Array)) fail("RICH_INVALID_BODY");
       writeText16(w, command.alt ?? ""); w.raw(command.bytes); opcode = RichOpcode.InsertImage; break;
-    case "makeEditableCopy": opcode = RichOpcode.MakeEditableCopy; break;
+    case "makeEditableCopy": writeStamp(w, command); opcode = RichOpcode.MakeEditableCopy; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
@@ -464,6 +465,22 @@ function writeText16(w, value) {
   const b = encoder.encode(value);
   if (b.length > 0xffff) fail("RICH_INVALID_BODY");
   w.u16(b.length); w.raw(b);
+}
+
+/**
+ * What the client supplies for the document properties (the engine has no clock):
+ * `nowMs` (BigInt, milliseconds since the epoch), `user` and `version` (at most 255 characters each).
+ */
+function readStamp(r) {
+  const nowMs = r.u64();
+  const user = text16(r);
+  const version = text16(r);
+  if ([...user].length > RICH_LIMITS.maxStampChars || [...version].length > RICH_LIMITS.maxStampChars) fail("RICH_INVALID_TEXT");
+  return { nowMs, user, version };
+}
+
+function writeStamp(w, { nowMs = 0n, user = "", version = "" }) {
+  w.u64(u64(nowMs)); writeText16(w, user); writeText16(w, version);
 }
 
 /** `SaveData` (US-218): {revision (BigInt), bytes, notices: [{code, text}]}. `bytes` is a view into the frame. */

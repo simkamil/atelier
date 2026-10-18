@@ -1316,7 +1316,15 @@ fn a_dense_page_is_sent_within_the_response_bounds() {
 
 // ---- US-218: open, create and save ---------------------------------------
 
-use crate::rich_protocol::{SaveFormat, notice};
+use crate::rich_protocol::{SaveFormat, Stamp, notice};
+
+fn stamp() -> Stamp {
+    Stamp {
+        now_ms: 1_700_000_000_000,
+        user: "Alice".into(),
+        version: "1.2".into(),
+    }
+}
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = format!(
@@ -1328,7 +1336,13 @@ fn fixture(name: &str) -> Vec<u8> {
 
 impl Harness {
     fn save(&mut self, format: SaveFormat) -> (Vec<u8>, Vec<proto::Notice>) {
-        match self.send(1, Command::Save { format }) {
+        match self.send(
+            1,
+            Command::Save {
+                format,
+                stamp: stamp(),
+            },
+        ) {
             Response::SaveData { bytes, notices, .. } => (bytes, notices),
             other => panic!("expected SaveData, got {other:?}"),
         }
@@ -1441,15 +1455,30 @@ fn text_files_save_back_byte_for_byte_and_after_an_edit() {
 }
 
 #[test]
-fn mixed_line_breaks_and_unmappable_characters_are_reported() {
+fn mixed_line_breaks_stay_with_their_paragraph_and_unmappable_characters_are_reported() {
     let mut h = Harness::new();
-    h.open_state(OpenKind::Txt, Profile::Txt, b"a\r\nb\r\nc\nd");
+    let original = b"a\r\nb\r\nc\nd\re";
+    h.open_state(OpenKind::Txt, Profile::Txt, original);
     let (saved, notices) = h.save(SaveFormat::Txt);
-    assert_eq!(saved, b"a\r\nb\r\nc\r\nd");
-    assert_eq!(
-        notices.iter().map(|n| n.code).collect::<Vec<_>>(),
-        [notice::LINE_BREAKS_NORMALISED]
-    );
+    assert_eq!(saved, original, "each line keeps its own break");
+    assert!(notices.is_empty(), "{notices:?}");
+    // An edit inside a line changes nothing else; a new paragraph takes the dominant CRLF.
+    h.select(1, 1);
+    h.insert("!");
+    let (saved, _) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, b"a!\r\nb\r\nc\nd\re");
+    let end = h.text().len() as u64;
+    h.select(end, end);
+    h.insert("\nf");
+    let (saved, _) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, b"a!\r\nb\r\nc\nd\re\r\nf");
+    // UTF-16 with a BOM and mixed breaks: the BOM only once.
+    let mut utf16 = vec![0xff, 0xfe];
+    for unit in "x\r\ny\nz".encode_utf16() {
+        utf16.extend_from_slice(&unit.to_le_bytes());
+    }
+    h.open_state(OpenKind::Txt, Profile::Txt, &utf16);
+    assert_eq!(h.save(SaveFormat::Txt).0, utf16);
     // A Windows-1252 file that gains a character the encoding cannot hold.
     h.open_state(OpenKind::Txt, Profile::Txt, &[b'a', 0xe9, b'\n']);
     h.select(0, 0);
@@ -1460,6 +1489,62 @@ fn mixed_line_breaks_and_unmappable_characters_are_reported() {
         notices.iter().map(|n| n.code).collect::<Vec<_>>(),
         [notice::REPLACED_CHARACTERS]
     );
+}
+
+fn repo_text(name: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/../compress/tests/corpus/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+#[test]
+fn repository_and_edge_text_files_round_trip() {
+    let utf16 = |text: &str, bom: bool| {
+        let mut out = if bom { vec![0xff, 0xfe] } else { Vec::new() };
+        for unit in text.encode_utf16() {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+        out
+    };
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("mixed-utf8.txt", repo_text("mixed-utf8.txt")),
+        ("repetitive.txt", repo_text("repetitive.txt")),
+        ("empty", Vec::new()),
+        ("bom only", vec![0xef, 0xbb, 0xbf]),
+        ("utf16 bom only", vec![0xff, 0xfe]),
+        (
+            "utf16 without bom",
+            utf16("Bonjour le monde, ligne un\nligne deux\n", false),
+        ),
+        (
+            "outside the BMP, utf8",
+            "pile \u{1f600} face \u{1d11e}\n".as_bytes().to_vec(),
+        ),
+        (
+            "outside the BMP, utf16",
+            utf16("pile \u{1f600} face \u{1d11e}\n", true),
+        ),
+        ("only breaks", b"\n\n\r\n\r".to_vec()),
+    ];
+    for (name, bytes) in cases {
+        let mut h = Harness::new();
+        h.open_state(OpenKind::Txt, Profile::Txt, &bytes);
+        let (saved, notices) = h.save(SaveFormat::Txt);
+        assert_eq!(saved, bytes, "{name}");
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+    }
+    // Edited: a character typed first, everything else stays byte for byte.
+    for name in ["mixed-utf8.txt", "repetitive.txt"] {
+        let bytes = repo_text(name);
+        let mut h = Harness::new();
+        h.open_state(OpenKind::Txt, Profile::Txt, &bytes);
+        h.select(0, 0);
+        h.insert("!");
+        let expected = [b"!".to_vec(), bytes].concat();
+        assert_eq!(h.save(SaveFormat::Txt).0, expected, "{name}");
+    }
 }
 
 #[test]
@@ -1551,7 +1636,7 @@ fn revisions_and_comments_open_read_only_in_the_accepted_state() {
         assert!(again.docx(&saved).read_only, "{name}");
         assert_eq!(again.text(), text);
         // The editable copy: a DOCX without revisions or comments, with notices.
-        let (copy, notices) = match h.send(1, Command::MakeEditableCopy) {
+        let (copy, notices) = match h.send(1, Command::MakeEditableCopy { stamp: stamp() }) {
             Response::SaveData { bytes, notices, .. } => (bytes, notices),
             other => panic!("{other:?}"),
         };
@@ -1581,7 +1666,8 @@ fn make_editable_copy_of_an_editable_document_is_its_save() {
     let mut h = Harness::new();
     h.blank();
     h.insert("abc");
-    let Response::SaveData { bytes, .. } = h.send(1, Command::MakeEditableCopy) else {
+    let Response::SaveData { bytes, .. } = h.send(1, Command::MakeEditableCopy { stamp: stamp() })
+    else {
         panic!("expected SaveData");
     };
     let mut again = Harness::new();
@@ -1657,7 +1743,9 @@ fn a_picture_added_to_an_imported_docx_gets_a_free_media_name() {
     let state = h.docx(&source);
     // rich.docx has revisions and comments: the picture goes in the copy.
     assert!(state.read_only);
-    let Response::SaveData { bytes: copy, .. } = h.send(1, Command::MakeEditableCopy) else {
+    let Response::SaveData { bytes: copy, .. } =
+        h.send(1, Command::MakeEditableCopy { stamp: stamp() })
+    else {
         panic!("copy");
     };
     h.docx(&copy);
@@ -1720,8 +1808,77 @@ fn save_with_nothing_open_is_refused() {
     let mut h = Harness::new();
     assert_eq!(
         h.error(Command::Save {
-            format: SaveFormat::Txt
+            format: SaveFormat::Txt,
+            stamp: stamp(),
         }),
         ErrorCode::UnknownDocument
     );
+}
+
+#[test]
+fn the_client_time_and_user_land_in_the_document_properties() {
+    let package = |bytes: &[u8]| atelier_fmt_ooxml::Package::read(bytes).unwrap();
+    // An imported DOCX.
+    let mut h = Harness::new();
+    h.docx(&fixture("basic.docx"));
+    let (saved, _) = h.save(SaveFormat::Docx);
+    let p = package(&saved);
+    assert_eq!(
+        p.core_properties().last_modified_by.as_deref(),
+        Some("Alice")
+    );
+    assert_eq!(
+        p.core_properties().modified.as_deref(),
+        Some("2023-11-14T22:13:20Z")
+    );
+    assert_eq!(p.app_properties().application.as_deref(), Some("Atelier"));
+    assert_eq!(p.app_properties().app_version.as_deref(), Some("1.2"));
+    assert!(p.app_properties().words.is_some());
+    // A new document.
+    h.blank();
+    h.insert("un deux trois");
+    let (saved, _) = h.save(SaveFormat::Docx);
+    let p = package(&saved);
+    assert_eq!(
+        p.core_properties().last_modified_by.as_deref(),
+        Some("Alice")
+    );
+    assert_eq!(p.app_properties().words.as_deref(), Some("3"));
+    // The editable copy: statistics of the accepted text.
+    h.docx(&fixture("revisions.docx"));
+    let Response::SaveData { bytes, .. } = h.send(1, Command::MakeEditableCopy { stamp: stamp() })
+    else {
+        panic!("copy");
+    };
+    let p = package(&bytes);
+    assert_eq!(p.app_properties().application.as_deref(), Some("Atelier"));
+    assert!(p.app_properties().words.is_some());
+    // An empty user leaves the author alone; a time out of range is refused.
+    let bad = Stamp {
+        now_ms: u64::MAX,
+        ..stamp()
+    };
+    h.docx(&fixture("basic.docx"));
+    assert_eq!(
+        h.error(Command::Save {
+            format: SaveFormat::Docx,
+            stamp: bad
+        }),
+        ErrorCode::InvalidBody
+    );
+}
+
+#[test]
+fn alternative_text_refuses_what_xml_forbids() {
+    for alt in ["a\u{fffe}", "\u{ffff}", "a\u{1}", "a\u{7f}"] {
+        let r = proto::encode_request(&Request {
+            doc_id: 1,
+            request_id: 1,
+            command: Command::InsertImage {
+                alt: alt.into(),
+                bytes: png(),
+            },
+        });
+        assert!(r.is_err(), "{alt:?}");
+    }
 }

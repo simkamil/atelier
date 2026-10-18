@@ -38,7 +38,9 @@ fn reply(request_id: u32, response: Response) -> Reply {
 fn describe_request(r: &Request) -> String {
     let head = format!("doc={} req={}", r.doc_id, r.request_id);
     let tail = match &r.command {
-        Command::Save { format } => format!("Save format={}", *format as u8),
+        Command::Save { format, stamp } => {
+            format!("Save format={} {}", *format as u8, describe_stamp(stamp))
+        }
         Command::InsertImage { alt, bytes } => {
             format!(
                 "InsertImage alt={} bytes={}",
@@ -46,7 +48,9 @@ fn describe_request(r: &Request) -> String {
                 hex(bytes)
             )
         }
-        Command::MakeEditableCopy => "MakeEditableCopy".into(),
+        Command::MakeEditableCopy { stamp } => {
+            format!("MakeEditableCopy {}", describe_stamp(stamp))
+        }
         other => panic!("not a US-218 command: {other:?}"),
     };
     format!("{head} {tail}")
@@ -80,6 +84,39 @@ fn describe_reply(r: &Reply) -> String {
     format!("{head} {tail}")
 }
 
+fn stamp() -> Stamp {
+    Stamp {
+        now_ms: 1_700_000_000_123,
+        user: "J\u{e9}r\u{f4}me".into(),
+        version: "0.1.0".into(),
+    }
+}
+
+fn describe_stamp(s: &Stamp) -> String {
+    format!(
+        "now_ms={} user={} version={}",
+        s.now_ms,
+        hex(s.user.as_bytes()),
+        hex(s.version.as_bytes())
+    )
+}
+
+/// The wire form of a stamp.
+fn stamp_bytes(user: &[u8], version: &[u8]) -> Vec<u8> {
+    let mut b = 5u64.to_le_bytes().to_vec();
+    for t in [user, version] {
+        b.extend_from_slice(&(t.len() as u16).to_le_bytes());
+        b.extend_from_slice(t);
+    }
+    b
+}
+
+fn with_stamp(head: &[u8], user: &[u8], version: &[u8]) -> Vec<u8> {
+    let mut b = head.to_vec();
+    b.extend(stamp_bytes(user, version));
+    b
+}
+
 fn requests() -> Vec<(&'static str, Request)> {
     vec![
         (
@@ -88,6 +125,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 1,
                 Command::Save {
                     format: SaveFormat::Txt,
+                    stamp: stamp(),
                 },
             ),
         ),
@@ -97,6 +135,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 2,
                 Command::Save {
                     format: SaveFormat::Docx,
+                    stamp: stamp(),
                 },
             ),
         ),
@@ -106,6 +145,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 3,
                 Command::Save {
                     format: SaveFormat::Docm,
+                    stamp: stamp(),
                 },
             ),
         ),
@@ -115,6 +155,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 4,
                 Command::Save {
                     format: SaveFormat::Dotx,
+                    stamp: stamp(),
                 },
             ),
         ),
@@ -138,7 +179,10 @@ fn requests() -> Vec<(&'static str, Request)> {
                 },
             ),
         ),
-        ("make-editable-copy", req(7, Command::MakeEditableCopy)),
+        (
+            "make-editable-copy",
+            req(7, Command::MakeEditableCopy { stamp: stamp() }),
+        ),
     ]
 }
 
@@ -213,29 +257,63 @@ fn bad_requests() -> Vec<(&'static str, Vec<u8>, ErrorCode)> {
     vec![
         (
             "save-format-0",
-            frame(opcode::SAVE, &[0, 0, 0, 0]),
+            frame(opcode::SAVE, &with_stamp(&[0, 0, 0, 0], b"", b"")),
             InvalidBody,
         ),
         (
             "save-format-5",
-            frame(opcode::SAVE, &[5, 0, 0, 0]),
+            frame(opcode::SAVE, &with_stamp(&[5, 0, 0, 0], b"", b"")),
             InvalidBody,
         ),
         (
             "save-reserved",
-            frame(opcode::SAVE, &[1, 0, 1, 0]),
+            frame(opcode::SAVE, &with_stamp(&[1, 0, 1, 0], b"", b"")),
             InvalidBody,
         ),
         ("save-short", frame(opcode::SAVE, &[1, 0, 0]), InvalidBody),
         (
             "save-long",
-            frame(opcode::SAVE, &[1, 0, 0, 0, 0]),
+            frame(
+                opcode::SAVE,
+                &[with_stamp(&[1, 0, 0, 0], b"", b""), vec![0]].concat(),
+            ),
             InvalidBody,
         ),
         (
             "copy-with-body",
-            frame(opcode::MAKE_EDITABLE_COPY, &[0]),
+            frame(
+                opcode::MAKE_EDITABLE_COPY,
+                &[stamp_bytes(b"", b""), vec![0]].concat(),
+            ),
             InvalidBody,
+        ),
+        (
+            "save-no-stamp",
+            frame(opcode::SAVE, &[1, 0, 0, 0]),
+            InvalidBody,
+        ),
+        (
+            "save-user-too-long",
+            frame(
+                opcode::SAVE,
+                &with_stamp(&[1, 0, 0, 0], "a".repeat(256).as_bytes(), b""),
+            ),
+            InvalidText,
+        ),
+        (
+            "copy-version-invalid-utf8",
+            frame(opcode::MAKE_EDITABLE_COPY, &stamp_bytes(b"", &[0xff])),
+            InvalidUtf8,
+        ),
+        (
+            "image-alt-fffe",
+            image("a\u{fffe}".as_bytes(), b"x"),
+            InvalidText,
+        ),
+        (
+            "image-alt-ffff",
+            image("\u{ffff}".as_bytes(), b"x"),
+            InvalidText,
         ),
         ("image-empty", image(b"", b""), InvalidBody),
         ("image-alt-too-long", image(&too_big_alt, b"x"), InvalidText),

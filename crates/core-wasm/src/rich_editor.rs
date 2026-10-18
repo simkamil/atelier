@@ -193,9 +193,16 @@ impl Session {
                 let doc = opened
                     .to_rich_document(MAX_TXT_PARAGRAPHS)
                     .map_err(failed)?;
+                // Several kinds of break: each paragraph keeps its own.
+                let eols = if opened.line_endings.style() == LineEndingStyle::Mixed {
+                    let breaks = io::line_breaks(data, &opened);
+                    doc.paragraph_ids().into_iter().zip(breaks).collect()
+                } else {
+                    Default::default()
+                };
                 let origin = io::Origin::new(io::Source::Text(io::TextOrigin {
                     format: opened.format(),
-                    mixed_breaks: opened.line_endings.style() == LineEndingStyle::Mixed,
+                    eols,
                     replaced_on_open: opened.invalid_sequences > 0,
                 }));
                 (doc, origin)
@@ -221,6 +228,7 @@ impl Session {
                 // Revisions and comments: everything accepted is shown, edits
                 // are refused until the copy made by `MakeEditableCopy` is opened.
                 origin.has_revisions = marked;
+                origin.unreadable = report.unreadable > 0;
                 origin.read_only = marked;
                 (doc, origin)
             }
@@ -423,9 +431,9 @@ impl Session {
                 Ok(Response::State(self.state(PageDelta::default(), false)?))
             }
             Command::Layout { budget } => self.finish(PageDelta::default(), budget, false),
-            Command::Save { format } => self.save(format),
+            Command::Save { format, stamp } => self.save(format, &stamp),
             Command::InsertImage { alt, bytes } => self.insert_image(&alt, &bytes),
-            Command::MakeEditableCopy => self.editable_copy(),
+            Command::MakeEditableCopy { stamp } => self.editable_copy(&stamp),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(

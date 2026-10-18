@@ -27,15 +27,18 @@ pub struct RevisionReport {
     pub comments: usize,
     /// Rows deleted by a tracked change (removed by the accepted copy).
     pub rows_removed: usize,
-    /// Changes the accepted copy cannot reproduce (deleted paragraph marks,
-    /// deleted or merged cells, parts that are not UTF-8).
+    /// Changes (already counted above) that the accepted copy cannot
+    /// reproduce: deleted paragraph marks, deleted or merged cells.
     pub blocked: usize,
+    /// Parts that could not be read (not UTF-8, a DTD, not well formed): what
+    /// they hold, if anything, is neither detected nor removed. Not a revision.
+    pub unreadable: usize,
 }
 
 impl RevisionReport {
     /// A tracked change of any kind.
     pub fn has_revisions(&self) -> bool {
-        self.insertions + self.deletions + self.moves + self.property_changes + self.blocked > 0
+        self.insertions + self.deletions + self.moves + self.property_changes > 0
     }
 
     pub fn has_comments(&self) -> bool {
@@ -50,6 +53,7 @@ impl RevisionReport {
         self.comments += other.comments;
         self.rows_removed += other.rows_removed;
         self.blocked += other.blocked;
+        self.unreadable += other.unreadable;
     }
 }
 
@@ -107,6 +111,9 @@ struct Open {
     unwrap: bool,
     /// The row holds a tracked deletion: drop it at its end tag.
     remove_row: bool,
+    /// Rows of a table, and how many of them are removed.
+    rows: usize,
+    removed_rows: usize,
 }
 
 /// Position of `pat` in `xml` from `from`.
@@ -144,7 +151,7 @@ fn scan_part(xml: &[u8]) -> (Vec<(usize, usize)>, RevisionReport) {
     let mut report = RevisionReport::default();
     let mut cuts: Vec<(usize, usize)> = Vec::new();
     if xml.starts_with(&[0xff, 0xfe]) || xml.starts_with(&[0xfe, 0xff]) || xml.contains(&0) {
-        report.blocked += 1;
+        report.unreadable += 1;
         return (cuts, report);
     }
     let n = xml.len();
@@ -175,7 +182,7 @@ fn scan_part(xml: &[u8]) -> (Vec<(usize, usize)>, RevisionReport) {
         }
         if rest.starts_with(b"<!") {
             // A DTD is not part of WordprocessingML: not interpreted.
-            report.blocked += 1;
+            report.unreadable += 1;
             return (Vec::new(), report);
         }
         // Tag end, outside quotes.
@@ -200,10 +207,20 @@ fn scan_part(xml: &[u8]) -> (Vec<(usize, usize)>, RevisionReport) {
         let tag_end = j + 1;
         if rest.starts_with(b"</") {
             if let Some(open) = stack.pop() {
-                if open.drop_subtree || open.remove_row {
+                let table_gone = open.is_w
+                    && open.local == "tbl"
+                    && open.rows > 0
+                    && open.rows == open.removed_rows;
+                if open.drop_subtree || open.remove_row || table_gone {
                     cuts.push((open.start, tag_end));
                 } else if open.unwrap {
                     cuts.push((at, tag_end));
+                }
+                if open.is_w && open.local == "tr" {
+                    if let Some(table) = stack.last_mut().filter(|t| t.is_w && t.local == "tbl") {
+                        table.rows += 1;
+                        table.removed_rows += usize::from(open.remove_row);
+                    }
                 }
                 scope.truncate(open.bindings);
             }
@@ -236,6 +253,8 @@ fn scan_part(xml: &[u8]) -> (Vec<(usize, usize)>, RevisionReport) {
             drop_subtree: false,
             unwrap: false,
             remove_row: false,
+            rows: 0,
+            removed_rows: 0,
         };
         if is_w && !inside_dropped {
             let marker = matches!(parent_local.as_str(), "rPr" | "trPr");
@@ -284,6 +303,21 @@ fn scan_part(xml: &[u8]) -> (Vec<(usize, usize)>, RevisionReport) {
                     open.drop_subtree = true;
                 }
                 l if RANGE_MARKS.contains(&l) => open.drop_subtree = true,
+                "customXmlInsRangeStart" | "customXmlInsRangeEnd" => {
+                    report.insertions += 1;
+                    open.drop_subtree = true;
+                }
+                "customXmlDelRangeStart" | "customXmlDelRangeEnd" => {
+                    report.deletions += 1;
+                    open.drop_subtree = true;
+                }
+                "customXmlMoveFromRangeStart"
+                | "customXmlMoveFromRangeEnd"
+                | "customXmlMoveToRangeStart"
+                | "customXmlMoveToRangeEnd" => {
+                    report.moves += 1;
+                    open.drop_subtree = true;
+                }
                 "commentRangeStart" | "commentRangeEnd" | "commentReference" => {
                     report.comments += 1;
                     open.drop_subtree = true;
@@ -307,7 +341,7 @@ fn scan_part(xml: &[u8]) -> (Vec<(usize, usize)>, RevisionReport) {
     }
     if !stack.is_empty() {
         // Not well formed: the package layer would have refused it.
-        report.blocked += 1;
+        report.unreadable += 1;
     }
     cuts.sort_unstable();
     let mut merged: Vec<(usize, usize)> = Vec::with_capacity(cuts.len());

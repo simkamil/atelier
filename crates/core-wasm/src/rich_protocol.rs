@@ -323,6 +323,7 @@ pub enum Command {
     /// Serialises the document; answered by `SaveData`, no state change.
     Save {
         format: SaveFormat,
+        stamp: Stamp,
     },
     /// Inserts a picture as an inline object at the caret (replacing the
     /// selection); answered by `State`.
@@ -330,9 +331,12 @@ pub enum Command {
         alt: String,
         bytes: Vec<u8>,
     },
-    /// Replaces a read-only document by an editable copy where the revisions
-    /// are accepted and the comments removed; answered by `State`.
-    MakeEditableCopy,
+    /// An editable copy of a read-only document, revisions accepted and
+    /// comments removed, as a DOCX; answered by `SaveData` (the session does
+    /// not change, the client opens the bytes).
+    MakeEditableCopy {
+        stamp: Stamp,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -889,7 +893,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
             put_u64(&mut b, *end);
             opcode::ACCESSIBLE_WINDOW
         }
-        Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy => {
+        Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy { .. } => {
             io::encode_command(&request.command, &mut b)?
         }
     };
@@ -1410,7 +1414,7 @@ pub fn split_page_delta(delta: &crate::rich_layout::PageDelta) -> (Vec<u32>, Vec
 mod io;
 pub use io::{
     MAX_ALT_BYTES, MAX_IMAGE_BYTES, MAX_NOTICE_BYTES, MAX_NOTICES, MAX_SAVE_BYTES, Notice,
-    SaveFormat, notice,
+    SaveFormat, Stamp, notice,
 };
 
 #[cfg(test)]

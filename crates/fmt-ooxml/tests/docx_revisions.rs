@@ -144,3 +144,73 @@ fn deleted_rows_are_removed_and_other_prefixes_work() {
     let clean = accepted.package.write().unwrap();
     assert_eq!(texts(&clean)[0], "<w:del/> kept");
 }
+
+#[test]
+fn unreadable_parts_are_not_revisions_and_whole_tables_can_go() {
+    use atelier_fmt_ooxml::TargetMode;
+    // A part in UTF-16 and one with a DTD: reported apart, never a revision.
+    let ct = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
+    let mut package = Package::new();
+    let main = PartUri::parse("word/document.xml").unwrap();
+    package
+        .insert_part(
+            main.clone(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+            b"<!DOCTYPE x><w:document/>".to_vec(),
+        )
+        .unwrap();
+    package
+        .insert_part(
+            PartUri::parse("word/header1.xml").unwrap(),
+            ct,
+            vec![0xff, 0xfe, b'<', 0, b'a', 0, b'/', 0, b'>', 0],
+        )
+        .unwrap();
+    package
+        .add_relationship(
+            None,
+            "r1",
+            "http://x/officeDocument",
+            "word/document.xml",
+            TargetMode::Internal,
+        )
+        .unwrap();
+    let report = scan_revisions(&package);
+    assert_eq!(report.unreadable, 2);
+    assert!(!report.has_revisions() && !report.has_comments());
+    let accepted = accept_all_revisions(&package).unwrap();
+    assert_eq!(accepted.report.unreadable, 2);
+
+    // A table whose rows are all deleted disappears; custom XML range marks go.
+    let row = |t: &str| {
+        format!(
+            r#"<w:tr><w:trPr><w:del w:id="1" w:author="a"/></w:trPr><w:tc><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:tc></w:tr>"#
+        )
+    };
+    let table = format!(
+        r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>{}{}</w:tbl><w:p><w:customXmlInsRangeStart w:id="2" w:author="a"/><w:customXmlDelRangeEnd w:id="3"/><w:r><w:t>after</w:t></w:r></w:p>"#,
+        row("a"),
+        row("b")
+    );
+    let package = Package::read(&doc(body(&table)).bytes()).unwrap();
+    let report = scan_revisions(&package);
+    assert_eq!(
+        (report.rows_removed, report.insertions, report.deletions),
+        (2, 1, 3)
+    );
+    let accepted = accept_all_revisions(&package).unwrap();
+    let clean = accepted.package.write().unwrap();
+    let xml = String::from_utf8(
+        Package::read(&clean)
+            .unwrap()
+            .part(&PartUri::parse("word/document.xml").unwrap())
+            .unwrap()
+            .bytes
+            .clone(),
+    )
+    .unwrap();
+    assert!(
+        !xml.contains("w:tbl") && !xml.contains("customXml") && xml.contains("after"),
+        "{xml}"
+    );
+}
