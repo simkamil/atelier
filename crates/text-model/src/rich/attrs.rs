@@ -83,6 +83,9 @@ pub struct CharAttrs {
     pub size_half_points: Option<u32>,
     pub color: Option<Color>,
     pub highlight: Option<Color>,
+    /// Character style id (Word `w:rStyle`); a run attribute that counts 0
+    /// bytes in flat text. Resolution and DOCX mapping are R1's (US-204).
+    pub char_style: Option<String>,
     /// Uninterpreted attributes, sorted by `(namespace, name)`.
     pub opaque: Vec<OpaqueAttr>,
 }
@@ -107,7 +110,8 @@ impl CharAttrs {
             font,
             size_half_points,
             color,
-            highlight
+            highlight,
+            char_style
         );
         for a in &set.opaque {
             opaque_upsert(&mut self.opaque, a);

@@ -348,6 +348,7 @@ fn all_mvp_character_properties_and_opaque_attributes_round_trip() {
             g: 255,
             b: 0,
         }),
+        char_style: Some("Emphasis".into()),
         opaque: vec![opaque.clone()],
     };
     run_checked(
