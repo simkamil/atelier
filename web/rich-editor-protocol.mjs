@@ -4,6 +4,8 @@
 // docs/us-203-rich-editor-protocol.md. Envelope and message types only: the
 // page cache and editor integration belong to US-203 part 2 (R4).
 // Positions, revisions and byte lengths that can exceed 2^32 are BigInt.
+// Decoders do not copy: `data`, page `display` are views (subarray) into the
+// frame passed in, which the caller must not mutate while using them.
 
 export const RICH_VERSION = 2;
 export const HEADER_BYTES = 20;
@@ -30,13 +32,13 @@ export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
 });
 
-export const RichErrorCode = Object.freeze({
+export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
   RICH_INVALID_ENVELOPE: 1, RICH_UNSUPPORTED_VERSION: 2, RICH_UNKNOWN_OPCODE: 3, RICH_INVALID_BODY: 4,
   RICH_INVALID_DOCUMENT_ID: 5, RICH_UNKNOWN_DOCUMENT: 6, RICH_POSITION_OUT_OF_RANGE: 7,
   RICH_POSITION_NOT_BOUNDARY: 8, RICH_INVALID_RANGE: 9, RICH_INVALID_UTF8: 10, RICH_INVALID_TEXT: 11,
   RICH_FRAME_TOO_LARGE: 12, RICH_WINDOW_TOO_LARGE: 13, RICH_PAGE_RANGE: 14, RICH_TOO_MANY_PAGES: 15,
-  RICH_STALE_REVISION: 16, RICH_OPEN_FAILED: 17, RICH_INTERNAL: 18,
-});
+  RICH_STALE_REVISION: 16, RICH_OPEN_FAILED: 17, RICH_INTERNAL: 18, RICH_LIMIT: 19, RICH_NOT_READY: 20,
+}));
 const ERROR_NAMES = new Map(Object.entries(RichErrorCode).map(([name, code]) => [code, name]));
 
 const OPEN_KINDS = ["blank", "txt", "docx"];
@@ -144,9 +146,9 @@ function frame(opcode, docId, requestId, body) {
 
 function split(input) {
   if (!(input instanceof Uint8Array)) fail("RICH_INVALID_ENVELOPE");
-  const bytes = Uint8Array.from(input);
+  const bytes = input;
   if (bytes.length < 6 || MAGIC.some((m, i) => bytes[i] !== m)) fail("RICH_INVALID_ENVELOPE");
-  const view = new DataView(bytes.buffer);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (view.getUint16(4, true) !== RICH_VERSION) fail("RICH_UNSUPPORTED_VERSION");
   if (bytes.length < HEADER_BYTES) fail("RICH_INVALID_ENVELOPE");
   const context = { docId: view.getUint32(8, true), requestId: view.getUint32(12, true) };
@@ -167,7 +169,7 @@ function parseCommand(opcode, body) {
       r.zero(2);
       const len = r.u32();
       if (len > RICH_LIMITS.maxOpenBytes) fail("RICH_FRAME_TOO_LARGE");
-      const data = Uint8Array.from(r.take(len));
+      const data = r.take(len);
       const consistent = kind === "blank" ? data.length === 0 : kind === "txt" ? profile === "txt" : profile === "document";
       if (!consistent) fail("RICH_INVALID_BODY");
       command = { type: "open", kind, profile, data };
@@ -258,12 +260,29 @@ export function decodeRichRequest(bytes) {
   });
 }
 
-export function encodeRichRequest({ docId, requestId, command }) {
+// Malformed caller input (wrong types, missing fields) becomes a typed protocol error.
+function typed(work) {
+  try { return work(); } catch (error) {
+    if (error instanceof RichProtocolError) throw error;
+    return fail("RICH_INVALID_BODY");
+  }
+}
+
+export function encodeRichRequest(request) {
+  return typed(() => encodeRequestUnchecked(request ?? {}));
+}
+
+export function encodeRichReply(reply) {
+  return typed(() => encodeReplyUnchecked(reply ?? {}));
+}
+
+function encodeRequestUnchecked({ docId, requestId, command }) {
   const w = new Writer();
   let opcode;
   switch (command?.type) {
     case "open":
       w.u8(enumIndex(OPEN_KINDS, command.kind), enumIndex(PROFILES, command.profile), 0, 0);
+      if (!(command.data instanceof Uint8Array)) fail("RICH_INVALID_BODY");
       w.u32(command.data.length); w.raw(command.data);
       opcode = RichOpcode.Open; break;
     case "close": opcode = RichOpcode.Close; break;
@@ -294,7 +313,7 @@ function readPages(r, pageCount) {
     const len = r.u32();
     if (index >= pageCount || (pages.length && pages[pages.length - 1].index >= index)) fail("RICH_PAGE_RANGE");
     if (len < RICH_LIMITS.minPageDisplayBytes || len > RICH_LIMITS.maxPageDisplayBytes) fail("RICH_INVALID_BODY");
-    const display = Uint8Array.from(r.take(len));
+    const display = r.take(len);
     if (String.fromCharCode(...display.subarray(0, 4)) !== "ATDL") fail("RICH_INVALID_BODY");
     pages.push({ index, display });
   }
@@ -303,7 +322,10 @@ function readPages(r, pageCount) {
 
 function writePages(w, pages) {
   w.u32(pages.length);
-  for (const page of pages) { w.u32(page.index); w.u32(page.display.length); w.raw(page.display); }
+  for (const page of pages) {
+    if (!(page.display instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+    w.u32(page.index); w.u32(page.display.length); w.raw(page.display);
+  }
 }
 
 function parseState(r) {
@@ -326,7 +348,7 @@ function parseState(r) {
   const invalidated = [];
   for (let i = 0; i < n; i += 1) {
     const first = r.u32(); const end = r.u32();
-    if (first >= end || end > RICH_LIMITS.maxPages || (invalidated.length && invalidated[invalidated.length - 1][1] > first)) fail("RICH_PAGE_RANGE");
+    if (first >= end || end > RICH_LIMITS.maxPages || (invalidated.length && invalidated[invalidated.length - 1][1] >= first)) fail("RICH_PAGE_RANGE");
     invalidated.push([first, end]);
   }
   const pages = readPages(r, pageCount);
@@ -394,12 +416,12 @@ export function decodeRichReply(bytes) {
   });
 }
 
-export function encodeRichReply({ docId, requestId, response }) {
+function encodeReplyUnchecked({ docId, requestId, response }) {
   const w = new Writer();
   let opcode;
   switch (response?.type) {
     case "error": {
-      const code = RichErrorCode[response.code];
+      const code = typeof response.code === "string" ? RichErrorCode[response.code] : undefined;
       if (!code) fail("RICH_INVALID_BODY");
       w.u16(code); w.u16(0); opcode = RichReplyOpcode.Error; break;
     }

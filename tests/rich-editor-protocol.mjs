@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  RICH_DIRECTIONS, RICH_LIMITS, RichProtocolError, decodeRichReply, decodeRichRequest,
+  RICH_DIRECTIONS, RICH_LIMITS, RichErrorCode, RichProtocolError, decodeRichReply, decodeRichRequest,
   encodeRichReply, encodeRichRequest,
 } from "../web/rich-editor-protocol.mjs";
 
@@ -88,7 +88,7 @@ for (const [kind, name, frameHex, expected] of rows) {
     expectCode(() => decode(bytes), code, note !== "nocontext");
   }
 }
-assert.deepEqual(counts, { request: 21, reply: 10, "bad-request": 33, "bad-reply": 12 });
+assert.deepEqual(counts, { request: 21, reply: 10, "bad-request": 33, "bad-reply": 13 });
 
 // Truncation: every strict prefix of a valid frame is rejected, never thrown as a foreign error.
 for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {
@@ -114,5 +114,58 @@ expectCode(() => decodeRichRequest("not bytes"), "RICH_INVALID_ENVELOPE", false)
 // A reply never decodes as a request and the reverse.
 const [, , undoFrame] = rows.find((row) => row[1] === "undo");
 expectCode(() => decodeRichReply(fromHex(undoFrame)), "RICH_UNKNOWN_OPCODE", true);
+
+// Bit flips: every single-byte corruption either decodes or raises a typed error.
+for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {
+  const decode = kind === "request" ? decodeRichRequest : decodeRichReply;
+  const original = fromHex(frameHex);
+  for (let at = 0; at < Math.min(original.length, 160); at += 1) {
+    const mutated = Uint8Array.from(original);
+    mutated[at] ^= 0xff;
+    try { decode(mutated); } catch (error) { assert.ok(error instanceof RichProtocolError, `byte ${at}: ${error}`); }
+  }
+}
+
+// Decoders alias the frame (no copy): page displays are views.
+{
+  const pagesRow = rows.find((row) => row[1] === "pages" && row[0] === "reply");
+  const bytes = fromHex(pagesRow[2]);
+  const decoded = decodeRichReply(bytes);
+  assert.equal(decoded.response.pages[0].display.buffer, bytes.buffer);
+}
+
+// Replies at the limits: 16 pages, 256 KiB window, 1024 invalidations.
+const atdl = (fill) => { const p = new Uint8Array(RICH_LIMITS.minPageDisplayBytes); p.set([0x41, 0x54, 0x44, 0x4c, 1]); p[43] = fill; return p; };
+const limitState = () => ({
+  type: "state", revision: 1n, anchor: 0n, focus: 0n, docLen: BigInt(RICH_LIMITS.maxWindowBytes),
+  modified: false, canUndo: false, canRedo: false, layoutComplete: true, pageCount: 40, caret: null,
+  invalidated: Array.from({ length: RICH_LIMITS.maxInvalidations }, (_, i) => [i * 2, i * 2 + 1]),
+  pages: Array.from({ length: RICH_LIMITS.maxPagesPerResponse }, (_, i) => ({ index: i * 2, display: atdl(i) })),
+  window: { start: 0n, text: "a".repeat(RICH_LIMITS.maxWindowBytes) },
+});
+{
+  const at = { docId: 1, requestId: 1, response: limitState() };
+  const decoded = decodeRichReply(encodeRichReply(at));
+  assert.equal(decoded.response.pages.length, 16);
+  assert.equal(decoded.response.invalidated.length, 1024);
+  assert.equal(decoded.response.window.text.length, RICH_LIMITS.maxWindowBytes);
+  const over = (edit, code) => {
+    const response = limitState();
+    edit(response);
+    expectCode(() => encodeRichReply({ docId: 1, requestId: 1, response }), code, true);
+  };
+  over((r) => r.pages.push({ index: 33, display: atdl(0) }), "RICH_TOO_MANY_PAGES");
+  over((r) => { r.invalidated.push([5000, 5001]); }, "RICH_INVALID_BODY");
+  over((r) => { r.window.text += "a"; r.docLen += 1n; }, "RICH_WINDOW_TOO_LARGE");
+  over((r) => { r.invalidated = [[1, 2], [2, 3]]; }, "RICH_PAGE_RANGE");
+}
+
+// Typed errors for malformed caller input, no inherited keys as codes.
+expectCode(() => encodeRichRequest(null), "RICH_UNKNOWN_OPCODE", false);
+expectCode(() => encodeRichRequest({ docId: 1, requestId: 1, command: { type: "insertText" } }), "RICH_INVALID_BODY", false);
+expectCode(() => encodeRichRequest({ docId: 1, requestId: 1, command: { type: "open", kind: "blank", profile: "document", data: "x" } }), "RICH_INVALID_BODY", false);
+expectCode(() => encodeRichReply({ docId: 1, requestId: 1, response: { type: "error", code: "constructor" } }), "RICH_INVALID_BODY", false);
+expectCode(() => encodeRichReply({ docId: 1, requestId: 1, response: { type: "state" } }), "RICH_INVALID_BODY", false);
+assert.equal(RichErrorCode.constructor, undefined);
 
 console.log(`rich editor protocol: ${rows.length} vectors verified`);
