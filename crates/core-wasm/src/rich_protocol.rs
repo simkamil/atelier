@@ -1062,6 +1062,7 @@ impl From<atelier_text_model::rich::flat::FlatError> for ErrorCode {
             F::InvalidRange => Self::InvalidRange,
             F::InvalidText => Self::InvalidText,
             F::Limit => Self::Limit,
+            F::Style => Self::Internal,
         }
     }
 }

@@ -1177,6 +1177,7 @@ fn engine_errors_map_to_protocol_codes() {
     assert_eq!(ErrorCode::from(F::InvalidRange), ErrorCode::InvalidRange);
     assert_eq!(ErrorCode::from(F::InvalidText), ErrorCode::InvalidText);
     assert_eq!(ErrorCode::from(F::Limit), ErrorCode::Limit);
+    assert_eq!(ErrorCode::from(F::Style), ErrorCode::Internal);
     assert_eq!(ErrorCode::from(L::PageOutOfRange), ErrorCode::PageRange);
     assert_eq!(
         ErrorCode::from(L::PositionOutOfRange),

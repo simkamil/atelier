@@ -16,6 +16,10 @@
 
 use atelier_text_model::rich::flat::{EditOutcome, LayoutContext};
 
+/// Painting of laid-out pages (US-216). Declared here so that R2 owns the
+/// file `rich_layout/rich_paint.rs` without touching `lib.rs`.
+pub mod rich_paint;
+
 /// Caret geometry in page coordinates (points, as in the display list).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CaretGeometry {
