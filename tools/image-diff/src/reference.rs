@@ -184,11 +184,16 @@ pub fn artifact_paths(reference: &Path, output_dir: Option<&Path>) -> (PathBuf, 
         .unwrap_or_else(|| "image".to_owned());
     let dir = match output_dir {
         Some(dir) => {
-            // FNV-1a over the path with separators normalised.
-            let hash = reference
-                .to_string_lossy()
+            // Separators are normalised so that `a\page.png` names the same artifact on every
+            // host; a backslash is an ordinary file-name byte on POSIX.
+            let normalised = reference.to_string_lossy().replace('\\', "/");
+            let name = normalised.rsplit('/').next().unwrap_or_default();
+            if let Some(s) = Path::new(name).file_stem() {
+                stem = s.to_string_lossy().into_owned();
+            }
+            // FNV-1a over the normalised path.
+            let hash = normalised
                 .bytes()
-                .map(|b| if b == b'\\' { b'/' } else { b })
                 .fold(0xcbf2_9ce4_8422_2325_u64, |hash, b| {
                     (hash ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
                 });
