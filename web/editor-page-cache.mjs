@@ -21,8 +21,12 @@ export class RichClientError extends Error {
 function invalid(message) { throw new RichClientError("CLIENT_BAD_REPLY", message); }
 
 export class EditorPageCache {
-  /** @param {{onChange?: (change: object) => void}} [options] */
-  constructor({ onChange } = {}) {
+  /** @param {{onChange?: (change: object) => void, maxCachedPages?: number, margin?: number}} [options] */
+  constructor({ onChange, maxCachedPages = 256, margin = 8 } = {}) {
+    if (!Number.isInteger(maxCachedPages) || maxCachedPages < 1 || !Number.isInteger(margin) || margin < 0) throw new TypeError("Invalid cache bounds.");
+    this.maxCachedPages = maxCachedPages;
+    this.margin = margin;
+    this.visible = null;
     if (onChange !== undefined && typeof onChange !== "function") throw new TypeError("onChange must be a function.");
     this.onChange = onChange;
     this.pageMap = new Map();
@@ -43,12 +47,17 @@ export class EditorPageCache {
     this.canRedo = false;
     this.layoutComplete = false;
     this.textWindow = null;
+    this.acceptAnyRevision = true;
     this.version += 1;
   }
+
+  /** Pages of [first, end) plus the margin are never evicted. */
+  setVisible(first, end) { this.visible = { first, end }; }
 
   /** Drop every cached page but keep the rest (used when invalidations may have been lost). */
   dropPages() {
     this.pageMap.clear();
+    this.acceptAnyRevision = true; // resync: the next State may carry any revision
     this.version += 1;
   }
 
@@ -98,12 +107,30 @@ export class EditorPageCache {
       default: return invalid("Reply type is not a cache input.");
     }
     if (!change.ignored) {
+      change.dropped += this.#evict();
       this.version += 1;
       if (this.onChange) {
         try { this.onChange(change); } catch { /* isolate user callbacks */ }
       }
     }
     return change;
+  }
+
+  /** Keep at most maxCachedPages pages: the ones farthest from the visible window (or the caret page) go first. */
+  #evict() {
+    if (this.pageMap.size <= this.maxCachedPages) return 0;
+    const centre = this.visible ?? { first: this.caret?.page ?? 0, end: (this.caret?.page ?? 0) + 1 };
+    const lo = centre.first - this.margin;
+    const hi = centre.end + this.margin;
+    const distance = (i) => (i < lo ? lo - i : i >= hi ? i - hi + 1 : 0);
+    const candidates = [...this.pageMap.keys()].filter((i) => distance(i) > 0).sort((a, b) => distance(b) - distance(a));
+    let dropped = 0;
+    for (const index of candidates) {
+      if (this.pageMap.size <= this.maxCachedPages) break;
+      this.pageMap.delete(index);
+      dropped += 1;
+    }
+    return dropped;
   }
 
   #checkPages(pages, pageCount) {
@@ -133,14 +160,19 @@ export class EditorPageCache {
   }
 
   #applyState(s) {
+    if (!this.acceptAnyRevision && this.revision !== null && typeof s.revision === "bigint" && s.revision < this.revision) {
+      return { ignored: true, updated: [], dropped: 0, invalidated: 0 };
+    }
     if (typeof s.revision !== "bigint" || typeof s.anchor !== "bigint" || typeof s.focus !== "bigint" || typeof s.docLen !== "bigint") invalid("State positions must be BigInt.");
     if (!Number.isInteger(s.pageCount) || s.pageCount < 0 || s.pageCount > RICH_LIMITS.maxPages) invalid("State page count is out of range.");
     if (!Array.isArray(s.invalidated) || !Array.isArray(s.pages)) invalid("State lists are missing.");
     for (const range of s.invalidated) {
       if (!Array.isArray(range) || !Number.isInteger(range[0]) || !Number.isInteger(range[1]) || range[0] < 0 || range[0] >= range[1]) invalid("Invalidation range is malformed.");
     }
+    if (s.anchor > s.docLen || s.focus > s.docLen) invalid("Selection lies outside the document.");
     this.#checkPages(s.pages, s.pageCount);
     const { updated, dropped } = this.#store(s.pages, s.pageCount, s.invalidated);
+    this.acceptAnyRevision = false;
     this.revision = s.revision;
     this.docLen = s.docLen;
     this.selection = { anchor: s.anchor, focus: s.focus, upstream: s.focusUpstream === true };

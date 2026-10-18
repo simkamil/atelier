@@ -107,7 +107,11 @@ export function createRichEditorClient({
     if (response.type === "error") throw new RichClientError(response.code, `Engine refused the command: ${response.code}`);
     const expected = command.type === "hitTest" ? (command.mode === "probe" ? "hitResult" : "state") : REPLY_TYPE[command.type];
     if (response.type !== expected) throw new RichClientError("CLIENT_BAD_REPLY", `Unexpected ${response.type} reply to ${command.type}.`);
-    if (response.type === "closed") { opened = false; cache.reset(); pumpHalt = "stopped"; return { response, change: null }; }
+    if (response.type === "closed") {
+      opened = false; cache.reset(); pumpHalt = "stopped";
+      settleLayoutWaiters(closedError());
+      return { response, change: null };
+    }
     const change = cache.apply(response);
     settleLayoutWaiters();
     return { response, change };
@@ -116,7 +120,9 @@ export function createRichEditorClient({
   /** Command whose reply carries a State: when it is cancelled the lost invalidations force a resync. */
   async function guarded(command, callerSignal) {
     try { return await exchange(command, callerSignal); } catch (error) {
-      if (isAbort(error) && REPLY_TYPE[command.type] === "state" && !disposed) { cache.dropPages(); needsResync = true; }
+      // The engine may have applied the command whatever went wrong, except for its own RICH_* refusals.
+      const refused = typeof error?.code === "string" && error.code.startsWith("RICH_");
+      if (!refused && REPLY_TYPE[command.type] === "state" && !disposed && error?.code !== "CLIENT_CLOSED") { cache.dropPages(); needsResync = true; }
       throw error;
     }
   }
@@ -156,10 +162,11 @@ export function createRichEditorClient({
       if (run) {
         const version = cache.version;
         try {
-          const { change } = await exchange({ type: "pages", first: run.first, count: run.count }, pumpController.signal);
+          const { change } = await exchange({ type: "pages", first: run.first, count: run.count }, undefined);
           if (change.ignored) fillBlockedVersion = version; // stale revision: wait for the next State
         } catch (error) {
-          if (disposed || isAbort(error)) return true;
+          if (disposed) return false;
+          if (isAbort(error)) { fillBlockedVersion = version; return true; }
           if (error?.code !== "RICH_NOT_READY" || cache.layoutComplete) report(error);
           fillBlockedVersion = version;
         }
@@ -262,7 +269,11 @@ export function createRichEditorClient({
         fillBlockedVersion = -1;
         needsResync = false;
         pumpController = new AbortController();
-        const result = await exchange({ type: "open", ...spec }, callerSignal);
+        let result;
+        try { result = await exchange({ type: "open", ...spec }, callerSignal); } catch (error) {
+          settleLayoutWaiters(error);
+          throw error;
+        }
         opened = true;
         return result;
       }, callerSignal);
@@ -281,13 +292,15 @@ export function createRichEditorClient({
     setVisibleRange(first, end) {
       if (!Number.isInteger(first) || !Number.isInteger(end) || first < 0 || end < first) throw new TypeError("Invalid page range.");
       visible = { first, end };
+      cache.setVisible(first, end);
       fillBlockedVersion = -1;
       kick();
     },
     closeDocument({ signal: callerSignal } = {}) { return enqueue(() => exchange({ type: "close" }, callerSignal), callerSignal); },
+    /** Stops the pump; a Layout in flight is cancelled, which empties the cached pages (asked again later). whenLayoutComplete() then waits for startPump(). */
     stopPump() { pumpHalt = "stopped"; pumpController.abort(); },
     startPump() { if (pumpHalt) { pumpHalt = null; pumpController = new AbortController(); } kick(); },
-    /** Resolves when the State carries the layout-complete flag; rejects if the pump fails or the client closes. */
+    /** Resolves when the State carries the layout-complete flag; rejects if the pump fails, the document closes, open fails or the client is disposed (a request in flight is then rejected with AbortError). Stays pending while the pump is stopped. */
     whenLayoutComplete() {
       if (disposed) return Promise.reject(closedError());
       if (opened && cache.layoutComplete) return Promise.resolve();

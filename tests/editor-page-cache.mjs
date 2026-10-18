@@ -193,7 +193,7 @@ test("onChange fires for applied replies only, and a throwing listener is isolat
 });
 
 test("load: 300 pages, 400 updates, no leaked page or retained frame", () => {
-  const cache = new EditorPageCache();
+  const cache = new EditorPageCache({ maxCachedPages: 1000 });
   const total = 300;
   const first = [];
   for (let i = 0; i < total; i += 16) first.push(pagesOf(...Array.from({ length: Math.min(16, total - i) }, (_, k) => i + k)));
@@ -226,6 +226,41 @@ test("load: 300 pages, 400 updates, no leaked page or retained frame", () => {
   assert.equal(cache.pageMap.size, 0);
   assert.equal(cache.window, null);
   assert.equal(cache.revision, null);
+});
+
+test("eviction keeps the visible window plus margin and drops the farthest pages first", () => {
+  const cache = new EditorPageCache({ maxCachedPages: 20, margin: 2 });
+  cache.setVisible(10, 14);
+  cache.apply(decoded(state({ revision: 1n, pageCount: 100, pages: pagesOf(...Array.from({ length: 16 }, (_, i) => i)) })));
+  assert.equal(cache.size, 16);
+  const change = cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 100, pages: pagesOf(40, 41, 42, 43, 44, 45, 46, 47) }));
+  assert.equal(cache.size, 20);
+  assert.equal(change.dropped, 4);
+  for (let i = 8; i < 16; i += 1) assert.equal(cache.has(i), true, "window " + i);
+  assert.equal([44, 45, 46, 47].every((i) => !cache.has(i)), true, "farthest first");
+  assert.equal(cache.has(40) && cache.has(43), true);
+  assert.equal(cache.missing(10, 14).length, 0);
+  assert.equal(cache.missing(44, 45).length, 1, "evicted pages are asked again");
+  cache.setVisible(0, 40); // window larger than the bound: it is never evicted
+  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 100, pages: pagesOf(60) }));
+  assert.equal(cache.has(8), true);
+  assert.throws(() => new EditorPageCache({ maxCachedPages: 0 }), TypeError);
+});
+
+test("a State with a lower revision is ignored except after reset or dropPages; selection must lie in the document", () => {
+  const cache = new EditorPageCache();
+  cache.apply(decoded(state({ revision: 5n, pageCount: 1 })));
+  assert.equal(cache.apply(decoded(state({ revision: 4n, pageCount: 3 }))).ignored, true);
+  assert.equal(cache.pageCount, 1);
+  assert.equal(cache.apply(decoded(state({ revision: 5n, pageCount: 2 }))).ignored, false);
+  cache.dropPages();
+  assert.equal(cache.apply(decoded(state({ revision: 2n, pageCount: 3 }))).ignored, false);
+  assert.equal(cache.revision, 2n);
+  assert.equal(cache.apply(decoded(state({ revision: 1n }))).ignored, true, "back to strict after a State");
+  cache.reset();
+  assert.equal(cache.apply(decoded(state({ revision: 0n }))).ignored, false);
+  const bad = { ...decoded(state({ revision: 3n })), focus: 2000n };
+  assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
 });
 
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }

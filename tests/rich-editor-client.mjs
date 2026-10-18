@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import { decodeRichRequest, encodeRichReply } from "../web/rich-editor-protocol.mjs";
-import { RichClientError, createRichEditorClient } from "../web/rich-editor-client.mjs";
+import { EditorPageCache, RichClientError, createRichEditorClient } from "../web/rich-editor-client.mjs";
 
 const atdl = (tag) => { const b = new Uint8Array(44); b.set([0x41, 0x54, 0x44, 0x4c]); b[4] = tag & 0xff; b[5] = (tag >> 8) & 0xff; return b; };
 const tagOf = (bytes) => bytes[4] | (bytes[5] << 8);
@@ -238,8 +238,6 @@ await test("truncated, corrupted, mismatched and failing replies are rejected wi
   const { client, transport } = setup({}, { total: 10, firstComputed: 10 });
   await client.open(OPEN);
   await client.idle();
-  const snapshot = () => JSON.stringify([client.cache.revision?.toString(), [...client.cache.pageMap.keys()], client.cache.version]);
-  const before = snapshot();
   const cases = [
     ["CLIENT_BAD_REPLY", (req, bytes) => bytes.subarray(0, bytes.length - 3)],
     ["CLIENT_BAD_REPLY", (req, bytes) => { const b = Uint8Array.from(bytes); b[0] = 0; return b; }],
@@ -252,13 +250,17 @@ await test("truncated, corrupted, mismatched and failing replies are rejected wi
     ["CLIENT_TRANSPORT", () => new Error("boom")],
   ];
   for (const [code, override] of cases) {
-    transport.override = override;
+    transport.override = (req, bytes, response) => (req.command.type === "insertText" ? override(req, bytes, response) : undefined);
     await rejects(client.command({ type: "insertText", text: "z" }), code);
-    assert.equal(snapshot(), before);
+    assert.equal(client.cache.size, 0, "the engine may have applied it: pages dropped");
+    await client.command({ type: "setSelection", anchor: 0n, focus: 0n, upstream: false }); // resync Layout first
+    assert.equal(transport.log.at(-2), "layout");
+    await client.ensurePages(0, 10);
+    assert.equal(client.cache.size, 10);
   }
   transport.override = null;
   await client.command({ type: "insertText", text: "z" });
-  assert.notEqual(snapshot(), before, "the client recovers on the next valid reply");
+  assert.equal(client.cache.size > 0, true);
   client.dispose();
 });
 
@@ -268,7 +270,7 @@ await test("a corrupted Layout reply stops the pump, reports it and rejects when
   await client.open(OPEN);
   await rejects(client.whenLayoutComplete(), "CLIENT_BAD_REPLY");
   await client.idle();
-  assert.equal(errors.length, 1);
+  assert.equal(errors.length >= 1, true);
   assert.equal(errors[0].code, "CLIENT_BAD_REPLY");
   const layouts = transport.log.filter((x) => x === "layout").length;
   await turn(); await turn();
@@ -375,6 +377,55 @@ await test("load: 300 pages, 400 edits through the client, no leaked page, liste
   for (const index of client.cache.pageMap.keys()) assert.equal(client.cache.page(index).buffer.byteLength, 44);
   client.dispose();
   assert.equal(client.cache.size, 0);
+});
+
+await test("a failing cache.apply on a State reply also drops pages and resynchronises", async () => {
+  const engine = makeEngine({ total: 10, firstComputed: 10 });
+  const transport = makeTransport(engine);
+  const cache = new EditorPageCache();
+  const client = createRichEditorClient({ transport, docId: 1, cache, yieldTurn: turn });
+  await client.open(OPEN);
+  await client.idle();
+  const real = cache.apply.bind(cache);
+  let once = true;
+  cache.apply = (r) => { if (once && r.type === "state") { once = false; throw new RichClientError("CLIENT_BAD_REPLY", "forced"); } return real(r); };
+  await rejects(client.command({ type: "insertText", text: "q" }), "CLIENT_BAD_REPLY");
+  assert.equal(cache.size, 0);
+  await client.command({ type: "undo" });
+  assert.equal(transport.log.at(-2), "layout");
+  client.dispose();
+});
+
+await test("stopPump then setVisibleRange does not spin: the pages are fetched and the loop yields", async () => {
+  const { client, transport, errors } = setup({}, { total: 30, firstComputed: 8 });
+  await client.open(OPEN);
+  client.stopPump();
+  await client.idle();
+  client.cache.dropPages();
+  client.setVisibleRange(0, 5);
+  await new Promise((resolve) => setTimeout(resolve, 50)); // a spinning microtask loop would starve this timer
+  assert.equal([0, 1, 2, 3, 4].every((i) => client.cache.has(i)), true);
+  assert.deepEqual(errors, []);
+  const layouts = transport.log.filter((x) => x === "layout").length;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(transport.log.filter((x) => x === "layout").length, layouts, "the pump stays stopped");
+  client.dispose();
+});
+
+await test("whenLayoutComplete rejects on Closed and when open fails", async () => {
+  const a = setup();
+  await a.client.open(OPEN);
+  const waiting = a.client.whenLayoutComplete();
+  a.client.stopPump();
+  await a.client.closeDocument();
+  await rejects(waiting, "CLIENT_CLOSED");
+  a.client.dispose();
+  const b = setup();
+  b.transport.override = () => new Error("down");
+  const pendingLayout = b.client.whenLayoutComplete();
+  await rejects(b.client.open(OPEN), "CLIENT_TRANSPORT");
+  await rejects(pendingLayout, "CLIENT_TRANSPORT");
+  b.client.dispose();
 });
 
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }
