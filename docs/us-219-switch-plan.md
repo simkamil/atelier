@@ -150,3 +150,24 @@ Lecture : v2 est meilleur que v1 sur la moyenne (4,0 contre 739,6) et sur le p95
 - Supprimer le traitement du code 75 s'il existe (75 = échec).
 - Ajouter `node tests/run-rich-editor-ui-browser.mjs` (si absent), `node tests/rich-editor-move.mjs`, `node tests/rich-editor-unit.mjs`, `cargo test --locked --offline -p atelier-core-wasm -p atelier-text-model` (nouveaux : `--test rich_move`, `--test flat_move`, `rich_protocol::move_tests`).
 - Banc de latence (hors blocage, machine dédiée) : `ATELIER_BENCH_ALONE=1 node tests/run-latency-browser.mjs --engine v2` ; v1 : `... --engine v1`.
+
+## 7. R8 — lecteurs relevés avant suppression (2026-10-18, main @ ad117fc)
+
+Relevé par `grep` dans `crates/`, `web/`, `tests/`, `tools/`, `.github/`, avant tout retrait. Le moteur a trois chemins dans `dispatch_editor` (`lib.rs`) : riche (`rich_editor::is_rich`), étagé (`staged::is_staged`) et « v1 » (`EditorSession::prepare_message`). Seul le troisième disparaît.
+
+| Élément retiré | Lecteurs relevés | Décision |
+|---|---|---|
+| `editor-layout.rs` (`Layout`) | `editor.rs:7`, `editor_queries.rs:5`, `lib.rs:14` ; aucun autre | supprimé |
+| `editor_queries.rs` (recherche, statistiques, remplacement v1) | `editor.rs` opcodes 19-22 seulement ; la v2 a `rich_editor/find.rs` (qui ne lit de v1 que `properties::{FIELDS, LIMITS}`) | supprimé, aucun appelant |
+| `EditorSession` (`editor.rs`), `parse_command`, `Reader`, navigation TXT | `lib.rs:236,343-360` ; tests `editor_engine`, `drag_spacing`, `navigation_queries`, `replacement`, `insert_image`, `properties`, `rich_preview_session`, `rich_session.rs:459` | supprimés ; tests : voir ci-dessous |
+| `editor.rs` : `EditorError`, `Writer`, `encode_preview` | `staged.rs:23`, `properties.rs:34`, `docx_export.rs:5`, `editor_queries.rs:4` | **gardés** (petit module de codage commun) |
+| `docx_export.rs` (export TXT -> DOCX v1) | `editor.rs` opcode 30 ; `rich_editor/tests.rs:1210` (aide de test) | supprimé, aide de test réécrite |
+| `images.rs` : `ImageStore`, `get`, `plain_bytes` | `editor.rs`, `docx_export.rs`, `editor-layout.rs:12` | retirés ; `analyze`, `render_bitmap`, `ImageInsertError` **gardés** (`rich_editor/io.rs:23,508`, `sel.rs:9,89`) |
+| `properties.rs` : `is_properties`, `handle`, `body_len_ok` (opcodes 26/27) | `editor.rs:59,999` ; JS : `web/properties-protocol.mjs` (via `app.mjs` v1 seulement), `tests/properties-abi.mjs` | retirés ; `FIELDS`, `LIMITS`, `SaveStamp`, `parse_stamp`, `stamp`, `context` **gardés** (`rich_editor/io.rs:24`, `find.rs:31`, `staged.rs`) |
+| opcode 18 `PreviewDocx` v1 | `editor.rs:62`, `web/editor.mjs` ; v2 : `previewDocx()` rejette (`rich-editor.mjs:1140`) | retiré ; `rich_preview.rs` **gardé** (`rich_session.rs`, `rich_editor.rs:21`, `rich_layout`, `staged.rs`) |
+| `staged.rs` (US-092) | aucun appelant dans l'interface v2 (`web/rich-editor*.mjs`, `app.mjs`) ; transport `engine-worker.mjs`, `wasm-protocol.mjs`, `tests/wasm-worker.mjs`, `tests/properties.rs` (Rust) | **gardé** (hors périmètre sans certitude : transport annulable testé, peut resservir à l'ouverture de gros fichiers) |
+| `web/editor.mjs` | `app.mjs:4,405`, `tests/editor-browser.mjs:2`, `tests/latency-browser.mjs:12`, commentaires | supprimé |
+| `web/editor-protocol.mjs` | `web/editor.mjs`, `web/image-insert.mjs:5` (`EDITOR_LIMITS`), `tests/{editor-protocol,editor-abi,image-insert,replacement-protocol,navigation-query-protocol,rich-preview-protocol,wasm-worker,editor-test-adapter}.mjs`, `tests/check-i18n.mjs:33`, `resources.rs:234`, `win32.rs:2039` | voir commit JS |
+| `web/engine-choice.mjs` | `app.mjs:21,196`, `tests/rich-editor-unit.mjs:5`, `resources.rs:289` | supprimé (plus qu'un moteur) |
+| `tests/engine-adapter.mjs`, `--engine` | tous les `tests/run-*-browser.mjs`, `mouse-selection.mjs` | simplifié |
+| CI | `ci.yml:148,158,179,194-204` | lignes v1 retirées |
