@@ -54,6 +54,29 @@ const TIMER_DIAG_DIALOG_CLOSE: usize = 0x1113;
 const TIMER_BRIDGE_RETRY: usize = 0x1114;
 const BRIDGE_RETRY_MS: u32 = 50;
 const MAX_BRIDGE_JOBS: usize = 4;
+const TIMER_CLOSE_WAIT: usize = 0x1115;
+const CLOSE_WAIT_POLL_MS: u32 = 250;
+/// Attente maximale des travaux du pont avant de laisser l'utilisateur décider de quitter.
+const CLOSE_WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Décision de fermeture vis-à-vis des travaux du pont encore en cours.
+#[derive(Debug, PartialEq, Eq)]
+enum CloseGate {
+    Proceed,
+    Wait,
+    /// Délai dépassé : demander à l'utilisateur plutôt que d'abandonner une écriture en silence.
+    AskTimeout,
+}
+
+fn close_gate(inflight: usize, waited: Option<std::time::Duration>) -> CloseGate {
+    if inflight == 0 {
+        CloseGate::Proceed
+    } else if waited.is_some_and(|waited| waited >= CLOSE_WAIT_LIMIT) {
+        CloseGate::AskTimeout
+    } else {
+        CloseGate::Wait
+    }
+}
 /// Délai maximal de lecture d'un fichier d'ouverture (partage réseau injoignable).
 const LAUNCH_READ_TIMEOUT_MS: u32 = 30_000;
 const SIZE_MINIMIZED: usize = 1;
@@ -278,6 +301,8 @@ struct FileRuntime {
     /// Résultats des travaux du pont terminés sur un fil de travail, en attente de remise.
     bridge_done: Arc<Mutex<std::collections::VecDeque<JobResult>>>,
     bridge_inflight: usize,
+    /// Début de l'attente de fin des travaux du pont après un WM_CLOSE différé.
+    close_wait_since: Option<std::time::Instant>,
 }
 
 impl FileRuntime {
@@ -293,6 +318,7 @@ impl FileRuntime {
             bridge: BridgeState::system(),
             bridge_done: Arc::new(Mutex::new(std::collections::VecDeque::new())),
             bridge_inflight: 0,
+            close_wait_since: None,
         })
     }
 }
@@ -1059,6 +1085,13 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                                     }
                                 }
                             }
+                            // Fermeture différée : le dernier travail est fini, on la relance.
+                            if (*context).file_runtime.as_ref().is_some_and(|runtime| {
+                                runtime.close_wait_since.is_some() && runtime.bridge_inflight == 0
+                            }) {
+                                // SAFETY: hwnd est la fenêtre vivante ; message sans pointeur.
+                                PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                            }
                         }
                         None => {
                             SetTimer(hwnd, TIMER_BRIDGE_RETRY, BRIDGE_RETRY_MS, null_mut());
@@ -1088,6 +1121,11 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     return 0;
                 }
                 WM_TIMER => {
+                    if w == TIMER_CLOSE_WAIT {
+                        let _ = KillTimer(hwnd, TIMER_CLOSE_WAIT);
+                        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                        return 0;
+                    }
                     if w == TIMER_BRIDGE_RETRY {
                         let _ = KillTimer(hwnd, TIMER_BRIDGE_RETRY);
                         PostMessageW(hwnd, WM_ATELIER_BRIDGE_DONE, 0, 0);
@@ -1171,6 +1209,51 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     }
                 }
                 WM_CLOSE => {
+                    let _ = KillTimer(hwnd, TIMER_CLOSE_WAIT);
+                    let gate =
+                        (*context)
+                            .file_runtime
+                            .as_mut()
+                            .map_or(CloseGate::Proceed, |runtime| {
+                                let waited = runtime.close_wait_since.map(|since| since.elapsed());
+                                let gate = close_gate(runtime.bridge_inflight, waited);
+                                if gate == CloseGate::Wait && runtime.close_wait_since.is_none() {
+                                    runtime.close_wait_since = Some(std::time::Instant::now());
+                                }
+                                gate
+                            });
+                    match gate {
+                        CloseGate::Wait => {
+                            // Un travail du pont (écriture atomique, lecture) tourne : on attend sa fin
+                            // (relance par BRIDGE_DONE) ; la minuterie borne l'attente.
+                            SetTimer(hwnd, TIMER_CLOSE_WAIT, CLOSE_WAIT_POLL_MS, null_mut());
+                            return 0;
+                        }
+                        CloseGate::AskTimeout => {
+                            let prompt: Vec<u16> = "Un enregistrement ou une lecture est toujours en cours. Quitter quand même ? Une écriture interrompue peut être perdue."
+                                .encode_utf16().chain(Some(0)).collect();
+                            let caption: Vec<u16> =
+                                "Atelier".encode_utf16().chain(Some(0)).collect();
+                            // SAFETY: hwnd est la fenêtre propriétaire vivante, chaînes terminées par NUL pour cet appel synchrone.
+                            let answer = MessageBoxW(
+                                hwnd,
+                                prompt.as_ptr(),
+                                caption.as_ptr(),
+                                0x0000_0024 | 0x0000_0100,
+                            );
+                            if let Some(runtime) = (*context).file_runtime.as_mut() {
+                                runtime.close_wait_since = None;
+                            }
+                            if answer != 6 {
+                                return 0;
+                            }
+                        }
+                        CloseGate::Proceed => {
+                            if let Some(runtime) = (*context).file_runtime.as_mut() {
+                                runtime.close_wait_since = None;
+                            }
+                        }
+                    }
                     if let Some(view) = (*context).webview.as_ref()
                         && view.file_work_active()
                     {
@@ -2492,15 +2575,30 @@ pub fn show_error(message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        FileDialogKind, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, WPF_RESTORETOMAXIMIZED,
-        atomic_write_to_temp, placement_is_maximized, route_file_request, validate_self_check_path,
-        with_file_dialog_options,
+        CLOSE_WAIT_LIMIT, CloseGate, FileDialogKind, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED,
+        WPF_RESTORETOMAXIMIZED, atomic_write_to_temp, close_gate, placement_is_maximized,
+        route_file_request, validate_self_check_path, with_file_dialog_options,
     };
     use crate::file_bridge::{self, Request};
     use crate::file_dialog::FileFilter;
     use crate::files::FileBroker;
     use std::io;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn close_gate_waits_for_bridge_jobs_then_asks_after_the_limit() {
+        use std::time::Duration;
+        assert_eq!(close_gate(0, None), CloseGate::Proceed);
+        assert_eq!(
+            close_gate(0, Some(CLOSE_WAIT_LIMIT * 2)),
+            CloseGate::Proceed
+        );
+        assert_eq!(close_gate(1, None), CloseGate::Wait);
+        assert_eq!(close_gate(3, Some(Duration::from_secs(1))), CloseGate::Wait);
+        let just_under = CLOSE_WAIT_LIMIT - Duration::from_millis(1);
+        assert_eq!(close_gate(1, Some(just_under)), CloseGate::Wait);
+        assert_eq!(close_gate(1, Some(CLOSE_WAIT_LIMIT)), CloseGate::AskTimeout);
+    }
 
     #[test]
     fn common_file_route_uses_distinct_dialogs_and_selected_paths() {
