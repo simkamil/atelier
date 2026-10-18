@@ -36,7 +36,7 @@ Profil TXT : Carlito 11 pt, interligne simple, aucun espacement (`editor-layout.
 | R2 | US-216 | M | `core-wasm/src/rich_layout.rs` et `rich_paint.rs` : incrémental, `CaretLayout`, cache par page, profils TXT et document ; dessin extrait de `rich_preview.rs`. |
 | R3a | US-217 | M | `core-wasm/src/rich_editor.rs` : saisie, suppression par graphème et par mot, sélection, déplacement, test de position, annuler/rétablir ; tables annexes remappées par `position_map`. |
 | R3b | US-218 | M | Ouvrir, créer, enregistrer en TXT et DOCX ; images en `AnchoredObject`. |
-| R4 | US-203 (partie JS) | M | `web/rich-editor-protocol.mjs` et `web/editor-page-cache.mjs`. |
+| R4 | US-203 (partie JS) | M | `web/rich-editor-protocol.mjs` est figé par R0 ; R4 crée `web/editor-page-cache.mjs` et l'intégration. |
 | R5 | US-209 | M | `web/document-mirror.mjs` : miroir DOM accessible de la portion visible. |
 | R6a | US-006 | S | Budget WASM séparé entre code et polices. |
 | R7 + R8 | US-219 | M + S | Bascule (suites v1/v2, v2 par défaut, latence mesurée dans Edge) puis retrait de l'éditeur v1. |
@@ -50,6 +50,10 @@ Lots de trois agents sur des fichiers disjoints :
 3. **Lot 3** : R3b, R7 côté interface (`web/editor.mjs`, `web/app.mjs`), puis R8.
 
 Réservés à l'intégrateur : `core-wasm/src/lib.rs`, routage de `editor.rs`, `web/app.mjs`, `web/i18n/fr-FR.txt`, `Cargo.toml`, `tools/bench/references/wasm-size.json`.
+
+## Périmètre de la première mise en page
+
+Le lot 1 et R2 n'implémentent pas la mise en page des tableaux ni des en-têtes et pieds de page. Les paragraphes de cellule sont mis en page comme des paragraphes de corps pleine largeur (mode dégradé documenté) et les en-têtes et pieds ne sont pas dessinés. Les accesseurs de tableaux, de cellules et d'en-têtes et pieds seront ajoutés par la story qui les traitera, pas par US-203.
 
 ## Risques et parades
 
