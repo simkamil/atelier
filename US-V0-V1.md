@@ -784,8 +784,10 @@ Réf : §6.5, §6.16 · Taille : M · Dépend de : US-203, US-214
 
 #### US-217 — Édition riche dans le moteur
 *En tant que* développeur, *je veux* un éditeur riche complet dans le moteur *afin de* remplacer l'éditeur texte brut.
-- [ ] Saisie, suppression par graphème et par mot, sélection, déplacement, test de position, annuler/rétablir, y compris sur les éléments en ligne d'US-204.
+- [x] Saisie, suppression par graphème et par mot, sélection, déplacement, test de position, annuler/rétablir, y compris sur les éléments en ligne d'US-204.
 - [ ] Les scénarios de `tests/editor-abi.mjs` passent en v2.
+
+Validation US-217 (2026-10-18) : tranche R3a développée sur la branche `us-217-rich-editor`, ni relue par un agent indépendant ni intégrée ; session v2 dans `core-wasm/src/rich_editor.rs`, routée par version dans `lib.rs`, et opcode `AccessibleWindow` (0x010F) livré pour US-209. Critère 1 vérifié (20 tests de session par le codec v2, dont objets, sauts et symboles en ligne, 400 éditions contre un texte miroir, 2000 trames aléatoires ; scénarios sur le vrai WASM). Critère 2 non coché : `node tests/rich-editor-abi.mjs` rejoue 24 vérifications v2 mais 6 scénarios de `editor-abi.mjs` n'ont pas d'équivalent (`DropText` ×4, `Export` octet pour octet, retour arrière d'une réponse refusée par l'ABI, révision attendue d'un remplacement) ; code WASM mesuré à 2 169 179 octets (limite actuelle 2 111 059, réétalonnage par l'intégrateur) ; [session, limites et preuves](docs/us-217-rich-editor.md).
 
 Réf : §6.4, §6.7 · Taille : M · Dépend de : US-204, US-216
 

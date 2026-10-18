@@ -1028,3 +1028,64 @@ fn random_commands_and_frames_never_panic() {
     }
     assert_eq!(h.editor.active_document(), Some(1));
 }
+
+#[test]
+fn symbols_and_page_breaks_edit_like_other_inline_items() {
+    let mut doc = RichDocument::new();
+    let para = doc.paragraph_ids()[0];
+    let (symbol, page) = (doc.alloc_id().unwrap(), doc.alloc_id().unwrap());
+    let transaction = Transaction::new(vec![
+        RichOp::InsertText {
+            para,
+            offset: 0,
+            text: "xy".into(),
+        },
+        RichOp::InsertInline {
+            para,
+            item: Inline::Symbol(atelier_text_model::rich::InlineSymbol {
+                id: symbol,
+                offset: 1,
+                font: "Symbol".into(),
+                code: 0xf0b7,
+            }),
+        },
+        RichOp::InsertInline {
+            para,
+            item: Inline::Break(InlineBreak {
+                id: page,
+                offset: 2,
+                kind: BreakKind::Page,
+            }),
+        },
+    ])
+    .unwrap();
+    doc.apply(&transaction).unwrap();
+    let mut h = harness_with(doc);
+    assert_eq!(h.text(), format!("x{OBJ}y{OBJ}"));
+    h.select(4, 4);
+    h.delete(false, DeleteUnit::Grapheme);
+    assert_eq!(h.text(), format!("xy{OBJ}"));
+    h.undo();
+    assert_eq!(h.text(), format!("x{OBJ}y{OBJ}"));
+    h.select(8, 8);
+    h.delete(false, DeleteUnit::Word);
+    assert_eq!(h.text(), format!("x{OBJ}y"));
+    h.undo();
+    let items = match h.send(1, Command::AccessibleWindow { start: 0, end: 8 }) {
+        Response::AccessibleWindow { items, .. } => items,
+        other => panic!("{other:?}"),
+    };
+    let inlines: Vec<(u64, u8, &str)> = items[0]
+        .inlines
+        .iter()
+        .map(|i| (i.offset, i.kind, i.value.as_str()))
+        .collect();
+    // F0B7 shows as its low byte, U+00B7.
+    assert_eq!(
+        inlines,
+        [
+            (1, inline_kind::SYMBOL, "·"),
+            (5, inline_kind::PAGE_BREAK, "")
+        ]
+    );
+}
