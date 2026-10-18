@@ -344,6 +344,7 @@ fn dispatch_editor(
     let mut state = editor_session()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let was_rich = rich_editor::is_rich(&message.payload);
     let (mut candidate, response) = if rich_editor::is_rich(&message.payload) {
         let mut rich = rich_editor_session()
             .lock()
@@ -366,6 +367,9 @@ fn dispatch_editor(
                 request_id: message.request_id,
                 payload: b"EDITOR_RESPONSE_LIMIT".to_vec(),
             };
+            if was_rich {
+                mark_rich_resync();
+            }
             match protocol::encode(&failed) {
                 Ok(bytes) => bytes,
                 Err(_) => {
@@ -392,11 +396,26 @@ fn dispatch_editor(
             }
             descriptor
         }
-        Err(_) => match prefix_status(Vec::new(), STATUS_LIMIT) {
-            Ok(payload) => register_response(registry, payload),
-            Err(_) => 0,
-        },
+        Err(_) => {
+            // The client never saw the reply: it resynchronises.
+            if was_rich {
+                mark_rich_resync();
+            }
+            match prefix_status(Vec::new(), STATUS_LIMIT) {
+                Ok(payload) => register_response(registry, payload),
+                Err(_) => 0,
+            }
+        }
     }
+}
+
+/// Tells the rich editor that its last reply was lost.
+#[cfg(target_arch = "wasm32")]
+fn mark_rich_resync() {
+    rich_editor_session()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .mark_resync();
 }
 
 #[cfg(target_arch = "wasm32")]

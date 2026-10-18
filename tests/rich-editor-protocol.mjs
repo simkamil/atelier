@@ -170,6 +170,19 @@ const limitState = () => ({
   over((r) => { r.invalidated = [[1, 2], [2, 3]]; }, "RICH_PAGE_RANGE");
 }
 
+// Page byte limits: one page up to 16 MiB, several pages within 8 MiB together.
+{
+  const mib = 1024 * 1024;
+  const big = (index, len) => { const d = new Uint8Array(len); d.set([0x41, 0x54, 0x44, 0x4c]); return { index, display: d }; };
+  const pagesReply = (pages) => ({ docId: 1, requestId: 1, response: { type: "pages", revision: 1n, pageCount: 4, pages } });
+  assert.equal(RICH_LIMITS.maxPageDisplayBytes, 16 * mib);
+  assert.equal(RICH_LIMITS.maxResponsePageBytes, 8 * mib);
+  assert.equal(decodeRichReply(encodeRichReply(pagesReply([big(0, 16 * mib)]))).response.pages.length, 1);
+  expectCode(() => encodeRichReply(pagesReply([big(0, 16 * mib + 1)])), "RICH_FRAME_TOO_LARGE", false);
+  assert.equal(decodeRichReply(encodeRichReply(pagesReply([big(0, 4 * mib), big(1, 4 * mib)]))).response.pages.length, 2);
+  expectCode(() => encodeRichReply(pagesReply([big(0, 4 * mib), big(1, 4 * mib + 1)])), "RICH_FRAME_TOO_LARGE", false);
+}
+
 // Typed errors for malformed caller input, no inherited keys as codes.
 expectCode(() => encodeRichRequest(null), "RICH_UNKNOWN_OPCODE", false);
 expectCode(() => encodeRichRequest({ docId: 1, requestId: 1, command: { type: "insertText" } }), "RICH_INVALID_BODY", false);

@@ -17,7 +17,7 @@ use atelier_text_model::rich::{RichDocument, Theme, default_rich_document};
 
 use crate::protocol::{Message, MessageType};
 use crate::rich_layout::{LayoutError, PageCache, PageDelta, RichPageCache};
-use crate::rich_preview::import_preview_docx;
+use crate::rich_preview::import_docx_for_editor;
 use crate::rich_protocol::{
     self as proto, Caret, Command, DEFAULT_LAYOUT_BUDGET, DecodeError, DeleteUnit, Direction,
     ErrorCode, HitMode, OpenKind, PageDisplay, Profile, Reply, Response, State, TextWindowData,
@@ -59,7 +59,17 @@ struct Session {
     upstream: bool,
     /// X kept across vertical moves.
     preferred_x: Option<f64>,
+    txt: bool,
+    /// Page changes found by a layout step outside a `State` (while a move
+    /// waits for the layout to reach its target); the next `State` reports them.
+    pending: PageDelta,
+    /// A reply was lost (encoding failure, ABI limit): the next `State`
+    /// invalidates every page and carries the text window.
+    resync: bool,
 }
+
+/// Paragraphs of layout a move or a hit test may run to reach its target.
+const REACH_BUDGET: u32 = 4096;
 
 impl RichEditor {
     /// Answers one `Editor` message whose payload is an ATED v2 frame.
@@ -104,10 +114,23 @@ impl RichEditor {
             request_id: request.request_id,
             response,
         };
-        proto::encode_reply(&reply).or_else(|code| {
-            reply.response = Response::Error(code);
-            proto::encode_reply(&reply)
-        })
+        match proto::encode_reply(&reply) {
+            Ok(frame) => Ok(frame),
+            Err(code) => {
+                // The reply is lost: the client resynchronises on the next State.
+                self.mark_resync();
+                reply.response = Response::Error(code);
+                proto::encode_reply(&reply)
+            }
+        }
+    }
+
+    /// Records that the last reply never reached the client (the host calls it
+    /// when the ABI refuses a response, `STATUS_LIMIT`, `EDITOR_RESPONSE_LIMIT`).
+    pub fn mark_resync(&mut self) {
+        if let Some(session) = self.active.as_mut() {
+            session.resync = true;
+        }
     }
 
     fn execute(&mut self, id: u32, command: Command) -> Result<Response, ErrorCode> {
@@ -133,16 +156,6 @@ impl RichEditor {
         }
         session.run(command)
     }
-}
-
-/// A position or text failure of the model or the layout, as a protocol code.
-/// A position the document accepted but the layout has not reached is not
-/// ready, not out of range.
-fn layout<T>(result: Result<T, LayoutError>) -> Result<T, ErrorCode> {
-    result.map_err(|e| match e {
-        LayoutError::PositionOutOfRange => ErrorCode::NotReady,
-        other => other.into(),
-    })
 }
 
 fn merge(into: &mut PageDelta, more: PageDelta) {
@@ -175,7 +188,7 @@ impl Session {
                 .and_then(|opened| opened.to_rich_document(MAX_TXT_PARAGRAPHS))
                 .map_err(failed)?,
             OpenKind::Docx => {
-                let imported = import_preview_docx(data).map_err(failed)?;
+                let imported = import_docx_for_editor(data).map_err(failed)?;
                 let mut doc = imported.document;
                 doc.set_styles(imported.styles.catalog().clone(), imported.theme);
                 doc
@@ -197,7 +210,78 @@ impl Session {
             focus: 0,
             upstream: false,
             preferred_x: None,
+            txt,
+            pending: PageDelta::default(),
+            resync: false,
         })
+    }
+
+    /// Adds the changes of a layout step done outside a `State`.
+    fn carry(&mut self, more: PageDelta) {
+        let mut base = std::mem::take(&mut self.pending);
+        merge(&mut base, more);
+        self.pending = base;
+    }
+
+    /// Replaces a cache whose layout gave up, so that moves do not stay
+    /// blocked until the next `Open`.
+    fn rebuild_cache(&mut self) {
+        let old = self.cache.page_count();
+        if let Ok(cache) = PageCache::new(&self.doc, self.txt) {
+            self.cache = cache;
+            let count = self.cache.page_count();
+            self.carry(PageDelta {
+                page_count: count,
+                layout_complete: self.cache.layout_complete(),
+                changed: (0..count.min(FIRST_PAGES)).collect(),
+                invalidated: vec![(0, old.max(count))],
+            });
+        }
+    }
+
+    /// Runs `query` against the layout, laying out the tail in blocks (256,
+    /// then 1024 paragraphs, `REACH_BUDGET` at most) until it answers. `None`
+    /// when the budget is spent or the layout cannot answer.
+    fn ready<T>(
+        &mut self,
+        query: impl Fn(&PageCache) -> Result<T, LayoutError>,
+    ) -> Result<Option<T>, ErrorCode> {
+        let (mut spent, mut rebuilt) = (0u32, false);
+        loop {
+            match query(&self.cache) {
+                Ok(value) => return Ok(Some(value)),
+                // A position the document accepts but the layout has not
+                // reached is not ready, whatever the layout calls it.
+                Err(LayoutError::NotReady | LayoutError::PositionOutOfRange) => {}
+                Err(other) => return Err(other.into()),
+            }
+            if !self.cache.layout_complete() {
+                if spent >= REACH_BUDGET {
+                    return Ok(None);
+                }
+                let chunk = if spent == 0 { 256 } else { 1024 };
+                let more = self.cache.step(&self.doc, chunk);
+                self.carry(more);
+                spent += chunk;
+            } else if !rebuilt {
+                rebuilt = true;
+                self.rebuild_cache();
+            } else {
+                return Ok(None);
+            }
+        }
+    }
+
+    /// Lays the document out as far as the caret, so that the `State` has one.
+    fn ensure_caret(&mut self) {
+        let (focus, upstream) = (self.focus, self.upstream);
+        let _ = self.ready(|c| c.caret(focus, upstream));
+    }
+
+    /// The target of a move was not reached within the budget: nothing moves,
+    /// the `State` has no caret and says the layout is not complete.
+    fn unreached(&mut self) -> Result<Response, ErrorCode> {
+        self.finish(PageDelta::default(), DEFAULT_LAYOUT_BUDGET, true)
     }
 
     fn revision(&self) -> u64 {
@@ -237,6 +321,7 @@ impl Session {
                 let anchor = self.doc.snap_back(proto::to_position(anchor)?)?;
                 let focus = self.doc.snap_back(proto::to_position(focus)?)?;
                 self.select(anchor, focus, upstream, None);
+                self.ensure_caret();
                 self.finish(PageDelta::default(), DEFAULT_LAYOUT_BUDGET, true)
             }
             Command::HitTest { page, mode, x, y } => self.hit_test(page, mode, x, y),
@@ -266,9 +351,18 @@ impl Session {
                     return Err(ErrorCode::PageRange);
                 }
                 let end = first.saturating_add(count).min(page_count);
-                let mut pages = Vec::new();
+                let mut pages: Vec<PageDisplay> = Vec::new();
+                let mut total = 0usize;
                 for index in first..end {
                     let display = self.cache.page_display(&self.doc, index)?;
+                    // Pages past the response bound are asked for again.
+                    if !proto::page_fits(pages.len(), total, display.len()) {
+                        if pages.is_empty() {
+                            return Err(ErrorCode::FrameTooLarge);
+                        }
+                        break;
+                    }
+                    total += display.len();
                     pages.push(PageDisplay { index, display });
                 }
                 Ok(Response::Pages {
@@ -312,8 +406,13 @@ impl Session {
         } else {
             self.cache.apply_edit(&self.doc, &outcome)
         };
-        let (anchor, focus) = outcome.selection;
-        self.select(self.snap(anchor), self.snap(focus), false, None);
+        // An edit that changed nothing (a separator between a paragraph and a
+        // table, a cell or an opaque block cannot be deleted) leaves the
+        // selection where it was.
+        if outcome.revision != before {
+            let (anchor, focus) = outcome.selection;
+            self.select(self.snap(anchor), self.snap(focus), false, None);
+        }
         self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)
     }
 
@@ -375,19 +474,35 @@ impl Session {
             WordRight => self.doc.next_word(focus)?.unwrap_or(focus),
             Up | Down => {
                 let lines = if direction == Up { -1 } else { 1 };
-                let (to, x) = layout(self.cache.move_vertical(focus, lines, self.preferred_x))?;
+                let x0 = self.preferred_x;
+                let Some((to, x)) = self.ready(|c| c.move_vertical(focus, lines, x0))? else {
+                    return self.unreached();
+                };
                 keep_x = Some(x);
                 to
             }
             PageUp | PageDown => {
                 let pages = if direction == PageUp { -1 } else { 1 };
-                let (to, x) = layout(self.cache.move_page(focus, pages, self.preferred_x))?;
+                let x0 = self.preferred_x;
+                let Some((to, x)) = self.ready(|c| c.move_page(focus, pages, x0))? else {
+                    return self.unreached();
+                };
                 keep_x = Some(x);
                 to
             }
-            Home => layout(self.cache.line_edges(focus, self.upstream))?.0,
+            Home => {
+                let up = self.upstream;
+                let Some(edges) = self.ready(|c| c.line_edges(focus, up))? else {
+                    return self.unreached();
+                };
+                edges.0
+            }
             End => {
-                let end = layout(self.cache.line_edges(focus, self.upstream))?.1;
+                let up = self.upstream;
+                let Some(edges) = self.ready(|c| c.line_edges(focus, up))? else {
+                    return self.unreached();
+                };
+                let end = edges.1;
                 let paragraph = self.doc.locate(end)?.paragraph;
                 // The end of a soft-wrapped line is drawn at that line's end.
                 upstream = end < self.paragraph_end(paragraph)?;
@@ -412,6 +527,7 @@ impl Session {
         let target = self.doc.snap_back(target)?;
         let anchor = if extend { self.anchor } else { target };
         self.select(anchor, target, upstream, keep_x);
+        self.ensure_caret();
         self.finish(PageDelta::default(), DEFAULT_LAYOUT_BUDGET, true)
     }
 
@@ -422,7 +538,14 @@ impl Session {
         x: f64,
         y: f64,
     ) -> Result<Response, ErrorCode> {
-        let (position, upstream) = layout(self.cache.hit_test(page, x, y))?;
+        let Some((position, upstream)) = self.ready(|c| c.hit_test(page, x, y))? else {
+            // A probe has no State to answer with; a page that was painted is
+            // always reachable, so this only follows a refused budget.
+            return match mode {
+                HitMode::Probe => Err(ErrorCode::NotReady),
+                _ => self.unreached(),
+            };
+        };
         let position = self.doc.snap_back(position)?;
         match mode {
             HitMode::Probe => Ok(Response::HitResult {
@@ -438,6 +561,7 @@ impl Session {
                     position
                 };
                 self.select(anchor, position, upstream, None);
+                self.ensure_caret();
                 self.finish(PageDelta::default(), DEFAULT_LAYOUT_BUDGET, true)
             }
         }
@@ -468,20 +592,35 @@ impl Session {
         Ok(Response::State(self.state(delta, window)?))
     }
 
-    fn state(&mut self, mut delta: PageDelta, window: bool) -> Result<State, ErrorCode> {
+    fn state(&mut self, delta: PageDelta, mut window: bool) -> Result<State, ErrorCode> {
         let page_count = self.cache.page_count();
+        let mut carried = std::mem::take(&mut self.pending);
+        merge(&mut carried, delta);
+        let mut delta = carried;
         delta.page_count = page_count;
         delta.layout_complete = self.cache.layout_complete();
+        if std::mem::take(&mut self.resync) {
+            if page_count > 0 {
+                delta.invalidated.push((0, page_count));
+            }
+            window = true;
+        }
         // A page that cannot be painted yet is reported as invalidated, so
         // that the client asks for it again.
         let (pages, invalidated) = loop {
             let (send, invalidated) = proto::split_page_delta(&delta);
             let mut pages = Vec::with_capacity(send.len());
             let mut failed = Vec::new();
+            let mut total = 0usize;
             for index in send {
+                // Over the response bound, a page is invalidated like one
+                // that cannot be painted yet: the client asks for it again.
                 match self.cache.page_display(&self.doc, index) {
-                    Ok(display) => pages.push(PageDisplay { index, display }),
-                    Err(_) => failed.push(index),
+                    Ok(display) if proto::page_fits(pages.len(), total, display.len()) => {
+                        total += display.len();
+                        pages.push(PageDisplay { index, display });
+                    }
+                    _ => failed.push(index),
                 }
             }
             if failed.is_empty() {

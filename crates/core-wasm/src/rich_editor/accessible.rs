@@ -85,6 +85,23 @@ fn inlines(doc: &RichDocument, index: usize, text: &str) -> Vec<AccessibleInline
         .collect()
 }
 
+/// The decimal counter and a dot, without the formatting machinery.
+fn counter_label(mut number: u32) -> String {
+    let mut digits = [0u8; 10];
+    let mut at = digits.len();
+    loop {
+        at -= 1;
+        digits[at] = b'0' + (number % 10) as u8;
+        number /= 10;
+        if number == 0 {
+            break;
+        }
+    }
+    let mut label: String = digits[at..].iter().map(|d| char::from(*d)).collect();
+    label.push('.');
+    label
+}
+
 fn item(doc: &RichDocument, index: usize) -> Result<AccessibleItem, ErrorCode> {
     let start = doc.paragraph_start(index)?;
     let text = doc.paragraph_flat(index)?.into_owned();
@@ -106,7 +123,7 @@ fn item(doc: &RichDocument, index: usize) -> Result<AccessibleItem, ErrorCode> {
                     level = list_level as u8;
                 }
                 let number = counters.before[list_level].saturating_add(1);
-                label = format!("{number}.");
+                label = counter_label(number);
             }
         }
     }

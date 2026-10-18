@@ -23,7 +23,10 @@ pub const MAX_WINDOW_BYTES: usize = 256 * 1024;
 /// Largest number of page display lists in one response.
 pub const MAX_PAGES_PER_RESPONSE: usize = 16;
 /// Largest display list of one page.
-pub const MAX_PAGE_DISPLAY_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_PAGE_DISPLAY_BYTES: usize = 16 * 1024 * 1024;
+/// Largest sum of the display lists of one response, unless it carries a
+/// single page (a page alone may reach `MAX_PAGE_DISPLAY_BYTES`).
+pub const MAX_RESPONSE_PAGE_BYTES: usize = 8 * 1024 * 1024;
 /// Smallest valid display list (an empty `ATDL` page).
 pub const MIN_PAGE_DISPLAY_BYTES: usize = 44;
 /// Largest number of invalidation ranges in one state.
@@ -845,9 +848,24 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
     Ok(frame)
 }
 
+/// True when a page of `next` bytes fits in a response that already carries
+/// `count` pages and `total` bytes of display lists: the first page always
+/// fits (up to the per-page limit), later ones only under the response sum.
+pub fn page_fits(count: usize, total: usize, next: usize) -> bool {
+    next <= MAX_PAGE_DISPLAY_BYTES
+        && (count == 0 || total.saturating_add(next) <= MAX_RESPONSE_PAGE_BYTES)
+}
+
 fn put_pages(out: &mut Vec<u8>, pages: &[PageDisplay]) -> Result<(), Fail> {
     if pages.len() > MAX_PAGES_PER_RESPONSE {
         return Err(Fail::TooManyPages);
+    }
+    let mut total = 0usize;
+    for (n, page) in pages.iter().enumerate() {
+        if !page_fits(n, total, page.display.len()) {
+            return Err(Fail::FrameTooLarge);
+        }
+        total += page.display.len();
     }
     put_u32(
         out,
@@ -870,6 +888,7 @@ fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, F
         return Err(Fail::TooManyPages);
     }
     let mut pages = Vec::with_capacity(n);
+    let mut total = 0usize;
     for _ in 0..n {
         let index = r.u32()?;
         let len = r.u32()? as usize;
@@ -879,6 +898,10 @@ fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, F
         if !(MIN_PAGE_DISPLAY_BYTES..=MAX_PAGE_DISPLAY_BYTES).contains(&len) {
             return Err(Fail::InvalidBody);
         }
+        if !page_fits(pages.len(), total, len) {
+            return Err(Fail::FrameTooLarge);
+        }
+        total += len;
         let display = r.take(len)?.to_vec();
         if display[..4] != *b"ATDL" {
             return Err(Fail::InvalidBody);

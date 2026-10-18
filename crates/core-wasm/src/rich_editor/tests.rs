@@ -1089,3 +1089,226 @@ fn symbols_and_page_breaks_edit_like_other_inline_items() {
         ]
     );
 }
+
+/// `ab`, a 1 x 2 table, an opaque block, `cd`.
+fn table_document() -> RichDocument {
+    let mut doc = RichDocument::new();
+    let section = doc.section_ids()[0];
+    let table = doc.new_table(1, 2).unwrap();
+    let opaque = doc.new_opaque("w:sdt", &[1]).unwrap();
+    let last = doc.new_paragraph("cd").unwrap();
+    let first = doc.paragraph_ids()[0];
+    let mut ops = vec![RichOp::InsertText {
+        para: first,
+        offset: 0,
+        text: "ab".into(),
+    }];
+    for (position, subtree) in [(1, table), (2, opaque), (3, last)] {
+        ops.push(RichOp::InsertBlock {
+            parent: Some(section),
+            position,
+            subtree,
+        });
+    }
+    doc.apply(&Transaction::new(ops).unwrap()).unwrap();
+    doc
+}
+
+#[test]
+fn separators_between_blocks_of_different_containers_are_not_deletable() {
+    let mut h = harness_with(table_document());
+    let text = format!("ab\n\n\n{OBJ}\ncd");
+    assert_eq!(h.text(), text);
+    // Backspace and Delete on the separators around the table and the opaque
+    // block: no edit, no revision, and the caret stays where it was.
+    for (forward, positions) in [(false, [3u64, 4, 5, 9]), (true, [2, 3, 4, 8])] {
+        for at in positions {
+            h.select(at, at);
+            let s = h.delete(forward, DeleteUnit::Grapheme);
+            assert_eq!((s.revision, s.focus, s.doc_len), (0, at, 11), "at {at}");
+            assert!(!s.can_undo);
+        }
+    }
+    // Words too.
+    h.select(3, 3);
+    assert_eq!(h.delete(false, DeleteUnit::Word).revision, 0);
+    assert_eq!(h.text(), text);
+    // Typing in a cell and in the paragraph after the opaque block works.
+    h.select(3, 3);
+    h.insert("X");
+    h.select(12, 12);
+    h.insert("!");
+    assert_eq!(h.text(), format!("ab\nX\n\n{OBJ}\ncd!"));
+    // A selection across structure clears the text it covers and keeps the
+    // cells, the table and the opaque block.
+    h.select(1, 5);
+    let s = h.delete(false, DeleteUnit::Grapheme);
+    assert_eq!(s.revision, 3);
+    assert_eq!(h.text().matches('\n').count(), 4, "{:?}", h.text());
+    assert!(h.text().contains(OBJ));
+    assert!(h.text().ends_with("cd!"));
+    h.undo();
+    assert_eq!(h.text(), format!("ab\nX\n\n{OBJ}\ncd!"));
+}
+
+#[test]
+fn every_direction_with_and_without_extension() {
+    let text: String = (0..40)
+        .map(|i| format!("Ligne {i} avec assez de mots pour passer a la ligne dans la page"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for direction in [
+        Direction::Left,
+        Direction::Right,
+        Direction::Up,
+        Direction::Down,
+        Direction::Home,
+        Direction::End,
+        Direction::DocumentStart,
+        Direction::DocumentEnd,
+        Direction::PageUp,
+        Direction::PageDown,
+        Direction::WordLeft,
+        Direction::WordRight,
+        Direction::ParagraphUp,
+        Direction::ParagraphDown,
+    ] {
+        for extend in [false, true] {
+            for start in [0u64, 7, 300, 1200] {
+                let mut h = Harness::new();
+                let opened = h.txt(&text);
+                let start = start.min(opened.doc_len);
+                h.select(start, start);
+                let before = h.step(Direction::Right, true);
+                let s = h.step(direction, extend);
+                let what = format!("{direction:?} extend={extend} from {start}");
+                assert!(s.focus <= s.doc_len && s.anchor <= s.doc_len, "{what}");
+                assert_eq!(s.revision, 0, "{what}");
+                assert!(s.caret.is_some() || !s.layout_complete, "{what}");
+                if extend {
+                    assert_eq!(s.anchor, before.anchor, "{what}: the anchor stays");
+                } else {
+                    assert_eq!(s.anchor, s.focus, "{what}: a plain move collapses");
+                }
+                // Moves never produce a position inside a cluster.
+                h.select(s.focus, s.focus);
+            }
+        }
+    }
+}
+
+/// A DOCX of `n` one-line paragraphs, written by the engine's own exporter.
+fn docx_of_paragraphs(n: usize) -> Vec<u8> {
+    let text: String = (0..n)
+        .map(|i| format!("Paragraphe numero {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    crate::docx_export::export_docx(&text, &crate::images::ImageStore::default())
+        .map_err(|e| e.0)
+        .unwrap()
+        .bytes
+}
+
+#[test]
+fn docx_with_more_than_a_thousand_paragraphs_opens_in_the_editor() {
+    let docx = docx_of_paragraphs(2500);
+    // The preview keeps its limit of 1024 paragraphs; the editor does not.
+    assert!(crate::rich_preview::import_preview_docx(&docx).is_err());
+    let mut h = Harness::new();
+    let s = h.open_state(OpenKind::Docx, Profile::Document, &docx);
+    assert!(s.doc_len > 2500 * 15);
+    let done = h.finish_layout();
+    assert!(done.page_count > 10);
+    h.select(0, 0);
+    h.step(Direction::DocumentEnd, false);
+    let s = h.insert("fin");
+    assert!(s.doc_len > done.doc_len);
+    assert!(h.text().contains("Paragraphe numero 2499"));
+}
+
+#[test]
+fn moves_reach_a_tail_that_is_not_laid_out_yet() {
+    let text: String = (0..12_000)
+        .map(|i| format!("ligne {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut h = Harness::new();
+    let opened = h.txt(&text);
+    assert!(!opened.layout_complete);
+    // Ctrl+End: the selection moves at once; the caret comes with the layout.
+    let end = h.step(Direction::DocumentEnd, false);
+    assert_eq!(end.focus, end.doc_len);
+    assert!(end.caret.is_some() || !end.layout_complete);
+    // Up before the layout is finished: never an error. Each call lays the
+    // tail out as far as its budget allows and moves once it can.
+    let mut up = h.step(Direction::Up, false);
+    let mut tries = 0;
+    while up.focus == end.focus {
+        tries += 1;
+        assert!(tries < 20, "the move never completed");
+        up = h.step(Direction::Up, false);
+    }
+    assert!(up.focus < end.focus);
+    assert!(up.caret.is_some());
+    // Home, PageUp (and PageDown from the start) work from there.
+    let home = h.step(Direction::Home, false);
+    assert!(home.focus <= up.focus && home.caret.is_some());
+    let page_up = h.step(Direction::PageUp, false);
+    assert!(page_up.focus < home.focus);
+    assert!(page_up.caret.unwrap().page < up.caret.unwrap().page);
+    h.select(0, 0);
+    assert!(h.step(Direction::PageDown, false).focus > 0);
+    let start = h.step(Direction::DocumentEnd, false);
+    assert!(
+        start.caret.is_some(),
+        "laid out: the caret is there at once"
+    );
+}
+
+#[test]
+fn a_lost_reply_makes_the_next_state_invalidate_everything() {
+    let mut h = Harness::new();
+    h.txt(&"mot ".repeat(2000));
+    let page_count = h.finish_layout().page_count;
+    h.insert("x");
+    let quiet = h.state(Command::Layout { budget: 1 });
+    assert!(quiet.invalidated.is_empty() && quiet.window.is_none());
+    h.editor.mark_resync();
+    let s = h.state(Command::Layout { budget: 1 });
+    assert_eq!(s.invalidated, [(0, page_count)]);
+    assert!(s.window.is_some());
+    // Only once.
+    let again = h.state(Command::Layout { budget: 1 });
+    assert!(again.invalidated.is_empty());
+}
+
+#[test]
+fn a_dense_page_is_sent_within_the_response_bounds() {
+    let line = "x".repeat(91);
+    let text = vec![line; 100].join("\n");
+    let mut h = Harness::new();
+    let opened = h.txt(&text);
+    let sent: usize = opened.pages.iter().map(|p| p.display.len()).sum();
+    assert!(
+        opened
+            .pages
+            .iter()
+            .all(|p| p.display.len() <= proto::MAX_PAGE_DISPLAY_BYTES)
+    );
+    assert!(opened.pages.len() <= 1 || sent <= proto::MAX_RESPONSE_PAGE_BYTES);
+    assert!(!opened.pages.is_empty(), "the first page is always sent");
+    // The pages left out of the reply are invalidated, then asked for.
+    let done = h.finish_layout();
+    for index in 0..done.page_count {
+        match h.send(
+            1,
+            Command::Pages {
+                first: index,
+                count: 1,
+            },
+        ) {
+            Response::Pages { pages, .. } => assert_eq!(pages.len(), 1),
+            other => panic!("{other:?}"),
+        }
+    }
+}

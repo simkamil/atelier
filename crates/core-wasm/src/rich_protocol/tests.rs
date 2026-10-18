@@ -1502,3 +1502,55 @@ fn engine_errors_map_to_protocol_codes() {
         assert_eq!(to_position(u64::MAX), Err(ErrorCode::PositionOutOfRange));
     }
 }
+
+fn atdl_of(index: u32, len: usize) -> PageDisplay {
+    let mut display = vec![0u8; len];
+    display[..4].copy_from_slice(b"ATDL");
+    PageDisplay { index, display }
+}
+
+#[test]
+fn page_byte_limits_are_checked_on_both_sides() {
+    let pages_reply = |pages: Vec<PageDisplay>| Reply {
+        doc_id: 1,
+        request_id: 1,
+        response: Response::Pages {
+            revision: 1,
+            page_count: 4,
+            pages,
+        },
+    };
+    let mib = 1024 * 1024;
+    // One page may reach the per-page limit, even above the response sum.
+    const { assert!(MAX_PAGE_DISPLAY_BYTES > MAX_RESPONSE_PAGE_BYTES) };
+    assert!(encode_reply(&pages_reply(vec![atdl_of(0, MAX_PAGE_DISPLAY_BYTES)])).is_ok());
+    assert_eq!(
+        encode_reply(&pages_reply(vec![atdl_of(0, MAX_PAGE_DISPLAY_BYTES + 1)])),
+        Err(ErrorCode::FrameTooLarge)
+    );
+    // Several pages share the response sum.
+    assert!(encode_reply(&pages_reply(vec![atdl_of(0, 4 * mib), atdl_of(1, 4 * mib)])).is_ok());
+    assert_eq!(
+        encode_reply(&pages_reply(vec![
+            atdl_of(0, 4 * mib),
+            atdl_of(1, 4 * mib + 1)
+        ])),
+        Err(ErrorCode::FrameTooLarge)
+    );
+    // The decoder refuses what the encoder refuses.
+    let mut body = 1u64.to_le_bytes().to_vec();
+    body.extend_from_slice(&4u32.to_le_bytes());
+    body.extend_from_slice(&2u32.to_le_bytes());
+    for (index, len) in [(0u32, 4 * mib), (1, 4 * mib + 1)] {
+        body.extend_from_slice(&index.to_le_bytes());
+        body.extend_from_slice(&(len as u32).to_le_bytes());
+        body.extend_from_slice(&atdl_of(index, len).display);
+    }
+    let error = decode_reply(&frame(opcode::R_PAGES, 1, 1, &body)).unwrap_err();
+    assert_eq!(error.code, ErrorCode::FrameTooLarge);
+    // The helper behind both.
+    assert!(page_fits(0, 0, MAX_PAGE_DISPLAY_BYTES));
+    assert!(!page_fits(1, MAX_RESPONSE_PAGE_BYTES, 1));
+    assert!(page_fits(1, MAX_RESPONSE_PAGE_BYTES - 1, 1));
+    assert!(!page_fits(0, 0, MAX_PAGE_DISPLAY_BYTES + 1));
+}

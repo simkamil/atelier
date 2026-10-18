@@ -16,7 +16,8 @@ export const RICH_LIMITS = Object.freeze({
   maxTextBytes: 1024 * 1024,
   maxWindowBytes: 256 * 1024,
   maxPagesPerResponse: 16,
-  maxPageDisplayBytes: 4 * 1024 * 1024,
+  maxPageDisplayBytes: 16 * 1024 * 1024,
+  maxResponsePageBytes: 8 * 1024 * 1024,
   minPageDisplayBytes: 44,
   maxInvalidations: 1024,
   maxPages: 1 << 20,
@@ -335,11 +336,14 @@ function readPages(r, pageCount) {
   const n = r.u32();
   if (n > RICH_LIMITS.maxPagesPerResponse) fail("RICH_TOO_MANY_PAGES");
   const pages = [];
+  let total = 0;
   for (let i = 0; i < n; i += 1) {
     const index = r.u32();
     const len = r.u32();
     if (index >= pageCount || (pages.length && pages[pages.length - 1].index >= index)) fail("RICH_PAGE_RANGE");
     if (len < RICH_LIMITS.minPageDisplayBytes || len > RICH_LIMITS.maxPageDisplayBytes) fail("RICH_INVALID_BODY");
+    if (pages.length > 0 && total + len > RICH_LIMITS.maxResponsePageBytes) fail("RICH_FRAME_TOO_LARGE");
+    total += len;
     const display = r.take(len);
     if (String.fromCharCode(...display.subarray(0, 4)) !== "ATDL") fail("RICH_INVALID_BODY");
     pages.push({ index, display });
@@ -349,8 +353,11 @@ function readPages(r, pageCount) {
 
 function writePages(w, pages) {
   w.u32(pages.length);
-  for (const page of pages) {
+  let total = 0;
+  for (const [n, page] of pages.entries()) {
     if (!(page.display instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+    if (page.display.length > RICH_LIMITS.maxPageDisplayBytes || (n > 0 && total + page.display.length > RICH_LIMITS.maxResponsePageBytes)) fail("RICH_FRAME_TOO_LARGE");
+    total += page.display.length;
     w.u32(page.index); w.u32(page.display.length); w.raw(page.display);
   }
 }
