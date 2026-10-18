@@ -214,6 +214,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   let compositionStart = null;
   let compositionCommit = null;
   let caretVisible = true;
+  let scrollWanted = false;
   let lastHostDirty;
   let pageZoom = 1;
   let zoomMode = "custom";
@@ -464,7 +465,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     if (documentReplaced || key !== publishedKey) {
       publishedKey = key;
       replacedPending = false;
-      if (selectionMoved && next.caret) scrollCaretIntoView();
+      if (selectionMoved && next.caret) scrollWanted = true;
       updateViewport();
       if (documentReplaced || previous?.readOnly !== next.readOnly || previous?.hasRevisions !== next.hasRevisions) announceReadOnly(next);
       try { onState(next, { documentReplaced }); } catch { /* UI callbacks are isolated */ }
@@ -479,6 +480,10 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     } else {
       updateViewport();
     }
+    // The caret of a far jump arrives after its State and possibly before its page: scrolling waits for both, and the
+    // spacer must cover the page before scrollTop is set.
+    if (scrollWanted && !next.caret && next.layoutComplete) scrollWanted = false;
+    if (scrollWanted && next.caret && caretViewport()) { scrollWanted = false; updateViewport(); scrollCaretIntoView(); }
   }
 
   function announceReadOnly(next) {

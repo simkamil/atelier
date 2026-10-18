@@ -62,6 +62,10 @@ function linkSignals(signals) {
  * @param {(bitmap: {objectId: bigint, width: number, height: number, rgba: Uint8Array}) => void} [options.onImageBitmap] a bitmap
  *   asked for by `setWantedImages` arrived (the pixels are a copy)
  */
+/** Paragraphs per Layout command while a selection waits for its caret (about 10 ms in release). */
+const JUMP_LAYOUT_BUDGET = 64;
+const CARET_COMMANDS = new Set(["move", "setSelection", "selectUnit", "insertText", "delete", "replaceRange", "undo", "redo", "insertImage"]);
+
 export function createRichEditorClient({
   transport, docId, cache = new EditorPageCache(), layoutBudget = 16, signal, yieldTurn = defaultYield,
   onError = () => {}, maxLayoutRetries = 4096, onSelectionRects = () => {}, hasImage = () => false, onImageBitmap = () => {},
@@ -161,7 +165,7 @@ export function createRichEditorClient({
     const expected = command.type === "hitTest" ? (command.mode === "probe" ? "hitResult" : "state") : REPLY_TYPE[command.type];
     if (response.type !== expected) throw new RichClientError("CLIENT_BAD_REPLY", `Unexpected ${response.type} reply to ${command.type}.`);
     if (response.type === "closed") {
-      opened = false; cache.reset(); pumpHalt = "stopped";
+      opened = false; awaitingCaret = false; cache.reset(); pumpHalt = "stopped";
       dropSelection();
       settleLayoutWaiters(closedError());
       return { response, change: null };
@@ -230,12 +234,24 @@ export function createRichEditorClient({
   async function closeExchange(callerSignal) {
     try { return await exchange({ type: "close" }, callerSignal); } catch (error) {
       if (error?.code === "RICH_UNKNOWN_DOCUMENT") {
-        opened = false; cache.reset(); pumpHalt = "stopped"; needsResync = false;
+        opened = false; awaitingCaret = false; cache.reset(); pumpHalt = "stopped"; needsResync = false;
         settleLayoutWaiters(closedError());
       }
       throw error;
     }
   }
+
+  /**
+   * The layout is sequential (the tail cannot be laid out before what precedes it), so a focus that the layout has not
+   * reached cannot be served first; its page is reached sooner with larger steps (still about 10 ms each). Commands
+   * queued meanwhile run before the next step, so no keystroke waits for the pump.
+   */
+  function pumpBudget() {
+    if (cache.caret || cache.layoutComplete) awaitingCaret = false;
+    return opened && awaitingCaret ? Math.max(layoutBudget, JUMP_LAYOUT_BUDGET) : layoutBudget;
+  }
+
+  let awaitingCaret = false;
 
   function pumpWanted() { return opened && !pumpHalt && !cache.layoutComplete; }
 
@@ -307,7 +323,7 @@ export function createRichEditorClient({
     }
     if (pumpWanted()) {
       try {
-        await guarded({ type: "layout", budget: layoutBudget }, pumpController.signal);
+        await guarded({ type: "layout", budget: pumpBudget() }, pumpController.signal);
       } catch (error) {
         if (disposed) return false;
         if (isAbort(error)) { pumpHalt ??= "stopped"; return true; }
@@ -407,6 +423,7 @@ export function createRichEditorClient({
         opened = false;
         pumpHalt = null;
         fillBlockedVersion = -1;
+        awaitingCaret = false;
         needsResync = false;
         pumpController = new AbortController();
         dropSelection();
@@ -426,7 +443,13 @@ export function createRichEditorClient({
     /** Send one command; resolves `{response, change}`, rejects with RichClientError for RICH_* refusals. */
     command(command, { signal: callerSignal } = {}) {
       if (command?.type === "open") return Promise.reject(new TypeError("Use open() to open a document."));
-      return enqueue(() => (command?.type === "close" ? closeExchange(callerSignal) : guarded(command, callerSignal)), callerSignal, command?.type === "close");
+      return enqueue(async () => {
+        if (command?.type === "close") return closeExchange(callerSignal);
+        const result = await guarded(command, callerSignal);
+        // A selection command that left the caret unplaced (target not laid out yet): the pump steps faster until it shows.
+        if (CARET_COMMANDS.has(command?.type)) awaitingCaret = cache.caret === null && !cache.layoutComplete;
+        return result;
+      }, callerSignal, command?.type === "close");
     },
     /**
      * Accessible window of [start, end) (flat positions, BigInt) for the DOM mirror (US-209):
