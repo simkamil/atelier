@@ -18,6 +18,7 @@ mod images;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod properties;
 pub mod protocol;
+pub mod rich_editor;
 pub mod rich_layout;
 pub mod rich_preview;
 pub mod rich_protocol;
@@ -223,6 +224,14 @@ fn staged_engine() -> &'static Mutex<staged::StagedEngine> {
     STAGED.get_or_init(|| Mutex::new(staged::StagedEngine::default()))
 }
 
+/// The rich editor (ATED v2) of this instance: one active document, edited
+/// in place, never cloned per command like the v1 session.
+#[cfg(target_arch = "wasm32")]
+fn rich_editor_session() -> &'static Mutex<rich_editor::RichEditor> {
+    static RICH: OnceLock<Mutex<rich_editor::RichEditor>> = OnceLock::new();
+    RICH.get_or_init(|| Mutex::new(rich_editor::RichEditor::default()))
+}
+
 #[cfg(target_arch = "wasm32")]
 fn editor_session() -> &'static Mutex<editor::EditorSession> {
     static SESSION: OnceLock<Mutex<editor::EditorSession>> = OnceLock::new();
@@ -335,7 +344,12 @@ fn dispatch_editor(
     let mut state = editor_session()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let (mut candidate, response) = if staged::is_staged(&message.payload) {
+    let (mut candidate, response) = if rich_editor::is_rich(&message.payload) {
+        let mut rich = rich_editor_session()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        (None, rich.respond(message))
+    } else if staged::is_staged(&message.payload) {
         let mut staged = staged_engine()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());

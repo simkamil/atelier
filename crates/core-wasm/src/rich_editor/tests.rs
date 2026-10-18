@@ -1,0 +1,1030 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! Tests of the rich editor session: every command through the real v2 codec
+//! (`encode_request` / `decode_reply`), no private shortcut except to build a
+//! document with inline items.
+
+use super::*;
+use crate::rich_protocol::{Request, inline_kind, role};
+use atelier_model::Transaction;
+use atelier_text_model::rich::{AnchoredObject, BreakKind, Inline, InlineBreak, RichOp};
+
+const OBJ: &str = "\u{fffc}";
+
+struct Harness {
+    editor: RichEditor,
+    request: u32,
+}
+
+impl Harness {
+    fn new() -> Self {
+        Self {
+            editor: RichEditor::default(),
+            request: 0,
+        }
+    }
+
+    fn raw(&mut self, payload: Vec<u8>) -> Message {
+        self.editor.respond(&Message {
+            kind: MessageType::Editor,
+            request_id: 7,
+            payload,
+        })
+    }
+
+    fn send(&mut self, doc: u32, command: Command) -> Response {
+        self.request += 1;
+        let frame = proto::encode_request(&Request {
+            doc_id: doc,
+            request_id: self.request,
+            command,
+        })
+        .unwrap();
+        let reply = self.raw(frame);
+        assert_eq!(reply.kind, MessageType::EditorResult);
+        assert_eq!(reply.request_id, 7);
+        let reply = proto::decode_reply(&reply.payload).unwrap();
+        assert_eq!((reply.doc_id, reply.request_id), (doc, self.request));
+        reply.response
+    }
+
+    fn state(&mut self, command: Command) -> State {
+        match self.send(1, command) {
+            Response::State(s) => {
+                check_state(&s);
+                s
+            }
+            other => panic!("expected a state, got {other:?}"),
+        }
+    }
+
+    fn error(&mut self, command: Command) -> ErrorCode {
+        match self.send(1, command) {
+            Response::Error(code) => code,
+            other => panic!("expected an error, got {other:?}"),
+        }
+    }
+
+    fn open(&mut self, kind: OpenKind, profile: Profile, data: &[u8]) -> Response {
+        self.send(
+            1,
+            Command::Open {
+                kind,
+                profile,
+                data: data.to_vec(),
+            },
+        )
+    }
+
+    fn open_state(&mut self, kind: OpenKind, profile: Profile, data: &[u8]) -> State {
+        match self.open(kind, profile, data) {
+            Response::State(s) => {
+                check_state(&s);
+                s
+            }
+            other => panic!("open failed: {other:?}"),
+        }
+    }
+
+    fn blank(&mut self) -> State {
+        self.open_state(OpenKind::Blank, Profile::Document, &[])
+    }
+
+    fn txt(&mut self, text: &str) -> State {
+        self.open_state(OpenKind::Txt, Profile::Txt, text.as_bytes())
+    }
+
+    fn text(&mut self) -> String {
+        match self.send(
+            1,
+            Command::TextWindow {
+                start: 0,
+                len: proto::MAX_WINDOW_BYTES as u32,
+            },
+        ) {
+            Response::TextWindow { text, .. } => text,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn insert(&mut self, text: &str) -> State {
+        self.state(Command::InsertText { text: text.into() })
+    }
+
+    fn select(&mut self, anchor: u64, focus: u64) -> State {
+        self.state(Command::SetSelection {
+            anchor,
+            focus,
+            upstream: false,
+        })
+    }
+
+    fn step(&mut self, direction: Direction, extend: bool) -> State {
+        self.state(Command::Move { direction, extend })
+    }
+
+    fn delete(&mut self, forward: bool, unit: DeleteUnit) -> State {
+        self.state(Command::Delete { forward, unit })
+    }
+
+    fn undo(&mut self) -> State {
+        self.state(Command::Undo)
+    }
+
+    fn redo(&mut self) -> State {
+        self.state(Command::Redo)
+    }
+
+    /// Runs `Layout` until the layout is complete.
+    fn finish_layout(&mut self) -> State {
+        let mut last = self.state(Command::Layout { budget: 256 });
+        for _ in 0..2000 {
+            if last.layout_complete {
+                return last;
+            }
+            last = self.state(Command::Layout { budget: 256 });
+        }
+        panic!("layout never completed");
+    }
+}
+
+/// Invariants of every `State` (the codec already re-decoded it).
+fn check_state(s: &State) {
+    assert!(s.anchor <= s.doc_len && s.focus <= s.doc_len);
+    assert!(s.pages.len() <= proto::MAX_PAGES_PER_RESPONSE);
+    assert!(s.pages.iter().all(|p| p.index < s.page_count));
+    assert!(
+        s.invalidated
+            .iter()
+            .all(|(a, b)| a < b && *b <= s.page_count)
+    );
+    if let Some(c) = s.caret {
+        assert!(c.page < s.page_count && c.height > 0.0);
+    }
+}
+
+/// A document of one paragraph `a<object>b<line break>` (8 flat bytes).
+fn object_document() -> RichDocument {
+    let mut doc = RichDocument::new();
+    let para = doc.paragraph_ids()[0];
+    let (object, line) = (doc.alloc_id().unwrap(), doc.alloc_id().unwrap());
+    let transaction = Transaction::new(vec![
+        RichOp::InsertText {
+            para,
+            offset: 0,
+            text: "ab".into(),
+        },
+        RichOp::InsertInline {
+            para,
+            item: Inline::Anchored(AnchoredObject {
+                id: object,
+                offset: 1,
+                kind: "pic".into(),
+                data: vec![],
+            }),
+        },
+        RichOp::InsertInline {
+            para,
+            item: Inline::Break(InlineBreak {
+                id: line,
+                offset: 2,
+                kind: BreakKind::Line,
+            }),
+        },
+    ])
+    .unwrap();
+    doc.apply(&transaction).unwrap();
+    doc
+}
+
+fn harness_with(doc: RichDocument) -> Harness {
+    let mut h = Harness::new();
+    h.editor.active = Some(Session::with_document(1, doc, true).unwrap());
+    h
+}
+
+#[test]
+fn blank_document_opens_with_its_first_page() {
+    let mut h = Harness::new();
+    let s = h.blank();
+    assert_eq!((s.revision, s.doc_len, s.anchor, s.focus), (0, 0, 0, 0));
+    assert!(!s.modified && !s.can_undo && !s.can_redo);
+    assert!(s.page_count >= 1 && s.layout_complete);
+    assert_eq!(s.pages.first().map(|p| p.index), Some(0));
+    assert!(s.pages[0].display.starts_with(b"ATDL"));
+    assert!(s.caret.is_some());
+    assert_eq!(s.window.as_ref().map(|w| w.start), Some(0));
+    assert_eq!(h.editor.active_document(), Some(1));
+}
+
+#[test]
+fn typing_reports_the_changed_page_and_the_flags() {
+    let mut h = Harness::new();
+    h.blank();
+    let s = h.insert("Bonjour");
+    assert_eq!((s.revision, s.doc_len, s.anchor, s.focus), (1, 7, 7, 7));
+    assert!(s.modified && s.can_undo && !s.can_redo);
+    assert_eq!(s.pages.iter().map(|p| p.index).collect::<Vec<_>>(), [0]);
+    assert_eq!(s.window.unwrap().text, "Bonjour");
+    assert_eq!(h.text(), "Bonjour");
+    let s = h.insert(" monde");
+    assert_eq!((s.revision, s.doc_len), (2, 13));
+}
+
+#[test]
+fn multi_paragraph_editing_splits_and_merges() {
+    let mut h = Harness::new();
+    h.blank();
+    let s = h.insert("ab\ncd\nef");
+    assert_eq!((s.doc_len, s.focus), (8, 8));
+    assert_eq!(h.text(), "ab\ncd\nef");
+    // Backspace at the start of "cd" removes the whole separator.
+    h.select(3, 3);
+    let s = h.delete(false, DeleteUnit::Grapheme);
+    assert_eq!((s.doc_len, s.focus, s.revision), (7, 2, 2));
+    assert_eq!(h.text(), "abcd\nef");
+    // Forward delete at the end of "abcd" merges with the next paragraph.
+    h.select(4, 4);
+    h.delete(true, DeleteUnit::Grapheme);
+    assert_eq!(h.text(), "abcdef");
+    // A range across separators merges what it joins.
+    h.undo();
+    h.undo();
+    assert_eq!(h.text(), "ab\ncd\nef");
+    let s = h.state(Command::ReplaceRange {
+        start: 1,
+        end: 7,
+        text: "X\nY".into(),
+    });
+    assert_eq!(h.text(), "aX\nYf");
+    assert_eq!((s.anchor, s.focus), (4, 4));
+    // Typing over a selection replaces it.
+    h.select(0, 2);
+    h.insert("Z");
+    assert_eq!(h.text(), "Z\nYf");
+}
+
+#[test]
+fn grapheme_and_word_deletion() {
+    let mut h = Harness::new();
+    h.blank();
+    h.insert("un e\u{301}te\u{301} long");
+    // One backspace removes a base letter with its combining mark only at the
+    // end of the cluster, never half of it.
+    h.select(10, 10);
+    let before = h.text();
+    h.delete(false, DeleteUnit::Grapheme);
+    assert_eq!(
+        before.len() - h.text().len(),
+        3,
+        "e + U+0301 is one cluster"
+    );
+    h.undo();
+    // Ctrl+Backspace deletes back to the start of the previous word.
+    let end = h.text().len() as u64;
+    h.select(end, end);
+    h.delete(false, DeleteUnit::Word);
+    assert_eq!(h.text(), "un e\u{301}te\u{301} ");
+    // Ctrl+Delete deletes up to the start of the next word.
+    h.select(0, 0);
+    h.delete(true, DeleteUnit::Word);
+    assert_eq!(h.text(), "e\u{301}te\u{301} ");
+    // Nothing to delete at the edges: a state, no edit.
+    h.select(0, 0);
+    let s = h.delete(false, DeleteUnit::Grapheme);
+    assert_eq!(s.revision, 5);
+}
+
+#[test]
+fn inline_objects_count_three_bytes_and_move_as_one_cluster() {
+    let mut h = harness_with(object_document());
+    assert_eq!(h.text(), format!("a{OBJ}b{OBJ}"));
+    h.select(0, 0);
+    // a | object | b | break
+    let positions: Vec<u64> = (0..4)
+        .map(|_| h.step(Direction::Right, false).focus)
+        .collect();
+    assert_eq!(positions, [1, 4, 5, 8]);
+    // A position inside an object is refused, and nothing changes.
+    let revision = h.state(Command::Layout { budget: 1 }).revision;
+    assert_eq!(
+        h.error(Command::ReplaceRange {
+            start: 2,
+            end: 4,
+            text: String::new()
+        }),
+        ErrorCode::PositionNotBoundary
+    );
+    // SetSelection snaps back instead of failing.
+    let s = h.select(2, 6);
+    assert_eq!((s.anchor, s.focus), (1, 5));
+    // Backspace removes the whole object (3 bytes); undo brings it back.
+    h.select(4, 4);
+    let s = h.delete(false, DeleteUnit::Grapheme);
+    assert_eq!((s.doc_len, s.focus, s.revision), (5, 1, revision + 1));
+    assert_eq!(h.text(), format!("ab{OBJ}"));
+    let s = h.undo();
+    assert_eq!((s.doc_len, s.revision), (8, revision + 2));
+    assert_eq!(h.text(), format!("a{OBJ}b{OBJ}"));
+    // A combining mark typed after an object forms its own cluster.
+    h.select(4, 4);
+    h.insert("\u{301}");
+    h.step(Direction::Left, false);
+    assert_eq!(h.state(Command::Layout { budget: 1 }).focus, 4);
+    // Text typed at the end of the document stays after the break.
+    h.select(0, 0);
+    let s = h.step(Direction::DocumentEnd, false);
+    assert_eq!(s.focus, s.doc_len);
+}
+
+#[test]
+fn accessible_window_describes_paragraphs_and_objects() {
+    let mut h = harness_with(object_document());
+    h.select(8, 8);
+    h.insert("\nsuite");
+    let items = match h.send(1, Command::AccessibleWindow { start: 0, end: 14 }) {
+        Response::AccessibleWindow { revision, items } => {
+            assert_eq!(revision, 1);
+            items
+        }
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(items.len(), 2);
+    assert_eq!((items[0].para_start, items[0].para_end), (0, 8));
+    assert_eq!((items[0].role, items[0].level), (role::PARAGRAPH, 0));
+    assert_eq!(items[0].text, format!("a{OBJ}b{OBJ}"));
+    assert_eq!(
+        items[0]
+            .inlines
+            .iter()
+            .map(|o| (o.offset, o.kind))
+            .collect::<Vec<_>>(),
+        [(1, inline_kind::OBJECT), (5, inline_kind::LINE_BREAK)]
+    );
+    assert_eq!((items[1].para_start, items[1].para_end), (9, 14));
+    // Only the paragraphs that intersect the range.
+    let one =
+        |h: &mut Harness, start, end| match h.send(1, Command::AccessibleWindow { start, end }) {
+            Response::AccessibleWindow { items, .. } => items,
+            other => panic!("{other:?}"),
+        };
+    assert_eq!(one(&mut h, 9, 9).len(), 1);
+    assert_eq!(
+        one(&mut h, 8, 8)[0].para_start,
+        0,
+        "the separator ends paragraph 0"
+    );
+    assert_eq!(
+        one(&mut h, 0, 9).len(),
+        1,
+        "the separator is not in paragraph 1"
+    );
+    assert_eq!(one(&mut h, 0, 10).len(), 2);
+    assert_eq!(
+        h.error(Command::AccessibleWindow { start: 2, end: 4 }),
+        ErrorCode::PositionNotBoundary
+    );
+    assert_eq!(
+        h.error(Command::AccessibleWindow { start: 0, end: 99 }),
+        ErrorCode::PositionOutOfRange
+    );
+}
+
+#[test]
+fn accessible_window_reads_headings_and_is_capped() {
+    let mut h = Harness::new();
+    let docx = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/docx-reference/basic.docx"
+    ))
+    .unwrap();
+    let s = h.open_state(OpenKind::Docx, Profile::Document, &docx);
+    assert!(
+        s.window
+            .unwrap()
+            .text
+            .starts_with("R\u{e9}f\u{e9}rence de titre")
+    );
+    let items = match h.send(
+        1,
+        Command::AccessibleWindow {
+            start: 0,
+            end: s.doc_len,
+        },
+    ) {
+        Response::AccessibleWindow { items, .. } => items,
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        items
+            .iter()
+            .any(|i| i.role == role::HEADING && i.level >= 1)
+    );
+    // 300 empty paragraphs: at most 256 items, the client continues after.
+    h.txt(&"\n".repeat(300));
+    let items = match h.send(1, Command::AccessibleWindow { start: 0, end: 300 }) {
+        Response::AccessibleWindow { items, .. } => items,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(items.len(), proto::MAX_ACCESSIBLE_ITEMS);
+    assert_eq!(items[255].para_start, 255);
+}
+
+#[test]
+fn undo_redo_and_mark_saved() {
+    let mut h = Harness::new();
+    h.txt("abc");
+    let s = h.select(3, 3);
+    assert!(!s.modified && !s.can_undo);
+    // Nothing to undo: an unchanged state, not an error.
+    let s = h.undo();
+    assert_eq!((s.revision, s.can_undo, s.can_redo), (0, false, false));
+    let edited = h.insert("d");
+    assert_eq!(edited.revision, 1);
+    assert!(edited.modified);
+    // MarkSaved with the current revision clears `modified`.
+    let s = h.state(Command::MarkSaved { revision: 1 });
+    assert!(!s.modified && s.can_undo);
+    // A stale revision is refused and changes nothing.
+    h.insert("e");
+    assert_eq!(
+        h.error(Command::MarkSaved { revision: 1 }),
+        ErrorCode::StaleRevision
+    );
+    assert!(h.state(Command::Layout { budget: 1 }).modified);
+    // Undo and redo count as edits for the revision; the selection comes back.
+    let s = h.undo();
+    assert_eq!((s.revision, s.can_redo, s.focus), (3, true, 4));
+    assert_eq!(h.text(), "abcd");
+    let s = h.undo();
+    assert_eq!((s.revision, s.focus, s.can_undo), (4, 3, false));
+    assert_eq!(h.text(), "abc");
+    let s = h.redo();
+    assert_eq!((s.revision, s.doc_len), (5, 4));
+    assert_eq!(h.text(), "abcd");
+    assert!(s.modified, "back at the saved text, but a later revision");
+    // A new edit clears the redo stack.
+    h.insert("!");
+    assert!(!h.state(Command::Layout { budget: 1 }).can_redo);
+}
+
+#[test]
+fn moves_follow_the_v1_numbering_and_extend() {
+    let mut h = Harness::new();
+    h.txt("un deux trois\nquatre cinq\n\nsix");
+    h.select(0, 0);
+    let end_of = |h: &mut Harness| h.state(Command::Layout { budget: 1 });
+    assert_eq!(h.step(Direction::Right, false).focus, 1);
+    assert_eq!(h.step(Direction::Left, false).focus, 0);
+    assert_eq!(h.step(Direction::WordRight, false).focus, 3);
+    assert_eq!(h.step(Direction::WordRight, false).focus, 8);
+    assert_eq!(h.step(Direction::WordLeft, false).focus, 3);
+    assert_eq!(h.step(Direction::End, false).focus, 13);
+    assert_eq!(h.step(Direction::Home, false).focus, 0);
+    // Paragraph moves: next start, then start of this one.
+    assert_eq!(h.step(Direction::ParagraphDown, false).focus, 14);
+    assert_eq!(h.step(Direction::ParagraphDown, false).focus, 26);
+    assert_eq!(h.step(Direction::ParagraphDown, false).focus, 27);
+    assert_eq!(
+        h.step(Direction::ParagraphDown, false).focus,
+        27,
+        "last paragraph"
+    );
+    h.select(17, 17);
+    assert_eq!(h.step(Direction::ParagraphUp, false).focus, 14);
+    assert_eq!(h.step(Direction::ParagraphUp, false).focus, 0);
+    // Vertical moves keep the column.
+    h.select(4, 4);
+    let down = h.step(Direction::Down, false);
+    assert!((14..=24).contains(&down.focus));
+    assert!(h.step(Direction::Up, false).focus <= 13);
+    // Extending keeps the anchor; a plain Left collapses to the start.
+    h.select(5, 5);
+    let s = h.step(Direction::Right, true);
+    assert_eq!((s.anchor, s.focus), (5, 6));
+    let s = h.step(Direction::WordRight, true);
+    assert_eq!((s.anchor, s.focus), (5, 8));
+    let s = h.step(Direction::Left, false);
+    assert_eq!((s.anchor, s.focus), (5, 5));
+    h.select(9, 4);
+    let s = h.step(Direction::Right, false);
+    assert_eq!((s.anchor, s.focus), (9, 9), "collapses to the end");
+    h.select(9, 4);
+    let s = h.step(Direction::Left, false);
+    assert_eq!((s.anchor, s.focus), (4, 4), "collapses to the start");
+    assert_eq!(h.step(Direction::DocumentEnd, true).focus, 30);
+    assert_eq!(h.step(Direction::DocumentStart, false).focus, 0);
+    let _ = end_of(&mut h);
+}
+
+#[test]
+fn hit_test_probes_sets_and_extends() {
+    let mut h = Harness::new();
+    h.txt("Bonjour tout le monde");
+    h.select(0, 0);
+    let before = h.state(Command::Layout { budget: 1 });
+    let caret = before.caret.unwrap();
+    let probe = |h: &mut Harness, mode, x: f64, y: f64| {
+        h.send(
+            1,
+            Command::HitTest {
+                page: 0,
+                mode,
+                x,
+                y,
+            },
+        )
+    };
+    let (x, y) = (caret.x + 40.0, caret.y + caret.height / 2.0);
+    let Response::HitResult { position, page, .. } = probe(&mut h, HitMode::Probe, x, y) else {
+        panic!("probe answers a HitResult");
+    };
+    assert_eq!(page, 0);
+    assert!(position > 0 && position < 21);
+    // A probe changes nothing.
+    let same = h.state(Command::Layout { budget: 1 });
+    assert_eq!((same.focus, same.revision), (0, 0));
+    let Response::State(s) = probe(&mut h, HitMode::SetCaret, x, y) else {
+        panic!("set caret answers a State");
+    };
+    assert_eq!((s.anchor, s.focus), (position, position));
+    let Response::State(s) = probe(&mut h, HitMode::Extend, caret.x + 500.0, y) else {
+        panic!("extend answers a State");
+    };
+    assert_eq!((s.anchor, s.focus), (position, 21));
+    assert_eq!(
+        match h.send(
+            1,
+            Command::HitTest {
+                page: 40,
+                mode: HitMode::Probe,
+                x: 0.0,
+                y: 0.0
+            }
+        ) {
+            Response::Error(code) => code,
+            other => panic!("{other:?}"),
+        },
+        ErrorCode::PageRange
+    );
+}
+
+#[test]
+fn layout_runs_to_completion_and_pages_follow() {
+    let mut h = Harness::new();
+    let text: String = (0..900)
+        .map(|i| format!("Paragraphe {i} avec assez de mots pour occuper une ligne ou deux."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let opened = h.txt(&text);
+    assert!(
+        !opened.layout_complete,
+        "the tail paginates in the background"
+    );
+    let mut counts = vec![opened.page_count];
+    let mut last = opened;
+    for _ in 0..2000 {
+        if last.layout_complete {
+            break;
+        }
+        last = h.state(Command::Layout { budget: 64 });
+        counts.push(last.page_count);
+    }
+    assert!(last.layout_complete, "mise en page terminée");
+    assert!(last.page_count > 5);
+    // A Pages request for a page that existed all along works.
+    match h.send(
+        1,
+        Command::Pages {
+            first: last.page_count - 1,
+            count: 16,
+        },
+    ) {
+        Response::Pages {
+            page_count, pages, ..
+        } => {
+            assert_eq!(page_count, last.page_count);
+            assert_eq!(pages.len(), 1);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(
+        h.error(Command::Pages {
+            first: last.page_count,
+            count: 1
+        }),
+        ErrorCode::PageRange
+    );
+    // Edit near the end: only a few pages come back.
+    h.select(last.doc_len, last.doc_len);
+    let s = h.insert("fin");
+    assert!(s.pages.len() <= 3, "{} pages sent", s.pages.len());
+}
+
+#[test]
+fn edits_before_the_laid_out_tail_stay_consistent() {
+    let mut h = Harness::new();
+    let text: String = (0..600)
+        .map(|i| format!("ligne numero {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let opened = h.txt(&text);
+    assert!(!opened.layout_complete);
+    h.select(0, 0);
+    h.insert("debut\n");
+    h.select(0, 0);
+    h.delete(true, DeleteUnit::Word);
+    let done = h.finish_layout();
+    assert!(done.page_count >= 1);
+    assert!(h.text().starts_with("\nligne numero 0"));
+}
+
+#[test]
+fn docx_opens_with_the_document_profile() {
+    let mut h = Harness::new();
+    let docx = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/docx-reference/basic.docx"
+    ))
+    .unwrap();
+    let s = h.open_state(OpenKind::Docx, Profile::Document, &docx);
+    assert_eq!(s.revision, 0);
+    assert!(s.doc_len > 10 && !s.pages.is_empty());
+    let s = h.insert("X");
+    assert_eq!((s.revision, s.focus), (1, 1));
+    assert!(h.text().starts_with("XR\u{e9}f\u{e9}rence"));
+}
+
+#[test]
+fn engine_errors_leave_the_state_unchanged() {
+    let mut h = Harness::new();
+    h.txt("abc\u{e9}");
+    h.select(2, 3);
+    let stable = h.state(Command::Layout { budget: 1 });
+    let unchanged = |h: &mut Harness| {
+        let s = h.state(Command::Layout { budget: 1 });
+        assert_eq!(
+            (s.revision, s.anchor, s.focus, s.doc_len, s.can_undo),
+            (
+                stable.revision,
+                stable.anchor,
+                stable.focus,
+                stable.doc_len,
+                stable.can_undo
+            )
+        );
+    };
+    for (command, code) in [
+        (
+            Command::ReplaceRange {
+                start: 0,
+                end: 99,
+                text: "x".into(),
+            },
+            ErrorCode::PositionOutOfRange,
+        ),
+        (
+            Command::ReplaceRange {
+                start: 4,
+                end: 5,
+                text: "x".into(),
+            },
+            ErrorCode::PositionNotBoundary,
+        ),
+        (
+            Command::SetSelection {
+                anchor: 0,
+                focus: 99,
+                upstream: false,
+            },
+            ErrorCode::PositionOutOfRange,
+        ),
+        (
+            Command::SetSelection {
+                anchor: u64::MAX,
+                focus: 0,
+                upstream: false,
+            },
+            ErrorCode::PositionOutOfRange,
+        ),
+        (
+            Command::TextWindow { start: 99, len: 4 },
+            ErrorCode::PositionOutOfRange,
+        ),
+        (
+            Command::TextWindow { start: 4, len: 4 },
+            ErrorCode::PositionNotBoundary,
+        ),
+        (Command::MarkSaved { revision: 9 }, ErrorCode::StaleRevision),
+        (
+            Command::Pages {
+                first: 99,
+                count: 1,
+            },
+            ErrorCode::PageRange,
+        ),
+        (
+            Command::HitTest {
+                page: 99,
+                mode: HitMode::SetCaret,
+                x: 1.0,
+                y: 1.0,
+            },
+            ErrorCode::PageRange,
+        ),
+    ] {
+        assert_eq!(h.error(command.clone()), code, "{command:?}");
+        unchanged(&mut h);
+    }
+    // Another document id is unknown, and so is any document once closed.
+    assert!(matches!(
+        h.send(2, Command::Undo),
+        Response::Error(ErrorCode::UnknownDocument)
+    ));
+    assert!(matches!(
+        h.send(2, Command::Close),
+        Response::Error(ErrorCode::UnknownDocument)
+    ));
+    unchanged(&mut h);
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    assert_eq!(h.editor.active_document(), None);
+    assert_eq!(h.error(Command::Undo), ErrorCode::UnknownDocument);
+}
+
+#[test]
+fn a_refused_open_keeps_the_active_document() {
+    let mut h = Harness::new();
+    h.txt("garde");
+    h.insert("!");
+    assert!(matches!(
+        h.send(
+            2,
+            Command::Open {
+                kind: OpenKind::Docx,
+                profile: Profile::Document,
+                data: vec![1, 2, 3],
+            }
+        ),
+        Response::Error(ErrorCode::OpenFailed)
+    ));
+    assert_eq!(h.editor.active_document(), Some(1));
+    assert_eq!(h.text(), "!garde");
+    // Opening with another id replaces the document.
+    let s = match h.send(
+        2,
+        Command::Open {
+            kind: OpenKind::Blank,
+            profile: Profile::Txt,
+            data: vec![],
+        },
+    ) {
+        Response::State(s) => s,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(s.doc_len, 0);
+    assert_eq!(h.editor.active_document(), Some(2));
+    assert!(matches!(
+        h.send(1, Command::Undo),
+        Response::Error(ErrorCode::UnknownDocument)
+    ));
+}
+
+#[test]
+fn txt_with_crlf_and_bom_opens_as_paragraphs() {
+    let mut h = Harness::new();
+    h.open_state(OpenKind::Txt, Profile::Txt, b"\xef\xbb\xbfseed\r\n\xc3\xa9");
+    assert_eq!(h.text(), "seed\n\u{e9}");
+}
+
+#[test]
+fn invalid_frames_are_answered_without_changing_anything() {
+    let mut h = Harness::new();
+    h.txt("abc");
+    let good = proto::encode_request(&Request {
+        doc_id: 1,
+        request_id: 5,
+        command: Command::Undo,
+    })
+    .unwrap();
+    let failed = |m: Message| {
+        assert_eq!(m.kind, MessageType::Failed);
+        String::from_utf8(m.payload).unwrap()
+    };
+    // Unreadable header: the outer Failed carries the error name.
+    assert_eq!(failed(h.raw(good[..12].to_vec())), "RICH_INVALID_ENVELOPE");
+    let mut zero_doc = good.clone();
+    zero_doc[8..12].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(failed(h.raw(zero_doc)), "RICH_INVALID_DOCUMENT_ID");
+    // Readable header: an Error reply with the same ids.
+    let mut text = proto::encode_request(&Request {
+        doc_id: 1,
+        request_id: 6,
+        command: Command::InsertText { text: "a".into() },
+    })
+    .unwrap();
+    *text.last_mut().unwrap() = 0x0d;
+    let reply = h.raw(text);
+    assert_eq!(reply.kind, MessageType::EditorResult);
+    let reply = proto::decode_reply(&reply.payload).unwrap();
+    assert_eq!((reply.doc_id, reply.request_id), (1, 6));
+    assert_eq!(reply.response, Response::Error(ErrorCode::InvalidText));
+    let mut unknown = good;
+    unknown[6..8].copy_from_slice(&0x0fffu16.to_le_bytes());
+    let reply = proto::decode_reply(&h.raw(unknown).payload).unwrap();
+    assert_eq!(reply.response, Response::Error(ErrorCode::UnknownOpcode));
+    assert_eq!(h.text(), "abc");
+    // Routing rule: version 2 with at least 8 bytes, nothing shorter.
+    assert!(is_rich(b"ATED\x02\x00\x01\x01"));
+    assert!(!is_rich(b"ATED\x02\x00\x01"));
+    assert!(!is_rich(b"ATED\x01\x00\x01\x01"));
+    assert!(!is_rich(b"XTED\x02\x00\x01\x01"));
+}
+
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n
+    }
+}
+
+/// Random ASCII edits against a shadow string, with undo and redo.
+#[test]
+fn random_edits_match_a_shadow_text() {
+    let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+    let mut h = Harness::new();
+    h.blank();
+    let mut shadow = String::new();
+    let (mut undo, mut redo): (Vec<String>, Vec<String>) = (Vec::new(), Vec::new());
+    let pick = |rng: &mut Rng, len: usize| rng.below(len as u64 + 1) as usize;
+    for step in 0..400 {
+        let len = shadow.len();
+        match rng.below(6) {
+            0 | 1 => {
+                let words = ["a", "bc", "def\n", "\n", " x ", "gh\nij"];
+                let text = words[rng.below(6) as usize];
+                let (a, b) = (pick(&mut rng, len), pick(&mut rng, len));
+                h.select(a as u64, b as u64);
+                h.insert(text);
+                undo.push(shadow.clone());
+                redo.clear();
+                shadow.replace_range(a.min(b)..a.max(b), text);
+            }
+            2 => {
+                let (a, b) = (pick(&mut rng, len), pick(&mut rng, len));
+                let (a, b) = (a.min(b), a.max(b));
+                h.state(Command::ReplaceRange {
+                    start: a as u64,
+                    end: b as u64,
+                    text: "Q\nR".into(),
+                });
+                {
+                    undo.push(shadow.clone());
+                    redo.clear();
+                }
+                shadow.replace_range(a..b, "Q\nR");
+            }
+            3 => {
+                let at = pick(&mut rng, len);
+                h.select(at as u64, at as u64);
+                let forward = rng.below(2) == 0;
+                let before = h.state(Command::Layout { budget: 1 }).revision;
+                let s = h.delete(forward, DeleteUnit::Grapheme);
+                if s.revision != before {
+                    undo.push(shadow.clone());
+                    redo.clear();
+                    if forward {
+                        shadow.remove(at);
+                    } else {
+                        shadow.remove(at - 1);
+                    }
+                } else {
+                    assert!(if forward { at == len } else { at == 0 });
+                }
+            }
+            4 => {
+                let s = h.undo();
+                if let Some(previous) = undo.pop() {
+                    redo.push(std::mem::replace(&mut shadow, previous));
+                } else {
+                    assert!(!s.can_undo);
+                }
+            }
+            _ => {
+                let s = h.redo();
+                if let Some(next) = redo.pop() {
+                    undo.push(std::mem::replace(&mut shadow, next));
+                } else {
+                    assert!(!s.can_redo);
+                }
+            }
+        }
+        if step % 25 == 0 {
+            assert_eq!(h.text(), shadow, "step {step}");
+        }
+    }
+    assert_eq!(h.text(), shadow);
+    h.finish_layout();
+}
+
+/// Random commands and random bytes never panic nor break the invariants.
+#[test]
+fn random_commands_and_frames_never_panic() {
+    let mut rng = Rng(0x1234_5678_9abc_def1);
+    let mut h = harness_with(object_document());
+    for _ in 0..600 {
+        let len = h.state(Command::Layout { budget: 1 }).doc_len;
+        let at = rng.below(len + 4);
+        let command = match rng.below(14) {
+            0 => Command::InsertText {
+                text: "é\n".into()
+            },
+            1 => Command::ReplaceRange {
+                start: at,
+                end: at + rng.below(6),
+                text: "z".into(),
+            },
+            2 => Command::Delete {
+                forward: rng.below(2) == 0,
+                unit: if rng.below(2) == 0 {
+                    DeleteUnit::Word
+                } else {
+                    DeleteUnit::Grapheme
+                },
+            },
+            3 => Command::Move {
+                direction: [
+                    Direction::Left,
+                    Direction::Right,
+                    Direction::Up,
+                    Direction::Down,
+                    Direction::Home,
+                    Direction::End,
+                    Direction::DocumentStart,
+                    Direction::DocumentEnd,
+                    Direction::PageUp,
+                    Direction::PageDown,
+                    Direction::WordLeft,
+                    Direction::WordRight,
+                    Direction::ParagraphUp,
+                    Direction::ParagraphDown,
+                ][rng.below(14) as usize],
+                extend: rng.below(2) == 0,
+            },
+            4 => Command::SetSelection {
+                anchor: at,
+                focus: rng.below(len + 4),
+                upstream: rng.below(2) == 0,
+            },
+            5 => Command::HitTest {
+                page: rng.below(3) as u32,
+                mode: HitMode::Extend,
+                x: rng.below(700) as f64,
+                y: rng.below(900) as f64,
+            },
+            6 => Command::Undo,
+            7 => Command::Redo,
+            8 => Command::TextWindow { start: at, len: 8 },
+            9 => Command::Pages { first: 0, count: 2 },
+            10 => Command::MarkSaved {
+                revision: rng.below(4),
+            },
+            11 => Command::AccessibleWindow {
+                start: at,
+                end: at + rng.below(8),
+            },
+            12 => Command::Layout {
+                budget: 1 + rng.below(8) as u32,
+            },
+            _ => Command::HitTest {
+                page: 0,
+                mode: HitMode::Probe,
+                x: -5.0,
+                y: 1e9,
+            },
+        };
+        if let Response::State(s) = h.send(1, command) {
+            check_state(&s);
+        }
+    }
+    // Garbage frames, never a panic, never a change of the active document.
+    for _ in 0..2000 {
+        let n = rng.below(80) as usize;
+        let mut payload: Vec<u8> = (0..n).map(|_| rng.next() as u8).collect();
+        if n >= 20 && rng.below(2) == 0 {
+            payload[..4].copy_from_slice(b"ATED");
+            payload[4..6].copy_from_slice(&[2, 0]);
+            payload[6] = 3 + rng.below(0x1d) as u8; // not Open nor Close
+            payload[7] = 1;
+            payload[8..12].copy_from_slice(&1u32.to_le_bytes());
+            let body = (n - 20) as u32;
+            payload[16..20].copy_from_slice(&body.to_le_bytes());
+        }
+        let _ = h.raw(payload);
+    }
+    assert_eq!(h.editor.active_document(), Some(1));
+}
