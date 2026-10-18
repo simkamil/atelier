@@ -20,11 +20,11 @@ Convention : `v2 = couvert` (même nom, même forme de résultat) ; `v2 = adapt�
 | `frenchSpacing`, `setFrenchSpacing` | couvert (contexte lu dans la fenêtre de texte de l'État) |
 | `inputLabel`, `confirmDiscard` | couvert |
 | `onState`, `onError`, `onBusy`, `onZoom`, `onViewport`, `onImages`, `imageAlt` | couvert, mêmes formes |
-| (nouveau) `t`, `user`, `version`, `onReadOnly`, `screenReaderMode`, `onScreenReaderMode`, `docId`, `layoutBudget`, `yieldTurn` | propres à v2 ; `t` (i18n du miroir) est obligatoire pour le miroir |
+| (nouveau) `t`, `user`, `version`, `onReadOnly`, `screenReaderMode`, `onScreenReaderMode`, `docId`, `layoutBudget`, `dialogLabels`, `mirrorContainer` | propres à v2 ; sans `t` (i18n du miroir) il n'y a pas de miroir DOM ; `dialogLabels` : titres et libellés des dialogues natifs ; `user` vide si inconnu, `version` : version de l'application |
 
 ## 3. Membres de l'objet renvoyé
 
-Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{kind:"state", text, textBytes, anchor, focus, revision (BigInt), dirty, canUndo, canRedo, caret, selectionRects, pages, imageIds...}`. v2 : `{kind:"state", revision (BigInt), anchor, focus (Number, octets plats), docLen, dirty, canUndo, canRedo, readOnly, hasRevisions, pageCount, layoutComplete, caret, upstream}`. **Absents en v2 : `text`, `textBytes`, `selectionRects`, `pages`, `imageIds`** (pas de texte entier côté interface ; géométrie de sélection non fournie par le moteur, la sélection est peinte par les pages du moteur). Lecteurs touchés : voir §5.
+Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{kind:"state", text, textBytes, anchor, focus, revision (BigInt), dirty, canUndo, canRedo, caret, selectionRects, pages, imageIds...}`. v2 : `{kind:"state", revision (BigInt), anchor, focus (Number, octets plats), docLen, dirty, canUndo, canRedo, readOnly, hasRevisions, pageCount, layoutComplete, caret, upstream}`. **Absents en v2 : `text`, `textBytes`, `selectionRects`, `pages`, `imageIds`** (pas de texte entier côté interface). **La surbrillance de la sélection n'est pas dessinée en v2** : le protocole ne renvoie que le caret du foyer (`selection_rects` existe dans le moteur, `PageCache::selection_rects`, mais aucune commande ni champ d'`State` ne l'expose) ; la sélection reste perceptible pour les lecteurs d'écran (miroir DOM) et par le texte copié, pas à l'écran. À livrer côté protocole avant la bascule par défaut (R7b). L'objet d'état reste le même tant que rien de ce qu'il porte ne change (identité conservée par un rafraîchissement de pages, un zoom). Lecteurs touchés : voir §5.
 
 | Membre v1 | Équivalent v2 | Statut |
 |---|---|---|
@@ -49,9 +49,9 @@ Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{k
 | `selectSearchResult(result, index)` | rejette `EDITOR_UNSUPPORTED_V2` | désactivé |
 | `insertImages(files, {revision, target})` | `InsertImage` par fichier (octets + texte alternatif, `target` = `SetSelection` avant) ; `onImages({inserted, failed})` idem. Limite : le moteur v2 compte l'image (3 octets plats, enregistrée dans le DOCX) mais **la page ne la dessine pas encore** (aucune commande `drawImage` dans les pages v2) | adapté |
 | `exportDocx()` | `Save` DOCX -> `{bytes, noticeCount, pictureCount}` (nombre de `word/media/*` du paquet) | couvert |
-| `exportDocument()` | `Save` TXT -> `{revision, bytes}` | couvert |
+| `exportDocument()` | `Save` TXT -> `{revision, bytes, notices}` | couvert |
 | `newDocument()` | confirmation, `Open` blank | couvert |
-| `openDocument(source)` | confirmation, puis `pickOpen` + `readTicket` (ou `source()`), `Open` TXT/DOCX selon le format ; renvoie `{kind:"ok", state}` / `cancelled` / `error` | couvert |
+| `openDocument(source, {formats})` | confirmation, puis `pickOpen` + `readTicket` (ou `source()`), `Open` TXT/DOCX selon le format ; renvoie `{kind:"ok", state}` / `cancelled` / `error` | couvert |
 | `saveAs()` | `pickSave` -> `Save` (format du dialogue) -> `writeTicket` -> `MarkSaved(revision)` ; `{kind:"ok", state}` / `cancelled` / `error` ; `files.error.queue_full` si occupé | couvert |
 | `undo()`, `redo()` | `Undo`, `Redo` ; `EDITOR_BUSY` si occupé ; `RICH_READ_ONLY` en lecture seule | couvert |
 | `confirmReplace()` | idem | couvert |
@@ -62,7 +62,8 @@ Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{k
 | (nouveau) `selectedText(snapshot)` | texte de la sélection du cliché (fenêtre de l'État, sinon `TextWindow`) pour le menu contextuel | v2 seulement |
 | (nouveau) `readOnlyInfo` / `onReadOnly` | `{readOnly, hasRevisions}` pour le bandeau | v2 seulement |
 | (nouveau) `makeEditableCopy()` | `MakeEditableCopy` -> `Open` de la copie ; avis exposés | v2 seulement |
-| (nouveau) `input` | poignée `attachTextInput` (bouton du mode lecteur d'écran) | v2 seulement |
+| (nouveau) `input`, `setScreenReaderMode(bool)` | poignée `attachTextInput` (bouton du mode lecteur d'écran, Alt+Maj+F1) | v2 seulement |
+| (nouveau) `whenLayoutComplete()` | résolu quand la mise en page est terminée | v2 seulement |
 | (nouveau) `mirror` | miroir DOM accessible | v2 seulement |
 
 ## 4. Événements et rappels
@@ -100,7 +101,7 @@ Chaque ligne cite la donnée utilisée et le comportement en v2, chemins d'erreu
 | `text-drag-drop.mjs` | `probePoint`, `onDrop`, `onFilesDrop`, `getSelectionSnapshot` (avec `text` entier) | **non branché en v2** : glisser-déposer de texte absent (le texte déposé est refusé par `EDITOR_UNSUPPORTED_V2`, la sélection ne se déplace pas) ; dépôt de fichiers image : géré directement par `rich-editor.mjs` (`HitTest` probe puis `InsertImage`) |
 | `french-spacing.mjs` | cliché `{text, anchor, focus}` après l'insertion | v2 : fenêtre de l'État (2 Kio autour du curseur), décalages ramenés à des positions plates |
 | `image-insert.mjs` | `insertImageFiles(files, {insertBytes, onError})` | identique (`insertBytes` = `InsertImage`) ; le magasin JS `imageCache` ne concerne que v1 |
-| `document-mirror.mjs` | `getAccessibleWindow(start, end, {signal})`, `update({revision, docLen, selection, visible})` | v2 seulement ; fenêtre fournie par `accessibleWindow` du client ; `update` après chaque `State` et chaque changement de portion visible |
+| `document-mirror.mjs` | `getAccessibleWindow(start, end, {signal})`, `update({revision, docLen, selection, visible})` | v2 seulement ; fenêtre fournie par `accessibleWindow` du client **après conversion** (`mirrorWindow` : le codec nomme les rôles et genres d'objets, le miroir attend leurs numéros ; l'écart a été trouvé par la suite navigateur) ; `update` après chaque `State` ; `visible` = positions plates du haut et du bas de la fenêtre, obtenues par deux `HitTest` de sonde 150 ms après le dernier défilement |
 | tests (`editor-test-adapter.mjs`) | `insertTextCommand`, `setSelectionCommand` (octets ATED v1) | côté v2 : trames v2 (`InsertText`, `SetSelection`) |
 
 ## 6. Ouverture, enregistrement, lecture seule, images (côté interface)
@@ -120,3 +121,17 @@ Chaque ligne cite la donnée utilisée et le comportement en v2, chemins d'erreu
 5. Sélection du mot et du paragraphe à la souris (double et triple clic).
 6. Affichage des images insérées (le moteur v2 ne les dessine pas encore).
 7. Texte entier de l'état (`state.text`), géométrie de sélection (`selectionRects`).
+
+## 8. Écarts connus de R7a (à lever en R7b ou par le protocole)
+
+1. **Sélection invisible à l'écran** (voir §3) : exposer `selection_rects` (commande ou champ d'`State`).
+2. Images insérées : comptées, enregistrées, lues par le miroir, **non dessinées** (pas de `drawImage` dans les pages v2) ; la suite d'images v2 saute géométrie et pixels et le dit.
+3. Double et triple clic : un clic simple (le protocole n'a pas de test de position par mot ou paragraphe).
+4. Glisser-déposer de texte : refusé avec `EDITOR_UNSUPPORTED_V2` ; le dépôt de fichiers image fonctionne.
+5. Recherche, remplacement, statistiques, propriétés : grisés (aucun équivalent protocole).
+6. Encodage : un fichier TXT n'est jamais refusé pour UTF-8 invalide (le moteur détecte l'encodage ; v1 répondait `EDITOR_INVALID_UTF8`).
+7. Aperçu de composition IME : largeur estimée à 7 px par caractère comme en v1 (la géométrie viendra du moteur en R7b).
+8. Presse-papiers : copie d'une sélection d'au plus 256 Kio ; au-delà `EDITOR_SELECTION_TOO_LARGE` (message `status-selection-too-large`) ; le texte d'une sélection hors de la fenêtre de l'État est demandé dès que la sélection change, une copie immédiate peut donc répondre `EDITOR_CLIPBOARD_UNAVAILABLE` (réessayer).
+9. `initialize()` ouvre un document vierge (en v1 il relisait l'état) ; `previewDocx` rejette.
+10. Avis d'enregistrement (`notices`) renvoyés par `saveAs`, `exportDocument` et `makeEditableCopy` mais non affichés par l'interface.
+11. Un `Open` refusé par le moteur (`RICH_OPEN_FAILED`) garde le document précédent côté moteur : le client se resynchronise (`Resync`) au lieu de rester vide (correctif de `rich-editor-client.mjs`, testé).

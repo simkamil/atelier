@@ -819,6 +819,8 @@ Réf : D13, §6.14 · Taille : M · Dépend de : US-203, US-217
 
 Avancement 2026-10-18 (préparation R7, aucune case cochée) : suites navigateur paramétrées `--engine v1|v2` avec adaptateur de test ; v2 sort « en attente de R7 (lot 3) » (code 75) ; banc `tests/run-latency-browser.mjs` et mesures v1 dans le [plan](docs/us-219-switch-plan.md), qui contient aussi l'inventaire R8. Interface non branchée sur v2.
 
+Avancement 2026-10-18 (R7a, interface branchée sur v2 derrière `?engine=v2`, aucune case cochée) : `web/rich-editor.mjs` expose l'API de `createEditor` au-dessus du client v2, du cache de pages à atlas et du miroir DOM ; ouverture et enregistrement par le pont US-113 (tickets), bandeau de lecture seule avec copie modifiable, mode lecteur d'écran persistant, fonctions sans équivalent grisées ([parité et écarts](docs/r7-ui-parity.md)). `run-ui-browser`, `run-image-insert-browser` (sans géométrie ni pixels d'images) et `run-editor-browser` (scénario v2 de 63 vérifications, sections v1 listées) passent en v2, avec la suite dédiée `run-rich-editor-ui-browser` ; les suites v1 sont inchangées. Restent pour R7b : surbrillance de la sélection (absente du protocole), images dessinées, mot et paragraphe à la souris, v2 par défaut, latence de frappe mesurée dans Edge.
+
 Réf : [plan de bascule](docs/rich-editor-migration.md) · Taille : M · Dépend de : US-217, US-218, US-209, US-006
 
 ## E1.3 — Édition
