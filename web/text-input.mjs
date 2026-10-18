@@ -69,6 +69,8 @@ export function attachTextInput({
   onComposition = () => {},
   onUnhandled,
   onError = () => {},
+  onScreenReaderMode,
+  screenReaderMode = false,
   label,
 } = {}) {
   if (!ownerDocument?.createElement) throw new TypeError("A DOM document is required.");
@@ -77,7 +79,8 @@ export function attachTextInput({
   }
   if (typeof onCommand !== "function" || typeof onComposition !== "function"
       || (getClipboardSnapshot !== undefined && typeof getClipboardSnapshot !== "function")
-      || (onUnhandled !== undefined && typeof onUnhandled !== "function") || typeof onError !== "function") {
+      || (onUnhandled !== undefined && typeof onUnhandled !== "function") || typeof onError !== "function"
+      || (onScreenReaderMode !== undefined && typeof onScreenReaderMode !== "function")) {
     throw new TypeError("Input callbacks must be functions.");
   }
   const initialCaret = normalizedRect(getCaret());
@@ -123,6 +126,10 @@ export function attachTextInput({
   let handledInput = null;
   let selectionErrorInput = null;
   let clearTimer;
+  // Screen reader mode (US-209): the textarea holds the current paragraph and its selection instead of staying empty.
+  let readerMode = false;
+  let readerContent = null;
+  const readerListeners = new Set();
 
   function reportError(error) {
     try { onError(error); } catch { /* keep the input surface usable */ }
@@ -131,6 +138,48 @@ export function attachTextInput({
   function clearValue() {
     textarea.value = "";
     try { textarea.setSelectionRange(0, 0); } catch { /* detached or unsupported */ }
+  }
+
+  /** Back to the resting content: empty, or the paragraph given to screen reader mode. */
+  function resetValue() {
+    if (!readerMode || !readerContent) { clearValue(); return; }
+    const { text, start, end, backward } = readerContent;
+    if (textarea.value !== text) textarea.value = text;
+    try { textarea.setSelectionRange(start, end, start === end ? "none" : backward ? "backward" : "forward"); } catch { /* detached or unsupported */ }
+  }
+
+  /** `{ text, start, end, backward }`: start and end are UTF-16 offsets in `text`. Ignored content is kept for later. */
+  function setScreenReaderContent(content) {
+    if (disposed || !readerMode) return false;
+    if (!content || typeof content.text !== "string" || !Number.isInteger(content.start) || !Number.isInteger(content.end)
+        || content.start < 0 || content.end < content.start || content.end > content.text.length) {
+      readerContent = null;
+      if (!nativeComposing) clearValue();
+      return false;
+    }
+    readerContent = { text: content.text, start: content.start, end: content.end, backward: content.backward === true };
+    if (!nativeComposing) resetValue(); // a composition in progress keeps its text; the end of it resets
+    return true;
+  }
+
+  function setScreenReaderMode(enabled) {
+    const on = Boolean(enabled);
+    if (disposed || on === readerMode) return;
+    readerMode = on;
+    readerContent = null;
+    if (on) textarea.setAttribute("aria-multiline", "true");
+    else textarea.removeAttribute("aria-multiline");
+    if (!nativeComposing) clearValue();
+    for (const listener of [...(onScreenReaderMode ? [onScreenReaderMode] : []), ...readerListeners]) {
+      try { listener(on); } catch (error) { reportError(error); }
+    }
+  }
+
+  /** Subscribes to mode changes (shortcut, button, API); returns the unsubscribe function. */
+  function onScreenReaderModeChange(listener) {
+    if (typeof listener !== "function") throw new TypeError("listener must be a function.");
+    readerListeners.add(listener);
+    return () => { readerListeners.delete(listener); };
   }
 
   function readSelection() { return copySelection(getSelection()); }
@@ -144,7 +193,7 @@ export function attachTextInput({
 
   function scheduleClear() {
     clearTimeout(clearTimer);
-    clearTimer = setTimeout(() => { if (!nativeComposing && !disposed) clearValue(); }, 0);
+    clearTimer = setTimeout(() => { if (!nativeComposing && !disposed) resetValue(); }, 0);
   }
 
   function emitCommand(command, selection = undefined) {
@@ -199,6 +248,13 @@ export function attachTextInput({
 
   function onKeyDown(event) {
     if (disposed || textarea.disabled || event.isComposing || event.keyCode === 229 || nativeComposing) return;
+    // Alt+Shift+F1 toggles screen reader mode. No Ctrl: on Windows AltGr is reported as Ctrl+Alt, so any Ctrl+Alt shortcut would
+    // fire while typing with AltGr. AltGr itself is excluded too.
+    if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === "F1" && !event.getModifierState?.("AltGraph")) {
+      event.preventDefault();
+      setScreenReaderMode(!readerMode);
+      return;
+    }
     if (event.key === "AltGraph" || event.getModifierState?.("AltGraph") || (event.ctrlKey && event.altKey)) return;
     const key = event.key;
     let command;
@@ -316,6 +372,7 @@ export function attachTextInput({
     } else if (emitUnhandled(event, "input")) {
       scheduleClear();
     } else {
+      if (readerMode) scheduleClear(); // the paragraph must come back; outside the mode the browser text is left alone
       return; // Leave browser-managed text in the textarea when no delegate is installed.
     }
     if (mapped) scheduleClear();
@@ -450,6 +507,7 @@ export function attachTextInput({
     }
     nativeComposing = false;
     disposed = true;
+    readerListeners.clear();
     clearTimeout(clearTimer);
     clearTimeout(compositionSuppressTimer);
     clearTimeout(pasteSuppressTimer);
@@ -475,5 +533,7 @@ export function attachTextInput({
     }
   }
 
-  return Object.freeze({ element: textarea, focus, updateCaret, dispose });
+  if (screenReaderMode) setScreenReaderMode(true);
+
+  return Object.freeze({ element: textarea, focus, updateCaret, setScreenReaderMode, setScreenReaderContent, onScreenReaderModeChange, screenReaderMode: () => readerMode, dispose });
 }
