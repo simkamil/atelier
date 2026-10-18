@@ -755,3 +755,124 @@ fn line_and_page_breaks_and_symbols_in_the_flat_text() {
         }
     }
 }
+
+fn real_docx(paragraphs: usize) -> Vec<u8> {
+    use atelier_fmt_ooxml::{Package, PartUri, TargetMode};
+    let mut rng = Rng(77);
+    let body: String = (0..paragraphs)
+        .map(|i| {
+            let words = 10 + rng.below(50);
+            let p = paragraph(&mut rng, words);
+            format!(
+                "<w:p><w:r><w:t>{} {}</w:t></w:r>{}</w:p>",
+                i,
+                p.text.replace('&', "and"),
+                if i % 7 == 3 {
+                    "<w:r><w:br/><w:t>after a break</w:t></w:r>"
+                } else {
+                    ""
+                }
+            )
+        })
+        .collect();
+    let xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>"#
+    );
+    let mut package = Package::new();
+    package
+        .insert_part(
+            PartUri::parse("word/document.xml").unwrap(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+            xml.into_bytes(),
+        )
+        .unwrap();
+    package
+        .add_relationship(
+            None,
+            "rId1",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
+            "word/document.xml",
+            TargetMode::Internal,
+        )
+        .unwrap();
+    package.write().unwrap()
+}
+
+/// End to end on the real model: import a DOCX, build the cache on the
+/// `RichDocument`, edit it through `FlatEdit` (typing, a split, a merging
+/// deletion, undo and redo) and compare each state with a full layout.
+#[test]
+fn the_real_model_drives_the_cache_through_flat_edits() {
+    use atelier_core_wasm::rich_preview::import_preview_docx;
+    use atelier_text_model::rich::flat::FlatEdit;
+    let mut imported = import_preview_docx(&real_docx(60)).expect("import");
+    let mut rng = Rng(3);
+    let mut cache = PageCache::new(&imported.document, false).expect("cache");
+    settle_with(&mut cache, &imported.document, &mut rng);
+    assert!(cache.page_count() >= 3, "{} pages", cache.page_count());
+    let check = |cache: &mut PageCache, doc: &RichDocument, rng: &mut Rng| {
+        let mut fresh = PageCache::new(doc, false).expect("fresh");
+        settle_with(&mut fresh, doc, &mut Rng(9));
+        assert_eq!(cache.pagination(), fresh.pagination());
+        assert_eq!(cache.page_count(), fresh.page_count());
+        for page in [0, fresh.page_count() / 2, fresh.page_count() - 1] {
+            assert_eq!(
+                cache.page_display(doc, page).unwrap(),
+                fresh.page_display(doc, page).unwrap()
+            );
+        }
+        let at = rng.below(doc.len().max(1));
+        if let Ok(snapped) = doc.snap_back(at) {
+            assert_eq!(cache.caret(snapped, false), fresh.caret(snapped, false));
+        }
+    };
+    check(&mut cache, &imported.document, &mut rng);
+    let middle = imported.document.len() / 2;
+    let middle = imported.document.snap_back(middle).unwrap();
+    let mut edits: Vec<EditOutcome> = Vec::new();
+    for (start, end, text) in [
+        (middle, middle, "typed words "),
+        (
+            middle + 3,
+            middle + 3,
+            "
+",
+        ),
+        (middle / 2, middle / 2 + 300, ""),
+        (
+            0,
+            0,
+            "A new first paragraph
+",
+        ),
+    ] {
+        let doc = &mut imported.document;
+        let start = doc.snap_back(start.min(doc.len())).unwrap();
+        let end = doc.snap_back(end.min(doc.len())).unwrap().max(start);
+        edits.push(doc.replace_range(start, end, text).expect("edit"));
+        let outcome = edits.last().unwrap().clone();
+        let delta = cache.apply_edit(&imported.document, &outcome);
+        assert!(delta.page_count > 0);
+        settle_with(&mut cache, &imported.document, &mut rng);
+        check(&mut cache, &imported.document, &mut rng);
+    }
+    for _ in 0..edits.len() {
+        let outcome = imported.document.undo().expect("undo");
+        cache.apply_edit(&imported.document, &outcome);
+        settle_with(&mut cache, &imported.document, &mut rng);
+        check(&mut cache, &imported.document, &mut rng);
+    }
+    let outcome = imported.document.redo().expect("redo");
+    cache.apply_edit(&imported.document, &outcome);
+    settle_with(&mut cache, &imported.document, &mut rng);
+    check(&mut cache, &imported.document, &mut rng);
+}
+
+fn settle_with(cache: &mut PageCache, doc: &dyn LayoutContext, rng: &mut Rng) {
+    let mut guard = 0;
+    while !cache.layout_complete() {
+        cache.step(doc, 1 + rng.below(40) as u32);
+        guard += 1;
+        assert!(guard < 10_000);
+    }
+}

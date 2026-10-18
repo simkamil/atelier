@@ -135,9 +135,6 @@ pub struct RenderJob {
     character_defaults: Vec<CharAttrs>,
     layouts: Vec<ParagraphLayout>,
     rules: Vec<ParagraphRules>,
-    /// Page and column breaks of the importer's side table, as laid-out offsets
-    /// just after the break (its text still holds a newline).
-    side_page_breaks: std::collections::BTreeMap<NodeId, Vec<usize>>,
     total_glyphs: usize,
     remaining_work: usize,
     remaining_weight: usize,
@@ -201,15 +198,6 @@ impl RenderJob {
             character_defaults: Vec::with_capacity(ids.len()),
             layouts: Vec::with_capacity(ids.len()),
             rules: Vec::with_capacity(ids.len()),
-            side_page_breaks: {
-                let mut map: std::collections::BTreeMap<NodeId, Vec<usize>> = Default::default();
-                for b in &imported.breaks {
-                    if matches!(b.break_type.as_deref(), Some("page" | "column")) {
-                        map.entry(b.paragraph).or_default().push(b.offset + 1);
-                    }
-                }
-                map
-            },
             ids,
             paragraph_bytes,
             text: String::new(),
@@ -333,14 +321,6 @@ impl RenderJob {
             if self.total_glyphs > MAX_GLYPHS {
                 return Err(PreviewError::Limit("glyphs"));
             }
-            let mut breaks_after = prepared.page_breaks.clone();
-            breaks_after.extend(
-                self.side_page_breaks
-                    .get(&id)
-                    .into_iter()
-                    .flatten()
-                    .copied(),
-            );
             self.rules.push(ParagraphRules {
                 style_id: paragraph
                     .props
@@ -350,7 +330,7 @@ impl RenderJob {
                     .unwrap_or(0),
                 space_before: twips(i64::from(paragraph.props.space_before.unwrap_or(0)))?,
                 space_after: twips(i64::from(paragraph.props.space_after.unwrap_or(0)))?,
-                line_breaks_before: page_break_lines(&layout, &breaks_after),
+                line_breaks_before: page_break_lines(&layout, &prepared.page_breaks),
                 ..ParagraphRules::default()
             });
             self.paragraphs.push(prepared.paragraph);

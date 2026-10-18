@@ -282,6 +282,32 @@ fn line_and_page_breaks_break_the_line_and_start_a_new_page() {
     );
 }
 
+#[test]
+fn a_symbol_is_drawn() {
+    let wrap = |body: &str| {
+        format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r>{body}</w:r></w:p></w:body></w:document>"#
+        )
+    };
+    let fills = |body: &str| {
+        let preview = preview_docx(&minimal_docx(&wrap(body))).unwrap();
+        DisplayList::decode(&preview.pages[0])
+            .unwrap()
+            .commands
+            .iter()
+            .filter(|c| matches!(c, Command::FillPath { .. }))
+            .count()
+    };
+    let plain = fills("<w:t>a</w:t>");
+    let bullet = fills(r#"<w:t>a</w:t><w:sym w:font="Symbol" w:char="F0B7"/>"#);
+    let wingdings = fills(r#"<w:t>a</w:t><w:sym w:font="Wingdings" w:char="F0FC"/>"#);
+    assert!(
+        bullet > plain,
+        "the Symbol bullet is drawn: {bullet} > {plain}"
+    );
+    assert!(wingdings > plain, "the Wingdings symbol is drawn");
+}
+
 fn minimal_docx(xml: &str) -> Vec<u8> {
     let mut package = Package::new();
     package

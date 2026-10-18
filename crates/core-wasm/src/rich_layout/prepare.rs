@@ -79,7 +79,7 @@ pub(crate) fn prepare(source: &Paragraph, fonts: &FontManager<'_>, with_runs: bo
     );
     items.extend(source.breaks.iter().map(|x| {
         let kind = match x.kind {
-            BreakKind::Line => Kind::Line,
+            BreakKind::Line | BreakKind::Wrapping { .. } => Kind::Line,
             BreakKind::Page | BreakKind::Column => Kind::Page,
         };
         (x.offset, x.id, kind)
