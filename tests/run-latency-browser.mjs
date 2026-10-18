@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Lanceur du banc de latence de frappe (tests/latency-browser.mjs) dans Edge/Chromium headless.
-// Usage : node tests/run-latency-browser.mjs [--engine v1|v2] [--shape lines|dense] [--pages N] [--keys N]
+// Usage : node tests/run-latency-browser.mjs [--shape lines|dense] [--pages N] [--keys N]
 // v2 (R7c) : l'éditeur riche, par `createRichEditor` (document de 300 pages sans limite de 128 Kio). Lancer le banc SEUL, sans autre test ni
 // processus lourd : définir ATELIER_BENCH_ALONE=1 pour l'inscrire dans le JSON (`machine.ranAlone`).
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const options = { shape: "lines", pages: "300", keys: "300", pairs: "40" };
-const usage = "node tests/run-latency-browser.mjs [--engine v1|v2] [--shape lines|dense] [--pages N] [--keys N] [--pairs N]";
+const usage = "node tests/run-latency-browser.mjs [--shape lines|dense] [--pages N] [--keys N] [--pairs N]";
 function parseOptions(rest) {
   const parsed = { ...options };
   for (let i = 0; i < rest.length; i += 2) {

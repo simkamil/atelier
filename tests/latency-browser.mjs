@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Banc de latence de bout en bout (US-219) : événement clavier -> fin du dessin Canvas, pour la frappe, Entrée et Retour arrière
-// au milieu d'un document déterministe, avec l'éditeur v1 (`createEditor`) ou v2 (`createRichEditor`, R7c).
+// au milieu d'un document déterministe, avec l'éditeur riche (`createRichEditor`, R7c ; la variante v1 a été retirée en R8).
 // Instrumentation de test seulement : aucun code produit n'est modifié.
 //   v1 : le dessin du Canvas est synchrone dans `publish()` de `web/editor.mjs` (setPages -> render, puis updateViewport) ;
 //        le rappel `onState` s'exécute juste après, donc son horodatage marque la fin du dessin.
@@ -9,7 +9,6 @@
 //        fenêtre visible ne manque encore (la `State` porte les pages touchées, sinon une requête `Pages` suit) ; le banc
 //        enveloppe `EditorPageCache.apply` (pour lire le cache) et `CanvasRenderer.setPages` (pour l'horodatage).
 // `untilNextFrameMs` ajoute l'attente de l'image d'animation suivante (présentation).
-import { createEditor } from "../web/editor.mjs";
 import { createRichEditor } from "../web/rich-editor.mjs";
 import { EditorPageCache } from "../web/editor-page-cache.mjs";
 import { CanvasRenderer } from "../web/canvas-renderer.mjs";
@@ -21,8 +20,8 @@ const TARGET_PAGES = Number(params.get("pages") ?? 300);
 const KEYS = Number(params.get("keys") ?? 300);
 const PAIRS = Number(params.get("pairs") ?? 40); // paires Entrée / Retour arrière mesurées
 // lines : TARGET_PAGES pages de lignes courtes ; dense : texte plein au plafond de l'éditeur v1.
-const ENGINE = params.get("engine") === "v2" ? "v2" : "v1";
-const V2 = ENGINE === "v2";
+const ENGINE = "v2"; // R8 : l'éditeur v1 a été retiré, le banc ne mesure plus que l'éditeur riche
+const V2 = true;
 const SHAPE = params.get("shape") ?? "lines";
 const MAX_TEXT = 128 * 1024; // plafond de l'éditeur v1 (MAX_TEXT dans crates/core-wasm/src/editor.rs)
 const MARKER = "MILIEU";
@@ -91,8 +90,6 @@ try {
     const catalog = new Map([...parseCatalog(await (await fetch("/i18n/fr-FR.txt")).text()).entries].map(([k, entry]) => [k, entry.value]));
     const i18n = createI18n({ locale: "fr-FR", catalog });
     editor = createRichEditor({ ...common, confirmDiscard: "confirm", t: (key, values) => i18n.t(key, values) });
-  } else {
-    editor = createEditor({ ...common, onState: () => { if (resolveState) { const done = resolveState; resolveState = null; done(performance.now()); } } });
   }
   await editor.initialize();
 

@@ -71,11 +71,6 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/properties-dialog.css"),
     },
     Resource {
-        path: "/properties-protocol.mjs",
-        mime: "text/javascript; charset=utf-8",
-        bytes: include_bytes!("../../../web/properties-protocol.mjs"),
-    },
-    Resource {
         path: "/about-licenses.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/about-licenses.mjs"),
@@ -236,11 +231,6 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/editor-protocol.mjs"),
     },
     Resource {
-        path: "/editor.mjs",
-        mime: "text/javascript; charset=utf-8",
-        bytes: include_bytes!("../../../web/editor.mjs"),
-    },
-    Resource {
         path: "/native-host.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/native-host.mjs"),
@@ -284,11 +274,6 @@ pub static RESOURCES: &[Resource] = &[
         path: "/french-spacing.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/french-spacing.mjs"),
-    },
-    Resource {
-        path: "/engine-choice.mjs",
-        mime: "text/javascript; charset=utf-8",
-        bytes: include_bytes!("../../../web/engine-choice.mjs"),
     },
     Resource {
         path: "/rich-editor.mjs",

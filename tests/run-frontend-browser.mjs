@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { engineNote, selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { engine, rest: suiteArgs } = selectEngine("run-frontend-browser", "node tests/run-frontend-browser.mjs [all|canvas|input] [--engine v1|v2]",
+const { engine, rest: suiteArgs } = selectEngine("run-frontend-browser", "node tests/run-frontend-browser.mjs [all|canvas|input]",
   rest => rest.length <= 1 && ["all", "canvas", "input"].includes(rest[0] ?? "all"));
 const suite = suiteArgs[0] ?? "all";
 const candidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
@@ -75,7 +75,7 @@ try {
     suite === "all" ? ["canvas", "input", "composition-integration"] : [suite]);
   assert(report.suites.every(suite => suite.checks.length > 0));
   assert.match(report.userAgent, /(?:Chrome|Edg)\//);
-  console.log(JSON.stringify({ ...report, engine, note: engineNote("run-frontend-browser", engine), executable,
+  console.log(JSON.stringify({ ...report, engine, note: engineNote("run-frontend-browser"), executable,
     environment: "headless software Canvas; synthetic input events are not native keyboard/IME evidence" }));
 } finally {
   clearTimeout(timer);

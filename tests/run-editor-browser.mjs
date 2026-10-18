@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { engine } = selectEngine("run-editor-browser", "node tests/run-editor-browser.mjs [--engine v1|v2]");
+const { engine } = selectEngine("run-editor-browser", "node tests/run-editor-browser.mjs");
 const browserCandidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
@@ -21,10 +21,9 @@ for (const candidate of browserCandidates) {
 }
 assert(executable, "An installed Edge/Chromium browser is required for this check.");
 const files = new Map([
-  ...["symbol-dialog", "symbol-catalogue", "editor-context-menu", "about-dialog", "about-licenses", "build-info", "properties-dialog", "properties-protocol"].flatMap(name =>
+  ...["symbol-dialog", "symbol-catalogue", "editor-context-menu", "about-dialog", "about-licenses", "build-info", "properties-dialog"].flatMap(name =>
     [`/${name}.mjs`, `/web/${name}.mjs`].map(url => [url, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]])),
   ...["symbol-dialog", "about-dialog", "properties-dialog", "document-mirror"].map(name => [`/${name}.css`, [`web/${name}.css`, "text/css; charset=utf-8"]]),
-  ["/tests/properties-integration-browser.mjs", ["tests/properties-integration-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-utilities-integration-browser.mjs", ["tests/editor-utilities-integration-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/page-navigation.mjs", ["web/page-navigation.mjs", "text/javascript; charset=utf-8"]],
   ["/replace-controls.mjs", ["web/replace-controls.mjs", "text/javascript; charset=utf-8"]],
@@ -37,13 +36,11 @@ const files = new Map([
   ["/tests/replacement-browser.mjs", ["tests/replacement-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/document-status-integration-browser.mjs", ["tests/document-status-integration-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser.html", ["tests/editor-browser.html", "text/html; charset=utf-8"]],
-  ["/tests/editor-browser.mjs", ["tests/editor-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser-entry.mjs", ["tests/editor-browser-entry.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser-v2.mjs", ["tests/editor-browser-v2.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-find-browser.mjs", ["tests/editor-find-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-test-adapter.mjs", ["tests/editor-test-adapter.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/zoom-browser.mjs", ["tests/zoom-browser.mjs", "text/javascript; charset=utf-8"]],
-  ["/tests/navigation-browser.mjs", ["tests/navigation-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser-watchdog.mjs", ["tests/editor-browser-watchdog.mjs", "text/javascript; charset=utf-8"]],
   ["/web/app.css", ["web/app.css", "text/css; charset=utf-8"]],
   ["/index.html", ["web/index.html", "text/html; charset=utf-8"]],
@@ -59,9 +56,9 @@ const files = new Map([
   ["/i18n/fr-FR.txt", ["web/i18n/fr-FR.txt", "text/plain; charset=utf-8"]],
   ["/atelier_core_wasm.wasm", ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
   ["/tests/docx-reference/basic.docx", ["tests/docx-reference/basic.docx", "application/octet-stream"]],
-  ...["i18n", "navigation-tools", "search-pane", "statistics-controls", "zoom", "zoom-controls", "editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "image-insert", "native-host", "rich-preview", "editor-shell", "ui-components", "ribbon", "theme", "engine-choice", "rich-editor", "rich-editor-client", "rich-image-cache", "rich-editor-protocol", "editor-page-cache", "document-mirror"].map(name =>
+  ...["i18n", "navigation-tools", "search-pane", "statistics-controls", "zoom", "zoom-controls", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "image-insert", "native-host", "rich-preview", "editor-shell", "ui-components", "ribbon", "theme", "rich-editor", "rich-editor-client", "rich-image-cache", "rich-editor-protocol", "editor-page-cache", "document-mirror"].map(name =>
     [`/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),
-  ...["i18n", "navigation-tools", "search-pane", "statistics-controls", "zoom", "zoom-controls", "editor", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "image-insert", "engine-choice", "rich-editor", "rich-editor-client", "rich-image-cache", "rich-editor-protocol", "editor-page-cache", "document-mirror"].map(name =>
+  ...["i18n", "navigation-tools", "search-pane", "statistics-controls", "zoom", "zoom-controls", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "image-insert", "rich-editor", "rich-editor-client", "rich-image-cache", "rich-editor-protocol", "editor-page-cache", "document-mirror"].map(name =>
     [`/web/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),
   ["/target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
 ]);
@@ -105,7 +102,7 @@ const timer = setTimeout(() => rejectReport(new Error(`Editor browser check time
 try {
   const report = await reportPromise;
   assert.equal(report.status, "passed", JSON.stringify(report));
-  assert(report.checks.length >= (engine === "v2" ? 60 : 18), "Editor integration must complete all required scenarios.");
+  assert(report.checks.length >= 60, "Editor integration must complete all required scenarios.");
   assert.match(report.userAgent, /(?:Chrome|Edg)\//);
   console.log(JSON.stringify({ ...report, executable }));
 } finally {

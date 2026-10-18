@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { engine } = selectEngine("run-image-insert-browser", "node tests/run-image-insert-browser.mjs [--engine v1|v2]");
+const { engine } = selectEngine("run-image-insert-browser", "node tests/run-image-insert-browser.mjs");
 const candidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
