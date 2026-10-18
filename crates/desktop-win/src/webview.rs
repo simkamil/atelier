@@ -1142,8 +1142,9 @@ pub(crate) fn timeout_ms() -> u32 {
 }
 
 pub(crate) fn diagnostic() -> String {
-    format!(
-        "Le runtime Microsoft Edge WebView2 est introuvable ou ne peut pas démarrer.\n\nInstallez le runtime Evergreen depuis :\n{WEBVIEW_RUNTIME_URL}\n\nAppuyez sur Ctrl+C pour copier ce message et cette adresse."
+    crate::i18n::t(
+        "native.webview.runtime_missing",
+        &[("url", WEBVIEW_RUNTIME_URL)],
     )
 }
 

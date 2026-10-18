@@ -148,9 +148,12 @@ fn launch_paths(
         .take(instance::MAX_PATHS)
     {
         paths.push(instance::normalize(argument, &cwd).map_err(|error| {
-            format!(
-                "argument invalide « {} » : {error:?}",
-                argument.to_string_lossy()
+            atelier_desktop_win::i18n::t(
+                "native.startup.invalid_argument",
+                &[
+                    ("argument", &argument.to_string_lossy()),
+                    ("error", &format!("{error:?}")),
+                ],
             )
         })?);
     }
@@ -181,9 +184,10 @@ fn open_main_window(
             launch,
         ),
         Acquire::Forwarded => Ok(()),
-        Acquire::Unreachable => Err(std::io::Error::other(
-            "Atelier est déjà ouvert mais ne répond pas. Fermez la fenêtre existante ou terminez le processus, puis relancez.",
-        )),
+        Acquire::Unreachable => Err(std::io::Error::other(atelier_desktop_win::i18n::t(
+            "native.startup.already_running",
+            &[],
+        ))),
     }
 }
 
@@ -196,7 +200,10 @@ fn finish_startup(
     use atelier_desktop_win::data;
     match outcome {
         data::StartupOutcome::Ready(paths) => {
-            let title = format!("Atelier — {}", paths.mode_label());
+            let title = atelier_desktop_win::i18n::t(
+                "native.window.title",
+                &[("mode", &paths.mode_label())],
+            );
             open_window(&paths.window_state_file(), &title, &paths.webview_dir())?;
         }
         data::StartupOutcome::MoveRequired => show_move(),

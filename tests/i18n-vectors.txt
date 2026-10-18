@@ -1,0 +1,21 @@
+# Vecteurs communs du format de message (web/i18n.mjs et crates/desktop-win/src/i18n.rs).
+# message<TAB>nom=valeur;nom=valeur<TAB>attendu   (attendu : \n = saut de ligne, \\ = barre oblique inverse)
+# !<TAB>message   : le message est invalide
+Texte simple		Texte simple
+Bonjour {nom} !	nom=Léa	Bonjour Léa !
+{a}{b}	a=1;b=2	12
+{ nom }	nom=x	x
+Ligne\nDeux		Ligne\nDeux
+\{x\} \# \\		{x} # \\
+{nom}	nom={y}\n#	{y}\\n#
+{nom}		{nom}
+50 % # fini		50 % # fini
+a=b		a=b
+!	Un } seul
+!	C:\temp
+!	{
+!	{1a}
+!	{nom
+!	fin\
+!	{n, select, a {x} other {y}}
+!	{n,

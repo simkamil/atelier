@@ -8,6 +8,7 @@ use crate::bridge_ops::{self, BridgeState, JobResult, Outcome, StaHost, Step};
 use crate::file_bridge::{self, Request};
 use crate::file_dialog::{DialogOwner, FileFilter, StaFileDialogs};
 use crate::files::{FileBroker, FileError};
+use crate::i18n::t;
 use crate::instance_win32;
 use crate::webview::{self, WebView};
 use std::ffi::c_void;
@@ -323,6 +324,11 @@ impl FileRuntime {
     }
 }
 
+/// Erreur de démarrage montrée à l'utilisateur : le texte du catalogue, jamais la clé brute.
+fn startup_file_error(error: &FileError) -> io::Error {
+    io::Error::other(t(error.message_key, &[]))
+}
+
 fn file_reply(id: &str, result: Result<Option<Vec<u8>>, &'static str>) -> String {
     match result {
         Ok(Some(bytes)) => format!(
@@ -377,17 +383,32 @@ fn with_file_dialog_options(
     show: impl FnOnce(&str, &[FileFilter], usize, Option<&str>) -> Result<Option<PathBuf>, FileError>,
 ) -> Result<Option<PathBuf>, FileError> {
     let (title, label, extensions, suggested_name) = match kind {
-        FileDialogKind::Open => ("Ouvrir un fichier texte", "Fichier texte", ["txt"], None),
-        FileDialogKind::OpenDocx => ("Ouvrir un document Word", "Document Word", ["docx"], None),
-        FileDialogKind::Save => (
-            "Enregistrer le fichier texte",
-            "Fichier texte",
+        FileDialogKind::Open => (
+            t("native.dialog.open_text.title", &[]),
+            t("native.dialog.filter.text", &[]),
             ["txt"],
-            Some("Sans titre.txt"),
+            None,
+        ),
+        FileDialogKind::OpenDocx => (
+            t("native.dialog.open_docx.title", &[]),
+            t("native.dialog.filter.docx", &[]),
+            ["docx"],
+            None,
+        ),
+        FileDialogKind::Save => (
+            t("native.dialog.save_text.title", &[]),
+            t("native.dialog.filter.text", &[]),
+            ["txt"],
+            Some(t("native.dialog.save_text.suggested_name", &[])),
         ),
     };
-    let filter = FileFilter::new(label, extensions)?;
-    show(title, std::slice::from_ref(&filter), 0, suggested_name)
+    let filter = FileFilter::new(&label, extensions)?;
+    show(
+        &title,
+        std::slice::from_ref(&filter),
+        0,
+        suggested_name.as_deref(),
+    )
 }
 
 /// US-115 : démarre la lecture du prochain fichier d'ouverture sur un thread de travail (un chemin UNC
@@ -1230,10 +1251,14 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             return 0;
                         }
                         CloseGate::AskTimeout => {
-                            let prompt: Vec<u16> = "Un enregistrement ou une lecture est toujours en cours. Quitter quand même ? Une écriture interrompue peut être perdue."
-                                .encode_utf16().chain(Some(0)).collect();
-                            let caption: Vec<u16> =
-                                "Atelier".encode_utf16().chain(Some(0)).collect();
+                            let prompt: Vec<u16> = t("native.close.pending_io", &[])
+                                .encode_utf16()
+                                .chain(Some(0))
+                                .collect();
+                            let caption: Vec<u16> = t("native.app.name", &[])
+                                .encode_utf16()
+                                .chain(Some(0))
+                                .collect();
                             // SAFETY: hwnd est la fenêtre propriétaire vivante, chaînes terminées par NUL pour cet appel synchrone.
                             let answer = MessageBoxW(
                                 hwnd,
@@ -1271,9 +1296,14 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             .is_some_and(|runtime| runtime.dirty)
                     });
                     if dirty {
-                        let prompt: Vec<u16> = "Des modifications ne sont pas enregistrées. Quitter sans enregistrer ?"
-                            .encode_utf16().chain(Some(0)).collect();
-                        let caption: Vec<u16> = "Atelier".encode_utf16().chain(Some(0)).collect();
+                        let prompt: Vec<u16> = t("native.close.unsaved", &[])
+                            .encode_utf16()
+                            .chain(Some(0))
+                            .collect();
+                        let caption: Vec<u16> = t("native.app.name", &[])
+                            .encode_utf16()
+                            .chain(Some(0))
+                            .collect();
                         // SAFETY: hwnd is the live owner window and both strings are NUL-terminated for this synchronous call.
                         let answer = MessageBoxW(
                             hwnd,
@@ -1607,7 +1637,7 @@ pub fn run_with_launch(
     let _apartment = webview::ComApartment::initialize_sta()?;
     let saved = load_state(state_file)?;
     let mut context = create_context(state_file, title, saved)?;
-    let mut runtime = FileRuntime::new().map_err(|error| io::Error::other(error.message_key))?;
+    let mut runtime = FileRuntime::new().map_err(|error| startup_file_error(&error))?;
     runtime
         .launch
         .extend(launch.into_iter().take(crate::instance::MAX_PATHS));
@@ -2565,7 +2595,10 @@ fn strip_verbatim_prefix(path: &Path) -> PathBuf {
 
 pub fn show_error(message: &str) {
     let body: Vec<u16> = message.encode_utf16().chain(Some(0)).collect();
-    let caption: Vec<u16> = "Atelier".encode_utf16().chain(Some(0)).collect();
+    let caption: Vec<u16> = t("native.app.name", &[])
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
     // SAFETY: both strings are NUL-terminated and remain alive for the synchronous MessageBoxW call.
     unsafe {
         MessageBoxW(null_mut(), body.as_ptr(), caption.as_ptr(), 0x10);
@@ -2574,6 +2607,16 @@ pub fn show_error(message: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn startup_file_errors_show_the_catalogue_text_not_the_key() {
+        let error = FileFilter::new("", ["txt"]).unwrap_err();
+        assert!(error.message_key.starts_with("files.error."));
+        let shown = super::startup_file_error(&error).to_string();
+        assert!(!shown.contains("files.error."), "{shown}");
+        assert!(!shown.contains('⟦'), "{shown}");
+        assert_eq!(shown, super::t(error.message_key, &[]));
+    }
+
     use super::{
         CLOSE_WAIT_LIMIT, CloseGate, FileDialogKind, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED,
         WPF_RESTORETOMAXIMIZED, atomic_write_to_temp, close_gate, placement_is_maximized,
