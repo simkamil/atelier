@@ -94,6 +94,17 @@ Index construit en 5,0 ms (une fois). Avec 3 000 pages (120 001 paragraphes, 9,9
 
 ## Limites connues
 
-- Les consommateurs qui lisent `Paragraph::text` seul ne voient pas les sauts et symboles : la recherche (`ParagraphSource`) et les statistiques comptent « a⏎b » comme un seul mot ; `rich_to_text` les rend (saut = fin de ligne, symbole = son caractère). L'aperçu DOCX et `RichSession` de `core-wasm` lisaient le saut comme `\n` dans le texte ; la mise en page d'US-216 doit lire les éléments.
+- Les consommateurs de `Paragraph::text` seul ne voient pas les sauts et symboles : voir « Effets visibles à la fusion ».
 - Les champs, liens et signets ne sont pas produits par l'import ; pour un paragraphe qui en porte, l'écrivain reconstruit depuis le modèle comme avant.
 - Une opération hors édition plate (`RichDocument::apply`, styles, tableaux) vide l'historique plat : annuler ces opérations avec les éditions plates relève de la couche qui les empile (US-217).
+
+## Effets visibles à la fusion
+
+Ce que voient les autres modules depuis que les sauts, symboles et styles de run sont des champs du modèle :
+
+- **Texte.** `Paragraph::text` d'un document importé ne contient plus ni `\n` pour un saut ni le caractère d'un symbole. Tout lecteur de `text` seul perd ces éléments : l'aperçu DOCX (corrigé par R2, propriétaire de `rich_preview.rs`), la recherche et les statistiques (non branchées sur le modèle riche aujourd'hui : « a⏎b » y compte pour un seul mot et ne se trouve pas par « a b »). `rich_to_text` rend les sauts et les symboles.
+- **`RichSession` (`core-wasm`)** n'est branchée à aucun opcode et sera remplacée par R3a. Elle ne peut plus viser un saut ou un symbole : elle les cherchait dans le texte (`\n`, caractère du symbole) et remappe les tables annexes `ImportedDocx::breaks`, `symbols` et `run_styles`, que l'import continue de remplir en vue dérivée (décalages du texte du modèle) sans qu'elles décrivent plus rien d'autre.
+- **Ordre des éléments.** À un même décalage, objets, sauts et symboles sont dans l'ordre des identifiants. Une suppression qui amène deux éléments au même décalage les remet donc dans l'ordre des identifiants, qui peut différer de l'ordre d'origine ; l'annulation rend l'état exact.
+- **Sauts de ligne.** `BreakKind::Wrapping { explicit_type, clear }` garde `w:type="textWrapping"` et `w:clear` ; `w:br` et `w:cr` nus restent `Line`. Une expression qui fait une correspondance exhaustive sur `BreakKind` doit gérer la nouvelle variante.
+- **Révision.** `EditOutcome.revision` ne repart plus de zéro dans un clone ni après un échec de transaction : le compteur est repris par le clone et conservé au rollback.
+- **Styles de run.** Les runs portent `char_style` : deux runs de styles différents ne fusionnent plus, `ImportedDocx::resolved_paragraph` ne rend plus ce champ (il résout par le style).
