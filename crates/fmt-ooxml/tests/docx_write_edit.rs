@@ -628,3 +628,111 @@ fn seeded_edit_campaign_writes_files_that_read_back_equal() {
         &problems[..problems.len().min(25)]
     );
 }
+
+const CT_WML: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml";
+
+fn regenerate_all() -> DocxWriteOptions {
+    DocxWriteOptions {
+        regenerate_all: true,
+        ..DocxWriteOptions::default()
+    }
+}
+
+#[test]
+fn a_list_reference_without_definition_in_the_copied_numbering_is_reported() {
+    use atelier_text_model::rich::ListRef;
+    let numbering = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><w:numbering xmlns:w="{W}"><w:abstractNum w:abstractNumId="0"/><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>"#
+    );
+    let mut d = doc(body(
+        "<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p>",
+    ));
+    d.extra.push((
+        "word/numbering.xml",
+        Box::leak(format!("{CT_WML}.numbering+xml").into_boxed_str()),
+        numbering.into_bytes(),
+        "numbering",
+    ));
+    let mut imp = d.import();
+    let ids = imp.document.paragraph_ids();
+    let list = |list_id| ParaProps {
+        list: Some(ListRef { list_id, level: 0 }),
+        ..ParaProps::default()
+    };
+    edit(
+        &mut imp,
+        vec![
+            RichOp::SetParaProps {
+                para: ids[0],
+                set: list(0),
+                clear: ParaProps::default(),
+            },
+            RichOp::SetParaProps {
+                para: ids[1],
+                set: list(7),
+                clear: ParaProps::default(),
+            },
+        ],
+    );
+    let w = write_docx(&imp, &regenerate_all()).unwrap();
+    let missing: Vec<_> = w
+        .notices
+        .iter()
+        .filter_map(|n| match n {
+            WriteNotice::ListDefinitionMissing { list_id } => Some(*list_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(missing, [7], "{:?}", w.notices);
+}
+
+#[test]
+fn notes_and_comments_copied_keep_unreferenced_entries_after_a_deletion() {
+    let notes = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><w:footnotes xmlns:w="{W}"><w:footnote w:id="2"><w:p><w:r><w:t>note</w:t></w:r></w:p></w:footnote></w:footnotes>"#
+    );
+    let comments = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><w:comments xmlns:w="{W}"><w:comment w:id="5" w:author="a"><w:p><w:r><w:t>remark</w:t></w:r></w:p></w:comment></w:comments>"#
+    );
+    let mut d = doc(body(
+        r#"<w:p><w:r><w:t>one</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r><w:commentRangeStart w:id="5"/><w:r><w:t>x</w:t></w:r><w:commentRangeEnd w:id="5"/><w:r><w:commentReference w:id="5"/></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p>"#,
+    ));
+    d.extra.push((
+        "word/footnotes.xml",
+        Box::leak(format!("{CT_WML}.footnotes+xml").into_boxed_str()),
+        notes.into_bytes(),
+        "footnotes",
+    ));
+    d.extra.push((
+        "word/comments.xml",
+        Box::leak(format!("{CT_WML}.comments+xml").into_boxed_str()),
+        comments.into_bytes(),
+        "comments",
+    ));
+    let mut imp = d.import();
+    let section = imp.document.section_ids()[0];
+    edit(
+        &mut imp,
+        vec![RichOp::RemoveBlock {
+            parent: Some(section),
+            position: 0,
+        }],
+    );
+    let w = write_docx(&imp, &regenerate_all()).unwrap();
+    let out = Package::read(&w.bytes).expect("the package reads back (XML parts validated)");
+    let text = |name: &str| {
+        let part = out
+            .parts()
+            .values()
+            .find(|p| p.uri.as_str() == name)
+            .unwrap();
+        String::from_utf8(part.bytes.clone()).unwrap()
+    };
+    let document = text("word/document.xml");
+    assert!(!document.contains("footnoteReference") && !document.contains("commentReference"));
+    // Documented limit: the copied parts keep their entries, now unreferenced.
+    assert!(text("word/footnotes.xml").contains(r#"w:id="2""#));
+    assert!(text("word/comments.xml").contains("remark"));
+    assert!(w.opaque_parts.iter().any(|p| p == "word/footnotes.xml"));
+    assert!(import_docx(&w.bytes).is_ok());
+}

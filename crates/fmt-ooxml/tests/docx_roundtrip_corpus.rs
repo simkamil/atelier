@@ -258,11 +258,13 @@ fn reverse_relationships(xml: &[u8]) -> Vec<u8> {
 /// raw bytes; fixed point after a save/open cycle; nothing copied from the source.
 fn determinism_problems(bytes: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
-    let Ok(imp) = import_docx(bytes) else {
-        return out;
+    let imp = match import_docx(bytes) {
+        Ok(i) => i,
+        Err(e) => return vec![format!("[determinism] import failed: {e:?}")],
     };
-    let Ok(first) = write_docx(&imp, &regenerate_all()) else {
-        return out;
+    let first = match write_docx(&imp, &regenerate_all()) {
+        Ok(w) => w,
+        Err(e) => return vec![format!("[determinism] write failed: {e:?}")],
     };
     if !first.reused_parts.is_empty() {
         out.push(format!(
