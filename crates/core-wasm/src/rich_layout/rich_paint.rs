@@ -528,7 +528,7 @@ struct GlyphProto {
 /// Glyph outlines converted once, keyed by face, glyph and size.
 #[derive(Default)]
 pub(crate) struct GlyphCache {
-    index: std::collections::HashMap<(u64, u16, i64), Option<usize>>,
+    index: std::collections::BTreeMap<(u64, u16, i64), Option<usize>>,
     protos: Vec<GlyphProto>,
 }
 

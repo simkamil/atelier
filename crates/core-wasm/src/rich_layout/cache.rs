@@ -17,7 +17,7 @@
 //!
 //! [`step`]: RichPageCache::step
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use atelier_font::manager::{FontManager, FontRequest, FontStyle};
 use atelier_text_layout::caret::{
@@ -33,6 +33,7 @@ use atelier_text_model::rich::flat::{
 };
 use atelier_text_model::rich::{CharAttrs, CharRun, Paragraph, ResolvedProperties};
 
+use super::prepare::{Mark, Prepared, page_break_lines, prepare};
 use super::rich_paint::{FastLine, GlyphCache, PageWriter, StyleTable, paint_line_fast};
 use super::{CaretGeometry, LayoutError, PageDelta, RichPageCache};
 use crate::rich_preview::build_fonts;
@@ -84,8 +85,10 @@ struct Geometry {
 struct ParaInfo {
     /// Bytes of the paragraph in the flat text.
     flat_len: usize,
-    /// Text offsets of the inline items, sorted.
-    items: Vec<usize>,
+    /// Inline items: place in the flat text and in the laid-out text.
+    marks: Vec<Mark>,
+    /// The paragraph could not be laid out and stands for an empty line.
+    degraded: bool,
     /// The text and runs that were laid out, for painting and caret queries.
     painted: Paragraph,
     /// Colours and underlines of its runs, resolved once.
@@ -97,40 +100,46 @@ impl ParaInfo {
         self.painted.text.len()
     }
 
-    /// Offset in the laid-out text for an offset in the paragraph's flat text.
+    /// Offset in the laid-out text for an offset in the paragraph's flat text;
+    /// `None` inside an item. Before and after an item are different offsets
+    /// when the item has text (a break, a symbol).
     fn flat_to_text(&self, flat: usize) -> Option<usize> {
-        let mut shift = 0;
-        for offset in &self.items {
-            let start = offset + shift;
-            if flat < start {
-                break;
-            }
-            if flat < start + OBJECT_LEN {
-                return (flat == start).then_some((*offset).min(self.text_len()));
-            }
-            if flat == start + OBJECT_LEN {
-                return Some((*offset).min(self.text_len()));
-            }
-            shift += OBJECT_LEN;
-        }
-        if self.text_len() == 0 && self.items.is_empty() && self.flat_len > 0 {
-            // A paragraph that could not be laid out stands for an empty line.
+        if self.degraded {
             return Some(0);
         }
-        flat.checked_sub(shift)
-            .filter(|t| *t <= self.text_len() && self.painted.text.is_char_boundary(*t))
+        let (mut flat_end, mut layout_end) = (0usize, 0usize);
+        for mark in &self.marks {
+            if flat < mark.flat {
+                break;
+            }
+            if flat < mark.flat + OBJECT_LEN {
+                return (flat == mark.flat).then_some(mark.layout);
+            }
+            flat_end = mark.flat + OBJECT_LEN;
+            layout_end = mark.layout + mark.len;
+        }
+        let t = layout_end + (flat - flat_end);
+        (t <= self.text_len() && self.painted.text.is_char_boundary(t)).then_some(t)
     }
 
-    /// Offset in the flat text for a laid-out text offset; the caret stands
-    /// after the items anchored at the paragraph end.
+    /// Offset in the flat text for a laid-out text offset: before the items
+    /// that start there, except at the paragraph end where the caret stands
+    /// after them.
     fn text_to_flat(&self, offset: usize) -> usize {
-        let after_items = offset >= self.text_len();
-        let before = self
-            .items
-            .iter()
-            .filter(|o| **o < offset || (after_items && **o == offset))
-            .count();
-        offset + OBJECT_LEN * before
+        if self.degraded {
+            return 0;
+        }
+        let after_all = offset >= self.text_len();
+        let (mut flat_end, mut layout_end) = (0usize, 0usize);
+        for mark in &self.marks {
+            if mark.layout < offset || after_all {
+                flat_end = mark.flat + OBJECT_LEN;
+                layout_end = mark.layout + mark.len;
+            } else {
+                break;
+            }
+        }
+        flat_end + offset.saturating_sub(layout_end)
     }
 }
 
@@ -186,18 +195,6 @@ fn txt_defaults() -> ResolvedProperties {
     }
 }
 
-fn item_offsets(paragraph: &Paragraph) -> Vec<usize> {
-    let mut items: Vec<usize> = paragraph
-        .anchored
-        .iter()
-        .map(|x| x.offset)
-        .chain(paragraph.breaks.iter().map(|x| x.offset))
-        .chain(paragraph.symbols.iter().map(|x| x.offset))
-        .collect();
-    items.sort_unstable();
-    items
-}
-
 /// Replaces each character no registered font covers by as many `?` as it has
 /// bytes, so that every byte offset keeps its meaning.
 fn sanitize(text: &str, fonts: &FontManager<'_>) -> String {
@@ -249,7 +246,7 @@ pub struct PageCache {
     pages_hint: u32,
     failed: bool,
     glyphs: GlyphCache,
-    memo: HashMap<u32, (u64, Vec<u8>)>,
+    memo: BTreeMap<u32, (u64, Vec<u8>)>,
     memo_order: Vec<u32>,
     last_step_work: usize,
     last_stats: StreamStats,
@@ -273,39 +270,51 @@ impl PageCache {
         index: usize,
     ) -> Result<(StreamParagraph, ParaInfo), ShapeError> {
         let source = document.paragraph(index);
-        let items = source.map(item_offsets).unwrap_or_else(|| vec![0]);
-        let flat_len = source.map_or(OBJECT_LEN, |p| p.text.len() + OBJECT_LEN * items.len());
-        let (mut paragraph, defaults) = match (self.txt, source) {
-            (true, source) => (
-                Paragraph {
-                    text: source.map(|p| p.text.clone()).unwrap_or_default(),
-                    ..Paragraph::default()
-                },
-                txt_defaults(),
-            ),
-            (false, source) => {
-                let defaults = document.resolved(index).unwrap_or_default();
-                let mut paragraph = source
-                    .map(|p| Paragraph {
-                        text: p.text.clone(),
-                        runs: p.runs.clone(),
-                        props: p.props.clone(),
-                        ..Paragraph::default()
-                    })
-                    .unwrap_or_default();
-                if paragraph.runs.iter().any(|r| r.attrs.char_style.is_some()) {
-                    for run in &mut paragraph.runs {
+        let (resolved_source, defaults) = if self.txt {
+            (source.cloned(), txt_defaults())
+        } else {
+            let defaults = document.resolved(index).unwrap_or_default();
+            let mut owned = source.cloned();
+            if let Some(p) = owned.as_mut() {
+                if p.runs.iter().any(|r| r.attrs.char_style.is_some()) {
+                    for run in &mut p.runs {
                         if run.attrs.char_style.is_some() {
                             if let Ok(resolved) = document.resolved_run(index, &run.attrs) {
                                 run.attrs = resolved;
                             }
                         }
                     }
-                    merge_equal_runs(&mut paragraph.runs);
+                    merge_equal_runs(&mut p.runs);
                 }
-                (paragraph, defaults)
             }
+            (owned, defaults)
         };
+        let (mut prepared, flat_len) = match &resolved_source {
+            Some(p) => {
+                let items = p.anchored.len() + p.breaks.len() + p.symbols.len();
+                (
+                    prepare(p, &self.fonts, !self.txt),
+                    p.text.len() + OBJECT_LEN * items,
+                )
+            }
+            None => (
+                Prepared {
+                    paragraph: Paragraph::default(),
+                    marks: vec![Mark {
+                        flat: 0,
+                        layout: 0,
+                        len: 0,
+                    }],
+                    page_breaks: Vec::new(),
+                },
+                OBJECT_LEN,
+            ),
+        };
+        if self.txt {
+            prepared.paragraph.props = Default::default();
+        }
+        let mut paragraph = std::mem::take(&mut prepared.paragraph);
+        let had_text = !paragraph.text.is_empty();
         let options = LayoutOptions::new(self.geometry.content_width);
         let layout = match layout_paragraph(&paragraph, &defaults, &self.fonts, options) {
             Ok(layout) => layout,
@@ -321,17 +330,17 @@ impl PageCache {
                 }
             }
         };
-        let rules = rules_of(&defaults, &paragraph);
+        let degraded = had_text && paragraph.text.is_empty();
+        let mut rules = rules_of(&defaults, &paragraph);
+        if !degraded {
+            rules.line_breaks_before = page_break_lines(&layout, &prepared.page_breaks);
+        }
         let styles = StyleTable::build(&defaults.character, &paragraph)
             .map_err(|_| ShapeError::InvalidParagraph("character attributes"))?;
         let info = ParaInfo {
             flat_len,
-            items: if paragraph.text.is_empty() && source.is_some_and(|p| !p.text.is_empty()) {
-                // Unlayable paragraph: the items no longer have a place in the text.
-                Vec::new()
-            } else {
-                items
-            },
+            marks: if degraded { Vec::new() } else { prepared.marks },
+            degraded,
             painted: Paragraph {
                 text: paragraph.text,
                 runs: paragraph.runs,
@@ -360,13 +369,16 @@ impl PageCache {
 
     fn reindex_starts(&mut self, from: usize) {
         self.starts.truncate(from);
-        let mut next = match from {
-            0 => 0,
-            _ => self.starts[from - 1] + self.infos[from - 1].flat_len + 1,
+        let mut next = match from.checked_sub(1) {
+            None => 0,
+            Some(previous) => match (self.starts.get(previous), self.infos.get(previous)) {
+                (Some(start), Some(info)) => start.saturating_add(info.flat_len).saturating_add(1),
+                _ => 0,
+            },
         };
-        for info in &self.infos[from..] {
+        for info in self.infos.get(from..).unwrap_or(&[]) {
             self.starts.push(next);
-            next += info.flat_len + 1;
+            next = next.saturating_add(info.flat_len).saturating_add(1);
         }
     }
 
@@ -504,11 +516,15 @@ impl PageCache {
         if self.infos.is_empty() {
             return Err(LayoutError::NotReady);
         }
-        let paragraph = self.starts.partition_point(|s| *s <= position) - 1;
-        let offset = position - self.starts[paragraph];
-        if offset > self.infos[paragraph].flat_len
-            || paragraph >= self.stream.paginated_paragraphs()
-        {
+        let paragraph = self
+            .starts
+            .partition_point(|s| *s <= position)
+            .checked_sub(1)
+            .ok_or(LayoutError::NotReady)?;
+        let start = *self.starts.get(paragraph).ok_or(LayoutError::NotReady)?;
+        let offset = position.checked_sub(start).ok_or(LayoutError::NotReady)?;
+        let info = self.infos.get(paragraph).ok_or(LayoutError::NotReady)?;
+        if offset > info.flat_len || paragraph >= self.stream.paginated_paragraphs() {
             return Err(LayoutError::NotReady);
         }
         Ok((paragraph, offset))
@@ -516,8 +532,10 @@ impl PageCache {
 
     fn text_position(&self, position: usize) -> Result<TextPosition, LayoutError> {
         let (paragraph, offset) = self.locate(position)?;
-        let byte_offset = self.infos[paragraph]
-            .flat_to_text(offset)
+        let byte_offset = self
+            .infos
+            .get(paragraph)
+            .and_then(|info| info.flat_to_text(offset))
             .ok_or(LayoutError::PositionOutOfRange)?;
         Ok(TextPosition {
             paragraph_index: paragraph,
@@ -526,8 +544,12 @@ impl PageCache {
     }
 
     fn flat_position(&self, position: TextPosition) -> usize {
-        self.starts[position.paragraph_index]
-            + self.infos[position.paragraph_index].text_to_flat(position.byte_offset)
+        let at = position.paragraph_index;
+        self.starts.get(at).copied().unwrap_or(0).saturating_add(
+            self.infos
+                .get(at)
+                .map_or(0, |i| i.text_to_flat(position.byte_offset)),
+        )
     }
 
     /// Caret geometry over whole paragraphs `first..=last`.
@@ -586,7 +608,7 @@ impl PageCache {
         };
         let window_end = TextPosition {
             paragraph_index: w1,
-            byte_offset: self.infos[w1].text_len(),
+            byte_offset: self.infos.get(w1).ok_or(LayoutError::NotReady)?.text_len(),
         };
         let (a, b) = (a.max(window_start), b.min(window_end));
         if a >= b {
@@ -643,7 +665,9 @@ impl PageCache {
         let mut writer = PageWriter::new(geometry.page_width, geometry.page_height)
             .map_err(|_| LayoutError::NotReady)?;
         for placed in stream.page_placements(index) {
-            let info = &infos[placed.paragraph_index];
+            let info = infos
+                .get(placed.paragraph_index)
+                .ok_or(LayoutError::NotReady)?;
             let layout = stream
                 .layout(placed.paragraph_index)
                 .ok_or(LayoutError::NotReady)?;
@@ -688,7 +712,7 @@ impl RichPageCache for PageCache {
             pages_hint: 0,
             failed: false,
             glyphs: GlyphCache::default(),
-            memo: HashMap::new(),
+            memo: BTreeMap::new(),
             memo_order: Vec::new(),
             last_step_work: 0,
             last_stats: StreamStats::default(),
@@ -881,7 +905,12 @@ impl RichPageCache for PageCache {
         };
         let end = TextPosition {
             paragraph_index: at.paragraph_index,
-            byte_offset: line.source.end,
+            // A line that ends with a forced break ends before the break.
+            byte_offset: if line.mandatory_break {
+                line.source.end.saturating_sub(1)
+            } else {
+                line.source.end
+            },
         };
         Ok((self.flat_position(start), self.flat_position(end)))
     }
@@ -945,7 +974,10 @@ impl RichPageCache for PageCache {
                 .stream
                 .layout(placed.paragraph_index)
                 .ok_or(LayoutError::NotReady)?;
-            let line = &layout.lines[placed.line_index];
+            let line = layout
+                .lines
+                .get(placed.line_index)
+                .ok_or(LayoutError::NotReady)?;
             let top = placed.top + self.geometry.top;
             let bottom = top + line.height;
             let distance = if yu < top {
@@ -1127,6 +1159,48 @@ mod tests {
                 &[(4, 30, bold.clone()), (60, 200, underlined.clone())],
             ));
         }
+        // Every underline style, an explicit "no underline", a family no font
+        // has (fallback face), a symbol and forced breaks.
+        let mut owner = atelier_text_model::rich::RichDocument::new();
+        for (i, style) in [
+            Underline::None,
+            Underline::Single,
+            Underline::Double,
+            Underline::Thick,
+            Underline::Dotted,
+            Underline::Dashed,
+            Underline::Wave,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let attrs = CharAttrs {
+                underline: Some(style),
+                font: (i % 2 == 0).then(|| "No Such Family".to_owned()),
+                color: (i % 3 == 0).then_some(Color {
+                    r: 9,
+                    g: 99,
+                    b: 199,
+                }),
+                ..CharAttrs::default()
+            };
+            let mut p = styled(
+                "underline styles and a missing family \u{e9}\u{2014}",
+                &[(0, 9, attrs), (10, 16, bold.clone())],
+            );
+            p.symbols.push(atelier_text_model::rich::InlineSymbol {
+                id: owner.alloc_id().unwrap(),
+                offset: 9,
+                font: "Symbol".into(),
+                code: 0xf0b7,
+            });
+            p.breaks.push(atelier_text_model::rich::InlineBreak {
+                id: owner.alloc_id().unwrap(),
+                offset: 20,
+                kind: atelier_text_model::rich::BreakKind::Line,
+            });
+            paragraphs.push(p);
+        }
         let mut document = VecParagraphs::new(paragraphs);
         document.section = example_section();
         let mut cache = PageCache::new(&document, false).unwrap();
@@ -1159,9 +1233,11 @@ mod tests {
                 data: Vec::new(),
             });
         }
+        let prepared = prepare(&paragraph, &FontManager::new(), true);
         let info = ParaInfo {
             flat_len: paragraph.text.len() + OBJECT_LEN * 4,
-            items: item_offsets(&paragraph),
+            marks: prepared.marks,
+            degraded: false,
             painted: Paragraph::with_text(&paragraph.text),
             styles: StyleTable::build(&CharAttrs::default(), &Paragraph::default()).unwrap(),
         };

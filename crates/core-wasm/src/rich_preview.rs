@@ -11,6 +11,7 @@ use atelier_text_layout::{
 use atelier_text_model::rich::{CharAttrs, NodeId, Paragraph};
 use core::fmt;
 
+use crate::rich_layout::prepare::{page_break_lines, prepare};
 use crate::rich_layout::rich_paint::{
     MAX_ATDL_BYTES, MAX_GLYPHS, PaintSink, PlacedLineToPaint, encode_page, paint_line,
 };
@@ -134,6 +135,9 @@ pub struct RenderJob {
     character_defaults: Vec<CharAttrs>,
     layouts: Vec<ParagraphLayout>,
     rules: Vec<ParagraphRules>,
+    /// Page and column breaks of the importer's side table, as laid-out offsets
+    /// just after the break (its text still holds a newline).
+    side_page_breaks: std::collections::BTreeMap<NodeId, Vec<usize>>,
     total_glyphs: usize,
     remaining_work: usize,
     remaining_weight: usize,
@@ -197,6 +201,15 @@ impl RenderJob {
             character_defaults: Vec::with_capacity(ids.len()),
             layouts: Vec::with_capacity(ids.len()),
             rules: Vec::with_capacity(ids.len()),
+            side_page_breaks: {
+                let mut map: std::collections::BTreeMap<NodeId, Vec<usize>> = Default::default();
+                for b in &imported.breaks {
+                    if matches!(b.break_type.as_deref(), Some("page" | "column")) {
+                        map.entry(b.paragraph).or_default().push(b.offset + 1);
+                    }
+                }
+                map
+            },
             ids,
             paragraph_bytes,
             text: String::new(),
@@ -293,8 +306,9 @@ impl RenderJob {
             self.remaining_work -= extra_work;
             self.remaining_weight -= weight;
             let glyph_budget = MAX_GLYPHS.saturating_sub(self.total_glyphs).max(1);
+            let prepared = prepare(&paragraph, &fonts, true);
             let layout = layout_paragraph(
-                &paragraph,
+                &prepared.paragraph,
                 &defaults,
                 &fonts,
                 LayoutOptions {
@@ -319,6 +333,14 @@ impl RenderJob {
             if self.total_glyphs > MAX_GLYPHS {
                 return Err(PreviewError::Limit("glyphs"));
             }
+            let mut breaks_after = prepared.page_breaks.clone();
+            breaks_after.extend(
+                self.side_page_breaks
+                    .get(&id)
+                    .into_iter()
+                    .flatten()
+                    .copied(),
+            );
             self.rules.push(ParagraphRules {
                 style_id: paragraph
                     .props
@@ -328,9 +350,10 @@ impl RenderJob {
                     .unwrap_or(0),
                 space_before: twips(i64::from(paragraph.props.space_before.unwrap_or(0)))?,
                 space_after: twips(i64::from(paragraph.props.space_after.unwrap_or(0)))?,
+                line_breaks_before: page_break_lines(&layout, &breaks_after),
                 ..ParagraphRules::default()
             });
-            self.paragraphs.push(paragraph);
+            self.paragraphs.push(prepared.paragraph);
             self.layouts.push(layout);
             self.next_paragraph += 1;
         }

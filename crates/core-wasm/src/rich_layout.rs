@@ -21,6 +21,7 @@ use atelier_text_model::rich::flat::{EditOutcome, LayoutContext};
 pub mod rich_paint;
 
 mod cache;
+pub(crate) mod prepare;
 pub use cache::{PageCache, SelectionRect};
 
 /// Caret geometry in page coordinates (points, as in the display list).
