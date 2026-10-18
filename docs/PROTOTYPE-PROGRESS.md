@@ -28,7 +28,7 @@ Le WASM a été reconstruit après la fusion : **3 977 489 octets**, SHA-256 `9d
 
 Après le premier push, le contrôle des empreintes a relevé des fins de ligne locales CRLF dans 17 manifestes Cargo/JSON alors que Git conserve LF. Le checkout a été aligné sur les octets Git et les **19 contrôles / 987 tests ont été entièrement relancés** sur ces 1 071 entrées canoniques. Le package WASM reconstruit est identique octet pour octet. Le reçu remplace les empreintes locales par celles des fichiers effectivement publiés.
 
-La [CI distante du commit d’intégration](https://github.com/simkamil/mon-bureau/actions/runs/38356618514) est bloquée avant le démarrage des trois jobs par la facturation/plafond GitHub Actions : [annotations](../_bmad-output/implementation-artifacts/merged-branches-ci.json). Les essais locaux n’établissent pas un passage Linux distant ni les essais physiques clavier/lecteurs d’écran.
+La [CI distante du commit d’intégration](https://github.com/simkamil/atelier/actions/runs/38356618514) est bloquée avant le démarrage des trois jobs par la facturation/plafond GitHub Actions : [annotations](../_bmad-output/implementation-artifacts/merged-branches-ci.json). Les essais locaux n’établissent pas un passage Linux distant ni les essais physiques clavier/lecteurs d’écran.
 
 ## Lot formats et outils — 2026-10-13
 
@@ -98,7 +98,7 @@ La sonde réelle WebView2 sert les **28 ressources**, exerce Worker/WASM et sais
 Les vues claire/sombre/étroite et contraste élevé ont été inspectées. Les essais physiques AZERTY/IME, NVDA/Narrator et les mesures matérielles restent distincts de ces tests automatiques. Le lot est publié sur une branche isolée pour la fusion avec les travaux parallèles; les résultats locaux ne valent pas résultat de CI distante.
 
 
-CI distante du commit `3aeab6e` : les trois jobs [du run 38354586127](https://github.com/simkamil/mon-bureau/actions/runs/38354586127) n’ont pas démarré, bloqués par la facturation ou le plafond du compte GitHub. La [preuve des annotations](../_bmad-output/implementation-artifacts/ui-shell-ci.json) distingue ce blocage des 17 contrôles locaux réussis.
+CI distante du commit `3aeab6e` : les trois jobs [du run 38354586127](https://github.com/simkamil/atelier/actions/runs/38354586127) n’ont pas démarré, bloqués par la facturation ou le plafond du compte GitHub. La [preuve des annotations](../_bmad-output/implementation-artifacts/ui-shell-ci.json) distingue ce blocage des 17 contrôles locaux réussis.
 
 ## Aperçu DOCX intégré — 2026-10-12
 
@@ -145,7 +145,7 @@ les [mesures répétées](../_bmad-output/implementation-artifacts/editor-increm
 et le [reçu Graphify](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-graph.json)
 conservent les preuves et les limites.
 
-Le code est publié dans [2c1f16c](https://github.com/simkamil/mon-bureau/commit/2c1f16cb1d7be958cd79359bc043ccfe109bc11c). La [CI de ce commit](https://github.com/simkamil/mon-bureau/actions/runs/38306301922) refuse les trois jobs avant démarrage pour paiement/plafond Actions. Aucun test distant n'a été exécuté. Voir le [reçu CI](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-ci.json).
+Le code est publié dans [2c1f16c](https://github.com/simkamil/atelier/commit/2c1f16cb1d7be958cd79359bc043ccfe109bc11c). La [CI de ce commit](https://github.com/simkamil/atelier/actions/runs/38306301922) refuse les trois jobs avant démarrage pour paiement/plafond Actions. Aucun test distant n'a été exécuté. Voir le [reçu CI](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-ci.json).
 
 ## Document initial, pagination incrémentale et bordures — 2026-10-12
 
@@ -188,7 +188,7 @@ et la [machine](../_bmad-output/implementation-artifacts/rich-incremental-border
 sont enregistrées. L’interface testable reste TXT; aucune fidélité Word
 supplémentaire n’est établie.
 
-Le code est publié dans [51034b3](https://github.com/simkamil/mon-bureau/commit/51034b31d2871d5f3245c6ef6aaab620b685ec92). La [CI de ce commit](https://github.com/simkamil/mon-bureau/actions/runs/38296298769)
+Le code est publié dans [51034b3](https://github.com/simkamil/atelier/commit/51034b31d2871d5f3245c6ef6aaab620b685ec92). La [CI de ce commit](https://github.com/simkamil/atelier/actions/runs/38296298769)
 refuse les trois jobs avant leur démarrage pour paiement/plafond Actions;
 voir le [reçu CI](../_bmad-output/implementation-artifacts/rich-incremental-borders-ci.json).
 Aucun test distant n’a été exécuté.
@@ -226,7 +226,7 @@ conservent les preuves et limites.
 US-210/212 attendent la mesure de fidélité Word; US-211 le dépassement de marge
 observé dans Word. L'interface testable reste TXT; ces API ne raccordent pas
 encore DOCX ou le layout riche à l'éditeur. Les tests musl sont compilés ici,
-sans exécution Linux locale. La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38267149521)
+sans exécution Linux locale. La [CI du code publié](https://github.com/simkamil/atelier/actions/runs/38267149521)
 refuse les trois jobs avant démarrage pour paiement/plafond Actions; voir le [reçu CI](../_bmad-output/implementation-artifacts/rich-page-geometry-ci.json).
 
 ## CFF, CFB, backend raster et fuzz — 2026-10-12
@@ -271,7 +271,7 @@ contrôle les dépendances et les 158 statuts.
 US-210 attend toujours la comparaison Word. Le parcours utilisateur actuel
 reste l'éditeur TXT ; ces API ne raccordent pas encore les documents riches
 à l'interface. Les tests musl sont compilés ici, sans exécution Linux locale.
-La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38238015736)
+La [CI du code publié](https://github.com/simkamil/atelier/actions/runs/38238015736)
 a refusé les trois jobs avant démarrage pour paiement/plafond Actions. Aucun
 build ni test distant exécuté ; le [reçu CI](../_bmad-output/implementation-artifacts/foundation-integration-ci.json)
 conserve le diagnostic. Aucun réglage de facturation modifié.
@@ -297,7 +297,7 @@ réussit **15 contrôles et 540 tests workspace** : builds Windows/WASM/musl,
 Clippy hôte/WASM, format, licences, garde, métadonnées et reproduction de fixture.
 Sources et lock sont inchangés pendant les contrôles; les 32 paquets et toutes
 leurs dépendances restent locaux. Les tests musl sont compilés localement.
-La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38227439851)
+La [CI du code publié](https://github.com/simkamil/atelier/actions/runs/38227439851)
 n’a lancé aucun job : GitHub signale un échec de paiement ou un plafond de dépenses
 Actions à relever. Aucun build ni test distant n’a été exécuté; voir le [reçu CI](../_bmad-output/implementation-artifacts/docx-rich-layout-ci.json).
 Le moteur embarqué reste à 1 179 080 octets, avec le même plafond; sa provenance

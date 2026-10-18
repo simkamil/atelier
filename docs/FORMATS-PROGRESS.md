@@ -7,7 +7,7 @@
 
 ## Preuves
 
-140 tests du workspace passent; les 21 tests ZIP et 28 tests XML passent aussi en release. Les [treize contrôles globaux](../_bmad-output/implementation-artifacts/formats-validation.json) réussissent : Windows/WASM/musl, tests natifs, Clippy, rustfmt, SPDX, garde et métadonnées Cargo. Les tests Linux sont compilés sur Windows; le [workflow distant](https://github.com/simkamil/mon-bureau/actions/workflows/ci.yml) les exécute sur Linux musl.
+140 tests du workspace passent; les 21 tests ZIP et 28 tests XML passent aussi en release. Les [treize contrôles globaux](../_bmad-output/implementation-artifacts/formats-validation.json) réussissent : Windows/WASM/musl, tests natifs, Clippy, rustfmt, SPDX, garde et métadonnées Cargo. Les tests Linux sont compilés sur Windows; le [workflow distant](https://github.com/simkamil/atelier/actions/workflows/ci.yml) les exécute sur Linux musl.
 
 L'[oracle indépendant](../_bmad-output/implementation-artifacts/format-oracle.json) valide 105 lectures et 105 réécritures XML, 20 rejets, 52 lectures ZIP et 48 écritures ZIP. Le [gestionnaire ZIP Windows](../_bmad-output/implementation-artifacts/explorer-zip.json) extrait correctement les variantes classique et Zip64. Les empreintes identifient les sources exactes testées.
 

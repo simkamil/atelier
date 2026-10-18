@@ -35,7 +35,7 @@ Preuves du lot : [validation globale](../_bmad-output/implementation-artifacts/i
 [revue](../_bmad-output/implementation-artifacts/images-fonts-review.md).
 
 Le lot précédent, commit `6e09261054a7cbb91bc63d270762ae15fea1131b`, a réussi
-les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38072851039).
+les trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38072851039).
 Le [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-model-font.json)
 identifie ce commit. Le dernier [relevé de CI](../_bmad-output/implementation-artifacts/github-ci.json)
 identifie séparément le commit publié et ses jobs. Le job Linux y exécute

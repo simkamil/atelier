@@ -28,5 +28,5 @@ assert(!used.has(0x2011), "the cmap catalogue must not pretend Carlito covers U+
 const version = (await source("Cargo.toml")).match(/\[workspace\.package\][\s\S]*?version\s*=\s*"([^"]+)"/)[1];
 assert.equal(BUILD_INFO.version, version);
 assert.equal(BUILD_INFO.buildDate, null, "development fallback must not invent a compilation date");
-assert.equal(BUILD_INFO.sourceUrl, "https://github.com/simkamil/mon-bureau");
+assert.equal(BUILD_INFO.sourceUrl, "https://github.com/simkamil/atelier");
 console.log(JSON.stringify({ status: "passed", symbols: used.size, unicodeNamesMatched: used.size, completeLicenses: 5, version }));

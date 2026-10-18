@@ -50,4 +50,4 @@ Preuves : [spécification et triage](../_bmad-output/implementation-artifacts/sp
 
 Validation locale du 13 octobre 2026 : 17 contrôles réussis, 930 tests Rust (2 optionnels ignorés), 112/114 assertions UI normal/contraste élevé, 118 éditeur et 36 Canvas/saisie. La sonde native réelle vérifie 28 ressources et les refus CSP; le journal borné rapporte sa rotation sans perdre les sondes requises.
 
-CI distante du commit `3aeab6e` : les trois jobs [du run 38354586127](https://github.com/simkamil/mon-bureau/actions/runs/38354586127) n’ont pas démarré, bloqués par la facturation ou le plafond du compte GitHub. La [preuve des annotations](../_bmad-output/implementation-artifacts/ui-shell-ci.json) distingue ce blocage des 17 contrôles locaux réussis.
+CI distante du commit `3aeab6e` : les trois jobs [du run 38354586127](https://github.com/simkamil/atelier/actions/runs/38354586127) n’ont pas démarré, bloqués par la facturation ou le plafond du compte GitHub. La [preuve des annotations](../_bmad-output/implementation-artifacts/ui-shell-ci.json) distingue ce blocage des 17 contrôles locaux réussis.

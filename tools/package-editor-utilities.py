@@ -70,6 +70,6 @@ write_asset('web/symbol-catalogue.mjs', header+'// i18n-ignore: canonical Unicod
 licenses={'agpl':(root/'LICENSE').read_text(encoding='utf-8'),'fonts':[{'name':name,'text':(root/f'data/fonts/licenses/{name}-OFL.txt').read_text(encoding='utf-8')} for name in ('Carlito','Caladea','Liberation')],'unicode':(ucd/'LICENSE.txt').read_text(encoding='utf-8')}
 write_asset('web/about-licenses.mjs', header+'// i18n-ignore: complete original legal notices must remain verbatim; surrounding interface labels are localized\nexport const ABOUT_LICENSES = '+json.dumps(licenses,ensure_ascii=True,separators=(',',':'))+';\n')
 version=tomllib.loads((root/'Cargo.toml').read_text(encoding='utf-8'))['workspace']['package']['version']
-fallback={'version':version,'buildDate':None,'sourceUrl':'https://github.com/simkamil/mon-bureau'}
+fallback={'version':version,'buildDate':None,'sourceUrl':'https://github.com/simkamil/atelier'}
 write_asset('web/build-info.mjs', header+'// Development server fallback; the executable serves its compile-time metadata here.\nexport const BUILD_INFO = '+json.dumps(fallback,separators=(',',':'))+';\n')
 print(json.dumps({'symbols':len(symbols),'blocks':len(catalogue['blocks']),'fonts':len(licenses['fonts']),'version':version}))

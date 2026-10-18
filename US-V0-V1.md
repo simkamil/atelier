@@ -72,7 +72,7 @@ Réf : §8 · Taille : S · Dépend de : US-001
 
 Validation locale US-002 (2026-10-10) : [preuves et limites](docs/DEVELOPMENT.md#preuve-us-002--2026-10-10). Workflow fourni et commandes vérifiées ; exécution GitHub et tests sous Linux à confirmer sur ces hôtes.
 
-Bloquée depuis le 2026-10-13 : les jobs GitHub ne démarrent plus (plafond de facturation Actions). À rétablir par l'une de ces voies : dépôt public (minutes gratuites, cohérent avec l'AGPL), relèvement du plafond, ou runner auto-hébergé Windows + WSL pour musl.
+Bloquée du 2026-10-13 au 2026-10-18 (plafond de facturation Actions). Le dépôt s'appelle désormais [simkamil/atelier](https://github.com/simkamil/atelier) et il est public depuis le 2026-10-18 ; les minutes des runners standard y sont gratuites.
 
 #### US-003 — Tests par images de référence
 *En tant que* développeur, *je veux* comparer des rendus à des images de référence *afin de* détecter toute régression visuelle.

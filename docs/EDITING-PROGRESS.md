@@ -10,7 +10,7 @@
 
 **160 tests du workspace et 76 tests release passent** : 24 dans atelier-model, 19 dans atelier-render et 33 dans atelier-xml. Les quatorze contrôles globaux réussissent.
 
-La [validation globale](../_bmad-output/implementation-artifacts/editing-validation.json) vérifie Windows, WASM, musl, tests natifs et release, Clippy, rustfmt, SPDX, garde du lock et métadonnées. Les tests musl sont compilés localement sur Windows ; leur exécution dépend du job Linux du [workflow GitHub](https://github.com/simkamil/mon-bureau/actions/workflows/ci.yml).
+La [validation globale](../_bmad-output/implementation-artifacts/editing-validation.json) vérifie Windows, WASM, musl, tests natifs et release, Clippy, rustfmt, SPDX, garde du lock et métadonnées. Les tests musl sont compilés localement sur Windows ; leur exécution dépend du job Linux du [workflow GitHub](https://github.com/simkamil/atelier/actions/workflows/ci.yml).
 
 L’[oracle indépendant](../_bmad-output/implementation-artifacts/editing-oracle.json) compare 24 captures XML UTF-8/UTF-16 à ElementTree, vérifie 258 contrôles de scopes et 10 000 étapes d’historique contre un modèle de référence. Il contrôle aussi la syntaxe XML du SVG, sa répétabilité, la déduplication des glyphes et les octets PNG incorporés.
 

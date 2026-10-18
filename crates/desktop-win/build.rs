@@ -25,7 +25,7 @@ fn main() {
     );
     let date = build_date(seconds);
     let metadata = format!(
-        "// SPDX-License-Identifier: AGPL-3.0-or-later\nexport const BUILD_INFO = {{version:\"{}\",buildDate:\"{}\",sourceUrl:\"https://github.com/simkamil/mon-bureau\"}};\n",
+        "// SPDX-License-Identifier: AGPL-3.0-or-later\nexport const BUILD_INFO = {{version:\"{}\",buildDate:\"{}\",sourceUrl:\"https://github.com/simkamil/atelier\"}};\n",
         std::env::var("CARGO_PKG_VERSION").expect("Cargo package version"),
         date,
     );

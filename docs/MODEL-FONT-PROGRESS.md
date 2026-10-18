@@ -27,7 +27,7 @@ Preuves du lot : [contrôles locaux](../_bmad-output/implementation-artifacts/mo
 [empreinte de revue](../_bmad-output/implementation-artifacts/model-font-review-snapshot.json).
 
 Le lot précédent, commit `77622b0c410ff9f5686325e81bca1e71cf383642`, a réussi les
-trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38068167771).
+trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38068167771).
 Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-editing.json)
 identifie ce commit ; les changements du présent lot nécessitent leur propre CI.
 

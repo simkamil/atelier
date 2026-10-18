@@ -47,7 +47,7 @@ les [mesures répétées](../_bmad-output/implementation-artifacts/editor-increm
 et le [reçu Graphify](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-graph.json)
 conservent les preuves et les limites.
 
-Le code est publié dans [2c1f16c](https://github.com/simkamil/mon-bureau/commit/2c1f16cb1d7be958cd79359bc043ccfe109bc11c). La [CI de ce commit](https://github.com/simkamil/mon-bureau/actions/runs/38306301922) refuse les trois jobs avant démarrage pour paiement/plafond Actions. Aucun test distant n'a été exécuté. Voir le [reçu CI](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-ci.json).
+Le code est publié dans [2c1f16c](https://github.com/simkamil/atelier/commit/2c1f16cb1d7be958cd79359bc043ccfe109bc11c). La [CI de ce commit](https://github.com/simkamil/atelier/actions/runs/38306301922) refuse les trois jobs avant démarrage pour paiement/plafond Actions. Aucun test distant n'a été exécuté. Voir le [reçu CI](../_bmad-output/implementation-artifacts/editor-drag-spacing-perf-ci.json).
 
 ## Document initial, pagination incrémentale et bordures — 2026-10-12
 
@@ -90,7 +90,7 @@ et la [machine](../_bmad-output/implementation-artifacts/rich-incremental-border
 sont enregistrées. L’interface testable reste TXT; aucune fidélité Word
 supplémentaire n’est établie.
 
-Le code est publié dans [51034b3](https://github.com/simkamil/mon-bureau/commit/51034b31d2871d5f3245c6ef6aaab620b685ec92). La [CI de ce commit](https://github.com/simkamil/mon-bureau/actions/runs/38296298769)
+Le code est publié dans [51034b3](https://github.com/simkamil/atelier/commit/51034b31d2871d5f3245c6ef6aaab620b685ec92). La [CI de ce commit](https://github.com/simkamil/atelier/actions/runs/38296298769)
 refuse les trois jobs avant leur démarrage pour paiement/plafond Actions;
 voir le [reçu CI](../_bmad-output/implementation-artifacts/rich-incremental-borders-ci.json).
 Aucun test distant n’a été exécuté.
@@ -128,7 +128,7 @@ conservent les preuves et limites.
 US-210/212 attendent la mesure de fidélité Word; US-211 le dépassement de marge
 observé dans Word. L'interface testable reste TXT; ces API ne raccordent pas
 encore DOCX ou le layout riche à l'éditeur. Les tests musl sont compilés ici,
-sans exécution Linux locale. La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38267149521)
+sans exécution Linux locale. La [CI du code publié](https://github.com/simkamil/atelier/actions/runs/38267149521)
 refuse les trois jobs avant démarrage pour paiement/plafond Actions; voir le [reçu CI](../_bmad-output/implementation-artifacts/rich-page-geometry-ci.json).
 
 ## CFF, CFB, backend raster et fuzz — 2026-10-12
@@ -173,7 +173,7 @@ contrôle les dépendances et les 158 statuts.
 US-210 attend toujours la comparaison Word. Le parcours utilisateur actuel
 reste l'éditeur TXT ; ces API ne raccordent pas encore les documents riches
 à l'interface. Les tests musl sont compilés ici, sans exécution Linux locale.
-La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38238015736)
+La [CI du code publié](https://github.com/simkamil/atelier/actions/runs/38238015736)
 a refusé les trois jobs avant démarrage pour paiement/plafond Actions. Aucun
 build ni test distant exécuté ; le [reçu CI](../_bmad-output/implementation-artifacts/foundation-integration-ci.json)
 conserve le diagnostic. Aucun réglage de facturation modifié.
@@ -199,7 +199,7 @@ réussit **15 contrôles et 540 tests workspace** : builds Windows/WASM/musl,
 Clippy hôte/WASM, format, licences, garde, métadonnées et reproduction de fixture.
 Sources et lock sont inchangés pendant les contrôles; les 32 paquets et toutes
 leurs dépendances restent locaux. Les tests musl sont compilés localement.
-La [CI du code publié](https://github.com/simkamil/mon-bureau/actions/runs/38227439851)
+La [CI du code publié](https://github.com/simkamil/atelier/actions/runs/38227439851)
 n’a lancé aucun job : GitHub signale un échec de paiement ou un plafond de dépenses
 Actions à relever. Aucun build ni test distant n’a été exécuté; voir le [reçu CI](../_bmad-output/implementation-artifacts/docx-rich-layout-ci.json).
 Le moteur embarqué reste à 1 179 080 octets, avec le même plafond; sa provenance
@@ -355,7 +355,7 @@ Les sources et le lock sont inchangés pendant les contrôles ; les 32 paquets r
 La [revue triée](../_bmad-output/implementation-artifacts/worker-shell-review.md)
 ne laisse aucun constat différé. Les limites de dispatch synchrone et de validation
 multi-écran sont décrites dans les contrats. Les tests musl s'exécutent en CI Linux.
-La [CI précédente](https://github.com/simkamil/mon-bureau/actions/runs/38120218029)
+La [CI précédente](https://github.com/simkamil/atelier/actions/runs/38120218029)
 sur c091f6a52aa58af94966592ff356750471200d44 est [archivée](../_bmad-output/implementation-artifacts/github-ci-text-layout.json).
 
 
@@ -367,7 +367,7 @@ Les [26 contrôles](../_bmad-output/implementation-artifacts/text-layout-validat
 
 Le [suivi du démonstrateur](PROTOTYPE-PROGRESS.md) précise les travaux restants : Worker, interface, Canvas et pont natif. L'API de provenance System n'implémente pas le pont US-113. Les tests musl sont compilés sur Windows ; la CI Linux les exécute.
 
-Le lot précédent (`6f4b0b34ab39d5a15a73d21f615d2cbf75c7edf6`) a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38093368641). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-text-bridge.json) conserve la preuve.
+Le lot précédent (`6f4b0b34ab39d5a15a73d21f615d2cbf75c7edf6`) a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38093368641). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-text-bridge.json) conserve la preuve.
 
 
 ### Preuve US-011, US-053 et US-091 — 2026-10-11
@@ -378,7 +378,7 @@ Les [25 contrôles](../_bmad-output/implementation-artifacts/text-bridge-validat
 
 Le [suivi du démonstrateur](PROTOTYPE-PROGRESS.md) précise les dépendances encore ouvertes. La CI Linux exécute les tests musl, compilés seulement sur l'hôte Windows local.
 
-Le lot précédent (`76efdfee2124112eef5ceee21d67422b062efa80`) a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38089712085), dont l'exécution musl. Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-prototype-foundations.json) en conserve la preuve.
+Le lot précédent (`76efdfee2124112eef5ceee21d67422b062efa80`) a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38089712085), dont l'exécution musl. Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-prototype-foundations.json) en conserve la preuve.
 
 
 ### Preuve US-010, US-051 et US-090 — 2026-10-10
@@ -391,7 +391,7 @@ L’[oracle Unicode indépendant](../_bmad-output/implementation-artifacts/proto
 
 ### Validation distante du lot images et polices — 2026-10-10
 
-Le commit `20a6a05bd69d22f4f004b7a907d2c9696b24c4ad` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38076202790). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-images-fonts.json) conserve la preuve du lot précédent.
+Le commit `20a6a05bd69d22f4f004b7a907d2c9696b24c4ad` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38076202790). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-images-fonts.json) conserve la preuve du lot précédent.
 
 
 ### Preuve US-040, US-043 et US-056 — 2026-10-10
@@ -412,7 +412,7 @@ Le [comparateur indépendant](../_bmad-output/implementation-artifacts/model-fon
 
 ### Validation distante du lot édition — 2026-10-10
 
-Le commit `77622b0c410ff9f5686325e81bca1e71cf383642` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38068167771). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-editing.json) conserve la preuve du lot précédent ; il ne couvre pas les modifications du présent lot.
+Le commit `77622b0c410ff9f5686325e81bca1e71cf383642` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38068167771). Son [relevé archivé](../_bmad-output/implementation-artifacts/github-ci-editing.json) conserve la preuve du lot précédent ; il ne couvre pas les modifications du présent lot.
 
 ### Preuve US-032, US-072 et US-081 — 2026-10-10
 
@@ -420,23 +420,23 @@ Trois US développées en parallèle avec GPT-6 Luna moyen, puis soumises à tro
 
 L’[oracle indépendant](../_bmad-output/implementation-artifacts/editing-oracle.json) valide 24 captures XML dans trois encodages, 258 contrôles de namespaces, 10 000 étapes d’historique et les données SVG incorporées. Le [rendu SVG](../_bmad-output/implementation-artifacts/editing-svg-visual.json) passe huit contrôles de pixels avec Sharp/libvips/librsvg et a été inspecté visuellement. La vérification navigateur reste indisponible, comme indiqué dans le suivi du lot.
 
-**160 tests du workspace et 76 tests release passent** (24 modèle, 19 rendu, 33 XML). Aucun constat de revue différé. La [validation globale](../_bmad-output/implementation-artifacts/editing-validation.json) couvre les quatorze contrôles locaux, dont les tests debug/release, Clippy hôte/WASM, formatage, licence, garde du lock, builds Windows/WASM/musl et compilation des tests musl. Les 31 paquets restent locaux, sans dépendance de production externe ; `atelier-render → atelier-xml` est ajouté uniquement pour les tests. Les tests musl sont compilés sur Windows ; le [workflow distant](https://github.com/simkamil/mon-bureau/actions/workflows/ci.yml) les exécute sur Linux.
+**160 tests du workspace et 76 tests release passent** (24 modèle, 19 rendu, 33 XML). Aucun constat de revue différé. La [validation globale](../_bmad-output/implementation-artifacts/editing-validation.json) couvre les quatorze contrôles locaux, dont les tests debug/release, Clippy hôte/WASM, formatage, licence, garde du lock, builds Windows/WASM/musl et compilation des tests musl. Les 31 paquets restent locaux, sans dépendance de production externe ; `atelier-render → atelier-xml` est ajouté uniquement pour les tests. Les tests musl sont compilés sur Windows ; le [workflow distant](https://github.com/simkamil/atelier/actions/workflows/ci.yml) les exécute sur Linux.
 
 ### Validation distante ZIP/XML — 2026-10-10
 
-Le commit `3aa4d19bef7e8e917b90136f80252bd988e1f7b0` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38050195393), dont l’exécution effective des tests Linux musl. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-formats.json) conserve cette preuve du lot précédent ; les modifications suivantes demandent leur propre validation distante.
+Le commit `3aa4d19bef7e8e917b90136f80252bd988e1f7b0` a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38050195393), dont l’exécution effective des tests Linux musl. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-formats.json) conserve cette preuve du lot précédent ; les modifications suivantes demandent leur propre validation distante.
 
 ### Preuve US-022/023 et US-030/031 — 2026-10-10
 
 Quatre US développées avec GPT-6 Luna moyen en parallèle, relues par trois agents indépendants puis validées et terminées dans le backlog : [ZIP](us-022-023-zip.md) et [XML en flux](us-030-031-xml.md). Le [suivi du lot](FORMATS-PROGRESS.md) détaille les garanties, la récupération bornée et les preuves.
 
-**140 tests du workspace passent**, dont 21 ZIP et 28 XML; ces 49 tests passent aussi en release. Les treize contrôles globaux réussissent : garde avant Cargo, builds Windows/WASM/musl, tests Windows et portables natifs, Clippy hôte/WASM, rustfmt, SPDX, métadonnées locales et compilation des tests musl. Les 31 paquets sont locaux, sans dépendance externe; les contrôles ne changent pas le lock. La CI couvre désormais ZIP et XML sur WASM et teste les deux sorties Writer connues conformes dans les tests Rust. Les tests musl sont compilés localement sur Windows; leur exécution Linux est assurée par le job distant du [workflow GitHub](https://github.com/simkamil/mon-bureau/actions/workflows/ci.yml).
+**140 tests du workspace passent**, dont 21 ZIP et 28 XML; ces 49 tests passent aussi en release. Les treize contrôles globaux réussissent : garde avant Cargo, builds Windows/WASM/musl, tests Windows et portables natifs, Clippy hôte/WASM, rustfmt, SPDX, métadonnées locales et compilation des tests musl. Les 31 paquets sont locaux, sans dépendance externe; les contrôles ne changent pas le lock. La CI couvre désormais ZIP et XML sur WASM et teste les deux sorties Writer connues conformes dans les tests Rust. Les tests musl sont compilés localement sur Windows; leur exécution Linux est assurée par le job distant du [workflow GitHub](https://github.com/simkamil/atelier/actions/workflows/ci.yml).
 
 L'oracle indépendant compare 105 lectures et 105 réécritures XML à ElementTree, vérifie 20 rejets stricts, lit 52 ZIP Python avec Rust et relit 48 ZIP Rust avec Python. Les quatre formes de descripteur 32/64 bits, avec/sans signature, passent. Le gestionnaire ZIP de l'Explorateur reconnaît et extrait les variantes classique/Zip64. Preuves : [validation](../_bmad-output/implementation-artifacts/formats-validation.json), [interopérabilité](../_bmad-output/implementation-artifacts/format-oracle.json), [Explorer](../_bmad-output/implementation-artifacts/explorer-zip.json) et [revue triée](../_bmad-output/implementation-artifacts/formats-review.md). Aucun constat différé.
 
 ### Validation distante du socle — 2026-10-10
 
-Le commit `b9297cd3a94293a913b2b79ba66c06e3acf4024c`, publié sur [simkamil/mon-bureau](https://github.com/simkamil/mon-bureau), a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/mon-bureau/actions/runs/38032559875) : Windows MSVC avec tests et qualité, compilation/lint WASM avec tests natifs, puis build et exécution des tests Linux musl. Cette exécution lève les réserves sur la CI distante et l'exécution Linux mentionnées dans les relevés locaux historiques ci-dessous. Elle couvre les six US du socle ; les modifications suivantes doivent obtenir leur propre validation. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-foundations.json) conserve le SHA, les jobs et leurs conclusions.
+Le commit `b9297cd3a94293a913b2b79ba66c06e3acf4024c`, publié sur [simkamil/atelier](https://github.com/simkamil/atelier), a réussi les trois jobs de la [CI GitHub](https://github.com/simkamil/atelier/actions/runs/38032559875) : Windows MSVC avec tests et qualité, compilation/lint WASM avec tests natifs, puis build et exécution des tests Linux musl. Cette exécution lève les réserves sur la CI distante et l'exécution Linux mentionnées dans les relevés locaux historiques ci-dessous. Elle couvre les six US du socle ; les modifications suivantes doivent obtenir leur propre validation. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-foundations.json) conserve le SHA, les jobs et leurs conclusions.
 
 ### Preuve US-020/021, US-071 et US-080 — 2026-10-10
 
@@ -446,7 +446,7 @@ Quatre US développées en parallèle avec GPT-6 Luna, raisonnement moyen, puis 
 - [US-071](us-071-transactions.md) : opérations génériques inversibles, transaction atomique par checkpoint, adaptateur réel de l'arbre et codec ATOP borné. Six tests nouveaux couvrent notamment erreur après mutation, rollback exact avec compteur, suppression à deux enfants et 200 transactions de plusieurs opérations comparées à un modèle Vec. Une annulation réussie conserve le compteur monotone des IDs publiés ; le checkpoint de l'adaptateur clone l'arène et les valeurs.
 - [US-080](us-080-display-list.md) : commandes indépendantes des backends et codec ATDL 1.0 ; treize tests couvrent toutes les commandes, les troncatures, les valeurs invalides et les budgets. Les compteurs forgés ne provoquent pas de réservation disproportionnée et la taille de sortie est vérifiée avant allocation. Clips rectangulaires en coordonnées de page, piles indépendantes de clips et transformations ; les backends restent à développer.
 
-**91 tests du workspace passent**. Les treize contrôles globaux réussissent : garde avant Cargo, builds MSVC/WASM/musl, tests natifs, Clippy hôte/WASM avec `-D warnings`, rustfmt, SPDX, métadonnées locales et compilation des tests musl. Les 31 paquets restent locaux, sans dépendance externe. La seule modification volontaire du lock ajoute `atelier-render → atelier-geom` ; les contrôles ne modifient ensuite aucun de ses octets. La CI WASM inclut désormais compression et rendu. La [CI du commit `ff7f3a3097ae23792afda188c3b5d0b739b76b5d`](https://github.com/simkamil/mon-bureau/actions/runs/38034970016) a ensuite réussi ses trois jobs Windows, WASM et Linux musl, avec exécution effective des tests Linux. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-codecs.json) conserve les conclusions de ce commit.
+**91 tests du workspace passent**. Les treize contrôles globaux réussissent : garde avant Cargo, builds MSVC/WASM/musl, tests natifs, Clippy hôte/WASM avec `-D warnings`, rustfmt, SPDX, métadonnées locales et compilation des tests musl. Les 31 paquets restent locaux, sans dépendance externe. La seule modification volontaire du lock ajoute `atelier-render → atelier-geom` ; les contrôles ne modifient ensuite aucun de ses octets. La CI WASM inclut désormais compression et rendu. La [CI du commit `ff7f3a3097ae23792afda188c3b5d0b739b76b5d`](https://github.com/simkamil/atelier/actions/runs/38034970016) a ensuite réussi ses trois jobs Windows, WASM et Linux musl, avec exécution effective des tests Linux. Le [relevé distant](../_bmad-output/implementation-artifacts/github-ci-codecs.json) conserve les conclusions de ce commit.
 
 Non-régression du banc AVL release : 100 000 blocs, 10 000 insertions, cinq échantillons après chauffe ; médiane **17,8943 ms**, sous le seuil de 50 ms, sur le même hôte i9-13900KF/64 Gio/Windows que le relevé du socle. Ce résultat reste propre à l'hôte et à sa charge.
 
