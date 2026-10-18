@@ -503,6 +503,19 @@ impl Session {
                 unit,
                 extend,
             } => self.select_unit(position, unit, extend),
+            Command::MoveText {
+                start,
+                end,
+                target,
+                copy,
+            } => {
+                self.deny_read_only()?;
+                proto::check_range(self.doc.len() as u64, start, end)?;
+                let target = proto::to_position(target)?;
+                self.doc.check_position(target)?;
+                let (start, end) = (proto::to_position(start)?, proto::to_position(end)?);
+                self.move_text(start, end, target, copy)
+            }
             Command::Search {
                 revision,
                 flags,
@@ -562,6 +575,29 @@ impl Session {
         // An edit that changed nothing (a separator between a paragraph and a
         // table, a cell or an opaque block cannot be deleted) leaves the
         // selection where it was.
+        if outcome.revision != before {
+            let (anchor, focus) = outcome.selection;
+            self.select(self.snap(anchor), self.snap(focus), false, None);
+        }
+        self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)
+    }
+
+    /// Moves or copies `start..end` to `target` as one edit; the moved text
+    /// ends up selected.
+    fn move_text(
+        &mut self,
+        start: usize,
+        end: usize,
+        target: usize,
+        copy: bool,
+    ) -> Result<Response, ErrorCode> {
+        let before = self.doc.revision();
+        let outcome = self.doc.move_range(start, end, target, copy)?;
+        let delta = if outcome.revision == before {
+            PageDelta::default()
+        } else {
+            self.cache.apply_edit(&self.doc, &outcome)
+        };
         if outcome.revision != before {
             let (anchor, focus) = outcome.selection;
             self.select(self.snap(anchor), self.snap(focus), false, None);

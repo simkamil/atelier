@@ -820,6 +820,50 @@ impl Paragraph {
         }
     }
 
+    /// Gives the text bytes `start..end` exactly the runs `with` (absolute
+    /// text offsets inside that span, sorted, disjoint), keeping the runs
+    /// outside it; touching equal runs are merged and empty attributes dropped.
+    pub(crate) fn overwrite_runs(&mut self, start: usize, end: usize, with: &[CharRun]) {
+        let mut out: Vec<CharRun> = Vec::with_capacity(self.runs.len() + with.len() + 1);
+        for run in std::mem::take(&mut self.runs) {
+            if run.end <= start || run.start >= end {
+                out.push(run);
+                continue;
+            }
+            if run.start < start {
+                out.push(CharRun {
+                    start: run.start,
+                    end: start,
+                    attrs: run.attrs.clone(),
+                });
+            }
+            if run.end > end {
+                out.push(CharRun {
+                    start: end,
+                    end: run.end,
+                    attrs: run.attrs,
+                });
+            }
+        }
+        out.extend(with.iter().filter(|r| r.start < r.end).cloned());
+        out.sort_by_key(|r| r.start);
+        let mut merged: Vec<CharRun> = Vec::with_capacity(out.len());
+        for run in out {
+            if run.attrs.is_empty() {
+                continue;
+            }
+            if let Some(last) = merged
+                .last_mut()
+                .filter(|l| l.end == run.start && l.attrs == run.attrs)
+            {
+                last.end = run.end;
+                continue;
+            }
+            merged.push(run);
+        }
+        self.runs = merged;
+    }
+
     /// Defines (`set`) then un-defines (`clear`) character properties on a
     /// range, then normalizes the runs. An empty range is a no-op.
     pub fn set_char_attrs(

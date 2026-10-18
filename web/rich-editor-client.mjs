@@ -17,6 +17,8 @@ const REPLY_TYPE = {
   accessibleWindow: "accessibleWindow", save: "saveData", makeEditableCopy: "saveData", insertImage: "state",
   // R7b-1: selection highlight, picture bitmaps, double and triple click.
   selectionRects: "selectionRects", imageBitmap: "imageBitmap", selectUnit: "state",
+  // R7c: text drag and drop (State).
+  moveText: "state",
   // R7b-2: search, replace, statistics, properties. `replaced` and `propertiesApplied` carry a State (applied to the cache).
   search: "searchResult", statistics: "statistics", searchRects: "searchRects", replace: "replaced", replaceAll: "replaced",
   propertiesRead: "properties", propertiesApply: "propertiesApplied",
@@ -66,7 +68,7 @@ function linkSignals(signals) {
 const JUMP_LAYOUT_BUDGET = 64;
 /** Moves the engine refuses while their target is not laid out (no caret): replayed once the caret is there. */
 const REPLAYED_MOVES = new Set(["up", "down", "pageUp", "pageDown", "home", "end"]);
-const CARET_COMMANDS = new Set(["move", "setSelection", "selectUnit", "insertText", "delete", "replaceRange", "undo", "redo", "insertImage"]);
+const CARET_COMMANDS = new Set(["move", "setSelection", "selectUnit", "moveText", "insertText", "delete", "replaceRange", "undo", "redo", "insertImage"]);
 
 export function createRichEditorClient({
   transport, docId, cache = new EditorPageCache(), layoutBudget = 16, signal, yieldTurn = defaultYield,

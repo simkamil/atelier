@@ -81,9 +81,9 @@ test("the mirror takes role and inline kind numbers, the codec names them", () =
 test("capabilities are frozen and list what v2 offers", () => {
   assert.ok(Object.isFrozen(RICH_CAPABILITIES));
   assert.deepEqual(Object.keys(RICH_CAPABILITIES).sort(), ["preview", "properties", "replace", "search", "statistics", "textDragDrop"]);
-  // R7b-2: search, replace, statistics and properties work in v2; the rest is still absent.
-  for (const name of ["search", "replace", "statistics", "properties"]) assert.equal(RICH_CAPABILITIES[name], true, name);
-  for (const name of ["textDragDrop", "preview"]) assert.equal(RICH_CAPABILITIES[name], false, name);
+  // R7b-2 and R7c: search, replace, statistics, properties and text drag and drop work in v2; only the DOCX preview is absent.
+  for (const name of ["search", "replace", "statistics", "properties", "textDragDrop"]) assert.equal(RICH_CAPABILITIES[name], true, name);
+  assert.equal(RICH_CAPABILITIES.preview, false, "preview");
 });
 
 test("R7b-2: the codes of queries and replacements keep the names of the plain editor", () => {

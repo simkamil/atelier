@@ -81,6 +81,8 @@ pub mod opcode {
     pub const SELECTION_RECTS: u16 = 0x0120;
     pub const IMAGE_BITMAP: u16 = 0x0121;
     pub const SELECT_UNIT: u16 = 0x0122;
+    // Text drag and drop (R7c).
+    pub const MOVE_TEXT: u16 = 0x0140;
     // Search, replace, statistics, properties (R7b-2).
     pub const SEARCH: u16 = 0x0130;
     pub const STATISTICS: u16 = 0x0131;
@@ -152,6 +154,10 @@ pub enum ErrorCode {
     PropertiesFailed = 43,
     /// `ReplaceAll` would replace more occurrences than one undo step holds.
     TooManyMatches = 44,
+    // Text drag and drop (R7c): codes 50 to 59.
+    /// `MoveText` names a range with objects, tables or opaque blocks, or a
+    /// target in another container.
+    MoveUnsupported = 50,
 }
 
 impl ErrorCode {
@@ -187,6 +193,7 @@ impl ErrorCode {
             42 => Self::QueryTooLarge,
             43 => Self::PropertiesFailed,
             44 => Self::TooManyMatches,
+            50 => Self::MoveUnsupported,
             _ => return None,
         })
     }
@@ -218,6 +225,7 @@ impl ErrorCode {
             Self::ImageInvalid => "RICH_IMAGE_INVALID",
             Self::RevisionsUnsupported => "RICH_REVISIONS_UNSUPPORTED",
             Self::UnknownObject => "RICH_UNKNOWN_OBJECT",
+            Self::MoveUnsupported => "RICH_MOVE_UNSUPPORTED",
             Self::EmptyQuery => "RICH_EMPTY_QUERY",
             Self::StaleMatch => "RICH_STALE_MATCH",
             Self::QueryTooLarge => "RICH_QUERY_TOO_LARGE",
@@ -410,6 +418,14 @@ pub enum Command {
         position: u64,
         unit: SelectionUnit,
         extend: bool,
+    },
+    /// Moves (or copies) the flat range `start..end` to `target`, keeping the
+    /// character formatting, in one undo step (R7c); answered by `State`.
+    MoveText {
+        start: u64,
+        end: u64,
+        target: u64,
+        copy: bool,
     },
     /// Occurrences of `query` (R7b-2); answered by `SearchResult`. `revision`
     /// must be the current one (`RICH_STALE_REVISION`).
@@ -950,9 +966,10 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
         opcode::SAVE | opcode::INSERT_IMAGE | opcode::MAKE_EDITABLE_COPY => {
             io::parse_command(opcode, &mut r)?
         }
-        opcode::SELECTION_RECTS | opcode::IMAGE_BITMAP | opcode::SELECT_UNIT => {
-            sel::parse_command(opcode, &mut r)?
-        }
+        opcode::SELECTION_RECTS
+        | opcode::IMAGE_BITMAP
+        | opcode::SELECT_UNIT
+        | opcode::MOVE_TEXT => sel::parse_command(opcode, &mut r)?,
         opcode::SEARCH
         | opcode::STATISTICS
         | opcode::SEARCH_RECTS
@@ -1084,7 +1101,8 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
         }
         Command::SelectionRects { .. }
         | Command::ImageBitmap { .. }
-        | Command::SelectUnit { .. } => sel::encode_command(&request.command, &mut b)?,
+        | Command::SelectUnit { .. }
+        | Command::MoveText { .. } => sel::encode_command(&request.command, &mut b)?,
         Command::Search { .. }
         | Command::Statistics
         | Command::SearchRects { .. }
@@ -1629,6 +1647,7 @@ impl From<atelier_text_model::rich::flat::FlatError> for ErrorCode {
             F::InvalidText => Self::InvalidText,
             F::Limit => Self::Limit,
             F::Style => Self::Internal,
+            F::Unsupported => Self::MoveUnsupported,
         }
     }
 }
@@ -1709,6 +1728,8 @@ pub use io::{
 };
 mod sel;
 pub use sel::{MAX_BITMAP_SIDE, MAX_SELECTION_RECTS, SelectionRect, SelectionUnit};
+#[cfg(test)]
+mod move_tests;
 #[cfg(test)]
 mod sel_tests;
 

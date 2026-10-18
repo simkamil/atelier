@@ -112,6 +112,8 @@ fn describe_request(r: &Request) -> String {
         Command::SelectionRects { .. }
         | Command::ImageBitmap { .. }
         | Command::SelectUnit { .. } => "see sel_tests".into(),
+        // The vectors of this one are in `move_tests` (tests/rich-editor-move-vectors.txt).
+        Command::MoveText { .. } => "see move_tests".into(),
         // The vectors of these are in `find_tests` (tests/rich-editor-find-vectors.txt).
         Command::Search { .. }
         | Command::Statistics

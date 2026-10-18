@@ -347,7 +347,7 @@ try {
     assert(button && !button.disabled && !button.hasAttribute("aria-disabled") && !/nouvel éditeur/.test(button.title), `${id} is enabled in v2`);
   }
   assert(editor.capabilities.search && editor.capabilities.replace && editor.capabilities.statistics && editor.capabilities.properties
-    && !editor.capabilities.textDragDrop && !editor.capabilities.preview, "capabilities list what v2 offers now");
+    && editor.capabilities.textDragDrop && !editor.capabilities.preview, "capabilities list what v2 offers now");
   const tintOf = () => {
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
@@ -513,8 +513,10 @@ try {
   const dropLength = state().docLen;
   const textDrop = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: (() => { const t = new DataTransfer(); t.setData("text/plain", "déposé"); return t; })(), clientX: 100, clientY: 100 });
   canvas.dispatchEvent(textDrop);
-  await waitFor(() => message() === "Cette fonction n’est pas encore disponible avec le nouvel éditeur.", "dropped text is refused with a message");
-  assert(textDrop.defaultPrevented && state().docLen === dropLength, "text drag and drop is refused, the document is unchanged");
+  await waitFor(() => state().docLen === dropLength + 8, "dropped text is inserted at the drop point (R7c)");
+  assert(textDrop.defaultPrevented && editor.capabilities.textDragDrop, "text drag and drop is offered in v2: the drop is handled, not refused");
+  await editor.undo();
+  await waitFor(() => state().docLen === dropLength, "one undo removes the dropped text");
   app.ribbon.selectTab("file");
 
 
