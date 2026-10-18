@@ -705,6 +705,36 @@ try {
   editor.setZoom(1);
   scrollport.scrollTop = 0;
 
+  // Ctrl+End on a document whose tail is not laid out yet: the engine answers within its budget with the selection but
+  // no caret, the Layout pump goes on in the background, the caret shows and the view scrolls to it; the UI never freezes.
+  const jumpLines = Array.from({ length: 8000 }, (_, i) => `saut ${i} avec du texte a lire`);
+  const jumpLen = jumpLines.join("\n").length;
+  bridge.nextOpen = { name: "saut.txt", format: "txt", bytes: encoder.encode(jumpLines.join("\n")) };
+  await clickAndWait(openButton, () => {}, () => state().docLen === jumpLen);
+  const wasComplete = state().layoutComplete;
+  let worstGap = 0;
+  let lastFrame = performance.now();
+  let probing = true;
+  const probe = () => { const now = performance.now(); worstGap = Math.max(worstGap, now - lastFrame); lastFrame = now; if (probing) requestAnimationFrame(probe); };
+  requestAnimationFrame(probe);
+  const jumpStart = performance.now();
+  key(editor.element, "End", { ctrlKey: true });
+  await waitFor(() => state().focus === state().docLen, "Ctrl+End moves the selection at once on a long document being laid out", 3000);
+  const sawNoCaret = state().caret === null && !state().layoutComplete;
+  await waitFor(() => state().caret !== null, "the caret shows once the layout reaches the end of the document", 30000);
+  const caretPageTop = () => (state().caret.page * (841.89 + 16) + state().caret.y) * editor.getZoom();
+  await waitFor(() => scrollport.scrollTop + scrollport.clientHeight >= caretPageTop() && scrollport.scrollTop <= caretPageTop(), `the view follows the caret (scrollTop ${scrollport.scrollTop}, caret at ${caretPageTop()}, complete ${state().layoutComplete})`, 15000);
+  probing = false;
+  const jumpTime = performance.now() - jumpStart;
+  assert(scrollport.scrollTop > 0 && darkPixels(0, 0, 400, 400) >= 0, "the view scrolled to the caret");
+  assert(worstGap < 400, `the page stayed responsive while the caret was reached (worst frame gap ${Math.round(worstGap)} ms)`);
+  console.log(JSON.stringify({ jumpToCaretMs: Math.round(jumpTime), worstFrameGapMs: Math.round(worstGap), openedIncomplete: !wasComplete, selectionWithoutCaretSeen: sawNoCaret }));
+  // A keystroke typed after the jump lands at the end of the document.
+  key(editor.element, "Home", { ctrlKey: true });
+  await waitFor(() => state().focus === 0, "back to the start after the jump");
+  await waitFor(() => state().layoutComplete, "the layout finishes", 60000);
+  scrollport.scrollTop = 0;
+
   // --- selection too large for the clipboard -----------------------------------------------------------------------------------------
   const hugeLine = "x".repeat(99);
   bridge.nextOpen = { name: "enorme.txt", format: "txt", bytes: encoder.encode(Array.from({ length: 3200 }, () => hugeLine).join("\n")) };

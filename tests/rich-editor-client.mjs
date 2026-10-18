@@ -805,5 +805,91 @@ await test("R7b-2: an engine refusal of a query or a replacement is a typed erro
   client.dispose();
 });
 
+/** An engine whose caret only shows once the layout reached `needed` paragraphs, after a far SetSelection. */
+function jumpSetup(options = {}, engineOptions = {}, needed = 300) {
+  const ctx = setup(options, { total: 1000, firstComputed: 10, ...engineOptions });
+  const { engine } = ctx;
+  const budgets = [];
+  let jumped = false;
+  const base = engine.handle;
+  engine.handle = (req) => {
+    const c = req.command;
+    if (c.type === "layout") budgets.push(c.budget);
+    if (c.type === "setSelection") { jumped = true; engine.anchor = c.focus; engine.jumps = (engine.jumps ?? 0) + 1; }
+    const r = base(req);
+    if (r.type === "state" && jumped) return { ...r, focus: engine.anchor, caret: engine.computed >= needed ? { page: 1, x: 10, y: 10, height: 12 } : null };
+    return r;
+  };
+  return { ...ctx, budgets, needed };
+}
+
+await test("a selection without caret raises the Layout budget of the pump until the caret arrives", async () => {
+  const { client, budgets, engine } = jumpSetup({ layoutBudget: 4 });
+  await client.open(OPEN);
+  client.stopPump();
+  await client.idle();
+  budgets.length = 0;
+  await client.command({ type: "setSelection", anchor: 99999n, focus: 99999n, upstream: false });
+  assert.equal(client.cache.caret, null, "the State of the jump has no caret");
+  assert.equal(client.cache.layoutComplete, false);
+  client.startPump();
+  await client.whenLayoutComplete();
+  assert(budgets.length >= 1 && budgets[0] === 64, `budgets ${budgets.slice(0, 3)}`);
+  assert(budgets.every((b) => b === 64 || b === 4), "only the two budgets are used");
+  assert.notEqual(client.cache.caret, null, "the caret came with a later State");
+  assert.equal(engine.computed >= 300, true);
+  client.dispose();
+});
+
+await test("without a pending selection the pump keeps its normal budget", async () => {
+  const { client, budgets } = jumpSetup({ layoutBudget: 4 });
+  await client.open(OPEN);
+  await client.whenLayoutComplete();
+  assert(budgets.length > 0 && budgets.every((b) => b === 4), "normal budget only");
+  client.dispose();
+});
+
+await test("keystrokes sent while the caret is absent run between two Layout steps and are not lost", async () => {
+  const { client, transport, engine } = jumpSetup({ layoutBudget: 4 });
+  await client.open(OPEN);
+  client.stopPump();
+  await client.idle();
+  await client.command({ type: "setSelection", anchor: 99999n, focus: 99999n, upstream: false });
+  client.startPump();
+  const typed = [client.command({ type: "insertText", text: "a" }), client.command({ type: "insertText", text: "b" })];
+  await Promise.all(typed);
+  assert.equal(engine.edits, 2, "both edits reached the engine");
+  const firstEdit = transport.log.indexOf("insertText");
+  assert(firstEdit >= 0 && transport.log.slice(firstEdit).includes("layout"), "the pump resumes after the edits");
+  assert.equal(client.cache.layoutComplete, false, "the edits did not wait for the whole layout");
+  await client.whenLayoutComplete();
+  assert.notEqual(client.cache.caret, null);
+  client.dispose();
+});
+
+await test("a second jump before the pump finishes, a Resync and a closed document keep the client consistent", async () => {
+  const { client, transport, engine, errors } = jumpSetup({ layoutBudget: 4 });
+  await client.open(OPEN);
+  await client.command({ type: "setSelection", anchor: 99999n, focus: 99999n, upstream: false });
+  await client.command({ type: "setSelection", anchor: 5n, focus: 5n, upstream: false });
+  assert.equal(engine.jumps, 2);
+  assert.equal(client.cache.selection.focus, 5n, "the last jump wins");
+  client.stopPump();
+  await client.idle();
+  engine.atlas.fresh = 2;
+  await client.command({ type: "resync" });
+  client.startPump();
+  await client.whenLayoutComplete();
+  assert.notEqual(client.cache.caret, null);
+  assert.deepEqual(errors, []);
+  // Closed document: the pump stops, waiters are released with an error.
+  await client.command({ type: "close" });
+  await client.idle();
+  const calls = transport.calls;
+  await turn();
+  assert.equal(transport.calls, calls, "no request after Close");
+  client.dispose();
+});
+
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }
 console.log("rich-editor-client: all tests passed");
