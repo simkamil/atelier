@@ -172,6 +172,11 @@ jobs:
           node tests/image-insert.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-image-insert-browser.mjs
+      - name: Check the accessible document mirror and screen reader mode
+        run: |
+          node --test tests/document-mirror.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/run-document-mirror-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests
