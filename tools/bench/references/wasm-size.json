@@ -4,7 +4,7 @@
   "target": "wasm32-unknown-unknown",
   "profile": "wasm-release",
   "features": [],
-  "code_reference_bytes": 1919145,
+  "code_reference_bytes": 2172665,
   "allowed_growth_percent": 10,
   "fonts": [
     {
@@ -30,5 +30,6 @@
   ],
   "measured_on": "2026-10-18",
   "previous_reference_bytes": 4280188,
-  "rebaseline_reason": "US-006: the 10% allowance now applies to code only. Embedded fonts (2734244 bytes, 58.8% of the 4653389-byte artifact) are frozen by path, size and SHA-256 and must appear exactly once; the code reference is the measured artifact minus fonts after the 2026-10-18 integration (US-270, US-328). See docs/rich-editor-migration.md."
+  "rebaseline_reason": "Intentional growth decided by the product owner on 2026-10-18: wiring the rich editor (R3a, US-217) links the flat model (R1), the incremental page cache and painter (R2) and the v2 protocol into the product for the first time (+253 520 bytes of code since 1919145). The 10% allowance is unchanged. Target: return under the former code limit (2111059 bytes) after the v1 editor is removed (R8, US-219). See docs/rich-editor-migration.md.",
+  "previous_code_reference_bytes": 1919145
 }
