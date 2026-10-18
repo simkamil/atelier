@@ -24,7 +24,9 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
   let selectionAbort = new AbortController();
   let navigationQueue = Promise.resolve();
   let replaceVisible = false, replacePending = false, replaceCount = null, replaceError = null;
-  let replaceActionId = 0, documentEpoch = 0, searchPending = false;
+  let replaceActionId = 0, documentEpoch = 0, searchPending = false, seeding = false;
+  // A read-only document (rich editor, revisions or comments) is searched but never replaced.
+  const readOnly = () => editor.state?.readOnly === true;
   const enqueueNavigation = run => {
     const generation = searchGeneration;
     navigationQueue = navigationQueue.then(() => !disposed && generation === searchGeneration ? run() : undefined).catch(() => {});
@@ -64,11 +66,11 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
     const selected = item && searchResult.revision === state?.revision
       && item.start === Math.min(state.anchor,state.focus) && item.end === Math.max(state.anchor,state.focus);
     replacement.setState({ visible: opened && replaceVisible, disabled: !enabled, busy: replacePending,
-      canReplace: Boolean(selected && !searchPending), canReplaceAll: Boolean(query && searchResult && !searchPending),
+      canReplace: Boolean(selected && !searchPending && !readOnly()), canReplaceAll: Boolean(query && searchResult && !searchPending && !readOnly()),
       count: replaceCount, error: replaceError });
   }
   async function replaceMatches(all, value) {
-    if (disposed || !enabled || !opened || !replaceVisible || replacePending || searchPending || !searchResult || !query) return;
+    if (disposed || !enabled || !opened || !replaceVisible || replacePending || searchPending || !searchResult || !query || readOnly()) return;
     const item = searchResult.items[index];
     if (!all && !item) return;
     const action = ++replaceActionId, epoch = documentEpoch, sourceQuery = query;
@@ -148,7 +150,10 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
         const state = editor.state;
         if (disposed || !enabled || generation !== statisticsGeneration || result.revision !== state?.revision
             || result.anchor !== state.anchor || result.focus !== state.focus) return;
-        statistics.setState({ document: result.document, selection: result.selection,
+        // The rich editor lays a long document out in the background: until it is done the lines and pages are not known
+        // (shown as unavailable); the next state brings the final counts.
+        const known = counts => (result.layoutComplete === false ? { ...counts, lines: null, pages: null } : counts);
+        statistics.setState({ document: known(result.document), selection: known(result.selection),
           hasSelection: result.anchor !== result.focus, busy: false, disabled: false, error: null });
       } catch (error) {
         if (!disposed && enabled && generation === statisticsGeneration) statistics.setState({ busy: false, error: error.code ?? "STATISTICS_FAILED" });
@@ -156,13 +161,21 @@ export function createNavigationTools({ document: doc = globalThis.document, edi
     },delay);
   }
   function openSearch(showReplacement = false) {
-    if (disposed || !enabled || doc.querySelector("dialog:modal")) return false;
+    if (disposed || !enabled || seeding || doc.querySelector("dialog:modal")) return false;
     const state = editor.state;
-    const selected = state && state.anchor !== state.focus
-      ? decoder.decode(state.textBytes.subarray(Math.min(state.anchor,state.focus),Math.max(state.anchor,state.focus))) : "";
-    if (selected) query = querySeed(selected);
-    opened = true; replaceVisible = showReplacement; paneSlot.hidden = false;
-    pane.open({ query, returnFocusTo: editor.element });
+    const begin = selected => {
+      seeding = false;
+      if (disposed || !enabled || doc.querySelector("dialog:modal")) return;
+      if (selected) query = querySeed(selected);
+      opened = true; replaceVisible = showReplacement && !readOnly(); paneSlot.hidden = false;
+      pane.open({ query, returnFocusTo: editor.element });
+    };
+    if (!state || state.anchor === state.focus) { begin(""); return true; }
+    const lo = Math.min(state.anchor, state.focus), hi = Math.max(state.anchor, state.focus);
+    if (state.textBytes) { begin(decoder.decode(state.textBytes.subarray(lo, hi))); return true; }
+    // The rich editor keeps no text of the document: the start of the selection is asked for (bounded by the seed size).
+    seeding = true;
+    Promise.resolve().then(() => editor.readText(lo, Math.min(hi, lo + 4 * 1024))).then(begin, () => begin(""));
     return true;
   }
   function openStatistics() {

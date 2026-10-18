@@ -3,7 +3,7 @@
 // transport. The simulated engine answers with frames built by the R0 codec.
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
-import { decodeRichRequest, encodeRichReply } from "../web/rich-editor-protocol.mjs";
+import { PROPERTY_FIELDS, decodeRichRequest, encodeRichReply } from "../web/rich-editor-protocol.mjs";
 import { EditorPageCache, RichClientError, createRichEditorClient } from "../web/rich-editor-client.mjs";
 
 globalThis.Path2D ??= class { moveTo() {} lineTo() {} quadraticCurveTo() {} bezierCurveTo() {} closePath() {} };
@@ -731,6 +731,78 @@ await test("R7a: the page cache keeps the read-only and revision flags of the St
   cache.apply(state({ readOnly: true, hasRevisions: true, revision: 2n }));
   cache.reset();
   assert.equal(cache.readOnly || cache.hasRevisions, false, "reset clears them");
+});
+
+await test("R7b-2: search, statistics, rectangles and properties never reach the cache; replace and apply carry a State that does", async () => {
+  const { client, engine, transport } = setup();
+  const snapshot = { editable: Object.fromEntries(PROPERTY_FIELDS.map((n) => [n, ""])), limits: Object.fromEntries(PROPERTY_FIELDS.map((n) => [n, 255])),
+    created: null, modified: null, lastPrinted: null, lastModifiedBy: null, revision: null, application: null, appVersion: null, template: null,
+    totalTime: null, statistics: { pages: null, words: 1, characters: 2, charactersWithSpaces: 2, lines: null, paragraphs: 1 }, noticeCount: 0 };
+  const counts = { words: 1, characters: 2, charactersWithSpaces: 2, paragraphs: 1, lines: 1, pages: 1 };
+  const base = engine.handle;
+  engine.handle = (req) => {
+    const c = req.command;
+    switch (c.type) {
+      case "search": return { type: "searchResult", revision: engine.rev, total: 1, truncated: false, totalCapped: false,
+        items: [{ start: 0n, end: 2n, excerpt: { text: "ab", start: 0, end: 2, truncatedBefore: false, truncatedAfter: false } }] };
+      case "statistics": return { type: "statistics", revision: engine.rev, anchor: 0n, focus: 0n, layoutComplete: true, document: counts, selection: counts };
+      case "searchRects": return { type: "searchRects", revision: engine.rev, rects: [{ item: 0, page: 0, x: 1, y: 2, width: 3, height: 4 }] };
+      case "replace": case "replaceAll": engine.rev += 1n; return { type: "replaced", count: 3, state: engine.state() };
+      case "propertiesRead": return { type: "properties", revision: engine.rev, snapshot };
+      case "propertiesApply": return { type: "propertiesApplied", status: "applied", changed: 1, field: null, max: 0, length: 0, state: engine.state() };
+      default: return base(req);
+    }
+  };
+  await client.open(OPEN);
+  await client.whenLayoutComplete();
+  await client.idle();
+  const version = client.cache.version;
+  const flags = { matchCase: true };
+  const found = await client.command({ type: "search", revision: 0n, flags, query: "ab" });
+  assert.equal(found.response.items.length, 1);
+  assert.equal(found.change, null);
+  assert.equal((await client.command({ type: "statistics" })).response.document.words, 1);
+  assert.equal((await client.command({ type: "searchRects", revision: 0n, firstPage: 0, pageCount: 1, ranges: [{ start: 0n, end: 2n }] })).response.rects[0].width, 3);
+  assert.equal((await client.command({ type: "propertiesRead" })).response.snapshot.limits.title, 255);
+  assert.equal(client.cache.version, version, "none of the four replies touches the page cache");
+  const all = await client.command({ type: "replaceAll", revision: 0n, flags: {}, query: "ab", replacement: "x" });
+  assert.equal(all.response.count, 3);
+  assert.equal(client.cache.revision, 1n, "the State of Replaced is applied");
+  assert.equal(all.change.ignored, false);
+  const one = await client.command({ type: "replace", revision: 1n, flags: {}, start: 0n, end: 2n, query: "ab", replacement: "x" });
+  assert.equal(one.response.type, "replaced");
+  assert.equal(client.cache.revision, 2n);
+  const applied = await client.command({ type: "propertiesApply", changes: { title: "T" } });
+  assert.equal(applied.response.status, "applied");
+  assert.equal(applied.change.ignored, false, "the State of PropertiesApplied is applied (the modified flag reaches the editor)");
+  assert.equal(transport.log.includes("resync"), false);
+  client.dispose();
+});
+
+await test("R7b-2: an engine refusal of a query or a replacement is a typed error and forces no resync; a lost Replaced does", async () => {
+  const { client, engine, transport } = setup();
+  const base = engine.handle;
+  let refuse = "RICH_STALE_MATCH";
+  engine.handle = (req) => {
+    const c = req.command;
+    if (c.type === "replace" || c.type === "search") return { type: "error", code: refuse };
+    return base(req);
+  };
+  await client.open(OPEN);
+  await client.whenLayoutComplete();
+  await client.idle();
+  await rejects(client.command({ type: "replace", revision: 0n, flags: {}, start: 0n, end: 1n, query: "a", replacement: "b" }), "RICH_STALE_MATCH");
+  refuse = "RICH_STALE_REVISION";
+  await rejects(client.command({ type: "search", revision: 0n, flags: {}, query: "a" }), "RICH_STALE_REVISION");
+  await client.idle();
+  assert.equal(transport.log.includes("resync"), false, "refusals leave the cache as it is");
+  // A transport failure after the engine applied a replacement: the cache cannot be trusted, a Resync follows.
+  transport.override = (req) => (req.command.type === "replaceAll" ? new Error("lost") : null);
+  await rejects(client.command({ type: "replaceAll", revision: 0n, flags: {}, query: "a", replacement: "b" }), "CLIENT_TRANSPORT");
+  transport.override = null;
+  await client.command({ type: "undo" });
+  assert.equal(transport.log.includes("resync"), true, "the lost State forces a resynchronisation");
+  client.dispose();
 });
 
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }

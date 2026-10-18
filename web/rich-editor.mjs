@@ -12,7 +12,7 @@ import { frenchSpacingEdit } from "./french-spacing.mjs";
 import { decodeDisplayList } from "./display-list.mjs";
 import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
-import { RICH_LIMITS, RichProtocolError } from "./rich-editor-protocol.mjs";
+import { RICH_LIMITS, RichProtocolError, PROPERTY_FIELDS } from "./rich-editor-protocol.mjs";
 import { createRichEditorClient, EditorPageCache, RichClientError } from "./rich-editor-client.mjs";
 import { createRichImageCache } from "./rich-image-cache.mjs";
 import { createDocumentMirror } from "./document-mirror.mjs";
@@ -30,7 +30,7 @@ export class EditorError extends Error {
 
 /** What the v2 editor does not offer (docs/r7-ui-parity.md §7); the interface greys the matching commands. */
 export const RICH_CAPABILITIES = Object.freeze({
-  search: false, replace: false, statistics: false, textDragDrop: false, preview: false, properties: false,
+  search: true, replace: true, statistics: true, textDragDrop: false, preview: false, properties: true,
 });
 
 const A4 = Object.freeze({ width: 595.276, height: 841.89 });
@@ -107,9 +107,14 @@ export function toEditorError(error, context = "") {
   if (error?.name === "AbortError") return error;
   const code = error?.code;
   let mapped = null;
-  if (error instanceof RichProtocolError) mapped = "EDITOR_UNSUPPORTED_INPUT";
+  // The queries of R7b-2 keep the codes of the plain editor, whether the codec or the engine refused them.
+  if (code === "RICH_EMPTY_QUERY") mapped = "EDITOR_EMPTY_QUERY";
+  else if (code === "RICH_QUERY_TOO_LARGE") mapped = "MESSAGE_TOO_LARGE";
+  else if (error instanceof RichProtocolError) mapped = "EDITOR_UNSUPPORTED_INPUT";
   else if (code === "RICH_READ_ONLY") mapped = "EDITOR_READ_ONLY";
-  else if (code === "RICH_STALE_REVISION") mapped = context === "save" ? "EDITOR_STALE_SAVE" : "EDITOR_STALE_EDIT";
+  else if (code === "RICH_STALE_REVISION") mapped = context === "save" ? "EDITOR_STALE_SAVE" : context === "query" ? "EDITOR_STALE_QUERY" : "EDITOR_STALE_EDIT";
+  else if (code === "RICH_STALE_MATCH") mapped = "EDITOR_STALE_MATCH";
+  else if (code === "RICH_TOO_MANY_MATCHES") mapped = "EDITOR_TOO_MANY_MATCHES";
   else if (code === "RICH_IMAGE_INVALID") mapped = "EDITOR_IMAGE_UNSUPPORTED";
   else if (code === "RICH_LIMIT" && context === "image") mapped = "EDITOR_IMAGE_LIMIT";
   else if (code === "RICH_FRAME_TOO_LARGE" && context === "image") mapped = "EDITOR_IMAGE_TOO_LARGE";
@@ -224,6 +229,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   let prefetchKey = "";
   let highlight = []; // selection rectangles of the visible pages, points of the page (R7b-1)
   let lastEpoch = null;
+  let highlights = null; // occurrences of the last search to paint (R7b-2)
   const decoded = new WeakMap();
   const abort = new AbortController();
 
@@ -347,7 +353,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     const compositionRects = composition ? [{ ...composition.caret, width: composition.width, height: 1 }] : [];
     const selectionRects = [];
     for (const rect of highlight) if (pageLists[rect.page]) selectionRects.push(viewportRect(rect, rect.page));
-    renderer.setEditorOverlay({ selectionRects, caret, compositionRects, caretVisible });
+    renderer.setEditorOverlay({ selectionRects, caret, compositionRects, caretVisible, ...searchOverlay() });
     input.updateCaret(caretScreen());
   }
 
@@ -406,6 +412,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       const range = visibleRange();
       try { rich.setVisibleRange(range.first, range.end); } catch (error) { reportError(toEditorError(error)); }
       scheduleMirrorVisible();
+      scheduleHighlights();
     }
     try { onViewport(viewportState()); } catch { /* UI callbacks are isolated */ }
   }
@@ -441,6 +448,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     if (disposed) return;
     if (cache.revision === null) return; // a reset, nothing to show yet
     if (cache.atlasEpoch !== lastEpoch) { lastEpoch = cache.atlasEpoch; images.clear(); }
+    refreshHighlightsOnChange();
     const candidate = buildState();
     const previous = state;
     const key = stateKey(candidate);
@@ -902,6 +910,169 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     return state;
   }
 
+  // ---- search, replace, statistics, properties (R7b-2) ------------------------------------------------------
+
+  // Highlights of the occurrences of the last search: the rectangles of the visible pages come from the engine
+  // (`searchRects`, page coordinates), as they are needed. { result, index, revision, ranges, pages: Map<page, rects[]>,
+  // fetching, layoutDone }. Declared with the other state at the top of the closure.
+
+  function searchOverlay() {
+    if (!highlights || !state || highlights.revision !== state.revision) return {};
+    const searchRects = []; const activeSearchRects = [];
+    const range = visibleRange();
+    for (let page = range.first; page < range.end; page += 1) {
+      for (const { item, rect } of highlights.pages.get(page) ?? []) {
+        const mapped = viewportRect(rect, page);
+        if (mapped.y + mapped.height >= 0 && mapped.y <= scrollport.clientHeight && mapped.x + mapped.width >= 0 && mapped.x <= scrollport.clientWidth) {
+          (item === highlights.index ? activeSearchRects : searchRects).push(mapped);
+        }
+      }
+    }
+    return { searchRects, activeSearchRects };
+  }
+
+  function scheduleHighlights() {
+    const current = highlights;
+    if (!current || current.fetching || disposed || !state || current.revision !== state.revision || !pageLists.length) return;
+    const range = visibleRange();
+    let first = -1; let last = -1;
+    for (let page = range.first; page < range.end; page += 1) {
+      if (current.pages.has(page)) continue;
+      if (first < 0) first = page;
+      last = page;
+    }
+    if (first < 0) return;
+    const pageCount = Math.min(RICH_LIMITS.maxPagesPerResponse, last - first + 1);
+    current.fetching = true;
+    rich.command({ type: "searchRects", revision: BigInt(current.revision), firstPage: first, pageCount, ranges: current.ranges })
+      .then(({ response }) => {
+        if (highlights !== current || disposed) return;
+        for (let page = first; page < first + pageCount; page += 1) current.pages.set(page, []);
+        for (const rect of response.rects) {
+          current.pages.get(rect.page)?.push({ item: rect.item, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+        }
+        current.fetching = false;
+        repaintOverlay();
+        scheduleHighlights();
+      })
+      .catch(error => {
+        if (highlights !== current || disposed) return;
+        current.fetching = false;
+        // A stale revision is followed by a State that clears the highlights; any other refusal gives up on these pages.
+        if (error?.code !== "RICH_STALE_REVISION" && error?.name !== "AbortError") {
+          for (let page = first; page < first + pageCount; page += 1) current.pages.set(page, []);
+        }
+      });
+  }
+
+  /** The layout finished since the rectangles were asked for: pages that were not reached then are asked for again. */
+  function refreshHighlightsOnChange() {
+    if (!highlights) return;
+    const done = cache.layoutComplete === true;
+    if (done !== highlights.layoutDone) {
+      highlights.layoutDone = done;
+      if (done) highlights.pages.clear();
+    }
+    if (cache.revision !== null && highlights.revision !== cache.revision) highlights = null;
+  }
+
+  function checkQueryState() {
+    if (disposed) throw new EditorError("EDITOR_CLOSED");
+    if (!state || busy) throw new EditorError("EDITOR_BUSY");
+  }
+
+  // The queries (search, statistics, properties) change nothing: they go straight to the client, whose queue keeps their order
+  // with the edits, and they do not count as pending editor tasks (the synchronous clipboard waits for those).
+  async function search(queryText, options = {}) {
+    if (typeof queryText !== "string") throw new TypeError("Search query must be a string.");
+    checkQueryState();
+    const { response } = await send({ type: "search", revision: BigInt(state.revision), flags: options ?? {}, query: queryText }, "query");
+    return {
+      kind: "search", revision: response.revision, total: response.total, totalCapped: response.totalCapped, truncated: response.truncated,
+      items: response.items.map(item => ({ start: Number(item.start), end: Number(item.end), excerpt: item.excerpt })),
+    };
+  }
+
+  async function statistics() {
+    checkQueryState();
+    const { response } = await send({ type: "statistics" }, "query");
+    return {
+      kind: "statistics", revision: response.revision, anchor: Number(response.anchor), focus: Number(response.focus),
+      layoutComplete: response.layoutComplete, document: response.document, selection: response.selection,
+    };
+  }
+
+  function replace(all, values, signal) {
+    return enqueueTask(async () => {
+      if (signal?.aborted || !state || values?.revision !== state.revision) throw new EditorError("EDITOR_STALE_QUERY");
+      if (busy || disposed || compositionStart) throw new EditorError(disposed ? "EDITOR_CLOSED" : "EDITOR_BUSY");
+      extensionMode = false;
+      const common = { revision: state.revision, flags: values.options ?? {}, query: values.query, replacement: sanitizeEditText(values.replacement) };
+      const command = all ? { type: "replaceAll", ...common } : { type: "replace", ...common, start: BigInt(values.start), end: BigInt(values.end) };
+      const { response } = await send(command, "query");
+      return { kind: "replacement", count: response.count, state };
+    });
+  }
+
+  function setHighlights(result, index = -1) {
+    if (disposed) return false;
+    if (result === null) {
+      highlights = null;
+      repaintOverlay();
+      return true;
+    }
+    if (!state || result?.kind !== "search" || result.revision !== state.revision) return false;
+    if (!Array.isArray(result.items) || result.items.length > RICH_LIMITS.maxSearchItems || !Number.isInteger(index) || index < -1 || index >= result.items.length) {
+      throw new EditorError("EDITOR_INVALID_RESPONSE");
+    }
+    for (const item of result.items) {
+      if (!Number.isInteger(item.start) || !Number.isInteger(item.end) || item.start < 0 || item.end <= item.start || item.end > state.docLen) {
+        throw new EditorError("EDITOR_INVALID_RESPONSE");
+      }
+    }
+    if (highlights?.result === result) {
+      // Same occurrences, another current one: nothing to ask the engine again.
+      highlights.index = index;
+    } else {
+      highlights = { result, index, revision: state.revision, pages: new Map(), fetching: false, layoutDone: cache.layoutComplete === true,
+        ranges: result.items.map(item => ({ start: BigInt(item.start), end: BigInt(item.end) })) };
+    }
+    repaintOverlay();
+    scheduleHighlights();
+    return true;
+  }
+
+  function selectSearchResult(result, index, { signal } = {}) {
+    return enqueueTask(async () => {
+      if (signal?.aborted || disposed || busy || !state || compositionStart || result?.revision !== state.revision) throw new EditorError("EDITOR_STALE_QUERY");
+      const item = result.items?.[index];
+      if (!item) throw new EditorError("EDITOR_INVALID_RESPONSE");
+      await setSelection(item.start, item.end);
+      if (result.revision === state.revision) setHighlights(result, index);
+      return state;
+    });
+  }
+
+  async function readProperties() {
+    checkQueryState();
+    const { response } = await send({ type: "propertiesRead" }, "properties");
+    // A document that is not a DOCX keeps its properties only in a DOCX file: the dialog says so.
+    return { kind: "snapshot", ...response.snapshot, docxOnly: !["docx", "docm", "dotx"].includes(origin.format) };
+  }
+
+  /** `changes` maps property names (PROPERTY_FIELDS) to their new text; an empty text removes the property. */
+  function applyProperties(changes) {
+    if (changes === null || typeof changes !== "object") return Promise.reject(new TypeError("changes must be an object."));
+    for (const name of Object.keys(changes)) if (!PROPERTY_FIELDS.includes(name)) return Promise.reject(new TypeError(`unknown property ${name}.`));
+    return enqueueTask(async () => {
+      if (disposed) throw new EditorError("EDITOR_CLOSED");
+      if (!state || busy || compositionStart) throw new EditorError("EDITOR_BUSY");
+      const { response } = await send({ type: "propertiesApply", changes }, "properties");
+      if (response.status === "tooLong") return { kind: "tooLong", field: response.field, max: response.max, length: response.length };
+      return { kind: "applied", changed: response.changed, state };
+    });
+  }
+
   const dialogFormats = (formats, labels) => formats.map(format => ({ format, label: labels[format] }));
 
   /** Native open dialog and ticket read (US-113), or the bytes-only `host.open()` of simple hosts. */
@@ -995,12 +1166,14 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     },
     selectedText,
     readText,
-    search() { return Promise.reject(new EditorError("EDITOR_UNSUPPORTED_V2")); },
-    statistics() { return Promise.reject(new EditorError("EDITOR_UNSUPPORTED_V2")); },
-    replaceCurrent() { return Promise.reject(new EditorError("EDITOR_UNSUPPORTED_V2")); },
-    replaceAll() { return Promise.reject(new EditorError("EDITOR_UNSUPPORTED_V2")); },
-    setSearchHighlights(result) { return result === null; },
-    selectSearchResult() { return Promise.reject(new EditorError("EDITOR_UNSUPPORTED_V2")); },
+    search,
+    statistics,
+    replaceCurrent(values, { signal } = {}) { return replace(false, values, signal); },
+    replaceAll(values, { signal } = {}) { return replace(true, values, signal); },
+    setSearchHighlights: setHighlights,
+    selectSearchResult,
+    readProperties,
+    applyProperties,
     insertImages,
     async exportDocx() {
       const saved = await enqueueTask(() => saveToBytes("docx"));
@@ -1097,6 +1270,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     dispose() {
       if (disposed) return;
       disposed = true;
+      highlights = null;
       abort.abort();
       clearInterval(blink);
       clearTimeout(mirrorTimer);

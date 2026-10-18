@@ -851,3 +851,300 @@ fn insert_object_is_one_undoable_edit_of_three_bytes() {
         FlatError::OutOfRange
     );
 }
+
+#[test]
+fn replace_ranges_is_one_history_step() {
+    let mut doc = body(&["foo bar foo", "x foo", "none"]);
+    let original = flat(&doc);
+    let revision = doc.revision();
+    let edits = [(0, 3, "a"), (8, 11, "b\nc"), (14, 17, "")];
+    let o = doc.replace_ranges(&edits).unwrap();
+    assert_eq!(flat(&doc), "a bar b\nc\nx \nnone");
+    assert_eq!(o.revision, revision + 1);
+    assert_eq!(doc.revision(), revision + 1);
+    assert_eq!(o.doc_len, doc.len());
+    assert_eq!(o.first_paragraph, 0);
+    assert_eq!(o.removed_paragraphs, 2);
+    assert_eq!(o.inserted_paragraphs, 3);
+    assert_eq!(o.start, 0);
+    assert_eq!(o.selection, (12, 12));
+    // The first edit stays visible to a later one: the group is one entry.
+    let undone = doc.undo().unwrap();
+    assert_eq!(flat(&doc), original);
+    assert_eq!(undone.revision, revision + 2);
+    assert!(!doc.can_undo());
+    assert!(doc.can_redo());
+    doc.redo().unwrap();
+    assert_eq!(flat(&doc), "a bar b\nc\nx \nnone");
+    assert_eq!(doc.revision(), revision + 3);
+    doc.undo().unwrap();
+    assert_eq!(flat(&doc), original);
+}
+
+#[test]
+fn replace_ranges_refuses_bad_input_without_changing_anything() {
+    let mut doc = body(&["abc abc"]);
+    let revision = doc.revision();
+    doc.replace_range(0, 0, "z").unwrap();
+    doc.undo().unwrap();
+    let revision = revision + 2;
+    assert!(doc.can_redo());
+    assert_eq!(
+        doc.replace_ranges(&[(4, 7, "x"), (0, 3, "y")]),
+        Err(FlatError::InvalidRange)
+    );
+    assert_eq!(
+        doc.replace_ranges(&[(0, 99, "x")]),
+        Err(FlatError::OutOfRange)
+    );
+    assert_eq!(
+        doc.replace_ranges(&[(0, 3, "\u{FFFC}")]),
+        Err(FlatError::InvalidText)
+    );
+    assert_eq!(flat(&doc), "abc abc");
+    assert_eq!(doc.revision(), revision);
+    assert!(doc.can_redo());
+    // An empty list, or one that changes nothing, leaves the history alone.
+    assert!(doc.replace_ranges(&[]).is_ok());
+    assert!(doc.replace_ranges(&[(0, 3, "abc")]).is_ok());
+    assert_eq!(doc.revision(), revision);
+}
+
+#[test]
+fn replace_ranges_keeps_formatting_between_the_ranges() {
+    let mut doc = body(&["aa bold aa"]);
+    let id = doc.paragraph_ids()[0];
+    apply(
+        &mut doc,
+        vec![RichOp::SetCharAttrs {
+            para: id,
+            start: 3,
+            end: 7,
+            set: bold(),
+            clear: CharAttrs::default(),
+        }],
+    );
+    doc.replace_ranges(&[(0, 2, "b"), (8, 10, "cc")]).unwrap();
+    let p = para_at(&doc, 0);
+    assert_eq!(p.text, "b bold cc");
+    assert!(
+        p.runs
+            .iter()
+            .any(|r| r.start == 2 && r.end == 6 && r.attrs.bold == Some(true))
+    );
+}
+
+fn strong() -> CharAttrs {
+    CharAttrs {
+        bold: Some(true),
+        char_style: Some("Strong".into()),
+        ..CharAttrs::default()
+    }
+}
+
+fn mark(doc: &mut RichDocument, para: usize, start: usize, end: usize, set: CharAttrs) {
+    let id = doc.paragraph_ids()[para];
+    apply(
+        doc,
+        vec![RichOp::SetCharAttrs {
+            para: id,
+            start,
+            end,
+            set,
+            clear: CharAttrs::default(),
+        }],
+    );
+}
+
+/// Text and runs of every paragraph: what undo and redo must give back exactly.
+fn shape(doc: &RichDocument) -> Vec<(String, Vec<CharRun>)> {
+    (0..doc.paragraph_count())
+        .map(|i| {
+            let p = para_at(doc, i);
+            (p.text.clone(), p.runs.clone())
+        })
+        .collect()
+}
+
+#[test]
+fn replacement_text_takes_the_attributes_of_the_first_replaced_character() {
+    // "xx " plain, "bold" strong, " yy" plain: the bold word replaced stays strong.
+    let mut doc = body(&["xx bold yy"]);
+    mark(&mut doc, 0, 3, 7, strong());
+    doc.replace_range(3, 7, "NEW").unwrap();
+    let p = para_at(&doc, 0);
+    assert_eq!(p.text, "xx NEW yy");
+    assert_eq!(p.attrs_at(3), strong());
+    assert_eq!(p.attrs_at(5), strong());
+    assert_eq!(p.attrs_at(2), CharAttrs::default());
+    assert_eq!(p.attrs_at(6), CharAttrs::default());
+    doc.undo().unwrap();
+    assert_eq!(para_at(&doc, 0).text, "xx bold yy");
+    assert_eq!(para_at(&doc, 0).attrs_at(4), strong());
+
+    // "a" plain, "b c" strong, "d" plain: the replacement of "b c" is strong too.
+    let mut doc = body(&["ab cd"]);
+    mark(&mut doc, 0, 1, 4, strong());
+    doc.replace_range(1, 4, "Z").unwrap();
+    assert_eq!(para_at(&doc, 0).text, "aZd");
+    assert_eq!(para_at(&doc, 0).attrs_at(1), strong());
+    assert_eq!(para_at(&doc, 0).attrs_at(0), CharAttrs::default());
+    assert_eq!(para_at(&doc, 0).attrs_at(2), CharAttrs::default());
+
+    // The first replaced character wins, not the one before: plain "ab", strong "cd", replace "bc".
+    let mut doc = body(&["abcd"]);
+    mark(&mut doc, 0, 2, 4, strong());
+    doc.replace_range(1, 3, "XY").unwrap();
+    let p = para_at(&doc, 0);
+    assert_eq!(p.text, "aXYd");
+    assert_eq!(p.attrs_at(1), CharAttrs::default());
+    assert_eq!(p.attrs_at(2), CharAttrs::default());
+    assert_eq!(p.attrs_at(3), strong());
+    p.validate_local().unwrap();
+
+    // Text with a paragraph break: every new paragraph looks like the replaced text.
+    let mut doc = body(&["xx bold yy"]);
+    mark(&mut doc, 0, 3, 7, strong());
+    doc.replace_range(3, 7, "A\nB").unwrap();
+    assert_eq!(flat(&doc), "xx A\nB yy");
+    assert_eq!(para_at(&doc, 0).attrs_at(3), strong());
+    assert_eq!(para_at(&doc, 1).attrs_at(0), strong());
+    assert_eq!(para_at(&doc, 1).attrs_at(1), CharAttrs::default());
+
+    // An empty range keeps the old rule: the text takes what precedes it.
+    let mut doc = body(&["ab"]);
+    mark(&mut doc, 0, 0, 1, strong());
+    doc.replace_range(1, 1, "X").unwrap();
+    assert_eq!(para_at(&doc, 0).attrs_at(1), strong());
+    doc.validate().unwrap();
+}
+
+#[test]
+fn replace_ranges_gives_the_formatting_back_through_undo_and_redo() {
+    // Adjacent ranges, an occurrence over two runs, a replacement at the end.
+    let mut doc = body(&["aabbccdd", "ee ee"]);
+    mark(&mut doc, 0, 2, 6, strong());
+    let original = shape(&doc);
+    let edits = [
+        (0, 2, "X"),
+        (2, 4, "Y"),
+        (3, 5, "Z"),
+        (7, 8, "W"),
+        (9, 11, "V"),
+        (12, 14, "U"),
+    ];
+    // (2,4) and (3,5) overlap: refused, nothing changes.
+    assert_eq!(doc.replace_ranges(&edits), Err(FlatError::InvalidRange));
+    assert_eq!(shape(&doc), original);
+    let edits = [
+        (0, 2, "X"),
+        (2, 4, "Y"),
+        (5, 7, "Z"),
+        (9, 11, "V"),
+        (12, 14, "U"),
+    ];
+    doc.replace_ranges(&edits).unwrap();
+    let changed = shape(&doc);
+    assert_eq!(changed[0].0, "XYcZd");
+    let p = para_at(&doc, 0);
+    // "aa" plain -> X plain; "bb" strong -> Y strong; "bc" over two runs -> starts strong.
+    assert_eq!(p.attrs_at(0), CharAttrs::default());
+    assert_eq!(p.attrs_at(1), strong());
+    doc.validate().unwrap();
+    for _ in 0..2 {
+        doc.undo().unwrap();
+        assert_eq!(
+            shape(&doc),
+            original,
+            "undo restores text, runs and attributes"
+        );
+        assert!(!doc.can_undo());
+        doc.redo().unwrap();
+        assert_eq!(shape(&doc), changed, "redo reapplies them exactly");
+        assert!(!doc.can_redo());
+    }
+    doc.undo().unwrap();
+    assert_eq!(shape(&doc), original);
+    doc.validate().unwrap();
+}
+
+#[test]
+fn replace_ranges_over_two_runs_and_adjacent_ranges_keep_the_runs_consistent() {
+    let mut doc = body(&["abcdef"]);
+    mark(&mut doc, 0, 3, 6, strong());
+    let original = shape(&doc);
+    // "cd" spans the plain and the strong run; "ef" follows it directly.
+    doc.replace_ranges(&[(2, 4, "1"), (4, 6, "23")]).unwrap();
+    let p = para_at(&doc, 0);
+    assert_eq!(p.text, "ab123");
+    assert_eq!(
+        p.attrs_at(2),
+        CharAttrs::default(),
+        "first replaced character was plain"
+    );
+    assert_eq!(
+        p.attrs_at(3),
+        strong(),
+        "the next range starts on a strong character"
+    );
+    assert_eq!(p.attrs_at(4), strong());
+    p.validate_local().unwrap();
+    doc.undo().unwrap();
+    assert_eq!(shape(&doc), original);
+    doc.redo().unwrap();
+    doc.undo().unwrap();
+    assert_eq!(shape(&doc), original);
+}
+
+#[test]
+fn replace_ranges_refuses_more_ranges_than_the_history_group_holds() {
+    let count = RichDocument::MAX_REPLACE_RANGES;
+    let text = "a".repeat(count + 1);
+    let mut doc = body(&[text.as_str()]);
+    let original = shape(&doc);
+    let revision = doc.revision();
+    let edits: Vec<(usize, usize, &str)> = (0..=count).map(|i| (i, i + 1, "b")).collect();
+    assert_eq!(doc.replace_ranges(&edits), Err(FlatError::Limit));
+    assert_eq!(shape(&doc), original);
+    assert_eq!(doc.revision(), revision);
+    // Exactly the limit is accepted, as one step.
+    let done = doc.replace_ranges(&edits[..count]).unwrap();
+    assert_eq!(done.revision, revision + 1);
+    doc.undo().unwrap();
+    assert_eq!(shape(&doc), original);
+    assert!(!doc.can_undo());
+}
+
+#[test]
+fn history_position_returns_when_undo_comes_back_to_a_step() {
+    let mut doc = body(&["ab"]);
+    let start = doc.history_position();
+    doc.replace_range(2, 2, "c").unwrap();
+    let saved = doc.history_position();
+    assert_ne!(saved, start);
+    doc.replace_range(3, 3, "d").unwrap();
+    assert_ne!(doc.history_position(), saved);
+    doc.undo().unwrap();
+    assert_eq!(
+        doc.history_position(),
+        saved,
+        "the revision grew, the position is the saved one"
+    );
+    doc.undo().unwrap();
+    assert_eq!(doc.history_position(), start);
+    doc.redo().unwrap();
+    assert_eq!(
+        doc.history_position(),
+        saved,
+        "redo gives the same step back"
+    );
+    // A new edit after an undo is another position, and a group is one step.
+    doc.undo().unwrap();
+    doc.replace_range(2, 2, "z").unwrap();
+    assert_ne!(doc.history_position(), saved);
+    let before = doc.history_position();
+    doc.replace_ranges(&[(0, 1, "q"), (2, 3, "r")]).unwrap();
+    assert_ne!(doc.history_position(), before);
+    doc.undo().unwrap();
+    assert_eq!(doc.history_position(), before);
+}

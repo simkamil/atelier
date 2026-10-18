@@ -10,6 +10,7 @@ import { createI18n, parseCatalog } from "../web/i18n.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
 import { checkEditorZoom } from "./zoom-browser.mjs";
 import { documentText, insertTextCommand } from "./editor-test-adapter.mjs";
+import { run as checkFind } from "./editor-find-browser.mjs";
 
 const checks = [];
 const skipped = [];
@@ -364,11 +365,13 @@ try {
 
   await checkEditorZoom({ editor, scrollport, canvas, openText, assert, waitFor, key, inputText, pointer, textOf: text });
 
+  // R7b-2: search, replacement, statistics and properties run here in v2 (they were skipped in R7a).
+  await checkFind({ assert, waitFor, editor, openText, text, canvas });
+
   for (const [name, reason] of [
-    ["search, replacement and statistics suites (navigation-browser, replacement-browser, statistics)", "absent from the v2 protocol; the commands are greyed (docs/r7-ui-parity.md §7)"],
     ["document-status integration (page count, go-to-page, view menu)", "reads state.text and v1 pages; goToPage and the viewport state are exercised by run-rich-editor-ui-browser"],
     ["context menu and symbols integration (editor-utilities-integration)", "reads state.text; copy, cut and select-all go through selectedText in run-rich-editor-ui-browser"],
-    ["document properties (properties-integration)", "reads the DOCX preview, absent in v2"],
+    ["the properties dialog on the DOCX preview (properties-integration)", "v2 has no preview: the dialog reads the open document, run through run-rich-editor-ui-browser"],
     ["DOCX preview mode (openDocx, closePreview)", "replaced by opening the DOCX in the editor"],
     ["launch documents (US-115) and app-level shortcut harness", "run through app.mjs, whose v1 text-state assertions are not portable; the v2 product page is run-rich-editor-ui-browser"],
   ]) skip(name, reason);
