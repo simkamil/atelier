@@ -324,6 +324,11 @@ impl FileRuntime {
     }
 }
 
+/// Erreur de démarrage montrée à l'utilisateur : le texte du catalogue, jamais la clé brute.
+fn startup_file_error(error: &FileError) -> io::Error {
+    io::Error::other(t(error.message_key, &[]))
+}
+
 fn file_reply(id: &str, result: Result<Option<Vec<u8>>, &'static str>) -> String {
     match result {
         Ok(Some(bytes)) => format!(
@@ -1632,7 +1637,7 @@ pub fn run_with_launch(
     let _apartment = webview::ComApartment::initialize_sta()?;
     let saved = load_state(state_file)?;
     let mut context = create_context(state_file, title, saved)?;
-    let mut runtime = FileRuntime::new().map_err(|error| io::Error::other(error.message_key))?;
+    let mut runtime = FileRuntime::new().map_err(|error| startup_file_error(&error))?;
     runtime
         .launch
         .extend(launch.into_iter().take(crate::instance::MAX_PATHS));
@@ -2602,6 +2607,16 @@ pub fn show_error(message: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn startup_file_errors_show_the_catalogue_text_not_the_key() {
+        let error = FileFilter::new("", ["txt"]).unwrap_err();
+        assert!(error.message_key.starts_with("files.error."));
+        let shown = super::startup_file_error(&error).to_string();
+        assert!(!shown.contains("files.error."), "{shown}");
+        assert!(!shown.contains('⟦'), "{shown}");
+        assert_eq!(shown, super::t(error.message_key, &[]));
+    }
+
     use super::{
         CLOSE_WAIT_LIMIT, CloseGate, FileDialogKind, SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED,
         WPF_RESTORETOMAXIMIZED, atomic_write_to_temp, close_gate, placement_is_maximized,
