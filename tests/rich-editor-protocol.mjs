@@ -40,10 +40,11 @@ function describeRequest({ docId, requestId, command: c }) {
   return `${head} ${tail}`;
 }
 
+const INLINE_KINDS = { object: 0, lineBreak: 1, pageBreak: 2, symbol: 3 };
 const ROLES = { paragraph: 0, heading: 1, listItem: 2, tableCell: 3, opaque: 4 };
 const describeItems = (items) => (items.length
   ? items.map((i) => `${i.paraStart}-${i.paraEnd}:${ROLES[i.role]}:${i.level}:${textHex(i.label)}:${textHex(i.text)}:${
-    i.objects.length ? i.objects.map((o) => `${o.offset}/${textHex(o.alt)}`).join("+") : "none"}`).join(";")
+    i.inlines.length ? i.inlines.map((o) => `${o.offset}/${INLINE_KINDS[o.kind]}/${textHex(o.value)}`).join("+") : "none"}`).join(";")
   : "none");
 
 const describePages = (pages) => (pages.length ? pages.map((p) => `${p.index}:${p.display.length}`).join(",") : "none");
@@ -97,7 +98,7 @@ for (const [kind, name, frameHex, expected] of rows) {
     expectCode(() => decode(bytes), code, note !== "nocontext");
   }
 }
-assert.deepEqual(counts, { request: 27, reply: 12, "bad-request": 41, "bad-reply": 24 });
+assert.deepEqual(counts, { request: 27, reply: 12, "bad-request": 41, "bad-reply": 27 });
 
 // Truncation: every strict prefix of a valid frame is rejected, never thrown as a foreign error.
 for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {

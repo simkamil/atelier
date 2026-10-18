@@ -348,12 +348,25 @@ pub struct State {
     pub window: Option<TextWindowData>,
 }
 
-/// A non-text item (U+FFFC) of an accessible paragraph.
+/// Kinds of an inline item (every U+FFFC of an accessible paragraph).
+pub mod inline_kind {
+    /// Anchored object; the value is its alternative text.
+    pub const OBJECT: u8 = 0;
+    /// Line break or text wrapping break; empty value.
+    pub const LINE_BREAK: u8 = 1;
+    /// Page or column break; empty value.
+    pub const PAGE_BREAK: u8 = 2;
+    /// Symbol; the value is its displayable character.
+    pub const SYMBOL: u8 = 3;
+}
+
+/// The inline item behind one U+FFFC of an accessible paragraph.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AccessibleObject {
-    /// Flat offset relative to the paragraph start.
+pub struct AccessibleInline {
+    /// Flat offset relative to the paragraph start, on a U+FFFC.
     pub offset: u64,
-    pub alt: String,
+    pub kind: u8,
+    pub value: String,
 }
 
 /// One paragraph of an `AccessibleWindow` reply.
@@ -368,7 +381,8 @@ pub struct AccessibleItem {
     pub label: String,
     /// Flat text of the paragraph (`para_end - para_start` bytes).
     pub text: String,
-    pub objects: Vec<AccessibleObject>,
+    /// Exactly one per U+FFFC of `text`, in text order.
+    pub inlines: Vec<AccessibleInline>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -899,13 +913,14 @@ fn put_accessible(out: &mut Vec<u8>, items: &[AccessibleItem]) -> Result<(), Fai
         put_text16(out, &item.label)?;
         put_text(out, &item.text)?;
         out.extend_from_slice(
-            &u16::try_from(item.objects.len())
+            &u16::try_from(item.inlines.len())
                 .map_err(|_| Fail::InvalidBody)?
                 .to_le_bytes(),
         );
-        for object in &item.objects {
-            put_u64(out, object.offset);
-            put_text16(out, &object.alt)?;
+        for inline in &item.inlines {
+            put_u64(out, inline.offset);
+            out.extend_from_slice(&[inline.kind, 0]);
+            put_text16(out, &inline.value)?;
         }
     }
     Ok(())
@@ -939,17 +954,30 @@ fn read_accessible(r: &mut Reader<'_>) -> Result<Vec<AccessibleItem>, Fail> {
             return Err(Fail::InvalidBody);
         }
         let n = usize::from(r.u16()?);
-        let mut objects: Vec<AccessibleObject> = Vec::with_capacity(n);
+        let mut inlines: Vec<AccessibleInline> = Vec::with_capacity(n);
         let mut floor = 0usize;
         for _ in 0..n {
             let offset = r.u64()?;
-            let alt = r.text16()?;
+            let kind = r.u8()?;
+            r.zero(1)?;
+            let value = r.text16()?;
             let at = usize::try_from(offset).map_err(|_| Fail::InvalidBody)?;
-            if at < floor || raw.get(at..at.saturating_add(3)) != Some(&OBJECT[..]) {
+            if kind > inline_kind::SYMBOL
+                || at < floor
+                || raw.get(at..at.saturating_add(3)) != Some(&OBJECT[..])
+            {
                 return Err(Fail::InvalidBody);
             }
             floor = at + 3;
-            objects.push(AccessibleObject { offset, alt });
+            inlines.push(AccessibleInline {
+                offset,
+                kind,
+                value,
+            });
+        }
+        // Every U+FFFC of the text has its inline.
+        if text.matches('\u{FFFC}').count() != n {
+            return Err(Fail::InvalidBody);
         }
         items.push(AccessibleItem {
             para_start,
@@ -958,7 +986,7 @@ fn read_accessible(r: &mut Reader<'_>) -> Result<Vec<AccessibleItem>, Fail> {
             level,
             label,
             text,
-            objects,
+            inlines,
         });
     }
     Ok(items)

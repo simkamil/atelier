@@ -135,12 +135,14 @@ fn describe_reply(r: &Reply) -> String {
                 items
                     .iter()
                     .map(|i| {
-                        let objects = if i.objects.is_empty() {
+                        let objects = if i.inlines.is_empty() {
                             "none".into()
                         } else {
-                            i.objects
+                            i.inlines
                                 .iter()
-                                .map(|o| format!("{}/{}", o.offset, hex(o.alt.as_bytes())))
+                                .map(|o| {
+                                    format!("{}/{}/{}", o.offset, o.kind, hex(o.value.as_bytes()))
+                                })
                                 .collect::<Vec<_>>()
                                 .join("+")
                         };
@@ -519,7 +521,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                             level: 2,
                             label: String::new(),
                             text: "Titre".into(),
-                            objects: vec![],
+                            inlines: vec![],
                         },
                         AccessibleItem {
                             para_start: 6,
@@ -528,14 +530,16 @@ fn replies() -> Vec<(&'static str, Reply)> {
                             level: 1,
                             label: "2.".into(),
                             text: "a\u{fffc}b\u{fffc}".into(),
-                            objects: vec![
-                                AccessibleObject {
+                            inlines: vec![
+                                AccessibleInline {
                                     offset: 1,
-                                    alt: "Logo".into(),
+                                    kind: inline_kind::OBJECT,
+                                    value: "Logo".into(),
                                 },
-                                AccessibleObject {
+                                AccessibleInline {
                                     offset: 5,
-                                    alt: String::new(),
+                                    kind: inline_kind::SYMBOL,
+                                    value: "·".into(),
                                 },
                             ],
                         },
@@ -546,9 +550,10 @@ fn replies() -> Vec<(&'static str, Reply)> {
                             level: 0,
                             label: String::new(),
                             text: "\u{fffc}".into(),
-                            objects: vec![AccessibleObject {
+                            inlines: vec![AccessibleInline {
                                 offset: 0,
-                                alt: String::new(),
+                                kind: inline_kind::OBJECT,
+                                value: String::new(),
                             }],
                         },
                     ],
@@ -937,7 +942,7 @@ fn acc_item(
     (start, end): (u64, u64),
     (role, level, reserved): (u8, u8, u8),
     text: &str,
-    objects: &[u64],
+    inlines: &[(u64, u8)],
 ) -> Vec<u8> {
     let mut b = start.to_le_bytes().to_vec();
     b.extend_from_slice(&end.to_le_bytes());
@@ -945,9 +950,10 @@ fn acc_item(
     b.extend_from_slice(&0u16.to_le_bytes());
     b.extend_from_slice(&(text.len() as u32).to_le_bytes());
     b.extend_from_slice(text.as_bytes());
-    b.extend_from_slice(&(objects.len() as u16).to_le_bytes());
-    for offset in objects {
+    b.extend_from_slice(&(inlines.len() as u16).to_le_bytes());
+    for (offset, kind) in inlines {
         b.extend_from_slice(&offset.to_le_bytes());
+        b.extend_from_slice(&[*kind, 0]);
         b.extend_from_slice(&0u16.to_le_bytes());
     }
     b
@@ -1117,18 +1123,41 @@ fn bad_replies() -> Vec<Bad> {
         ),
         (
             "accessible-object-not-fffc",
-            acc_reply(&[acc_item((0, 3), (0, 0, 0), "abc", &[0])]),
+            acc_reply(&[acc_item((0, 3), (0, 0, 0), "abc", &[(0, 0)])]),
             InvalidBody,
             true,
         ),
         (
-            "accessible-objects-overlap",
+            "accessible-inlines-overlap",
             acc_reply(&[acc_item(
                 (0, 6),
                 (0, 0, 0),
                 "\u{fffc}\u{fffc}",
-                &[0, 0],
+                &[(0, 0), (0, 0)],
             )]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-inline-missing",
+            acc_reply(&[acc_item((0, 3), (0, 0, 0), "\u{fffc}", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-inline-kind-4",
+            acc_reply(&[acc_item((0, 3), (0, 0, 0), "\u{fffc}", &[(0, 4)])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-inline-reserved",
+            {
+                let mut f = acc_reply(&[acc_item((0, 3), (0, 0, 0), "\u{fffc}", &[(0, 0)])]);
+                let at = f.len() - 3;
+                f[at] = 1;
+                f
+            },
             InvalidBody,
             true,
         ),
@@ -1282,25 +1311,28 @@ fn encoder_refuses_what_decoder_would_reject() {
         response: Response::State(s),
     };
     assert_eq!(encode_reply(&reply), Err(ErrorCode::PageRange));
-    let item = |objects: Vec<AccessibleObject>| AccessibleItem {
+    let item = |inlines: Vec<AccessibleInline>| AccessibleItem {
         para_start: 0,
         para_end: 3,
         role: role::PARAGRAPH,
         level: 0,
         label: String::new(),
         text: "\u{fffc}".into(),
-        objects,
+        inlines,
     };
     let accessible = |items: Vec<AccessibleItem>| Reply {
         doc_id: 1,
         request_id: 1,
         response: Response::AccessibleWindow { revision: 1, items },
     };
-    assert!(encode_reply(&accessible(vec![item(vec![AccessibleObject {
-        offset: 0,
-        alt: "x".into()
-    }])]))
-    .is_ok());
+    assert!(
+        encode_reply(&accessible(vec![item(vec![AccessibleInline {
+            offset: 0,
+            kind: inline_kind::OBJECT,
+            value: "x".into()
+        }])]))
+        .is_ok()
+    );
     let too_many: Vec<AccessibleItem> = (0..=MAX_ACCESSIBLE_ITEMS as u64)
         .map(|i| AccessibleItem {
             para_start: i * 4,
@@ -1312,9 +1344,10 @@ fn encoder_refuses_what_decoder_would_reject() {
         encode_reply(&accessible(too_many)),
         Err(ErrorCode::InvalidBody)
     );
-    let long_alt = vec![AccessibleObject {
+    let long_alt = vec![AccessibleInline {
         offset: 0,
-        alt: "a".repeat(65_536),
+        kind: inline_kind::OBJECT,
+        value: "a".repeat(65_536),
     }];
     assert_eq!(
         encode_reply(&accessible(vec![item(long_alt)])),

@@ -406,6 +406,7 @@ function writeState(w, s) {
 }
 
 const OBJECT_BYTES = [0xef, 0xbf, 0xbc];
+const INLINE_KINDS = ["object", "lineBreak", "pageBreak", "symbol"];
 const ACCESSIBLE_ROLES = ["paragraph", "heading", "listItem", "tableCell", "opaque"];
 
 function text16(r) {
@@ -422,7 +423,7 @@ function writeText16(w, value) {
   w.u16(b.length); w.raw(b);
 }
 
-/** Items: {paraStart, paraEnd (BigInt), role, level, label, text, objects: [{offset (BigInt), alt}]}. */
+/** Items: {paraStart, paraEnd (BigInt), role, level, label, text, inlines: [{offset (BigInt), kind, value}]}, one inline per U+FFFC. */
 function readAccessible(r) {
   const count = r.u32();
   if (count > RICH_LIMITS.maxAccessibleItems) fail("RICH_INVALID_BODY");
@@ -442,18 +443,26 @@ function readAccessible(r) {
     const previous = items[items.length - 1];
     if (paraStart > paraEnd || paraEnd - paraStart !== BigInt(len) || (previous && paraStart <= previous.paraEnd)) fail("RICH_INVALID_BODY");
     const n = r.u16();
-    const objects = [];
+    const inlines = [];
     let floor = 0;
     for (let k = 0; k < n; k += 1) {
       const offset = r.u64();
-      const alt = text16(r);
-      if (offset > BigInt(len)) fail("RICH_INVALID_BODY");
+      const kindCode = r.u8();
+      r.zero(1);
+      const value = text16(r);
+      const kind = INLINE_KINDS[kindCode];
+      if (kind === undefined || offset > BigInt(len)) fail("RICH_INVALID_BODY");
       const at = Number(offset);
       if (at < floor || at + 3 > len || OBJECT_BYTES.some((b, j) => raw[at + j] !== b)) fail("RICH_INVALID_BODY");
       floor = at + 3;
-      objects.push({ offset, alt });
+      inlines.push({ offset, kind, value });
     }
-    items.push({ paraStart, paraEnd, role, level, label, text, objects });
+    let marks = 0;
+    for (let at = 0; at + 2 < len; at += 1) {
+      if (raw[at] === 0xef && raw[at + 1] === 0xbf && raw[at + 2] === 0xbc) { marks += 1; at += 2; }
+    }
+    if (marks !== n) fail("RICH_INVALID_BODY");
+    items.push({ paraStart, paraEnd, role, level, label, text, inlines });
   }
   return items;
 }
@@ -466,9 +475,9 @@ function writeAccessible(w, items) {
     w.u8(enumIndex(ACCESSIBLE_ROLES, item.role), item.level, 0, 0);
     writeText16(w, item.label);
     w.text(item.text);
-    if (item.objects.length > 0xffff) fail("RICH_INVALID_BODY");
-    w.u16(item.objects.length);
-    for (const object of item.objects) { w.u64(u64(object.offset)); writeText16(w, object.alt); }
+    if (item.inlines.length > 0xffff) fail("RICH_INVALID_BODY");
+    w.u16(item.inlines.length);
+    for (const inline of item.inlines) { w.u64(u64(inline.offset)); w.u8(enumIndex(INLINE_KINDS, inline.kind), 0); writeText16(w, inline.value); }
   }
 }
 
