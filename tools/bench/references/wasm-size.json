@@ -4,7 +4,7 @@
   "target": "wasm32-unknown-unknown",
   "profile": "wasm-release",
   "features": [],
-  "code_reference_bytes": 2172665,
+  "code_reference_bytes": 2078420,
   "allowed_growth_percent": 10,
   "fonts": [
     {
@@ -28,8 +28,8 @@
       "sha256": "f6418f708baede9789daef5d458c0f53d2a888af9820e8062934e504fedc6595"
     }
   ],
-  "measured_on": "2026-10-18",
+  "measured_on": "2026-10-19",
   "previous_reference_bytes": 4280188,
-  "rebaseline_reason": "Intentional growth decided by the product owner on 2026-10-18: wiring the rich editor (R3a, US-217) links the flat model (R1), the incremental page cache and painter (R2) and the v2 protocol into the product for the first time (+253 520 bytes of code since 1919145). The 10% allowance is unchanged. Target: return under the former code limit (2111059 bytes) after the v1 editor is removed (R8, US-219). See docs/rich-editor-migration.md.",
-  "previous_code_reference_bytes": 1919145
+  "rebaseline_reason": "Tightened after the v1 editor removal (R8, -109 927 bytes) and compact Unicode tables (R8b, -104 312 bytes): code is back under the former limit (2 111 059) as decided by the product owner. The 10% allowance is unchanged and now applies to the smaller reference.",
+  "previous_code_reference_bytes": 2172665
 }
