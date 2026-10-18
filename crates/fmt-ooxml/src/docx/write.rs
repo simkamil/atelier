@@ -23,12 +23,22 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 mod body;
+mod legacy;
 mod parts;
 mod props;
 mod tbl;
 mod xml;
 
 use body::Gen;
+
+/// The text of a paragraph as the ranges of the preserved skeleton count it
+/// (`PreservedElement::range`): the text of the model with a `\n` for each
+/// line, page or column break and the character of each symbol put back where
+/// the inline items of the model stand.
+pub fn source_text(paragraph: &atelier_text_model::rich::Paragraph) -> String {
+    legacy::legacy(paragraph).paragraph.into_owned().text
+}
+
 use props::Prefixes;
 use xml::Out;
 

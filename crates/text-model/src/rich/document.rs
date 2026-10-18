@@ -147,6 +147,48 @@ impl RichDocument {
         self.theme = theme;
     }
 
+    /// Sets the uninterpreted attributes of a section, among them the page
+    /// geometry that [`PageSetup::from_section`](super::flat::PageSetup::from_section)
+    /// reads. Meant for loading a document: it is not an undoable operation
+    /// and ends the flat edit history. `attrs` are sorted by key; a repeated
+    /// key keeps its last value.
+    pub fn set_section_attrs(
+        &mut self,
+        section: NodeId,
+        mut attrs: Vec<super::OpaqueAttr>,
+    ) -> Result<(), RichError> {
+        match self.nodes.get_mut(&section) {
+            Some(Node::Section(s)) => {
+                let mut sorted: Vec<super::OpaqueAttr> = Vec::with_capacity(attrs.len());
+                attrs.sort_by(|a, b| {
+                    (a.namespace.as_str(), a.name.as_str())
+                        .cmp(&(b.namespace.as_str(), b.name.as_str()))
+                });
+                for attr in attrs {
+                    match sorted.last_mut() {
+                        Some(last)
+                            if last.namespace == attr.namespace && last.name == attr.name =>
+                        {
+                            *last = attr;
+                        }
+                        _ => sorted.push(attr),
+                    }
+                }
+                s.opaque = sorted;
+            }
+            Some(_) => {
+                return Err(RichError::WrongNodeKind {
+                    id: section,
+                    expected: "section",
+                });
+            }
+            None => return Err(RichError::NodeNotFound(section)),
+        }
+        self.invalidate_flat();
+        self.history.clear();
+        Ok(())
+    }
+
     /// Drops the flat index (the next flat query rebuilds it).
     pub(crate) fn invalidate_flat(&mut self) {
         *self.flat.get_mut().unwrap_or_else(|e| e.into_inner()) = None;

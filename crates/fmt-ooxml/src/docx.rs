@@ -13,16 +13,17 @@ use atelier_font::FontFace;
 use atelier_font::manager::{FontManager, FontSource};
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
-    Alignment, AnchoredObject, CharAttrs, Color, DocumentStyleDefaults, LineRule, LineSpacing,
-    Node, NodeId, OpaqueAttr, ParaProps, Paragraph, ResolvedProperties, RichDocument, RichOp,
-    Style, StyleCatalog, StyleCharAttrs, StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont,
-    Underline, VerticalAlign,
+    Alignment, AnchoredObject, BreakKind, CharAttrs, Color, DocumentStyleDefaults, Inline,
+    InlineBreak, InlineSymbol, LineRule, LineSpacing, Node, NodeId, OpaqueAttr, ParaProps,
+    Paragraph, ResolvedProperties, RichDocument, RichOp, Style, StyleCatalog, StyleCharAttrs,
+    StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont, Underline, VerticalAlign,
 };
 use atelier_unicode::segmentation::grapheme_boundaries;
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+mod inline;
 mod preserve;
 mod tables;
 mod write;
@@ -38,7 +39,7 @@ pub use tables::{
 };
 pub use write::{
     DocxVariant, DocxWriteOptions, NewDocument, PageSetup, StyleDecl, WriteError, WriteNotice,
-    WrittenDocx, write_docx, write_new_docx,
+    WrittenDocx, source_text, write_docx, write_new_docx,
 };
 
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -302,24 +303,12 @@ impl ImportedDocx {
         let mut output = source.clone();
         let mut resolved_runs = Vec::new();
         let boundaries = grapheme_boundaries(&source.text);
-        let paragraph_run_styles: Vec<_> = self
-            .run_styles
-            .iter()
-            .filter(|run| run.paragraph == paragraph_id)
-            .collect();
-        let mut style_cursor = 0;
         for pair in boundaries.boundaries().windows(2) {
             let (start, end) = (pair[0], pair[1]);
-            let direct = source.attrs_at(start);
-            while style_cursor < paragraph_run_styles.len()
-                && paragraph_run_styles[style_cursor].end <= start
-            {
-                style_cursor += 1;
-            }
-            let style = paragraph_run_styles
-                .get(style_cursor)
-                .filter(|run| run.start <= start && run.end >= end)
-                .and_then(|run| run.style_id.as_deref());
+            // The character style is a run attribute of the model (US-204).
+            let mut direct = source.attrs_at(start);
+            let style_id = direct.char_style.take();
+            let style = style_id.as_deref();
             let mut effective = self
                 .styles
                 .resolve(&self.document, paragraph_id, style, &direct)
@@ -674,7 +663,19 @@ pub(crate) fn import_package(
                     for object in paragraph.anchored.drain(..) {
                         ops.push(RichOp::InsertInline {
                             para: para_id,
-                            item: atelier_text_model::rich::Inline::Anchored(object),
+                            item: Inline::Anchored(object),
+                        });
+                    }
+                    for item in paragraph.breaks.drain(..) {
+                        ops.push(RichOp::InsertInline {
+                            para: para_id,
+                            item: Inline::Break(item),
+                        });
+                    }
+                    for item in paragraph.symbols.drain(..) {
+                        ops.push(RichOp::InsertInline {
+                            para: para_id,
+                            item: Inline::Symbol(item),
                         });
                     }
                     document
@@ -688,6 +689,9 @@ pub(crate) fn import_package(
         }
     }
     flush_blocks(&mut document, &mut pending)?;
+    document
+        .set_section_attrs(section, section_attrs(body))
+        .map_err(model_error)?;
     let body_element = body_tree.finish();
     {
         let root = sink.pres.shell(&main_xml)?;
@@ -801,6 +805,58 @@ impl XmlNode {
         }
     }
 }
+/// The `w:sectPr` that gives the page geometry of the single section of the
+/// model: the first one met in a paragraph's `w:pPr` (the section that starts
+/// the document), else the one that ends the body.
+fn first_sect_pr(body: &XmlNode) -> Option<&XmlNode> {
+    let find = |node: &XmlNode, local: &str| -> Option<usize> {
+        node.children.iter().position(|n| is_w(n, local))
+    };
+    for child in &body.children {
+        if !is_w(child, "p") {
+            continue;
+        }
+        let Some(ppr) = find(child, "pPr").and_then(|i| child.children.get(i)) else {
+            continue;
+        };
+        if let Some(sect) = find(ppr, "sectPr").and_then(|i| ppr.children.get(i)) {
+            return Some(sect);
+        }
+    }
+    find(body, "sectPr").and_then(|i| body.children.get(i))
+}
+
+/// The page attributes `pgSz` (`w`, `h`, `orient`) and `pgMar` (`top`,
+/// `right`, `bottom`, `left`, `header`, `footer`, `gutter`) of the section
+/// properties, as the opaque attributes `PageSetup::from_section` reads:
+/// WordprocessingML namespace, name `element.attribute`, the value being the
+/// text of the source attribute. Absent attributes are left out (defaults).
+fn section_attrs(body: &XmlNode) -> Vec<OpaqueAttr> {
+    const SIZE: [&str; 3] = ["w", "h", "orient"];
+    const MARGIN: [&str; 7] = [
+        "top", "right", "bottom", "left", "header", "footer", "gutter",
+    ];
+    let mut out = Vec::new();
+    let Some(sect) = first_sect_pr(body) else {
+        return out;
+    };
+    for (element, names) in [("pgSz", &SIZE[..]), ("pgMar", &MARGIN[..])] {
+        let Some(node) = sect.children.iter().find(|n| is_w(n, element)) else {
+            continue;
+        };
+        for name in names {
+            if let Some(value) = node.w_attr(name) {
+                out.push(OpaqueAttr {
+                    namespace: W_NS.to_owned(),
+                    name: format!("{element}.{name}"),
+                    value: value.trim().as_bytes().to_vec(),
+                });
+            }
+        }
+    }
+    out
+}
+
 /// Blocks inserted per transaction. A transaction takes a checkpoint of the
 /// whole document, so one transaction per block copies the document (and every
 /// captured byte in it) once per block: quadratic in the number of blocks.
@@ -1130,7 +1186,7 @@ fn parse_paragraph(
         let rpr = child
             .find(W_NS, "rPr")
             .or_else(|| child.find(W_STRICT_NS, "rPr"));
-        let attrs = match rpr {
+        let mut attrs = match rpr {
             Some(rpr) => parse_char_attrs(rpr, theme)?,
             None => CharAttrs::default(),
         };
@@ -1140,7 +1196,9 @@ fn parse_paragraph(
                     .or_else(|| r.find(W_STRICT_NS, "rStyle"))
             })
             .and_then(|s| s.w_attr("val"))
+            .filter(|value| !value.is_empty())
             .map(str::to_owned);
+        attrs.char_style = style_id.clone();
         for item in &child.children {
             let item_start = paragraph.text.len();
             let mut leaf = true;
@@ -1158,11 +1216,19 @@ fn parse_paragraph(
                 "br" | "cr" if is_w(item, "br") || is_w(item, "cr") => {
                     let offset = paragraph.text.len();
                     paragraph.text.push('\n');
-                    breaks.push((
+                    let break_type = item.w_attr("type").map(str::to_owned);
+                    let kind = match (item.name.local.as_str(), break_type.as_deref()) {
+                        ("br", Some("page")) => BreakKind::Page,
+                        ("br", Some("column")) => BreakKind::Column,
+                        _ => BreakKind::Line,
+                    };
+                    // `offset` is in the text of the source until `inline::strip`.
+                    paragraph.breaks.push(InlineBreak {
+                        id: document.alloc_id().map_err(model_error)?,
                         offset,
-                        item.name.local.clone(),
-                        item.w_attr("type").map(str::to_owned),
-                    ));
+                        kind,
+                    });
+                    breaks.push((offset, item.name.local.clone(), break_type));
                 }
                 "noBreakHyphen" if is_w(item, "noBreakHyphen") => paragraph.text.push('\u{2011}'),
                 "softHyphen" if is_w(item, "softHyphen") => paragraph.text.push('\u{00ad}'),
@@ -1188,6 +1254,12 @@ fn parse_paragraph(
                         .to_owned();
                     let offset = paragraph.text.len();
                     paragraph.text.push(scalar);
+                    paragraph.symbols.push(InlineSymbol {
+                        id: document.alloc_id().map_err(model_error)?,
+                        offset,
+                        font: font.clone(),
+                        code: u32::from(scalar),
+                    });
                     symbols.push((offset, font, code.to_owned()));
                 }
                 _ => {
@@ -1390,6 +1462,22 @@ impl<'a> ParagraphSink<'a> {
         if paragraph.props.style.is_none() {
             paragraph.props.style = self.default_style.clone();
         }
+        // The breaks and the symbols leave the text for inline items; the
+        // metadata kept next to the paragraph follows.
+        let map = inline::strip(&mut paragraph);
+        let runs: Vec<_> = runs
+            .into_iter()
+            .map(|(start, end, style)| (map.map(start), map.map(end), style))
+            .filter(|(start, end, _)| start < end)
+            .collect();
+        let breaks = breaks
+            .into_iter()
+            .map(|(offset, kind, break_type)| (map.map(offset), kind, break_type))
+            .collect();
+        let symbols = symbols
+            .into_iter()
+            .map(|(offset, font, code)| (map.map(offset), font, code))
+            .collect();
         self.total_text = self
             .total_text
             .checked_add(paragraph.text.len())
