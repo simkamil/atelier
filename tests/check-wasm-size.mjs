@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const rootArg = args.find(arg => arg.startsWith("--root="));
-// --root=<dir> redirects the reference, data/fonts and data/engine/manifest.json (used by the test).
+// --root=<dir> redirects the reference, data/fonts and data/engine/manifest.json. It exists for
+// tests/check-wasm-size.test.mjs (synthetic artifacts) and may point outside the repository: never use it
+// in CI or to validate the product, which must read the committed reference and fonts.
 const repoRoot = rootArg
   ? resolve(rootArg.slice("--root=".length))
   : resolve(dirname(fileURLToPath(import.meta.url)), "..");
