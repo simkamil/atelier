@@ -1,0 +1,13 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/web/app.css"><link rel="stylesheet" href="/ui-components.css"><link rel="stylesheet" href="/ribbon.css"><link rel="stylesheet" href="/theme.css"></head>
+  <body>
+    <main class="shell">
+      <section class="workspace"><div id="document-scroll" class="document-scroll"><div class="page-stack"><div id="document-text" class="accessible-document" role="region" aria-label="Texte du document"></div><canvas id="document-canvas"></canvas><div id="page-spacer"></div></div></div></section>
+    </main>
+    <pre id="result">running</pre>
+    <script type="module" src="/tests/latency-browser-watchdog.mjs"></script>
+    <script type="module" src="/tests/latency-browser.mjs"></script>
+  </body>
+</html>

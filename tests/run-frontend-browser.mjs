@@ -7,11 +7,12 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const suite = process.argv[2] ?? "all";
-assert(process.argv.length <= 3 && ["all", "canvas", "input"].includes(suite),
-  "Usage: node tests/run-frontend-browser.mjs [all|canvas|input]");
+const { rest: suiteArgs } = selectEngine("run-frontend-browser", "node tests/run-frontend-browser.mjs [all|canvas|input] [--engine v1|v2]",
+  rest => rest.length <= 1 && ["all", "canvas", "input"].includes(rest[0] ?? "all"));
+const suite = suiteArgs[0] ?? "all";
 const candidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createEditor } from "../web/editor.mjs";
 import { createEngineClient } from "../web/engine-client.mjs";
-import { encodeEditorCommand, EditorOpcode } from "../web/editor-protocol.mjs";
+import { insertTextCommand } from "./editor-test-adapter.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
 import { checkEditorZoom, checkAppZoom } from "./zoom-browser.mjs";
 import { checkNavigation } from "./navigation-browser.mjs";
@@ -416,7 +416,7 @@ try {
   try { await editor.undo(); } catch (error) { busyUndo = error.code === "EDITOR_BUSY"; }
   assert(busyUndo, "public undo is guarded while a native file operation is active");
   const externalEdit = encodeMessage({ type: MessageType.Editor, requestId: 900n,
-    payload: encodeEditorCommand(EditorOpcode.InsertText, { nowMs: 999n, text: "Q" }) });
+    payload: insertTextCommand("Q") });
   await client.request(externalEdit);
   releaseSave();
   let stale = false;
