@@ -324,10 +324,21 @@ pub fn parse_stamp(input: &[u8]) -> Result<(SaveStamp, &[u8]), EditorError> {
 
 /// Calls `update_on_save` on the package of an imported DOCX.
 pub fn stamp(imported: &mut ImportedDocx, stamp: &SaveStamp) -> Result<(), EditorError> {
+    let context = context(&imported.document, stamp)?;
+    imported.package.update_on_save(&context);
+    Ok(())
+}
+
+/// The values `update_on_save` takes, from the document (statistics) and the
+/// caller's stamp (time, user, version).
+pub fn context(
+    document_model: &atelier_text_model::rich::RichDocument,
+    stamp: &SaveStamp,
+) -> Result<SaveContext, EditorError> {
     let now = W3cDateTime::from_unix_seconds(stamp.unix_seconds).ok_or(INVALID)?;
-    let counts = document(&imported.document, &StatisticsOptions::default());
+    let counts = document(document_model, &StatisticsOptions::default());
     let n = |v: usize| Some(v as u64);
-    imported.package.update_on_save(&SaveContext {
+    Ok(SaveContext {
         now,
         user: stamp.user.clone(),
         application: Some("Atelier".to_owned()),
@@ -340,6 +351,5 @@ pub fn stamp(imported: &mut ImportedDocx, stamp: &SaveStamp) -> Result<(), Edito
             lines: None,
             paragraphs: n(counts.paragraphs),
         }),
-    });
-    Ok(())
+    })
 }

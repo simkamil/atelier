@@ -11,7 +11,8 @@
 //! never the whole document. Every edit, move and selection command also runs
 //! `DEFAULT_LAYOUT_BUDGET` paragraphs of pending layout.
 
-use atelier_text_model::plain_io::{OpenOptions, open_text};
+use atelier_fmt_ooxml::scan_revisions;
+use atelier_text_model::plain_io::{LineEndingStyle, OpenOptions, open_text};
 use atelier_text_model::rich::flat::{FlatEdit, FlatIndex, LayoutContext};
 use atelier_text_model::rich::{RichDocument, Theme, default_rich_document};
 
@@ -25,6 +26,7 @@ use crate::rich_protocol::{
 };
 
 mod accessible;
+mod io;
 #[cfg(test)]
 mod tests;
 
@@ -63,6 +65,8 @@ struct Session {
     /// X kept across vertical moves.
     preferred_x: Option<f64>,
     txt: bool,
+    /// Where the document comes from, read-only state, pictures (US-218).
+    origin: io::Origin,
     /// Page changes found by a layout step outside a `State` (while a move
     /// waits for the layout to reach its target); the next `State` reports them.
     pending: PageDelta,
@@ -188,28 +192,68 @@ impl Session {
         fn failed<E>(_: E) -> ErrorCode {
             ErrorCode::OpenFailed
         }
-        let doc = match kind {
-            OpenKind::Blank if txt => RichDocument::new(),
+        let (doc, origin) = match kind {
+            OpenKind::Blank if txt => (RichDocument::new(), io::Origin::new(io::Source::New)),
             OpenKind::Blank => {
                 let default = default_rich_document();
                 let mut doc = default.document;
                 doc.set_styles(default.styles.catalog().clone(), Theme::default());
-                doc
+                (doc, io::Origin::new(io::Source::New))
             }
-            OpenKind::Txt => open_text(data, &OpenOptions::default())
-                .and_then(|opened| opened.to_rich_document(MAX_TXT_PARAGRAPHS))
-                .map_err(failed)?,
+            OpenKind::Txt => {
+                let opened = open_text(data, &OpenOptions::default()).map_err(failed)?;
+                let doc = opened
+                    .to_rich_document(MAX_TXT_PARAGRAPHS)
+                    .map_err(failed)?;
+                // Several kinds of break: each paragraph keeps its own.
+                let eols = if opened.line_endings.style() == LineEndingStyle::Mixed {
+                    let breaks = io::line_breaks(data, &opened);
+                    doc.paragraph_ids().into_iter().zip(breaks).collect()
+                } else {
+                    Default::default()
+                };
+                let origin = io::Origin::new(io::Source::Text(io::TextOrigin {
+                    format: opened.format(),
+                    eols,
+                    replaced_on_open: opened.invalid_sequences > 0,
+                }));
+                (doc, origin)
+            }
             OpenKind::Docx => {
-                let imported = import_docx_for_editor(data).map_err(failed)?;
-                let mut doc = imported.document;
-                doc.set_styles(imported.styles.catalog().clone(), imported.theme);
-                doc
+                let mut imported = import_docx_for_editor(data).map_err(failed)?;
+                let report = scan_revisions(&imported.package);
+                // The model moves into the session; the import keeps the
+                // package and the baseline the writer compares with.
+                let marked = report.has_revisions() || report.has_comments();
+                let mut doc = if marked {
+                    // The import keeps the whole model (the source of a save
+                    // of the read-only session); the session shows a copy
+                    // without the marks of deleted text, moves and comments.
+                    let mut shown = imported.document.clone();
+                    io::show_accepted(&mut shown).map_err(failed)?;
+                    shown
+                } else {
+                    std::mem::take(&mut imported.document)
+                };
+                doc.set_styles(imported.styles.catalog().clone(), imported.theme.clone());
+                let mut origin = io::Origin::new(io::Source::Docx(Box::new(imported)));
+                // Revisions and comments: everything accepted is shown, edits
+                // are refused until the copy made by `MakeEditableCopy` is opened.
+                origin.has_revisions = marked;
+                origin.unreadable = report.unreadable > 0;
+                origin.read_only = marked;
+                (doc, origin)
             }
         };
-        Self::with_document(id, doc, txt)
+        Self::with_document(id, doc, txt, origin)
     }
 
-    fn with_document(id: u32, doc: RichDocument, txt: bool) -> Result<Self, ErrorCode> {
+    fn with_document(
+        id: u32,
+        doc: RichDocument,
+        txt: bool,
+        origin: io::Origin,
+    ) -> Result<Self, ErrorCode> {
         let cache = PageCache::new(&doc, txt).map_err(|_| ErrorCode::OpenFailed)?;
         let base = doc.revision();
         Ok(Self {
@@ -223,6 +267,7 @@ impl Session {
             upstream: false,
             preferred_x: None,
             txt,
+            origin,
             pending: PageDelta::default(),
             resync: false,
             epoch: 0,
@@ -331,15 +376,20 @@ impl Session {
             // Handled by the caller.
             Command::Open { .. } | Command::Close => Err(ErrorCode::Internal),
             Command::InsertText { text } => {
+                self.deny_read_only()?;
                 let (start, end) = self.selection_range();
                 self.edit(start, end, &text)
             }
             Command::ReplaceRange { start, end, text } => {
+                self.deny_read_only()?;
                 proto::check_range(self.doc.len() as u64, start, end)?;
                 let (start, end) = (proto::to_position(start)?, proto::to_position(end)?);
                 self.edit(start, end, &text)
             }
-            Command::Delete { forward, unit } => self.delete(forward, unit),
+            Command::Delete { forward, unit } => {
+                self.deny_read_only()?;
+                self.delete(forward, unit)
+            }
             Command::Move { direction, extend } => self.move_selection(direction, extend),
             Command::SetSelection {
                 anchor,
@@ -354,10 +404,12 @@ impl Session {
             }
             Command::HitTest { page, mode, x, y } => self.hit_test(page, mode, x, y),
             Command::Undo => {
+                self.deny_read_only()?;
                 let outcome = self.doc.undo();
                 self.after_history(outcome)
             }
             Command::Redo => {
+                self.deny_read_only()?;
                 let outcome = self.doc.redo();
                 self.after_history(outcome)
             }
@@ -414,6 +466,9 @@ impl Session {
                 self.mark_resync();
                 self.finish(PageDelta::default(), 1, true)
             }
+            Command::Save { format, stamp } => self.save(format, &stamp),
+            Command::InsertImage { alt, bytes } => self.insert_image(&alt, &bytes),
+            Command::MakeEditableCopy { stamp } => self.editable_copy(&stamp),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(
@@ -699,6 +754,8 @@ impl Session {
             } else {
                 None
             },
+            read_only: self.origin.read_only,
+            has_revisions: self.origin.has_revisions,
         })
     }
 
