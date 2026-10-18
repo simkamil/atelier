@@ -107,7 +107,6 @@ document.addEventListener("securitypolicyviolation", event => {
 });
 
 const FILE_ERROR_KEYS = ["files.error.invalid_text", "files.error.too_large", "files.error.queue_full", "files.error.unsupported_type", "files.error.timeout"];
-const MAX_TEXT_FILE_BYTES = 128 * 1024;
 const MAX_RICH_FILE_BYTES = 32 * 1024 * 1024;
 
 /** Loads the catalogue and returns the translator plus `messages`, the reader used to build module labels. */
@@ -145,7 +144,7 @@ function buildDateText(value, i18n, messages) {
 }
 
 /** Message of a rejected file operation: catalogue key from the host, with its named parameters. */
-function fileErrorMessage(key, i18n, messages, limit = MAX_TEXT_FILE_BYTES) {
+function fileErrorMessage(key, i18n, messages, limit = MAX_RICH_FILE_BYTES) {
   if (!FILE_ERROR_KEYS.includes(key)) return messages.get(key);
   return i18n.t(key, key === "files.error.too_large" ? { limit: i18n.formatFileSize(limit, { binary: true }) } : {});
 }

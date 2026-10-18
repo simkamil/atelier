@@ -628,13 +628,16 @@ ${text}
 // i18n-ignore-end`), ["invalid-exemption:2", "hardcoded:1"]);
 });
 
-test("limits: the JS text size limit equals MAX_TEXT of the Rust editor", () => {
-  const rust = readFileSync(join(root, "crates/core-wasm/src/editor.rs"), "utf8");
+// The size shown by files.error.too_large is the v2 open ceiling: MAX_FRAME_BYTES (rich_protocol.rs), of which
+// MAX_OPEN_BYTES is that minus the frame header. The v1 128 KiB limit (MAX_TEXT) no longer exists.
+test("limits: the JS file size limit shown equals the v2 engine frame limit", () => {
+  const rust = readFileSync(join(root, "crates/core-wasm/src/rich_protocol.rs"), "utf8");
   const app = readFileSync(join(root, "web/app.mjs"), "utf8");
-  const rustLimit = /const MAX_TEXT: usize = (\d+) \* 1024;/.exec(rust);
-  const jsLimit = /const MAX_TEXT_FILE_BYTES = (\d+) \* 1024;/.exec(app);
-  assert(rustLimit && jsLimit, "both constants are written as N * 1024");
+  const rustLimit = /const MAX_FRAME_BYTES: usize = (\d+) \* 1024 \* 1024;/.exec(rust);
+  const jsLimit = /const MAX_RICH_FILE_BYTES = (\d+) \* 1024 \* 1024;/.exec(app);
+  assert(rustLimit && jsLimit, "both constants are written as N * 1024 * 1024");
   assert.equal(Number(jsLimit[1]), Number(rustLimit[1]));
+  assert(!/MAX_TEXT_FILE_BYTES/.test(app), "the dead v1 limit is gone");
 });
 
 test("fallback: the French fallback of app.mjs equals the catalogue", () => {
