@@ -321,7 +321,7 @@ impl RenderJob {
             self.remaining_work -= extra_work;
             self.remaining_weight -= weight;
             let glyph_budget = MAX_GLYPHS.saturating_sub(self.total_glyphs).max(1);
-            let prepared = prepare(&paragraph, &fonts, true);
+            let prepared = prepare(&paragraph, &fonts, true, None);
             let layout = layout_paragraph(
                 &prepared.paragraph,
                 &defaults,

@@ -594,6 +594,24 @@ fn selection_rectangles_follow_lines_and_pages() {
 }
 
 #[test]
+fn a_selection_reaching_past_the_laid_out_paragraphs_ends_at_the_page() {
+    // Only the first pages are laid out: the selection runs far beyond them.
+    let doc = document(9, 400);
+    let cache = PageCache::new(&doc, false).expect("cache");
+    assert!(!cache.layout_complete());
+    let rects = cache.selection_rects(0, 0, doc.len()).unwrap();
+    assert!(rects.len() > 5, "{rects:?}");
+    assert!(rects.iter().all(|r| r.page == 0 && r.height > 0.0));
+    // A selection that starts past them selects nothing here.
+    assert!(
+        cache
+            .selection_rects(0, doc.len() - 5, doc.len())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn positions_are_checked() {
     let doc = wrapped_document();
     let cache = complete_state(&doc, true);

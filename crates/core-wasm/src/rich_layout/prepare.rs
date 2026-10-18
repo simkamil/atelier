@@ -13,7 +13,9 @@
 //!   font has it, otherwise with the font of the run (the Symbol and Wingdings
 //!   private-use code points `F000..F0FF` then stand for their Latin-1 low
 //!   byte);
-//! - anchored objects take no room.
+//! - an anchored picture takes the room of its drawn size when the caller gives
+//!   a [`PictureFit`] (U+FFFC in the laid-out text, laid out as an inline box),
+//!   other anchored objects take no room.
 //!
 //! Every item keeps its place in flat positions through a [`Mark`], which
 //! the caret code uses to convert between flat and laid-out offsets. The preview
@@ -21,6 +23,8 @@
 
 use atelier_font::manager::{FontManager, FontRequest, FontStyle};
 use atelier_text_layout::ParagraphLayout;
+use atelier_text_layout::inline_object;
+use atelier_text_model::inline_image::{IMAGE_OBJECT_KIND, InlineImage};
 use atelier_text_model::rich::flat::OBJECT_LEN;
 use atelier_text_model::rich::{BreakKind, CharAttrs, CharRun, NodeId, Paragraph};
 
@@ -35,6 +39,25 @@ pub(crate) struct Mark {
     pub len: usize,
 }
 
+/// Largest drawn size of a picture, in points (the text area of the page).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PictureFit {
+    pub max_width: f64,
+    pub max_height: f64,
+}
+
+/// A picture laid out as an inline box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Picture {
+    /// Offset of its U+FFFC in the laid-out text.
+    pub layout: usize,
+    /// Wire identity of the object (`ImageBitmap`).
+    pub id: u64,
+    /// Drawn size, 1/64 pt.
+    pub width: i64,
+    pub height: i64,
+}
+
 /// The paragraph to shape and how its items map into it.
 #[derive(Debug, Clone)]
 pub(crate) struct Prepared {
@@ -43,10 +66,13 @@ pub(crate) struct Prepared {
     pub marks: Vec<Mark>,
     /// Laid-out offsets just after a page or column break.
     pub page_breaks: Vec<usize>,
+    /// Pictures, in text order (empty without a [`PictureFit`]).
+    pub pictures: Vec<Picture>,
 }
 
 enum Kind {
     Object,
+    Picture(i64, i64),
     Line,
     Page,
     Symbol(String, u32),
@@ -69,14 +95,23 @@ fn symbol_char(font: &str, code: u32, fonts: &FontManager<'_>) -> (char, bool) {
 }
 
 /// Builds the text to lay out. `with_runs` is false for plain text.
-pub(crate) fn prepare(source: &Paragraph, fonts: &FontManager<'_>, with_runs: bool) -> Prepared {
+pub(crate) fn prepare(
+    source: &Paragraph,
+    fonts: &FontManager<'_>,
+    with_runs: bool,
+    fit: Option<PictureFit>,
+) -> Prepared {
     let mut items: Vec<(usize, NodeId, Kind)> = Vec::new();
-    items.extend(
-        source
-            .anchored
-            .iter()
-            .map(|x| (x.offset, x.id, Kind::Object)),
-    );
+    items.extend(source.anchored.iter().map(|x| {
+        let size = fit
+            .filter(|_| x.kind == IMAGE_OBJECT_KIND)
+            .and_then(|fit| picture_size(&x.data, fit));
+        (
+            x.offset,
+            x.id,
+            size.map_or(Kind::Object, |(w, h)| Kind::Picture(w, h)),
+        )
+    }));
     items.extend(source.breaks.iter().map(|x| {
         let kind = match x.kind {
             BreakKind::Line | BreakKind::Wrapping { .. } => Kind::Line,
@@ -97,6 +132,7 @@ pub(crate) fn prepare(source: &Paragraph, fonts: &FontManager<'_>, with_runs: bo
     let mut out_runs: Vec<CharRun> = Vec::new();
     let mut marks = Vec::with_capacity(items.len());
     let mut page_breaks = Vec::new();
+    let mut pictures = Vec::new();
     let mut at = 0usize;
     let piece = |text: &mut String, out_runs: &mut Vec<CharRun>, a: usize, b: usize| {
         let base = text.len();
@@ -112,7 +148,7 @@ pub(crate) fn prepare(source: &Paragraph, fonts: &FontManager<'_>, with_runs: bo
             }
         }
     };
-    for (k, (offset, _, kind)) in items.iter().enumerate() {
+    for (k, (offset, id, kind)) in items.iter().enumerate() {
         let offset = (*offset).min(source.text.len());
         if offset > at && source.text.is_char_boundary(offset) {
             piece(&mut text, &mut out_runs, at, offset);
@@ -121,6 +157,16 @@ pub(crate) fn prepare(source: &Paragraph, fonts: &FontManager<'_>, with_runs: bo
         let layout = text.len();
         let len = match kind {
             Kind::Object => 0,
+            Kind::Picture(width, height) => {
+                text.push(atelier_text_layout::INLINE_BOX_CHAR);
+                pictures.push(Picture {
+                    layout,
+                    id: id.value(),
+                    width: *width,
+                    height: *height,
+                });
+                atelier_text_layout::INLINE_BOX_CHAR.len_utf8()
+            }
             Kind::Line => {
                 text.push('\n');
                 1
@@ -172,7 +218,19 @@ pub(crate) fn prepare(source: &Paragraph, fonts: &FontManager<'_>, with_runs: bo
         },
         marks,
         page_breaks,
+        pictures,
     }
+}
+
+/// Drawn size of a picture (1/64 pt): natural size at 96 dpi with the EXIF
+/// orientation applied, shrunk proportionally to `fit`, never enlarged (the
+/// rule of the v1 editor, US-270).
+fn picture_size(data: &[u8], fit: PictureFit) -> Option<(i64, i64)> {
+    let (width, height, orientation) = InlineImage::peek_object_data(data).ok()?;
+    let (w, h) = inline_object::natural_size(width, height, orientation);
+    let (w, h) = inline_object::fit(w, h, fit.max_width, fit.max_height)?;
+    let units = |points: f64| (points * 64.0).round().max(1.0) as i64;
+    Some((units(w), units(h)))
 }
 
 /// Indices of the lines that begin a new page: the line starting at each of

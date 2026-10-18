@@ -27,6 +27,7 @@ use crate::rich_protocol::{
 
 mod accessible;
 mod io;
+mod sel;
 #[cfg(test)]
 mod tests;
 
@@ -64,6 +65,9 @@ struct Session {
     upstream: bool,
     /// X kept across vertical moves.
     preferred_x: Option<f64>,
+    /// Span of the unit gesture in progress (double or triple click and its
+    /// drag, R7b-1); any other selection change forgets it.
+    unit_base: Option<(usize, usize)>,
     txt: bool,
     /// Where the document comes from, read-only state, pictures (US-218).
     origin: io::Origin,
@@ -266,6 +270,7 @@ impl Session {
             focus: 0,
             upstream: false,
             preferred_x: None,
+            unit_base: None,
             txt,
             origin,
             pending: PageDelta::default(),
@@ -469,6 +474,13 @@ impl Session {
             Command::Save { format, stamp } => self.save(format, &stamp),
             Command::InsertImage { alt, bytes } => self.insert_image(&alt, &bytes),
             Command::MakeEditableCopy { stamp } => self.editable_copy(&stamp),
+            Command::SelectionRects { first, count } => self.selection_rects(first, count),
+            Command::ImageBitmap { object_id } => self.image_bitmap(object_id),
+            Command::SelectUnit {
+                position,
+                unit,
+                extend,
+            } => self.select_unit(position, unit, extend),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(
@@ -485,6 +497,7 @@ impl Session {
         self.focus = focus;
         self.upstream = upstream;
         self.preferred_x = preferred_x;
+        self.unit_base = None;
     }
 
     /// Replaces `start..end` and lays the change out.

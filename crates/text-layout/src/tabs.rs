@@ -85,5 +85,5 @@ pub fn layout_paragraph_with_tabs(
     options: LayoutOptions,
     settings: &TabSettings,
 ) -> Result<TabLayout, LayoutError> {
-    crate::layout_paragraph_impl(paragraph, defaults, fonts, options, settings)
+    crate::layout_paragraph_impl(paragraph, defaults, fonts, options, settings, &[])
 }
