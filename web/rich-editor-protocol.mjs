@@ -33,7 +33,7 @@ export const NO_CARET = 0xffffffff;
 export const RichOpcode = Object.freeze({
   Open: 0x0101, Close: 0x0102, InsertText: 0x0103, ReplaceRange: 0x0104, Delete: 0x0105,
   Move: 0x0106, SetSelection: 0x0107, HitTest: 0x0108, Undo: 0x0109, Redo: 0x010a,
-  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e, AccessibleWindow: 0x010f,
+  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e, AccessibleWindow: 0x010f, Resync: 0x0118,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
@@ -259,6 +259,7 @@ function parseCommand(opcode, body) {
       command = { type: "layout", budget };
       break;
     }
+    case RichOpcode.Resync: command = { type: "resync" }; break;
     case RichOpcode.AccessibleWindow: {
       const start = r.u64();
       const end = r.u64();
@@ -327,6 +328,7 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "pages": w.u32(u32(command.first)); w.u32(u32(command.count)); opcode = RichOpcode.Pages; break;
     case "markSaved": w.u64(u64(command.revision)); opcode = RichOpcode.MarkSaved; break;
     case "layout": w.u32(u32(command.budget)); opcode = RichOpcode.Layout; break;
+    case "resync": opcode = RichOpcode.Resync; break;
     case "accessibleWindow": w.u64(u64(command.start)); w.u64(u64(command.end)); opcode = RichOpcode.AccessibleWindow; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }

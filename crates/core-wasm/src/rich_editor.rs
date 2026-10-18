@@ -135,9 +135,7 @@ impl RichEditor {
     /// when the ABI refuses a response, `STATUS_LIMIT`, `EDITOR_RESPONSE_LIMIT`).
     pub fn mark_resync(&mut self) {
         if let Some(session) = self.active.as_mut() {
-            session.resync = true;
-            // The client may have missed atlas entries: start a new atlas.
-            session.new_atlas_epoch();
+            session.mark_resync();
         }
     }
 
@@ -232,6 +230,13 @@ impl Session {
     }
 
     /// Restarts the glyph atlas: new epoch, no entry, no painted page.
+    /// The client may have missed a reply: the next `State` invalidates every
+    /// page, and a new atlas epoch starts (atlas and painted pages emptied).
+    fn mark_resync(&mut self) {
+        self.resync = true;
+        self.new_atlas_epoch();
+    }
+
     fn new_atlas_epoch(&mut self) {
         self.epoch = self.epoch.wrapping_add(1);
         self.cache.reset_atlas();
@@ -403,6 +408,12 @@ impl Session {
                 Ok(Response::State(self.state(PageDelta::default(), false)?))
             }
             Command::Layout { budget } => self.finish(PageDelta::default(), budget, false),
+            // Idempotent: a lost reply is replayed, each answer starts a new
+            // epoch whose atlas begins at 0.
+            Command::Resync => {
+                self.mark_resync();
+                self.finish(PageDelta::default(), 1, true)
+            }
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(

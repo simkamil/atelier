@@ -1456,3 +1456,79 @@ fn a_lost_pages_reply_is_recovered_by_the_epoch() {
         }
     }
 }
+
+#[test]
+fn resync_recovers_replies_the_client_abandoned() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt(&format!("{}b", "a\n".repeat(400)));
+    view.apply(&opened.atlas);
+    let last = h.finish_layout().page_count - 1;
+    assert!(last >= 1);
+    // A Pages reply the engine produced and the client dropped (cancelled
+    // request, stopPump): its entries are never applied to the view.
+    match h.send(
+        1,
+        Command::Pages {
+            first: last,
+            count: 1,
+        },
+    ) {
+        Response::Pages { .. } => {}
+        other => panic!("{other:?}"),
+    }
+    // The next reply no longer follows what the client holds.
+    let gap = h.state(Command::Layout { budget: 1 });
+    assert_ne!(gap.atlas.first, view.len, "the gap exists");
+    // Resync: new epoch, atlas from 0, everything invalidated, text window.
+    let resynced = h.state(Command::Resync);
+    assert_ne!(Some(resynced.atlas.epoch), view.epoch);
+    assert_eq!(resynced.atlas.first, 0);
+    assert_eq!(resynced.invalidated, vec![(0, resynced.page_count)]);
+    assert!(resynced.window.is_some());
+    assert!(view.apply(&resynced.atlas));
+    view.covers(&resynced.pages);
+    // Pages and later States follow the new epoch.
+    for index in 0..resynced.page_count.min(3) {
+        match h.send(
+            1,
+            Command::Pages {
+                first: index,
+                count: 1,
+            },
+        ) {
+            Response::Pages { atlas, pages, .. } => {
+                assert_eq!(atlas.epoch, resynced.atlas.epoch);
+                assert!(!view.apply(&atlas));
+                view.covers(&pages);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    let after = h.state(Command::Layout { budget: 1 });
+    assert!(!view.apply(&after.atlas));
+    view.covers(&after.pages);
+    // A Resync whose reply is lost is replayed: idempotent.
+    let _lost = h.state(Command::Resync);
+    let replay = h.state(Command::Resync);
+    assert_ne!(replay.atlas.epoch, resynced.atlas.epoch);
+    assert_eq!(replay.atlas.first, 0);
+    assert_eq!(replay.invalidated, vec![(0, replay.page_count)]);
+    assert!(view.apply(&replay.atlas));
+    view.covers(&replay.pages);
+    assert_eq!(replay.doc_len, resynced.doc_len);
+    assert_eq!(replay.revision, resynced.revision);
+}
+
+#[test]
+fn resync_needs_a_document() {
+    let mut h = Harness::new();
+    assert_eq!(h.error(Command::Resync), ErrorCode::UnknownDocument);
+    h.txt("abc");
+    assert!(matches!(
+        h.send(2, Command::Resync),
+        Response::Error(ErrorCode::UnknownDocument)
+    ));
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    assert_eq!(h.error(Command::Resync), ErrorCode::UnknownDocument);
+}

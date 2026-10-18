@@ -103,6 +103,7 @@ fn describe_request(r: &Request) -> String {
         Command::AccessibleWindow { start, end } => {
             format!("AccessibleWindow start={start} end={end}")
         }
+        Command::Resync => "Resync".into(),
     };
     format!("{head} {tail}")
 }
@@ -384,6 +385,7 @@ fn requests() -> Vec<(&'static str, Request)> {
             ),
         ),
         ("layout", req(7, 22, Command::Layout { budget: 16 })),
+        ("resync", req(7, 27, Command::Resync)),
         (
             "accessible-window",
             req(7, 24, Command::AccessibleWindow { start: 2, end: 12 }),

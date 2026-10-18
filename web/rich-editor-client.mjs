@@ -12,7 +12,7 @@ export { EditorPageCache, RichClientError };
 
 const REPLY_TYPE = {
   open: "state", insertText: "state", replaceRange: "state", delete: "state", move: "state", setSelection: "state",
-  undo: "state", redo: "state", markSaved: "state", layout: "state", textWindow: "textWindow", pages: "pages", close: "closed",
+  undo: "state", redo: "state", markSaved: "state", layout: "state", resync: "state", textWindow: "textWindow", pages: "pages", close: "closed",
 };
 
 function abortError() { return new DOMException("The operation was aborted.", "AbortError"); }
@@ -114,8 +114,8 @@ export function createRichEditorClient({
     }
     let change;
     try { change = cache.apply(response); } catch (error) {
-      // Glyph atlas entries were lost (an aborted request the engine answered): the pages that
-      // refer to them cannot be trusted, so the existing resync is requested.
+      // Glyph atlas entries were lost (an abandoned reply the engine counted as sent): the pages that
+      // refer to them cannot be trusted, so a `Resync` (new atlas epoch) is requested.
       if (error?.cause?.atlas === true && !disposed) { cache.dropPages(); needsResync = true; }
       throw error;
     }
@@ -123,12 +123,19 @@ export function createRichEditorClient({
     return { response, change };
   }
 
-  /** Command whose reply carries a State: when it is cancelled the lost invalidations force a resync. */
+  /**
+   * Command whose reply carries a State or Pages: when it is cancelled the lost invalidations (State)
+   * or the lost atlas entries (State, Pages) force a resync.
+   */
   async function guarded(command, callerSignal) {
     try { return await exchange(command, callerSignal); } catch (error) {
       // The engine may have applied the command whatever went wrong, except for its own RICH_* refusals.
       const refused = typeof error?.code === "string" && error.code.startsWith("RICH_");
-      if (!refused && REPLY_TYPE[command.type] === "state" && !disposed && error?.code !== "CLIENT_CLOSED") { cache.dropPages(); needsResync = true; }
+      const type = REPLY_TYPE[command.type];
+      if (!refused && (type === "state" || type === "pages") && !disposed && error?.code !== "CLIENT_CLOSED") {
+        if (type === "state") cache.dropPages();
+        needsResync = true;
+      }
       throw error;
     }
   }
@@ -139,7 +146,7 @@ export function createRichEditorClient({
       const run = cache.missing(first, end)[0];
       if (!run) return;
       try {
-        await exchange({ type: "pages", first: run.first, count: run.count }, callerSignal);
+        await guarded({ type: "pages", first: run.first, count: run.count }, callerSignal);
       } catch (error) {
         if (error?.code !== "RICH_NOT_READY" || cache.layoutComplete || notReady >= maxLayoutRetries) throw error;
         notReady += 1;
@@ -155,7 +162,7 @@ export function createRichEditorClient({
   async function idleStep() {
     if (needsResync && opened) {
       needsResync = false;
-      try { await guarded({ type: "layout", budget: 1 }, undefined); } catch (error) {
+      try { await guarded({ type: "resync" }, undefined); } catch (error) {
         if (disposed) return false;
         needsResync = true;
         report(error);
@@ -168,7 +175,7 @@ export function createRichEditorClient({
       if (run) {
         const version = cache.version;
         try {
-          const { change } = await exchange({ type: "pages", first: run.first, count: run.count }, undefined);
+          const { change } = await guarded({ type: "pages", first: run.first, count: run.count }, undefined);
           if (change.ignored) fillBlockedVersion = version; // stale revision: wait for the next State
         } catch (error) {
           if (disposed) return false;
@@ -203,9 +210,10 @@ export function createRichEditorClient({
       while (!disposed) {
         const task = queue.shift();
         if (task) {
-          if (needsResync && opened) {
+          // An Open replaces the whole state: no resync before it.
+          if (needsResync && opened && !task.replaces) {
             needsResync = false;
-            try { await exchange({ type: "layout", budget: 1 }, undefined); } catch (error) {
+            try { await guarded({ type: "resync" }, undefined); } catch (error) {
               if (disposed) break;
               needsResync = true;
               task.reject(error);
@@ -235,13 +243,13 @@ export function createRichEditorClient({
     if (!draining && !disposed) void drain();
   }
 
-  function enqueue(run, taskSignal) {
+  function enqueue(run, taskSignal, replaces = false) {
     if (disposed) return Promise.reject(closedError());
     if (taskSignal !== undefined && taskSignal !== null && typeof taskSignal.addEventListener !== "function") {
       return Promise.reject(new TypeError("signal must be an AbortSignal."));
     }
     return new Promise((resolve, reject) => {
-      queue.push({ run, resolve, reject, signal: taskSignal });
+      queue.push({ run, resolve, reject, signal: taskSignal, replaces });
       kick();
     });
   }
@@ -286,7 +294,7 @@ export function createRichEditorClient({
         }
         opened = true;
         return result;
-      }, callerSignal);
+      }, callerSignal, true);
     },
     /** Send one command; resolves `{response, change}`, rejects with RichClientError for RICH_* refusals. */
     command(command, { signal: callerSignal } = {}) {

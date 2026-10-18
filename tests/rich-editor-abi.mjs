@@ -342,6 +342,48 @@ scenario("(v2 only) dense pages: lines of 100 columns open, page bounds hold", "
   }
 });
 
+scenario("(v2 only) a reply the client abandoned: Resync restarts the atlas epoch", "Pages reply dropped, then Resync, replayed, and a Resync without document", () => {
+  globalThis.Path2D ??= class { moveTo() {} lineTo() {} quadraticCurveTo() {} bezierCurveTo() {} closePath() {} };
+  const text = Array.from({ length: 160 }, (_, i) => `ligne ${i} ${"abcdefghij".slice(i % 10)}${String.fromCharCode(65 + (i % 26))}`).join("\n");
+  const opened = openTxt(text);
+  const client = new EditorPageCache();
+  client.apply(opened);
+  let state = opened;
+  for (let i = 0; i < 4000 && !state.layoutComplete; i += 1) { state = expectState({ type: "layout", budget: 256 }); client.apply(state); }
+  const last = state.pageCount - 1;
+  assert.ok(last >= 1);
+  // The engine answers; the client never sees the reply.
+  const lost = command({ type: "pages", first: last, count: 1 });
+  assert.equal(lost.type, "pages");
+  const next = expectState({ type: "layout", budget: 1 });
+  if (lost.atlas.entries.length > 0) {
+    assert.throws(() => client.apply(next), (e) => e.code === "CLIENT_BAD_REPLY" && e.cause?.atlas === true);
+  }
+  const resynced = expectState({ type: "resync" });
+  assert.equal(resynced.atlas.first, 0);
+  assert.notEqual(resynced.atlas.epoch, opened.atlas.epoch);
+  assert.deepEqual(resynced.invalidated, [[0, resynced.pageCount]]);
+  assert.ok(resynced.window);
+  client.apply(resynced);
+  assert.equal(client.atlasEpoch, resynced.atlas.epoch);
+  // The reply to the Resync is lost in turn: replaying it converges again.
+  const replay = expectState({ type: "resync" });
+  assert.equal(replay.atlas.first, 0);
+  assert.notEqual(replay.atlas.epoch, resynced.atlas.epoch);
+  client.apply(replay);
+  for (let first = 0; first < replay.pageCount; first += 1) {
+    const r = command({ type: "pages", first, count: 1 });
+    assert.equal(r.type, "pages");
+    client.apply(r);
+    for (const page of r.pages) {
+      for (const c of decodeDisplayList(page.display).commands) {
+        if (c.type === "drawGlyphRun") for (const g of c.glyphs) assert.ok(client.glyphResolver(c.fontId, g.glyphId), `atlas entry ${g.glyphId}`);
+      }
+    }
+  }
+  assert.equal(command({ type: "resync" }, 9).code, "RICH_UNKNOWN_DOCUMENT");
+});
+
 let passed = 0;
 for (const s of SCENARIOS) {
   if (!s.run) continue;

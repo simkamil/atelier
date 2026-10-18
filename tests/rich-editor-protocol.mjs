@@ -36,6 +36,7 @@ function describeRequest({ docId, requestId, command: c }) {
     pages: () => `Pages first=${c.first} count=${c.count}`,
     markSaved: () => `MarkSaved revision=${c.revision}`,
     accessibleWindow: () => `AccessibleWindow start=${c.start} end=${c.end}`,
+    resync: () => "Resync",
   }[c.type]();
   return `${head} ${tail}`;
 }
@@ -100,7 +101,7 @@ for (const [kind, name, frameHex, expected] of rows) {
     expectCode(() => decode(bytes), code, note !== "nocontext");
   }
 }
-assert.deepEqual(counts, { request: 27, reply: 12, "bad-request": 41, "bad-reply": 30 });
+assert.deepEqual(counts, { request: 28, reply: 12, "bad-request": 41, "bad-reply": 30 });
 
 // Truncation: every strict prefix of a valid frame is rejected, never thrown as a foreign error.
 for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {

@@ -72,6 +72,7 @@ pub mod opcode {
     pub const MARK_SAVED: u16 = 0x010D;
     pub const LAYOUT: u16 = 0x010E;
     pub const ACCESSIBLE_WINDOW: u16 = 0x010F;
+    pub const RESYNC: u16 = 0x0118;
     pub const R_ERROR: u16 = 0x8000;
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
@@ -305,6 +306,9 @@ pub enum Command {
         start: u64,
         end: u64,
     },
+    /// Restarts the atlas epoch and invalidates every page after a reply the
+    /// client abandoned; empty body, answered by `State`, idempotent.
+    Resync,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -745,6 +749,7 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
             }
             Command::AccessibleWindow { start, end }
         }
+        opcode::RESYNC => Command::Resync,
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -837,6 +842,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
             put_u32(&mut b, *budget);
             opcode::LAYOUT
         }
+        Command::Resync => opcode::RESYNC,
         Command::HitTest { page, mode, x, y } => {
             put_u32(&mut b, *page);
             b.extend_from_slice(&[*mode as u8, 0, 0, 0]);
