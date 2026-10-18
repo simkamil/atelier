@@ -39,8 +39,10 @@ function fakeDocument() {
   return doc;
 }
 const t = (key, values = {}) => `${key}${Object.keys(values).length ? JSON.stringify(values) : ""}`;
+const inline = (offset, kind, value = "") => ({ offset: BigInt(offset), kind, value });
+const obj = (offset, alt) => inline(offset, 0, alt);
 const item = (start, text, extra = {}) => ({
-  paraStart: BigInt(start), paraEnd: BigInt(start + Buffer.byteLength(text)), role: 0, level: 0, label: "", text, objects: [], ...extra,
+  paraStart: BigInt(start), paraEnd: BigInt(start + Buffer.byteLength(text)), role: 0, level: 0, label: "", text, inlines: [], ...extra,
 });
 const reply = (revision, items) => ({ revision: BigInt(revision), items });
 const state = (revision, anchor, focus = anchor, docLen = 10000n) => ({ revision: BigInt(revision), docLen, selection: { anchor: BigInt(anchor), focus: BigInt(focus) } });
@@ -58,17 +60,19 @@ test("byte and UTF-16 offsets agree on multi-byte text", () => {
 });
 
 test("segments and flat position mapping round-trip", () => {
-  const text = "ab￼cé￼d";
-  const segs = buildSegments(item(0, text, { objects: [{ offset: 2n, alt: "chat" }] }));
-  assert.deepEqual(segs.map(s => [s.kind, s.byteStart, s.byteLen]), [["text", 0, 2], ["object", 2, 3], ["text", 5, 3], ["gap", 8, 3], ["text", 11, 1]]);
-  for (const rel of [0, 1, 2, 5, 6, 8, 11, 12]) {
+  const text = "ab￼cé￼d￼";
+  const segs = buildSegments(item(0, text, { inlines: [obj(2, "chat"), inline(8, 1), inline(12, 3, "©")] }));
+  assert.deepEqual(segs.map(s => [s.kind, s.byteStart, s.byteLen]), [["text", 0, 2], ["object", 2, 3], ["text", 5, 3], ["break", 8, 3], ["text", 11, 1], ["symbol", 12, 3]]);
+  for (const rel of [0, 1, 2, 5, 6, 8, 11, 12, 15]) {
     const point = flatToSegmentPoint(segs, rel);
     assert.equal(segmentPointToFlat(segs, point), rel, `rel ${rel}`);
   }
   assert.deepEqual(flatToSegmentPoint(segs, 7), { seg: 2, utf16: 1, side: "in" }, "after é");
-  assert.deepEqual(flatToSegmentPoint(segs, 12), { seg: 4, utf16: 1, side: "in" });
+  assert.deepEqual(flatToSegmentPoint(segs, 12), { seg: 5, utf16: 0, side: "start" }, "a symbol has no inner offset");
+  assert.deepEqual(flatToSegmentPoint(segs, 15), { seg: 5, utf16: 0, side: "end" });
   assert.deepEqual(flatToSegmentPoint([], 0), { seg: -1, utf16: 0, side: "start" });
   assert.equal(sliceSegments(segs, 1, 6, a => `[${a}]`), "b[chat]c");
+  assert.equal(sliceSegments(segs, 8, 15, a => a), " d©", "break as a space, symbol by value");
   assert.equal(sliceSegments(segs, 3, 4, a => a), "", "inside an object: nothing");
 });
 
@@ -86,9 +90,11 @@ test("validateWindow refuses malformed replies with a typed error", () => {
   const good = reply(1, [item(0, "x")]);
   assert.equal(validateWindow(good).items.length, 1);
   const refused = [null, {}, { revision: 1, items: [] }, { revision: 1n, items: "no" }, reply(1, [{ ...item(0, "x"), role: 9 }]),
-    reply(1, [{ ...item(0, "x"), text: 5 }]), reply(1, [item(5, "abc"), item(6, "d")]), reply(1, [{ ...item(0, "x"), objects: [{ offset: 1, alt: "a" }] }]),
+    reply(1, [{ ...item(0, "x"), text: 5 }]), reply(1, [item(5, "abc"), item(6, "d")]), reply(1, [{ ...item(0, "x"), inlines: [{ offset: 1, kind: 0, value: "a" }] }]),
     reply(1, [{ ...item(0, "x"), paraEnd: -1n }]), reply(1, Array.from({ length: 257 }, (_, i) => item(i * 4, "x"))),
-    reply(1, [item(0, "x".repeat(262145))])];
+    reply(1, [item(0, "x".repeat(262145))]),
+    reply(1, [item(0, "a￼b")]), reply(1, [item(0, "ab", { inlines: [obj(1, "x")] })]), reply(1, [item(0, "a￼b", { inlines: [obj(2, "x")] })]),
+    reply(1, [{ ...item(0, "abc"), paraEnd: 9n }]), reply(1, [item(0, "a￼", { inlines: [inline(1, 7)] })])];
   for (const value of refused) assert.throws(() => validateWindow(value), error => error instanceof DocumentMirrorError && error.code === "MIRROR_BAD_WINDOW");
 });
 
@@ -97,8 +103,8 @@ test("structure: headings, lists, images, cells, opaque blocks, empty paragraphs
   const mirror = createDocumentMirror({ container: doc.body, t, getAccessibleWindow: async () => reply(1, [
     item(0, "Titre", { role: 1, level: 2 }), item(6, "Neuf", { role: 1, level: 8 }),
     item(11, "un", { role: 2, level: 0, label: "1." }), item(14, "deux", { role: 2, level: 1, label: "•" }),
-    item(19, "ab￼cd￼", { objects: [{ offset: 2n, alt: "Un chat" }, { offset: 7n, alt: " " }] }),
-    item(35, "cellule", { role: 3 }), item(43, "￼", { role: 4 }), item(47, ""),
+    item(19, "ab￼cd￼￼￼", { inlines: [obj(2, "Un chat"), obj(7, " "), inline(10, 3, "§"), inline(13, 1)] }),
+    item(41, "cellule", { role: 3 }), item(49, "￼", { role: 4, inlines: [obj(0, "")] }), item(53, ""),
   ]) });
   assert.equal((await mirror.update(state(1, 0))).status, "applied");
   const top = tree(mirror);
@@ -111,6 +117,8 @@ test("structure: headings, lists, images, cells, opaque blocks, empty paragraphs
   assert.equal(para.kids[1].getAttribute("role"), "img");
   assert.equal(para.kids[1].getAttribute("aria-label"), "Un chat");
   assert.equal(para.kids[3].getAttribute("aria-label"), "mirror.image.noalt", "blank alt falls back to the i18n key");
+  assert.equal(para.kids[4].data, "§", "a symbol is a text node with its character");
+  assert.equal(para.kids[5].tag, "br", "a line break is a br");
   assert.equal(top[4].dataset.mirrorRole, "cell");
   assert.equal(top[5].textContent, "mirror.opaque");
   assert.equal(top[6].kids[0].tag, "br", "empty paragraph keeps a line break so it is announced");
@@ -118,11 +126,11 @@ test("structure: headings, lists, images, cells, opaque blocks, empty paragraphs
   assert.equal(mirror.element.getAttribute("aria-label"), "mirror.label");
 });
 
-test("removed U+FFFC (breaks) do not glue words together", async () => {
+test("breaks are line breaks, so words are not glued together", async () => {
   const doc = fakeDocument();
-  const mirror = createDocumentMirror({ container: doc.body, t, getAccessibleWindow: async () => reply(1, [item(0, "un￼deux"), item(10, "a ￼b")]) });
+  const mirror = createDocumentMirror({ container: doc.body, t, getAccessibleWindow: async () => reply(1, [item(0, "un￼deux", { inlines: [inline(2, 1)] })]) });
   await mirror.update(state(1, 0));
-  assert.deepEqual(tree(mirror).map(n => n.textContent), ["un deux", "a b"]);
+  assert.deepEqual(tree(mirror)[0].kids.map(n => n.tag ?? n.data), ["un", "br", "deux"]);
 });
 
 test("revision update rebuilds only the changed paragraphs and keeps node identity", async () => {
@@ -136,9 +144,10 @@ test("revision update rebuilds only the changed paragraphs and keeps node identi
   await mirror.update(state(2, 0));
   const after = tree(mirror);
   assert.equal(after[0], before[0]);
-  assert.notEqual(after[1], before[1]);
+  assert.equal(after[1], before[1], "text-only change: the node is updated in place");
+  assert.equal(after[1].textContent, "beta!");
   assert.equal(after[2], before[2], "a shifted but identical paragraph is reused");
-  assert.deepEqual([mirror.stats.created, mirror.stats.reused, mirror.stats.removed], [4, 2, 1]);
+  assert.deepEqual([mirror.stats.created, mirror.stats.reused, mirror.stats.updated, mirror.stats.removed], [3, 2, 1, 0]);
   revision = 3; items = [item(0, "alpha"), item(6, "nouveau"), item(14, "beta!"), item(20, "gamma")];
   await mirror.update(state(3, 0));
   assert.equal(tree(mirror)[2], after[1]);
@@ -147,7 +156,7 @@ test("revision update rebuilds only the changed paragraphs and keeps node identi
 
 test("selection moves with the model, with direction, and clamps outside the window", async () => {
   const doc = fakeDocument();
-  const mirror = createDocumentMirror({ container: doc.body, t, getAccessibleWindow: async () => reply(1, [item(10, "café"), item(16, "ab￼cd", { objects: [{ offset: 2n, alt: "x" }] })]) });
+  const mirror = createDocumentMirror({ container: doc.body, t, getAccessibleWindow: async () => reply(1, [item(10, "café"), item(16, "ab￼cd", { inlines: [obj(2, "x")] })]) });
   await mirror.update(state(1, 12, 14));
   const last = () => doc.selections.at(-1);
   const [first, second] = tree(mirror);
@@ -160,8 +169,11 @@ test("selection moves with the model, with direction, and clamps outside the win
   assert.deepEqual([last()[0], last()[1]], [second, 1], "right before the object");
   await mirror.update(state(1, 21));
   assert.deepEqual([last()[0], last()[1]], [second.kids[2], 0], "right after the object (start of the next text)");
+  const count = doc.selections.length;
   await mirror.update(state(1, 0, 500));
-  assert.deepEqual([last()[0], last()[1], last()[2], last()[3]], [first.kids[0], 0, second.kids[2], 2], "clamped to the mirrored window");
+  assert.equal(doc.selections.length, count, "focus outside the window: the DOM selection does not move");
+  await mirror.update(state(1, 500, 10));
+  assert.deepEqual([last()[0], last()[1], last()[2], last()[3]], [second.kids[2], 2, first.kids[0], 0], "anchor outside: clamped to the window edge");
 });
 
 test("stale revisions and superseded requests never reach the DOM", async () => {
@@ -201,13 +213,16 @@ test("same revision, same range: one request; selection-only updates reuse the w
   assert.equal(last[1], 5, "the latest selection wins");
 });
 
-test("window range: visible range plus margin, clamped to the document", async () => {
+test("window range: visible range plus margin, clamped to the document; a far focus is what is read", async () => {
   const doc = fakeDocument();
   const ranges = [];
   const mirror = createDocumentMirror({ container: doc.body, t, margin: 100n, getAccessibleWindow: async (a, b) => { ranges.push([a, b]); return reply(1, []); } });
   await mirror.update({ ...state(1, 0, 0, 1000n), visible: { start: 50n, end: 300n } });
-  await mirror.update({ ...state(1, 0, 0, 1000n), visible: { start: 900n, end: 990n } });
-  assert.deepEqual(ranges, [[0n, 400n], [800n, 1000n]]);
+  await mirror.update({ ...state(1, 950, 950, 1000n), visible: { start: 900n, end: 990n } });
+  await mirror.update({ ...state(1, 500, 500, 1000n), visible: { start: 0n, end: 100n } });
+  assert.deepEqual(ranges, [[0n, 400n], [800n, 1000n], [400n, 600n]]);
+  await mirror.update({ ...state(1, 500, 500, 1000n), visible: { start: 0n, end: 100n } });
+  assert.equal(ranges.length, 3, "an empty or truncated reply remembers the range asked for: no new request");
 });
 
 test("provider failures and malformed data go to onError; the previous mirror stays", async () => {
@@ -228,25 +243,121 @@ test("provider failures and malformed data go to onError; the previous mirror st
   assert.throws(() => createDocumentMirror({}), error => error.code === "MIRROR_BAD_OPTIONS");
 });
 
-test("announcements: new paragraph, selection, character moves; aria-activedescendant", async () => {
+test("announcements: new paragraph, selection delta, character moves, clearing; aria-activedescendant", async () => {
   const doc = fakeDocument();
   const input = doc.createElement("textarea");
-  const mirror = createDocumentMirror({ container: doc.body, t, activeDescendantTarget: input, getAccessibleWindow: async () => reply(1, [
+  const mirror = createDocumentMirror({ container: doc.body, t, activeDescendantTarget: input, announceDelay: 0, getAccessibleWindow: async () => reply(1, [
     item(0, "Titre", { role: 1, level: 1 }), item(6, "abc def"),
   ]) });
   const live = mirror.element.kids[1];
   await mirror.update(state(1, 0));
-  assert.equal(live.textContent, 'mirror.heading{"level":1} : Titre');
+  assert.equal(live.textContent, t("mirror.prefixed", { prefix: t("mirror.heading", { level: 1 }), text: "Titre" }));
   assert.equal(input.getAttribute("aria-activedescendant"), tree(mirror)[0].id);
   await mirror.update(state(1, 7));
   assert.equal(live.textContent, "abc def");
   assert.equal(input.getAttribute("aria-activedescendant"), tree(mirror)[1].id);
   await mirror.update(state(1, 8));
   assert.equal(live.textContent, "c", "caret moved inside the paragraph: the next character is announced");
+  await mirror.update(state(1, 6, 9));
+  assert.equal(live.textContent, t("mirror.selection", { text: "abc" }));
+  await mirror.update(state(1, 6, 11));
+  assert.equal(live.textContent, t("mirror.selection.added", { text: " d" }), "extending a selection announces only what was added");
+  await mirror.update(state(1, 6, 10));
+  assert.equal(live.textContent, t("mirror.selection.removed", { text: "d" }));
   await mirror.update(state(1, 6, 13));
-  assert.equal(live.textContent, 'mirror.selection{"text":"abc def"}');
+  assert.equal(live.textContent, t("mirror.selection.added", { text: "def" }));
+  await mirror.update(state(1, 13));
+  assert.equal(live.textContent, t("mirror.selection.cleared"));
   mirror.dispose();
   assert.equal(input.getAttribute("aria-activedescendant"), null);
   assert.equal(mirror.element.parent, null);
   assert.equal((await mirror.update(state(1, 0))).status, "disposed");
+});
+
+test("the character announced after the caret comes from the segments (object, symbol, break)", async () => {
+  const doc = fakeDocument();
+  const mirror = createDocumentMirror({ container: doc.body, t, announceDelay: 0, getAccessibleWindow: async () => reply(1, [
+    item(0, "a\uFFFCb\uFFFC\uFFFCc ", { inlines: [obj(1, "chat"), inline(5, 3, "§"), inline(8, 1)] }),
+  ]) });
+  const live = mirror.element.kids[1];
+  await mirror.update(state(1, 0));
+  const said = [];
+  for (const position of [1, 4, 5, 8, 11]) { await mirror.update(state(1, position)); said.push(live.textContent); }
+  assert.deepEqual(said, ["chat", "b", "§", "§", "c"], "a break says nothing new (the previous message stays)");
+});
+
+test("typing a character does not re-read the paragraph, and keeps its node and id", async () => {
+  const doc = fakeDocument();
+  let revision = 1, text = "abc";
+  const mirror = createDocumentMirror({ container: doc.body, t, announceDelay: 0, getAccessibleWindow: async () => reply(revision, [item(0, "Titre", { role: 1, level: 1 }), item(6, text)]) });
+  const live = mirror.element.kids[1];
+  await mirror.update(state(1, 7));
+  const said = live.textContent;
+  assert.equal(said, "abc");
+  const node = tree(mirror)[1], id = node.id;
+  revision = 2; text = "abXc";
+  await mirror.update(state(2, 9));
+  assert.equal(tree(mirror)[1], node, "same node");
+  assert.equal(node.id, id, "same id");
+  assert.equal(node.textContent, "abXc");
+  assert.equal(live.textContent, said, "nothing is announced for typing");
+  assert.equal(mirror.stats.updated, 1);
+  revision = 3; text = "abXYc";
+  await mirror.update(state(3, 10));
+  assert.equal(live.textContent, said);
+});
+
+test("announcements are coalesced and a focus outside the window says nothing", async () => {
+  const doc = fakeDocument();
+  const timers = [];
+  const mirror = createDocumentMirror({ container: doc.body, t, schedule: fn => timers.push(fn), getAccessibleWindow: async () => reply(1, [item(0, "Titre", { role: 1, level: 1 }), item(6, "abc def")]) });
+  const live = mirror.element.kids[1];
+  await mirror.update(state(1, 0));
+  await mirror.update(state(1, 7));
+  await mirror.update(state(1, 9));
+  assert.equal(timers.length, 1, "one timer for three moves");
+  assert.equal(live.textContent, "");
+  timers.shift()();
+  assert.equal(live.textContent, "abc def", "only the final paragraph is announced");
+  const before = doc.selections.length;
+  await mirror.update({ ...state(1, 9, 9, 100000n), selection: { anchor: 9n, focus: 90000n }, visible: { start: 0n, end: 13n } });
+  timers.shift()?.();
+  assert.equal(live.textContent, "abc def", "focus outside the window: unchanged");
+  assert.equal(doc.selections.length, before, "and the DOM selection does not move");
+});
+
+test("a long selection is announced by its size", async () => {
+  const doc = fakeDocument();
+  const mirror = createDocumentMirror({ container: doc.body, t, announceDelay: 0, getAccessibleWindow: async () => reply(1, [item(0, "x".repeat(150))]) });
+  await mirror.update(state(1, 0, 120));
+  assert.equal(mirror.element.kids[1].textContent, t("mirror.selection.count", { count: 120 }));
+});
+
+test("screen reader mode gives the input the current paragraph and the selection", async () => {
+  const doc = fakeDocument();
+  const calls = [];
+  const input = { setScreenReaderMode: on => calls.push(["mode", on]), setScreenReaderContent: c => calls.push(["content", c]) };
+  const mirror = createDocumentMirror({ container: doc.body, t, input, announceDelay: 0, getAccessibleWindow: async () => reply(1, [
+    item(0, "Titre", { role: 1, level: 1 }), item(6, "un", { role: 2, label: "1." }), item(9, "a\uFFFCb\uFFFC", { inlines: [obj(1, "chat"), inline(5, 3, "§")] }),
+  ]) });
+  const live = mirror.element.kids[1];
+  await mirror.update(state(1, 0));
+  assert.deepEqual(calls, [], "off by default");
+  const domBefore = doc.selections.length;
+  mirror.setScreenReaderMode(true);
+  assert.deepEqual(calls[0], ["mode", true]);
+  assert.equal(live.textContent, t("mirror.reader.on"));
+  assert.deepEqual(calls.at(-1)[1], { text: "Titre", start: 0, end: 0, backward: false });
+  await mirror.update(state(1, 17, 9));
+  assert.deepEqual(calls.at(-1)[1], { text: "achatb§", start: 0, end: 7, backward: true }, "selection reflected, direction kept");
+  assert.equal(doc.selections.length, domBefore, "no DOM selection in reader mode");
+  await mirror.update(state(1, 13, 17));
+  assert.deepEqual(calls.at(-1)[1], { text: "achatb§", start: 5, end: 7, backward: false }, "objects by alt text, symbols by value");
+  await mirror.update(state(1, 0, 12));
+  assert.deepEqual(calls.at(-1)[1], { text: "achatb§", start: 0, end: 1, backward: false }, "an anchor in another paragraph is clamped to this one");
+  await mirror.update(state(1, 6));
+  assert.deepEqual(calls.at(-1)[1], { text: "1. un", start: 3, end: 3, backward: false }, "the list label is part of the text");
+  mirror.setScreenReaderMode(false);
+  assert.deepEqual(calls.at(-1), ["mode", false]);
+  assert.equal(live.textContent, t("mirror.reader.off"));
 });
