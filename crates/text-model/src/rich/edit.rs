@@ -100,6 +100,24 @@ pub(crate) struct History {
 }
 
 impl History {
+    /// Empty stacks, same revision.
+    pub(crate) fn fresh(&self) -> History {
+        History {
+            undo: Vec::new(),
+            redo: Vec::new(),
+            revision: self.revision,
+        }
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// The revision never goes back.
+    pub(crate) fn raise_revision(&mut self, revision: u64) {
+        self.revision = self.revision.max(revision);
+    }
+
     /// Forgets both stacks (the revision keeps counting).
     pub(crate) fn clear(&mut self) {
         self.undo.clear();

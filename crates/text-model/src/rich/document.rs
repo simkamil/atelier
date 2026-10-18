@@ -68,7 +68,9 @@ impl Clone for RichDocument {
             styles: self.styles.clone(),
             theme: self.theme.clone(),
             flat: Mutex::new(None),
-            history: History::default(),
+            // The edit history stays behind, the revision does not: a
+            // revision number is never given twice by clones of a document.
+            history: self.history.fresh(),
         }
     }
 }
@@ -98,8 +100,10 @@ impl TransactionalState for RichDocument {
         // The minter is kept so that an id handed out before the failed
         // transaction can never be handed out again.
         let minter = std::mem::take(&mut self.minter);
+        let revision = self.history.revision();
         *self = checkpoint;
         self.minter = minter;
+        self.history.raise_revision(revision);
         self.invalidate_flat();
     }
 }

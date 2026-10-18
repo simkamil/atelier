@@ -712,3 +712,30 @@ fn char_style_runs_survive_edits_and_clearing() {
     );
     assert!(para_at(&doc, 0).runs.is_empty());
 }
+
+#[test]
+fn the_revision_is_never_given_twice() {
+    use atelier_model::Transaction;
+    let mut doc = body(&["abc"]);
+    doc.replace_range(0, 0, "x").unwrap();
+    doc.replace_range(0, 0, "y").unwrap();
+    assert_eq!(doc.revision(), 2);
+    // A clone continues the count, with no history.
+    let mut copy = doc.clone();
+    assert_eq!(copy.revision(), 2);
+    assert!(!copy.can_undo());
+    assert_eq!(copy.replace_range(0, 0, "z").unwrap().revision, 3);
+    // A failed transaction restores the document without lowering it.
+    doc.undo().unwrap();
+    assert_eq!(doc.revision(), 3);
+    let first = doc.paragraph_ids()[0];
+    let bad = Transaction::new(vec![RichOp::DeleteText {
+        para: first,
+        start: 5,
+        end: 99,
+    }])
+    .unwrap();
+    assert!(doc.apply(&bad).is_err());
+    assert_eq!(doc.revision(), 3);
+    assert_eq!(doc.replace_range(0, 0, "w").unwrap().revision, 4);
+}
