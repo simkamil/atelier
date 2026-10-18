@@ -27,7 +27,7 @@ function pageTop(renderer, pageIndex) {
 // i18n-ignore: valeur par défaut d’un composant autonome ; l’application transmet le texte du catalogue (confirm-discard, input-label)
 export function createEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, inputLabel, confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?", onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {}, onImages = () => {}, imageAlt = () => "" } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.open !== "function"
-      || typeof host.save !== "function" || typeof host.saveAs !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
+      || typeof host.save !== "function" || typeof host.notifyDirty !== "function") throw new TypeError("client and native host are required.");
   if (!canvas?.getBoundingClientRect || !scrollport?.addEventListener || !spacer?.style) throw new TypeError("Canvas, scrollport and spacer are required.");
   if (textRepresentation !== null && (typeof textRepresentation !== "object" || typeof textRepresentation.textContent !== "string")) {
     throw new TypeError("textRepresentation must be a text-capable DOM element.");
@@ -68,7 +68,6 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
   let extensionMode = false;
   let mouseSelection;
   let textDragDrop;
-  let lastFilePath = null;
   const input = attachTextInput({
     container: document.body, label: inputLabel,
     getSelection: () => state ? { anchor: state.anchor, focus: state.focus } : { anchor: 0, focus: 0 },
@@ -617,38 +616,16 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
         return { kind: "ok", state: await enqueue(EditorOpcode.Load, { bytes: result.bytes }) };
       } finally { setBusy(false); input.focus(); }
     },
-    async save() {
-      if (busy) return { kind: "error", key: "files.error.queue_full" };
-      setBusy(true);
-      try {
-        const exported = await enqueue(EditorOpcode.Export);
-        if (exported.kind !== "export") throw new EditorError("EDITOR_INVALID_EXPORT");
-        // Use saveAs for first save, then use save for atomic updates of the same file
-        const result = lastFilePath
-          ? await host.save(exported.bytes)
-          : await host.saveAs(exported.bytes, lastFilePath);
-        if (result.kind !== "ok") return result;
-        // Update lastFilePath if saveAs provided a new path
-        if (result.path && result.path !== lastFilePath) {
-          lastFilePath = result.path;
-        }
-        const saved = await enqueue(EditorOpcode.MarkSaved, { revision: exported.revision });
-        return { kind: "ok", state: saved, path: result.path || lastFilePath };
-      } finally { setBusy(false); input.focus(); }
-    },
     async saveAs() {
       if (busy) return { kind: "error", key: "files.error.queue_full" };
       setBusy(true);
       try {
         const exported = await enqueue(EditorOpcode.Export);
         if (exported.kind !== "export") throw new EditorError("EDITOR_INVALID_EXPORT");
-        const result = await host.saveAs(exported.bytes, lastFilePath);
+        const result = await host.save(exported.bytes);
         if (result.kind !== "ok") return result;
-        if (result.path) {
-          lastFilePath = result.path;
-        }
         const saved = await enqueue(EditorOpcode.MarkSaved, { revision: exported.revision });
-        return { kind: "ok", state: saved, path: result.path };
+        return { kind: "ok", state: saved };
       } finally { setBusy(false); input.focus(); }
     },
     undo() { return busy ? Promise.reject(new EditorError("EDITOR_BUSY")) : enqueue(EditorOpcode.Undo); },

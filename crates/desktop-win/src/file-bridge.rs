@@ -18,7 +18,6 @@ pub(crate) enum Request {
     Open { id: String },
     OpenDocx { id: String },
     Save { id: String, bytes: Vec<u8> },
-    SaveAs { id: String, bytes: Vec<u8>, path_hint: Option<String> },
     Dirty { id: String, dirty: bool },
 }
 
@@ -28,7 +27,6 @@ impl Request {
             Self::Open { id }
             | Self::OpenDocx { id }
             | Self::Save { id, .. }
-            | Self::SaveAs { id, .. }
             | Self::Dirty { id, .. } => id,
         }
     }
@@ -109,38 +107,6 @@ impl Queue {
                     bytes,
                 }
             }
-            "saveAs" => {
-                // Decode path hint if provided
-                let (bytes, path_hint) = if tail.is_empty() {
-                    (Vec::new(), None)
-                } else {
-                    let parts: Vec<&str> = tail.splitn(2, '|').collect();
-                    if parts.len() != 2 {
-                        return Err(Reject::Malformed);
-                    }
-                    let bytes = decode_base64(parts[0])?;
-                    let path_hint_str = if parts[1].is_empty() {
-                        None
-                    } else {
-                        let decoded = decode_base64(parts[1])?;
-                        Some(String::from_utf8(decoded).map_err(|_| Reject::Malformed)?)
-                    };
-                    (bytes, path_hint_str)
-                };
-                if bytes.len() > MAX_FILE_BYTES {
-                    return Err(Reject::TooLarge);
-                }
-                match text_error(&bytes) {
-                    Some("files.error.invalid_text") => return Err(Reject::Malformed),
-                    Some(_) => return Err(Reject::TooLarge),
-                    None => {}
-                }
-                Request::SaveAs {
-                    id: id.to_owned(),
-                    bytes,
-                    path_hint,
-                }
-            }
             _ => return Err(Reject::Malformed),
         };
         self.last_id = numeric_id;
@@ -150,7 +116,6 @@ impl Queue {
         }
         let size = match &request {
             Request::Save { bytes, .. } => bytes.len(),
-            Request::SaveAs { bytes, .. } => bytes.len(),
             _ => 0,
         };
         if self.pending.len() == MAX_QUEUE
@@ -308,7 +273,7 @@ pub(crate) fn process_selection(
                 match result {
                     Ok(bytes) => match text_error(&bytes) {
                         Some(key) => Err(key),
-                        None => Ok((Some(bytes), None)),
+                        None => Ok(Some(bytes)),
                     },
                     Err(error) => Err(error.message_key),
                 }
@@ -320,7 +285,7 @@ pub(crate) fn process_selection(
                 let result = broker.read(ticket);
                 broker.revoke_read(ticket);
                 match result {
-                    Ok(bytes) if bytes.len() <= MAX_DOCX_PREVIEW_BYTES => Ok((Some(bytes), None)),
+                    Ok(bytes) if bytes.len() <= MAX_DOCX_PREVIEW_BYTES => Ok(Some(bytes)),
                     Ok(_) => Err("files.error.too_large"),
                     Err(error) => Err(error.message_key),
                 }
@@ -336,28 +301,7 @@ pub(crate) fn process_selection(
                     let result = broker.write(ticket, &bytes);
                     broker.revoke_write(ticket);
                     match result {
-                        Ok(()) => Ok((None, None)),
-                        Err(error) => Err(error.message_key),
-                    }
-                }
-            }
-        }
-        Request::SaveAs { bytes, path_hint, .. } => {
-            // Use pathHint as default if provided and valid, otherwise use selected path
-            let final_path = path_hint
-                .and_then(|p| PathBuf::from(&p).canonicalize().ok())
-                .unwrap_or_else(|| path.clone());
-            
-            if let Some(key) = text_error(&bytes) {
-                return format!("us120-file|1|{id}|error|{key}");
-            }
-            match broker.grant_write(&final_path) {
-                Err(error) => Err(error.message_key),
-                Ok(ticket) => {
-                    let result = broker.write(ticket, &bytes);
-                    broker.revoke_write(ticket);
-                    match result {
-                        Ok(()) => Ok((None, Some(final_path))),
+                        Ok(()) => Ok(None),
                         Err(error) => Err(error.message_key),
                     }
                 }
@@ -366,13 +310,8 @@ pub(crate) fn process_selection(
         Request::Dirty { .. } => unreachable!("dirty messages do not select a file"),
     };
     let reply = match result {
-        Ok((Some(bytes), _)) => format!("us120-file|1|{id}|ok|{}", encode_base64(&bytes)),
-        Ok((None, Some(path_buf))) => {
-            // For SaveAs, return the final path in the response
-            let path_str = path_buf.to_string_lossy().to_string();
-            format!("us120-file|1|{id}|ok|path|{}", encode_base64(path_str.as_bytes()))
-        }
-        Ok((None, _)) => format!("us120-file|1|{id}|ok|"),
+        Ok(Some(bytes)) => format!("us120-file|1|{id}|ok|{}", encode_base64(&bytes)),
+        Ok(None) => format!("us120-file|1|{id}|ok|"),
         Err(key) => format!("us120-file|1|{id}|error|{key}"),
     };
     if reply.len() <= MAX_DOCX_REPLY_BYTES {
