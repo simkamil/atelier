@@ -36,12 +36,6 @@ no-script=Atelier nécessite JavaScript pour ouvrir le document.
 options-label=Options
 option-french-spacing=Espaces françaises automatiques
 action-open-docx=Ouvrir DOCX…
-action-close-preview=Retour au texte
-preview-caption=Lecture seule · A4 simplifié. Tableaux, images, en-têtes, pieds de page, puces et numéros de liste omis ; sauts de page Word non reproduits ; liens inactifs.
-preview-title=Aperçu DOCX
-preview-eyebrow=DOCUMENT WORD · LECTURE SEULE
-preview-state=Lecture seule
-preview-footer=Atelier · aperçu DOCX
 # US-104 / US-105 / US-106 editor shell
 theme-label=Thème de l’interface
 theme-light=Clair
@@ -220,9 +214,6 @@ status-a11y-ok=Écho confirmé
 status-a11y-failed=Échec
 engine-ready=Transport vérifié
 engine-error=Indisponible
-rich-workspace-label=Aperçu DOCX en lecture seule
-rich-pages-label=Pages de l’aperçu DOCX
-rich-text-label=Texte de l’aperçu DOCX
 # US-328 : propriétés du document
 propertiesTitle=Propriétés…
 properties-title=Propriétés du document

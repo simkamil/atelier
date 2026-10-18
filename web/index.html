@@ -39,7 +39,6 @@
           <button id="open-docx" type="button" data-i18n="action-open-docx" disabled>Ouvrir DOCX…</button>
           <button id="save-document" class="primary" type="button" data-i18n="action-save" disabled>Enregistrer sous…</button>
         </div>
-        <button id="close-preview" type="button" data-i18n="action-close-preview" hidden>Retour au texte</button>
         <div class="toolbar-group history-actions">
           <button id="undo" type="button" data-i18n="action-undo" disabled>Annuler</button>
           <button id="redo" type="button" data-i18n="action-redo" disabled>Rétablir</button>
@@ -61,16 +60,6 @@
             <div id="document-text" class="accessible-document" role="region" aria-label="Texte du document" data-i18n-aria-label="document-text-label"></div>
             <canvas id="document-canvas" role="img" aria-label="Pages du document texte brut" data-i18n-aria-label="canvas-label"></canvas>
             <div id="page-spacer" aria-hidden="true"></div>
-          </div>
-        </div>
-      </section>
-      <section id="rich-workspace" class="workspace rich-workspace" aria-label="Aperçu DOCX en lecture seule" data-i18n-aria-label="rich-workspace-label" hidden>
-        <p class="preview-caption" data-i18n="preview-caption">Lecture seule · A4 simplifié. Tableaux, images, en-têtes, pieds de page, puces et numéros de liste omis ; sauts de page Word non reproduits ; liens inactifs.</p>
-        <div id="rich-scroll" class="document-scroll" tabindex="0" aria-label="Pages de l’aperçu DOCX" data-i18n-aria-label="rich-pages-label">
-          <div class="page-stack">
-            <div id="rich-text" class="accessible-document" role="region" aria-label="Texte de l’aperçu DOCX" data-i18n-aria-label="rich-text-label"></div>
-            <canvas id="rich-canvas" role="img" aria-label="Pages de l’aperçu DOCX" data-i18n-aria-label="rich-pages-label"></canvas>
-            <div id="rich-spacer" aria-hidden="true"></div>
           </div>
         </div>
       </section>

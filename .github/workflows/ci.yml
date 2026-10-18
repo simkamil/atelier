@@ -170,7 +170,7 @@ jobs:
       - name: Check pointer capture, selection ordering and bounded auto-scroll
         run: node tests/mouse-selection.mjs
       - name: Check text drag/drop and automatic French spacing
-        run: node --test tests/page-navigation.mjs tests/zoom.mjs tests/text-drag-drop.mjs tests/french-spacing.mjs tests/rich-preview.mjs tests/rich-preview-protocol.mjs
+        run: node --test tests/page-navigation.mjs tests/zoom.mjs tests/text-drag-drop.mjs tests/french-spacing.mjs tests/rich-preview-protocol.mjs
       - name: Exercise Canvas editor, composition and file adapter in headless Edge
         run: node tests/run-editor-browser.mjs
       - name: Insert images by picker, paste and drop in headless Edge
