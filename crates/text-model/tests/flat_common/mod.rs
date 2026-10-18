@@ -3,8 +3,8 @@
 
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
-    AnchoredObject, BreakKind, Inline, InlineBreak, InlineSymbol, Node, NodeId, RichDocument,
-    RichOp,
+    Alignment, AnchoredObject, BreakKind, CharAttrs, Inline, InlineBreak, InlineSymbol, Node,
+    NodeId, ParaProps, RichDocument, RichOp,
 };
 use atelier_unicode::segmentation::grapheme_boundaries;
 
@@ -117,8 +117,66 @@ fn id_byte(rng: &mut Rng) -> u8 {
     rng.below(256) as u8
 }
 
-/// A document of `count` body paragraphs of random text, some with items.
+/// Random paragraph properties, direct run attributes and character styles.
+pub fn vary(doc: &mut RichDocument, rng: &mut Rng) {
+    for para in doc.paragraph_ids() {
+        if rng.chance(2) {
+            let set = ParaProps {
+                style: rng
+                    .chance(2)
+                    .then(|| ["Heading1", "Quote"][rng.below(2)].into()),
+                alignment: rng.chance(2).then(|| {
+                    [Alignment::Left, Alignment::Center, Alignment::Justify][rng.below(3)]
+                }),
+                space_after: rng.chance(2).then(|| 20 * rng.below(10) as u32),
+                indent_left: rng.chance(3).then(|| 100 * rng.below(5) as i32),
+                ..ParaProps::default()
+            };
+            apply(
+                doc,
+                vec![RichOp::SetParaProps {
+                    para,
+                    set,
+                    clear: ParaProps::default(),
+                }],
+            );
+        }
+        let text = doc.paragraph(para).unwrap().text.clone();
+        let cuts = grapheme_boundaries(&text).boundaries().to_vec();
+        for _ in 0..rng.below(3) {
+            let (a, b) = (cuts[rng.below(cuts.len())], cuts[rng.below(cuts.len())]);
+            let (start, end) = (a.min(b), a.max(b));
+            if start == end {
+                continue;
+            }
+            let set = CharAttrs {
+                bold: rng.chance(2).then_some(true),
+                italic: rng.chance(3).then_some(true),
+                char_style: rng
+                    .chance(2)
+                    .then(|| ["Emph", "Strong"][rng.below(2)].into()),
+                ..CharAttrs::default()
+            };
+            apply(
+                doc,
+                vec![RichOp::SetCharAttrs {
+                    para,
+                    start,
+                    end,
+                    set,
+                    clear: CharAttrs::default(),
+                }],
+            );
+        }
+    }
+}
+
+/// A document of `count` body paragraphs of random text, some with items;
+/// sometimes just one empty paragraph.
 pub fn random_body(rng: &mut Rng, count: usize, items: bool) -> RichDocument {
+    if count == 1 && rng.chance(4) {
+        return RichDocument::new();
+    }
     let mut doc = RichDocument::new();
     let section = doc.section_ids()[0];
     let first = doc.paragraph_ids()[0];
@@ -142,6 +200,7 @@ pub fn random_body(rng: &mut Rng, count: usize, items: bool) -> RichDocument {
             }],
         );
     }
+    vary(&mut doc, rng);
     if items {
         for para in doc.paragraph_ids() {
             for _ in 0..rng.below(3) {
@@ -153,22 +212,50 @@ pub fn random_body(rng: &mut Rng, count: usize, items: bool) -> RichDocument {
     doc
 }
 
-/// Like [`random_body`], plus a table and an opaque block among the blocks.
+/// Like [`random_body`], plus one to three tables, an opaque block and
+/// sometimes further sections among the blocks.
 pub fn random_structured(rng: &mut Rng, count: usize) -> RichDocument {
     let mut doc = random_body(rng, count, true);
     let section = doc.section_ids()[0];
-    let rows = 1 + rng.below(2);
-    let cols = 1 + rng.below(2);
-    let table = doc.new_table(rows, cols).unwrap();
-    let position = rng.below(count + 1);
-    apply(
-        &mut doc,
-        vec![RichOp::InsertBlock {
-            parent: Some(section),
-            position,
-            subtree: table,
-        }],
-    );
+    for _ in 0..1 + rng.below(3) {
+        let rows = 1 + rng.below(2);
+        let cols = 1 + rng.below(2);
+        let table = doc.new_table(rows, cols).unwrap();
+        let position = rng.below(doc.block_ids(Some(section)).unwrap().len() + 1);
+        apply(
+            &mut doc,
+            vec![RichOp::InsertBlock {
+                parent: Some(section),
+                position,
+                subtree: table,
+            }],
+        );
+    }
+    for _ in 0..rng.below(3) {
+        let extra = doc.new_section().unwrap();
+        let position = doc.section_ids().len();
+        apply(
+            &mut doc,
+            vec![RichOp::InsertBlock {
+                parent: None,
+                position,
+                subtree: extra,
+            }],
+        );
+        if rng.chance(2) {
+            let sub = doc.new_table(1, 1 + rng.below(2)).unwrap();
+            let last = *doc.section_ids().last().unwrap();
+            apply(
+                &mut doc,
+                vec![RichOp::InsertBlock {
+                    parent: Some(last),
+                    position: 0,
+                    subtree: sub,
+                }],
+            );
+        }
+    }
+    vary(&mut doc, rng);
     let opaque = doc.new_opaque("w:sdt", b"<w:sdt/>").unwrap();
     let position = rng.below(doc.block_ids(Some(section)).unwrap().len() + 1);
     apply(

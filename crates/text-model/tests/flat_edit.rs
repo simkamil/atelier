@@ -566,6 +566,15 @@ fn play(mut doc: RichDocument, rng: &mut Rng, steps: usize, string_model: bool) 
         }
         assert_same_index(&doc);
         states.push(doc.clone());
+        if rng.chance(4) && states.len() > 1 {
+            // Undo then redo in the middle of the sequence.
+            doc.undo().unwrap();
+            assert_eq!(&doc, &states[states.len() - 2]);
+            doc.redo().unwrap();
+            assert_eq!(&doc, states.last().unwrap());
+            doc.validate().unwrap();
+            assert_same_index(&doc);
+        }
     }
     let last = doc.clone();
     for expected in states.iter().rev().skip(1) {
@@ -633,10 +642,19 @@ fn ten_thousand_sequences_return_to_the_initial_state() {
             }
         }
         doc.validate().unwrap();
+        let after = doc.clone();
         for _ in 0..applied {
             doc.undo().unwrap();
         }
         assert!(doc.undo().is_none(), "seed {seed}");
+        assert_eq!(doc, initial, "seed {seed}");
+        for _ in 0..applied {
+            doc.redo().unwrap();
+        }
+        assert_eq!(doc, after, "redo, seed {seed}");
+        for _ in 0..applied {
+            doc.undo().unwrap();
+        }
         assert_eq!(doc, initial, "seed {seed}");
         node_total += node_kinds(&doc).0;
     }
@@ -738,4 +756,59 @@ fn the_revision_is_never_given_twice() {
     assert!(doc.apply(&bad).is_err());
     assert_eq!(doc.revision(), 3);
     assert_eq!(doc.replace_range(0, 0, "w").unwrap().revision, 4);
+}
+
+/// Properties of paragraphs are those of the split paragraph on a split, those
+/// of the first on a merge, and come back exactly on inversion.
+#[test]
+fn properties_and_runs_follow_splits_and_merges_exactly() {
+    for seed in 0..300 {
+        let mut rng = Rng::new(90_000 + seed);
+        let count = 1 + rng.below(3);
+        let mut doc = random_body(&mut rng, count, seed % 2 == 0);
+        let initial = doc.clone();
+        let index = rng.below(doc.paragraph_count());
+        let source = para_at(&doc, index).clone();
+        let start = doc.paragraph_start(index).unwrap();
+        let valid: Vec<usize> = (start..=start + doc.paragraph_flat(index).unwrap().len())
+            .filter(|p| doc.check_position(*p).is_ok())
+            .collect();
+        let at = valid[rng.below(valid.len())];
+        // Split.
+        doc.replace_range(at, at, "\n").unwrap();
+        let head = para_at(&doc, index).clone();
+        let tail = para_at(&doc, index + 1).clone();
+        assert_eq!(head.props, source.props, "seed {seed}");
+        assert_eq!(tail.props, source.props, "seed {seed}");
+        doc.validate().unwrap();
+        // The text of both halves keeps the attributes of the source.
+        for (half, shift) in [(&head, 0), (&tail, head.text.len())] {
+            for (position, _) in half.text.char_indices() {
+                assert_eq!(
+                    half.attrs_at(position),
+                    source.attrs_at(position + shift),
+                    "seed {seed}"
+                );
+            }
+        }
+        // Merge back: the first paragraph keeps its properties.
+        let separator = doc.paragraph_start(index + 1).unwrap() - 1;
+        doc.replace_range(separator, separator + 1, "").unwrap();
+        assert_eq!(para_at(&doc, index).props, source.props, "seed {seed}");
+        assert_eq!(para_at(&doc, index).text, source.text);
+        doc.undo().unwrap();
+        assert_eq!(doc.paragraph_count(), initial.paragraph_count() + 1);
+        assert_eq!(para_at(&doc, index + 1).props, source.props);
+        doc.undo().unwrap();
+        assert_eq!(doc, initial, "seed {seed}");
+        // Merging two different paragraphs keeps the first one's properties.
+        if doc.paragraph_count() > 1 {
+            let first = para_at(&doc, 0).clone();
+            let separator = doc.paragraph_start(1).unwrap() - 1;
+            doc.replace_range(separator, separator + 1, "").unwrap();
+            assert_eq!(para_at(&doc, 0).props, first.props, "seed {seed}");
+            doc.undo().unwrap();
+            assert_eq!(doc, initial, "seed {seed}");
+        }
+    }
 }

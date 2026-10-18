@@ -161,7 +161,10 @@ fn layout_context_serves_sections_styles_pages_resources_and_counters() {
     let mut doc = random_structured(&mut rng, 3);
     // Page setup from the section attributes.
     assert_eq!(doc.page_setup(0), Ok(PageSetup::standard()));
-    assert_eq!(doc.page_setup(1), Err(FlatError::OutOfRange));
+    assert_eq!(
+        doc.page_setup(doc.section_ids().len()),
+        Err(FlatError::OutOfRange)
+    );
     let (index, s) = doc.section_of(0).unwrap();
     assert_eq!((index, s.opaque.len()), (0, 0));
     assert_eq!(
@@ -173,9 +176,23 @@ fn layout_context_serves_sections_styles_pages_resources_and_counters() {
     defaults.character.values.font = Some("Carlito".into());
     defaults.paragraph.space_after = Some(160);
     doc.set_styles(StyleCatalog::new(defaults), Theme::default());
-    let first_body = (0..doc.paragraph_count())
-        .find(|i| doc.block_kind(*i) == Ok(BlockKind::Body))
-        .unwrap();
+    // A plain paragraph (the others may name styles the catalog lacks).
+    let plain = doc.new_paragraph("plain").unwrap();
+    let plain_id = plain.root;
+    let section0 = doc.section_ids()[0];
+    let at = doc.block_ids(Some(section0)).unwrap().len();
+    apply(
+        &mut doc,
+        vec![atelier_text_model::rich::RichOp::InsertBlock {
+            parent: Some(section0),
+            position: at,
+            subtree: plain,
+        }],
+    );
+    let first_body = doc
+        .locate(doc.flat_position(plain_id, 0, false).unwrap())
+        .unwrap()
+        .paragraph;
     let resolved = doc.resolved(first_body).unwrap();
     assert_eq!(resolved.paragraph.space_after, Some(160));
     assert_eq!(resolved.character.font.as_deref(), Some("Carlito"));
@@ -197,7 +214,7 @@ fn layout_context_serves_sections_styles_pages_resources_and_counters() {
         assert_eq!(doc.object_resource(object.id), Some(object.data.as_slice()));
     }
     // List counters: levels restart below a shallower item.
-    let section_id = doc.section_ids()[0];
+    let section_id = *doc.section_ids().last().unwrap();
     let list_para = |doc: &mut RichDocument, level: u8| {
         let mut sub = doc.new_paragraph("x").unwrap();
         if let Some(Node::Paragraph(p)) = sub.nodes.get_mut(&sub.root) {
