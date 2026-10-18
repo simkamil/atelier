@@ -36,6 +36,16 @@ pub const DEFAULT_LAYOUT_BUDGET: u32 = 16;
 pub const MAX_LAYOUT_BUDGET: u32 = 4096;
 /// `Caret::page` value meaning "no caret geometry".
 pub const NO_CARET: u32 = u32::MAX;
+/// Largest number of paragraphs in one `AccessibleWindow` reply.
+pub const MAX_ACCESSIBLE_ITEMS: usize = 256;
+/// Roles of an accessible paragraph.
+pub mod role {
+    pub const PARAGRAPH: u8 = 0;
+    pub const HEADING: u8 = 1;
+    pub const LIST_ITEM: u8 = 2;
+    pub const TABLE_CELL: u8 = 3;
+    pub const OPAQUE: u8 = 4;
+}
 
 pub mod opcode {
     pub const OPEN: u16 = 0x0101;
@@ -52,12 +62,14 @@ pub mod opcode {
     pub const PAGES: u16 = 0x010C;
     pub const MARK_SAVED: u16 = 0x010D;
     pub const LAYOUT: u16 = 0x010E;
+    pub const ACCESSIBLE_WINDOW: u16 = 0x010F;
     pub const R_ERROR: u16 = 0x8000;
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
     pub const R_PAGES: u16 = 0x8102;
     pub const R_HIT: u16 = 0x8103;
     pub const R_CLOSED: u16 = 0x8104;
+    pub const R_ACCESSIBLE_WINDOW: u16 = 0x8105;
 }
 
 /// Stable error codes; the numeric values never change.
@@ -278,6 +290,12 @@ pub enum Command {
     Layout {
         budget: u32,
     },
+    /// Paragraphs intersecting the flat range `[start, end)`, for the
+    /// accessible DOM mirror; `end - start` is at most `MAX_WINDOW_BYTES`.
+    AccessibleWindow {
+        start: u64,
+        end: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -330,6 +348,29 @@ pub struct State {
     pub window: Option<TextWindowData>,
 }
 
+/// A non-text item (U+FFFC) of an accessible paragraph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessibleObject {
+    /// Flat offset relative to the paragraph start.
+    pub offset: u64,
+    pub alt: String,
+}
+
+/// One paragraph of an `AccessibleWindow` reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessibleItem {
+    pub para_start: u64,
+    pub para_end: u64,
+    pub role: u8,
+    /// Heading level 1-9 (role heading), list level 0-8 (role list item), else 0.
+    pub level: u8,
+    /// Computed list label (a number and a dot, a bullet), possibly empty.
+    pub label: String,
+    /// Flat text of the paragraph (`para_end - para_start` bytes).
+    pub text: String,
+    pub objects: Vec<AccessibleObject>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Response {
     Error(ErrorCode),
@@ -352,6 +393,10 @@ pub enum Response {
         upstream: bool,
     },
     Closed,
+    AccessibleWindow {
+        revision: u64,
+        items: Vec<AccessibleItem>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -414,6 +459,14 @@ impl<'a> Reader<'a> {
             1 => Ok(true),
             _ => Err(Fail::InvalidBody),
         }
+    }
+    /// A `u16` length followed by that many UTF-8 bytes.
+    fn text16(&mut self) -> Result<String, Fail> {
+        let len = usize::from(self.u16()?);
+        let raw = self.take(len)?;
+        Ok(core::str::from_utf8(raw)
+            .map_err(|_| Fail::InvalidUtf8)?
+            .to_owned())
     }
     fn finish(&self) -> Result<(), Fail> {
         if self.at == self.bytes.len() {
@@ -646,6 +699,14 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
             }
             Command::Layout { budget }
         }
+        opcode::ACCESSIBLE_WINDOW => {
+            let (start, end) = (r.u64()?, r.u64()?);
+            check_range(u64::MAX, start, end)?;
+            if end - start > MAX_WINDOW_BYTES as u64 {
+                return Err(Fail::WindowTooLarge);
+            }
+            Command::AccessibleWindow { start, end }
+        }
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -759,6 +820,11 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
             put_u64(&mut b, *revision);
             opcode::MARK_SAVED
         }
+        Command::AccessibleWindow { start, end } => {
+            put_u64(&mut b, *start);
+            put_u64(&mut b, *end);
+            opcode::ACCESSIBLE_WINDOW
+        }
     };
     let frame = header(op, request.doc_id, request.request_id, &b)?;
     decode_request(&frame).map_err(|e| e.code)?;
@@ -806,6 +872,96 @@ fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, F
         pages.push(PageDisplay { index, display });
     }
     Ok(pages)
+}
+
+fn put_text16(out: &mut Vec<u8>, text: &str) -> Result<(), Fail> {
+    out.extend_from_slice(
+        &u16::try_from(text.len())
+            .map_err(|_| Fail::InvalidBody)?
+            .to_le_bytes(),
+    );
+    out.extend_from_slice(text.as_bytes());
+    Ok(())
+}
+
+fn put_accessible(out: &mut Vec<u8>, items: &[AccessibleItem]) -> Result<(), Fail> {
+    if items.len() > MAX_ACCESSIBLE_ITEMS {
+        return Err(Fail::InvalidBody);
+    }
+    put_u32(
+        out,
+        u32::try_from(items.len()).map_err(|_| Fail::InvalidBody)?,
+    );
+    for item in items {
+        put_u64(out, item.para_start);
+        put_u64(out, item.para_end);
+        out.extend_from_slice(&[item.role, item.level, 0, 0]);
+        put_text16(out, &item.label)?;
+        put_text(out, &item.text)?;
+        out.extend_from_slice(
+            &u16::try_from(item.objects.len())
+                .map_err(|_| Fail::InvalidBody)?
+                .to_le_bytes(),
+        );
+        for object in &item.objects {
+            put_u64(out, object.offset);
+            put_text16(out, &object.alt)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_accessible(r: &mut Reader<'_>) -> Result<Vec<AccessibleItem>, Fail> {
+    const OBJECT: [u8; 3] = [0xEF, 0xBF, 0xBC];
+    let count = r.u32()? as usize;
+    if count > MAX_ACCESSIBLE_ITEMS {
+        return Err(Fail::InvalidBody);
+    }
+    let mut items: Vec<AccessibleItem> = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (para_start, para_end) = (r.u64()?, r.u64()?);
+        let (role, level) = (r.u8()?, r.u8()?);
+        r.zero(2)?;
+        let level_ok = match role {
+            role::HEADING => (1..=9).contains(&level),
+            role::LIST_ITEM => level <= 8,
+            role::PARAGRAPH | role::TABLE_CELL | role::OPAQUE => level == 0,
+            _ => false,
+        };
+        let label = r.text16()?;
+        let len = r.u32()? as usize;
+        let raw = r.take(len)?;
+        let text = core::str::from_utf8(raw)
+            .map_err(|_| Fail::InvalidUtf8)?
+            .to_owned();
+        let ordered = items.last().is_none_or(|p| para_start > p.para_end);
+        if !level_ok || para_start > para_end || para_end - para_start != len as u64 || !ordered {
+            return Err(Fail::InvalidBody);
+        }
+        let n = usize::from(r.u16()?);
+        let mut objects: Vec<AccessibleObject> = Vec::with_capacity(n);
+        let mut floor = 0usize;
+        for _ in 0..n {
+            let offset = r.u64()?;
+            let alt = r.text16()?;
+            let at = usize::try_from(offset).map_err(|_| Fail::InvalidBody)?;
+            if at < floor || raw.get(at..at.saturating_add(3)) != Some(&OBJECT[..]) {
+                return Err(Fail::InvalidBody);
+            }
+            floor = at + 3;
+            objects.push(AccessibleObject { offset, alt });
+        }
+        items.push(AccessibleItem {
+            para_start,
+            para_end,
+            role,
+            level,
+            label,
+            text,
+            objects,
+        });
+    }
+    Ok(items)
 }
 
 fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
@@ -976,6 +1132,11 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
             opcode::R_HIT
         }
         Response::Closed => opcode::R_CLOSED,
+        Response::AccessibleWindow { revision, items } => {
+            put_u64(&mut b, *revision);
+            put_accessible(&mut b, items)?;
+            opcode::R_ACCESSIBLE_WINDOW
+        }
     };
     let frame = header(op, reply.doc_id, reply.request_id, &b)?;
     #[cfg(test)]
@@ -1040,6 +1201,10 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
                 }
             }
             opcode::R_CLOSED => Response::Closed,
+            opcode::R_ACCESSIBLE_WINDOW => Response::AccessibleWindow {
+                revision: r.u64()?,
+                items: read_accessible(&mut r)?,
+            },
             _ => return Err(Fail::UnknownOpcode),
         };
         r.finish()?;

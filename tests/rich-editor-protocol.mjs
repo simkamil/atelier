@@ -35,9 +35,16 @@ function describeRequest({ docId, requestId, command: c }) {
     textWindow: () => `TextWindow start=${c.start} len=${c.len}`,
     pages: () => `Pages first=${c.first} count=${c.count}`,
     markSaved: () => `MarkSaved revision=${c.revision}`,
+    accessibleWindow: () => `AccessibleWindow start=${c.start} end=${c.end}`,
   }[c.type]();
   return `${head} ${tail}`;
 }
+
+const ROLES = { paragraph: 0, heading: 1, listItem: 2, tableCell: 3, opaque: 4 };
+const describeItems = (items) => (items.length
+  ? items.map((i) => `${i.paraStart}-${i.paraEnd}:${ROLES[i.role]}:${i.level}:${textHex(i.label)}:${textHex(i.text)}:${
+    i.objects.length ? i.objects.map((o) => `${o.offset}/${textHex(o.alt)}`).join("+") : "none"}`).join(";")
+  : "none");
 
 const describePages = (pages) => (pages.length ? pages.map((p) => `${p.index}:${p.display.length}`).join(",") : "none");
 
@@ -46,6 +53,7 @@ function describeReply({ docId, requestId, response: s }) {
   const tail = {
     error: () => `Error code=${s.code}`,
     closed: () => "Closed",
+    accessibleWindow: () => `AccessibleWindow revision=${s.revision} items=${describeItems(s.items)}`,
     hitResult: () => `HitResult revision=${s.revision} page=${s.page} position=${s.position} upstream=${flag(s.upstream)}`,
     textWindow: () => `TextWindow revision=${s.revision} start=${s.start} doc_len=${s.docLen} text=${textHex(s.text)}`,
     pages: () => `Pages revision=${s.revision} page_count=${s.pageCount} pages=${describePages(s.pages)}`,
@@ -89,7 +97,7 @@ for (const [kind, name, frameHex, expected] of rows) {
     expectCode(() => decode(bytes), code, note !== "nocontext");
   }
 }
-assert.deepEqual(counts, { request: 24, reply: 10, "bad-request": 38, "bad-reply": 14 });
+assert.deepEqual(counts, { request: 27, reply: 12, "bad-request": 41, "bad-reply": 24 });
 
 // Truncation: every strict prefix of a valid frame is rejected, never thrown as a foreign error.
 for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {
