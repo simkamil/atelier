@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createNativeHost } from "../web/native-host.mjs";
-import { encodeEditorCommand, decodeEditorResponse, EditorOpcode } from "../web/editor-protocol.mjs";
+import { decodeEditorResponse } from "../web/editor-protocol.mjs";
 
 function page() {
   const bytes = new Uint8Array(44), view = new DataView(bytes.buffer);
@@ -34,12 +34,6 @@ test("ATRP owns pages, preserves Unicode/notices and rejects corrupt envelopes",
   }
   const p = page(); new DataView(p.buffer).setFloat64(24, 600, true);
   assert.throws(() => decode(response("x", [p])));
-});
-test("DOCX command has an independent 8 MiB limit, TXT retains its own limit", () => {
-  const bytes = new Uint8Array(8*1024*1024);
-  assert.equal(encodeEditorCommand(EditorOpcode.PreviewDocx,{bytes}).length, bytes.length+8);
-  assert.throws(() => encodeEditorCommand(EditorOpcode.PreviewDocx,{bytes:new Uint8Array(bytes.length+1)}));
-  assert.throws(() => encodeEditorCommand(EditorOpcode.Load,{bytes:new Uint8Array(131076)}));
 });
 class WebView {
   listeners = new Set(); posted=[];

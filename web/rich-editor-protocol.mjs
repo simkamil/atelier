@@ -918,7 +918,7 @@ function writeOptionalNumber(w, value) {
   w.u64(value === null || value === undefined ? 0n : BigInt(value));
 }
 
-/** Snapshot of the properties: the shape of the properties dialog (web/properties-protocol.mjs, without `kind`). */
+/** Snapshot of the properties: the shape of the properties dialog (without `kind`). */
 function readSnapshot(r) {
   const editable = {}; const limits = {};
   for (const name of PROPERTY_FIELDS) editable[name] = readPropertyText(r);

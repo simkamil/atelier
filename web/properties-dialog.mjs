@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Document properties dialog (US-328). It knows nothing about the engine: the caller supplies
-// `load()` (resolves to the snapshot of properties-protocol.mjs) and `apply(changes)`.
+// `load()` (resolves to the properties snapshot of web/rich-editor-protocol.mjs) and `apply(changes)`.
 import { createDialog } from "./ui-components.mjs";
 
 export const PROPERTIES_LABEL_KEYS = Object.freeze([

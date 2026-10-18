@@ -2036,7 +2036,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/french-spacing.mjs','text/javascript'],
             ['/i18n.mjs','text/javascript'], ['/i18n/fr-FR.txt','text/plain'], ['/engine-worker.mjs','text/javascript'],
             ['/engine-client.mjs','text/javascript'], ['/wasm-loader.mjs','text/javascript'],
-            ['/editor-protocol.mjs','text/javascript'], ['/editor.mjs','text/javascript'],
+            ['/editor-protocol.mjs','text/javascript'],
             ['/native-host.mjs','text/javascript'], ['/display-list.mjs','text/javascript'],
             ['/navigation-tools.mjs','text/javascript'], ['/search-pane.mjs','text/javascript'], ['/search-pane.css','text/css'],
             ['/statistics-controls.mjs','text/javascript'], ['/statistics-controls.css','text/css'],
@@ -2046,9 +2046,9 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
             ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
           ];
-          paths.push(['/engine-choice.mjs','text/javascript'],['/rich-editor.mjs','text/javascript'],['/rich-editor-client.mjs','text/javascript'],['/rich-image-cache.mjs','text/javascript'],['/rich-editor-protocol.mjs','text/javascript'],['/editor-page-cache.mjs','text/javascript'],['/document-mirror.mjs','text/javascript'],['/document-mirror.css','text/css']);
+          paths.push(['/rich-editor.mjs','text/javascript'],['/rich-editor-client.mjs','text/javascript'],['/rich-image-cache.mjs','text/javascript'],['/rich-editor-protocol.mjs','text/javascript'],['/editor-page-cache.mjs','text/javascript'],['/document-mirror.mjs','text/javascript'],['/document-mirror.css','text/css']);
           paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);
-          paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/build-info.mjs','text/javascript'],['/image-insert.mjs','text/javascript'],['/properties-dialog.mjs','text/javascript'],['/properties-dialog.css','text/css'],['/properties-protocol.mjs','text/javascript']);
+          paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/build-info.mjs','text/javascript'],['/image-insert.mjs','text/javascript'],['/properties-dialog.mjs','text/javascript'],['/properties-dialog.css','text/css']);
           // Keep required log probes within the bounded request log.
           paths.sort((a,b)=>Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(a[0]))-Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(b[0])));
           const assets={};
@@ -2094,14 +2094,16 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
           input.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:expected,bubbles:true,cancelable:true}));
           const exported=await ready.exportDocument();
           const edited=ready.getState();
-          const typedOk=new TextDecoder().decode(exported.bytes)===expected&&edited.dirty&&edited.pages.length===1;
+          await editor.whenLayoutComplete();
+          // The rich editor saves a new text document with CRLF line ends.
+          const typedOk=new TextDecoder().decode(exported.bytes)===expected.replace('\n','\r\n')&&edited.dirty&&ready.getState().pageCount===1;
           const canvas=document.querySelector('canvas');
           const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
           let ink=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]<100&&pixels[i+1]<100&&pixels[i+2]<100&&pixels[i+3]>0)ink++;
           await editor.undo();
-          const undoOk=ready.getState().text===''&&!ready.getState().dirty;
+          const undoOk=(await editor.readText())===''&&!ready.getState().dirty;
           await editor.redo();
-          const redoOk=ready.getState().text===expected&&ready.getState().dirty;
+          const redoOk=(await editor.readText())===expected&&ready.getState().dirty;
           await editor.undo();
           const editorOk=typedOk&&undoOk&&redoOk&&ink>20&&!ready.getState().dirty;
           window.__atelierUs112Result={

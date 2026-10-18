@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { engine, rest: args } = selectEngine("run-ui-browser", "node tests/run-ui-browser.mjs [--forced-colors] [--screenshots] [--engine v1|v2]",
+const { engine, rest: args } = selectEngine("run-ui-browser", "node tests/run-ui-browser.mjs [--forced-colors] [--screenshots]",
   rest => rest.every(arg => ["--forced-colors", "--screenshots"].includes(arg)));
 const v2 = engine === "v2";
 const engineQuery = `engine=${engine}`;

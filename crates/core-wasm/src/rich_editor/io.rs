@@ -507,7 +507,7 @@ impl Session {
         self.deny_read_only()?;
         let image = images::analyze(bytes)
             .map_err(|error| match error {
-                ImageInsertError::TooLarge | ImageInsertError::StoreFull => ErrorCode::Limit,
+                ImageInsertError::TooLarge => ErrorCode::Limit,
                 ImageInsertError::Unsupported | ImageInsertError::Corrupt => {
                     ErrorCode::ImageInvalid
                 }

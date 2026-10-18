@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Pictures of the editor session (US-270): validation, storage, display bitmap.
+//! Pictures of the editor (US-270): validation and display bitmap.
 //!
 //! Original bytes are kept untouched. Insertion fully decodes the picture once
 //! (so a corrupt file is refused before it enters the document) but keeps only
@@ -10,19 +10,12 @@ use atelier_image::{
     DecodeLimits, Image, ImageError, decode_bmp, decode_gif, decode_jpeg_with_metadata, decode_png,
 };
 use atelier_text_model::inline_image::{
-    IMAGE_CHAR_BASE, ImageFormat, InlineImage, OBJECT_REPLACEMENT, SniffError, image_char,
-    is_image_char, oriented_size, oriented_source,
+    ImageFormat, InlineImage, SniffError, oriented_size, oriented_source,
 };
 use std::sync::Arc;
 
 /// Largest accepted encoded picture.
 pub(crate) const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
-/// Longest alternative text of a picture, in bytes.
-pub(crate) const MAX_ALT: usize = atelier_text_model::inline_image::MAX_ALT_BYTES;
-/// Total encoded bytes kept by one document.
-pub(crate) const MAX_STORE_BYTES: usize = 32 * 1024 * 1024;
-/// Distinct pictures per document.
-pub(crate) const MAX_IMAGES: usize = 512;
 /// Decoded pixel budget of one picture (4096 x 4096).
 pub(crate) const MAX_PIXELS: u64 = 16_777_216;
 /// Longest side of a display bitmap.
@@ -37,8 +30,6 @@ pub(crate) enum ImageInsertError {
     Corrupt,
     /// Encoded size or pixel count over the limits.
     TooLarge,
-    /// The document already holds the maximum number of pictures.
-    StoreFull,
 }
 
 fn limits() -> DecodeLimits {
@@ -95,115 +86,6 @@ pub(crate) fn analyze(bytes: &[u8]) -> Result<InlineImage, ImageInsertError> {
         orientation,
     )
     .map_err(|_| ImageInsertError::Corrupt)
-}
-
-/// Pictures of one document; the text refers to them by private-use scalars.
-#[derive(Clone, Debug)]
-pub(crate) struct ImageStore {
-    base: u32,
-    items: Vec<InlineImage>,
-    bytes: usize,
-}
-
-impl Default for ImageStore {
-    fn default() -> Self {
-        Self {
-            base: IMAGE_CHAR_BASE,
-            items: Vec::new(),
-            bytes: 0,
-        }
-    }
-}
-
-impl ImageStore {
-    /// Drops every picture for a newly loaded `text`, moving the scalar range
-    /// past any private-use scalar the text already contains.
-    pub fn reset(&mut self, text: &str) {
-        let highest = text
-            .chars()
-            .filter(|c| is_image_char(*c))
-            .map(|c| c as u32)
-            .max();
-        self.base = highest.map_or(IMAGE_CHAR_BASE, |code| code + 1);
-        self.items.clear();
-        self.bytes = 0;
-    }
-
-    /// Adds `image` (or reuses an identical stored one) and returns its scalar.
-    pub fn add(&mut self, image: InlineImage) -> Result<char, ImageInsertError> {
-        if let Some(slot) = self.items.iter().position(|i| {
-            i.format == image.format
-                && i.orientation == image.orientation
-                && i.alt == image.alt
-                && i.bytes[..] == image.bytes[..]
-        }) {
-            return self.char_of(slot).ok_or(ImageInsertError::StoreFull);
-        }
-        let total = self
-            .bytes
-            .checked_add(image.bytes.len())
-            .ok_or(ImageInsertError::StoreFull)?;
-        if self.items.len() >= MAX_IMAGES || total > MAX_STORE_BYTES {
-            return Err(ImageInsertError::StoreFull);
-        }
-        let slot = self.items.len();
-        let ch = self.char_of(slot).ok_or(ImageInsertError::StoreFull)?;
-        self.bytes = total;
-        self.items.push(image);
-        Ok(ch)
-    }
-
-    fn char_of(&self, slot: usize) -> Option<char> {
-        image_char(self.base, u32::try_from(slot).ok()?)
-    }
-
-    /// The slot a scalar of the text stands for, when it is a stored picture.
-    pub fn slot_of(&self, c: char) -> Option<usize> {
-        let code = c as u32;
-        let slot = usize::try_from(code.checked_sub(self.base)?).ok()?;
-        (slot < self.items.len()).then_some(slot)
-    }
-
-    pub fn get(&self, slot: usize) -> Option<&InlineImage> {
-        self.items.get(slot)
-    }
-
-    /// UTF-8 `bytes` of the document (optional BOM kept) with every picture
-    /// scalar replaced by U+FFFC, for plain-text output and the dirty check.
-    pub fn plain_bytes(&self, bytes: Vec<u8>) -> Vec<u8> {
-        if self.items.is_empty() {
-            return bytes;
-        }
-        let skip = if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
-            3
-        } else {
-            0
-        };
-        match core::str::from_utf8(&bytes[skip..]) {
-            Ok(text) if text.chars().any(|c| self.slot_of(c).is_some()) => {
-                let mut out = bytes[..skip].to_vec();
-                out.extend_from_slice(self.plain_text(text).as_bytes());
-                out
-            }
-            _ => bytes,
-        }
-    }
-
-    /// `text` with every picture scalar replaced by U+FFFC.
-    pub fn plain_text(&self, text: &str) -> String {
-        if self.items.is_empty() || !text.chars().any(|c| self.slot_of(c).is_some()) {
-            return text.to_owned();
-        }
-        text.chars()
-            .map(|c| {
-                if self.slot_of(c).is_some() {
-                    OBJECT_REPLACEMENT
-                } else {
-                    c
-                }
-            })
-            .collect()
-    }
 }
 
 /// Oriented RGBA8 pixels of a picture, straight alpha, top-down.

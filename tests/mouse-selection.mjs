@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { attachMouseSelection } from "../web/mouse-selection.mjs";
 import { engineNote, selectEngine } from "./engine-adapter.mjs";
 
-const { engine } = selectEngine("mouse-selection", "node tests/mouse-selection.mjs [--engine v1|v2]");
+const { engine } = selectEngine("mouse-selection", "node tests/mouse-selection.mjs");
 
 class Target {
   listeners = new Map();
@@ -205,4 +205,4 @@ async function settle() { for (let i = 0; i < 8; i += 1) await tick(); }
   }
 }
 
-console.log("Mouse selection: capture, Shift anchor, word selection, async pointerup, cancel/disable/error handling, page/zoom mapping and bounded autoscroll passed." + (engine === "v2" ? ` (engine v2: ${engineNote("mouse-selection", engine)})` : ""));
+console.log("Mouse selection: capture, Shift anchor, word selection, async pointerup, cancel/disable/error handling, page/zoom mapping and bounded autoscroll passed." + (engine === "v2" ? ` (engine v2: ${engineNote("mouse-selection")})` : ""));

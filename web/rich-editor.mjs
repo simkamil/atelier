@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Rich editor (engine v2) behind the public API of `createEditor` (web/editor.mjs), R7a.
+// Rich editor (engine v2): the editor of the application since R7c; the plain-text editor (v1) was removed in R8.
 // Same names, same result shapes and same callbacks (onState, onError, onBusy, onZoom, onViewport, onImages);
 // the table of differences is docs/r7-ui-parity.md. It connects the ATED v2 client (rich-editor-client.mjs),
 // the page cache with its glyph atlas (editor-page-cache.mjs), the Canvas renderer, the hidden text input,
@@ -1137,7 +1137,6 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     setFrenchSpacing(enabled) { spacingEnabled = Boolean(enabled); },
     setSuspended(value) { if (disposed) throw new EditorError("EDITOR_CLOSED"); setBusy(Boolean(value)); },
     setScreenReaderMode(enabled) { input.setScreenReaderMode(Boolean(enabled)); },
-    previewDocx() { return Promise.reject(new EditorError("EDITOR_UNSUPPORTED_V2")); },
     setZoom(zoom) {
       if (disposed) throw new EditorError("EDITOR_CLOSED");
       applyZoom(zoom);

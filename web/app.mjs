@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createEngineClient } from "/engine-client.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "/wasm-protocol.mjs";
-import { createEditor, EditorError } from "/editor.mjs";
+import { createRichEditor, EditorError } from "/rich-editor.mjs";
 import { createNativeHost } from "/native-host.mjs";
 import { createRichPreview } from "/rich-preview.mjs";
 import { createEditorShell } from "/editor-shell.mjs";
@@ -13,12 +13,10 @@ import { SYMBOL_CATALOGUE } from "/symbol-catalogue.mjs";
 import { createEditorContextMenu } from "/editor-context-menu.mjs";
 import { createAboutDialog } from "/about-dialog.mjs";
 import { createPropertiesDialog, PROPERTIES_LABEL_KEYS } from "/properties-dialog.mjs";
-import { applyProperties, readProperties } from "/properties-protocol.mjs";
 import { ABOUT_LICENSES } from "/about-licenses.mjs";
 import { BUILD_INFO } from "/build-info.mjs";
 import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
 import { createImagePicker, imageMessageKey } from "/image-insert.mjs";
-import { chooseEngine } from "/engine-choice.mjs";
 
 const READER_MODE_KEY = "atelier.screenReaderMode";
 const byId = id => document.getElementById(id);
@@ -53,10 +51,6 @@ const FALLBACK = new Map(Object.entries({
   "state-clean": "Enregistré", "state-dirty": "Modifications non enregistrées",
   "options-label": "Options", "option-french-spacing": "Espaces françaises automatiques",
   "action-open-docx": "Ouvrir DOCX…", "action-close-preview": "Retour au texte",
-  "status-preview-loading": "Ouverture de l’aperçu DOCX…",
-  "status-preview-ready": "Aperçu DOCX en lecture seule. Mise en page simplifiée.",
-  "status-preview-notices": "Aperçu DOCX en lecture seule. Certains éléments ne sont pas affichés.",
-  "status-preview-error": "L’aperçu DOCX n’a pas pu être ouvert. Document invalide, non pris en charge ou trop volumineux (8 Mio maximum).",
   "preview-title": "Aperçu DOCX", "preview-eyebrow": "DOCUMENT WORD · LECTURE SEULE", "preview-state": "Lecture seule", "preview-footer": "Atelier · aperçu DOCX",
   "zoom-group": "Zoom du document", "zoom-range": "Facteur de zoom", "zoom-percent": "Régler le zoom",
   "zoom-title": "Zoom…", "zoom-value": "Pourcentage (10 à 500)", "zoom-custom": "Pourcentage personnalisé",
@@ -193,9 +187,8 @@ async function start() {
   const { i18n, messages } = await loadCatalog();
   let storage = null;
   try { storage = globalThis.localStorage; } catch { /* preference storage can be blocked */ }
-  const engine = chooseEngine({ search: globalThis.location?.search ?? "", storage });
-  const v2 = engine === "v2";
-  const fileLimit = v2 ? MAX_RICH_FILE_BYTES : MAX_TEXT_FILE_BYTES;
+  const engine = "v2";
+  const fileLimit = MAX_RICH_FILE_BYTES;
   document.documentElement.dataset.engine = engine;
   const toolKeys = ["searchTitle", "searchQuery", "searchMatchCase", "searchWholeWord", "searchIgnoreAccents", "searchMatchNbsp",
     "searchPrevious", "searchNext", "searchClose", "searchCount", "searchEmptyQuery", "searchNoResults", "searchTruncated",
@@ -215,7 +208,6 @@ async function start() {
   let symbols;
   let about;
   let properties;
-  let previewDocxBytes = null;
   let contextMenu;
   let symbolSnapshot;
   const symbolKeys = ["title", "close", "symbols", "specialCharacters", "search", "block", "allBlocks", "font", "recent", "insert", "noResults", "insertionFailed", "previous", "next", "page"];
@@ -231,7 +223,7 @@ async function start() {
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
     symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, onImage: () => { void insertPickedImages(); }, onProperties: () => {
       if (!properties || document.querySelector("dialog:modal")) return;
-      if (v2 ? !initialized || busy || !editor?.capabilities?.properties : !previewReady || !previewDocxBytes) return;
+      if (!initialized || busy || !editor?.capabilities?.properties) return;
       properties.open({ returnFocusTo: document.activeElement }).catch(() => showEditorMessage(messages.get("status-properties-loadError"), true));
     }, onSymbols: () => {
       if (!symbols || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
@@ -243,7 +235,6 @@ async function start() {
   let client;
   let host;
   let editor;
-  let richEditorError = null;
   let preview;
   let previewActive = false;
   let previewReady = false;
@@ -318,7 +309,7 @@ async function start() {
     const disabled = !initialized || (previewActive ? !previewReady : busy);
     zoomControls.setState({ zoom: view?.getZoom() ?? 1, mode: view?.getZoomMode() ?? "custom", disabled });
     shell.setZoomEnabled(!disabled);
-    shell.setPropertiesEnabled(propertiesAvailable && !disabled && (v2 ? Boolean(editor?.capabilities?.properties) : previewActive && previewDocxBytes !== null));
+    shell.setPropertiesEnabled(propertiesAvailable && !disabled && Boolean(editor?.capabilities?.properties));
     updateStatus();
   };
   updateZoom();
@@ -333,7 +324,7 @@ async function start() {
     const toolsEnabled = !blocked && !previewActive;
     const writable = !state?.readOnly;
     navigation?.setEnabled(toolsEnabled, { preview: previewActive });
-    shell.setNavigationEnabled(toolsEnabled && toolsAvailable && (!v2 || Boolean(editor?.capabilities?.search)));
+    shell.setNavigationEnabled(toolsEnabled && toolsAvailable && Boolean(editor?.capabilities?.search));
     shell.setSymbolsEnabled(toolsEnabled && symbolsAvailable && writable);
     shell.setImageEnabled(toolsEnabled && imageAvailable && writable);
     if (!toolsEnabled) { symbols?.close(); contextMenu?.close({ restoreFocus: false }); }
@@ -385,10 +376,7 @@ async function start() {
       imageAlt: number => i18n.t("image-alt-default", { number }),
       onImages: ({ inserted, failed }) => { if (inserted > 0 && failed === 0) showEditorMessage(i18n.t("image-inserted", { count: inserted })); },
     };
-    if (v2) {
-      // Loaded only for v2: the rich editor and its modules stay out of a v1 session.
-      const { createRichEditor, EditorError: RichEditorError } = await import("/rich-editor.mjs");
-      richEditorError = RichEditorError;
+    {
       let readerMode = false;
       try { readerMode = storage?.getItem(READER_MODE_KEY) === "true"; } catch { /* default: off */ }
       editor = createRichEditor({ ...editorOptions, t: (key, values) => i18n.t(key, values), version: BUILD_INFO.version, screenReaderMode: readerMode,
@@ -402,12 +390,12 @@ async function start() {
       // What the rich editor offers is enabled like in v1; a command it lacks stays greyed with its reason.
       shell.setUnavailable?.(editor.capabilities.search ? null : messages.get("v2-unavailable-search"),
         editor.capabilities.properties ? null : messages.get("v2-unavailable-properties"));
-    } else editor = createEditor(editorOptions);
+    }
     function closePreview() {
       if (!previewActive || disposed) return;
       previewGeneration += 1; previewAbort?.abort(); previewAbort = null;
       previewActive = false;
-      previewReady = false; previewDocxBytes = null; properties?.close();
+      previewReady = false; properties?.close();
       nodes.richWorkspace.hidden = true; nodes.textWorkspace.hidden = false; nodes.closePreview.hidden = true;
       editor.setSuspended(false); preview.close(); shell.ribbon.selectTab("file"); shell.ribbon.setCollapsed(false); nodes.openDocx.focus();
       setPreviewIdentity(false);
@@ -417,7 +405,7 @@ async function start() {
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
       spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
       onZoom: () => { if (previewActive) updateZoom(); }, onViewport: () => { if (previewActive) updateStatus(); } });
-    if (toolsAvailable && (!v2 || editor.capabilities.search)) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
+    if (toolsAvailable && editor.capabilities.search) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
     async function openDocxInEditor(source) {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
@@ -427,40 +415,7 @@ async function start() {
       else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
       return result;
     }
-    async function openDocx(source) {
-      if (v2) return openDocxInEditor(source);
-      source ??= () => host.openDocx();
-      if (!initialized || busy || disposed) return { kind: "cancelled" };
-      const generation = ++previewGeneration;
-      previewAbort = new AbortController();
-      const signal = previewAbort.signal;
-      previewActive = true; previewReady = false; editor.setSuspended(true); nodes.closePreview.hidden = false;
-      setPreviewIdentity(true);
-      showEditorMessage(messages.get("status-preview-loading"));
-      const current = () => !disposed && generation === previewGeneration;
-      try {
-        const result = await source();
-        if (!current()) return { kind: "cancelled" };
-        if (result.kind !== "ok") {
-          closePreview();
-          showEditorMessage(messages.get(result.kind === "cancelled" ? "status-cancelled" : result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-preview-error"), result.kind !== "cancelled");
-          return result;
-        }
-        previewDocxBytes = result.bytes.slice();
-        const document = await editor.previewDocx(result.bytes, { signal });
-        if (!current()) return { kind: "cancelled" };
-        preview.setDocument(document);
-        nodes.textWorkspace.hidden = true; nodes.richWorkspace.hidden = false;
-        preview.open({ returnFocusTo: nodes.openDocx });
-        previewReady = true; updateZoom();
-        showEditorMessage(messages.get(document.noticeCount ? "status-preview-notices" : "status-preview-ready"));
-        return { kind: "ok" };
-      } catch (error) {
-        if (!current()) return { kind: "cancelled" };
-        closePreview(); showEditorMessage(messages.get("status-preview-error"), true);
-        return { kind: "error", key: error.code ?? "EDITOR_PREVIEW_FAILED" };
-      }
-    }
+    const openDocx = source => openDocxInEditor(source);
     const state = await editor.initialize();
     initialized = true;
     if (symbolsAvailable) {
@@ -481,21 +436,10 @@ async function start() {
     }
     if (propertiesAvailable) {
       properties = createPropertiesDialog({ i18n,
-        load: () => {
-          if (v2) return editor.readProperties();
-          if (!previewDocxBytes) throw new EditorError("EDITOR_BUSY");
-          return readProperties(client, previewDocxBytes);
-        },
+        load: () => editor.readProperties(),
         apply: async changes => {
-          if (v2) {
-            const applied = await editor.applyProperties(changes);
-            return applied.kind === "tooLong" ? applied : { kind: "ok" };
-          }
-          if (!previewDocxBytes) throw new EditorError("EDITOR_BUSY");
-          const result = await applyProperties(client, previewDocxBytes, changes);
-          if (result.kind === "tooLong") return result;
-          previewDocxBytes = result.bytes;
-          return { kind: "ok" };
+          const applied = await editor.applyProperties(changes);
+          return applied.kind === "tooLong" ? applied : { kind: "ok" };
         } });
       document.body.append(properties.element);
     }
@@ -503,15 +447,14 @@ async function start() {
       contextMenu = createEditorContextMenu({ target: nodes.canvas, focusTarget: editor.element,
         labels: Object.fromEntries(contextKeys.map(key => [key, messages.get(`context-${key}`)])),
         getState: () => { const current = editor.getState(); return { revision: current.revision, anchor: current.anchor, focus: current.focus,
-          ...(v2 ? { hasText: current.docLen > 0 } : { text: current.text }),
+          hasText: current.docLen > 0,
           canUndo: current.canUndo, canRedo: current.canRedo, enabled: editor.canEdit && !previewActive, busy, preview: previewActive }; },
         clipboardCapabilities: { read: () => typeof navigator.clipboard?.readText === "function", write: () => typeof navigator.clipboard?.writeText === "function" },
         onError: () => showEditorMessage(messages.get("utilities-clipboardError"), true),
         onCommand: async (action, snapshot) => {
           if (previewActive || !editor.canEdit) throw new EditorError("EDITOR_BUSY");
           if (["copy", "cut"].includes(action)) {
-            const selected = v2 ? await editor.selectedText(snapshot)
-              : new TextDecoder("utf-8", { fatal: true }).decode(new TextEncoder().encode(snapshot.text).subarray(Math.min(snapshot.anchor, snapshot.focus), Math.max(snapshot.anchor, snapshot.focus)));
+            const selected = await editor.selectedText(snapshot);
             await navigator.clipboard.writeText(selected);
             if (action === "cut") await editor.editSelection("", snapshot);
           } else if (action === "paste") {
@@ -527,7 +470,7 @@ async function start() {
     nodes.openDocx.addEventListener("click", () => { void openDocx(); }, { signal: listeners.signal });
     nodes.closePreview.addEventListener("click", closePreview, { signal: listeners.signal });
     nodes.readonlyCopy.addEventListener("click", async () => {
-      if (!v2 || nodes.readonlyCopy.disabled) return;
+      if (nodes.readonlyCopy.disabled) return;
       nodes.readonlyCopy.disabled = true;
       try {
         const result = await editor.makeEditableCopy();

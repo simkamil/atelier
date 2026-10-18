@@ -211,14 +211,6 @@ try {
   const stagedHarness = spawnWorker();
   const staged = await createEngineClient({ worker: stagedHarness.worker, bytes: wasmBytes });
   const docx = new Uint8Array(await readFile(new URL("./docx-reference/basic.docx", import.meta.url)));
-  const previewFrame = (requestId) => {
-    const payload = new Uint8Array(8 + docx.byteLength);
-    payload.set(new TextEncoder().encode("ATED"));
-    new DataView(payload.buffer).setUint16(4, 1, true);
-    new DataView(payload.buffer).setUint16(6, 18, true);
-    payload.set(docx, 8);
-    return encodeMessage({ type: MessageType.Editor, requestId, payload });
-  };
   const resultOf = (bytes) => decodeMessage(bytes, "event");
   const stepEvents = [];
   const track = (events) => (progress) => { if (progress.phase === "step") events.push(progress); };
@@ -227,11 +219,12 @@ try {
     assert.ok(events.every((event, index) => event.totalBytes === 1000 && (index === 0 || event.copiedBytes >= events[index - 1].copiedBytes)), "step progress is monotonic on a fixed scale");
   };
 
-  const oneShot = resultOf(await staged.request(previewFrame(900n)));
+  // Reference: a first staged open (the native test `staged::tests` compares the staged open with the one-shot preview).
+  const oneShot = resultOf(await staged.request(encodeStagedBegin(900n, StagedKind.OpenDocx, docx)));
   const open = resultOf(await staged.request(encodeStagedBegin(901n, StagedKind.OpenDocx, docx), { onProgress: track(stepEvents) }));
   assertMonotonic(stepEvents);
   assert.equal(stepEvents.at(-1).copiedBytes < 1000, true, "the last progress precedes the final result");
-  assert.deepEqual(open.payload, oneShot.payload, "uncancelled staged open is byte-identical to the one-shot preview");
+  assert.deepEqual(open.payload, oneShot.payload, "uncancelled staged open is byte-identical to the reference open");
   assert.equal(open.requestId, 901n);
 
   const exportEvents = [];
@@ -264,7 +257,7 @@ try {
   }
   await abortAfter(StagedKind.OpenDocx, 905n, 2);
   assert.deepEqual(await staged.request(command(MessageType.Ping, 906n)), command(MessageType.Ping, 906n), "engine answers after a cancelled open");
-  assert.deepEqual(resultOf(await staged.request(encodeStagedBegin(907n, StagedKind.OpenDocx, docx))).payload, oneShot.payload, "a new open after cancellation matches the one-shot preview");
+  assert.deepEqual(resultOf(await staged.request(encodeStagedBegin(907n, StagedKind.OpenDocx, docx))).payload, oneShot.payload, "a new open after cancellation matches the reference open");
   await abortAfter(StagedKind.ExportDocx, 908n, 1);
   assert.deepEqual(decodeStagedExport(resultOf(await staged.request(encodeStagedBegin(909n, StagedKind.ExportDocx, docx))).payload).bytes, exported.bytes, "export after a cancelled export is unchanged");
   const failed = resultOf(await staged.request(encodeStagedBegin(910n, StagedKind.OpenDocx, Uint8Array.of(1, 2, 3))));

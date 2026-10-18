@@ -453,25 +453,3 @@ fn empty_import_and_tab_insertion_are_supported() {
     }
     assert_eq!(session.undo(1).unwrap().text, "");
 }
-
-#[test]
-fn rich_session_operations_do_not_touch_plain_editor_state() {
-    use atelier_core_wasm::editor::EditorSession;
-    let plain = EditorSession::default();
-    let mut new = b"ATED".to_vec();
-    new.extend_from_slice(&1u16.to_le_bytes());
-    new.extend_from_slice(&0u16.to_le_bytes());
-    let (plain, _) = plain.transact(&new).unwrap();
-    let mut export = b"ATED".to_vec();
-    export.extend_from_slice(&1u16.to_le_bytes());
-    export.extend_from_slice(&10u16.to_le_bytes());
-    let (_, before) = plain.transact(&export).unwrap();
-    let mut session = RichSession::open(&simple("DOCX")).unwrap();
-    let id = session.imported().paragraph_ids()[0];
-    session.replace(0, id, 0, 4, "Changed").unwrap();
-    let (_, after) = plain.transact(&export).unwrap();
-    assert_eq!(
-        before, after,
-        "rich operations do not leak into the plain session"
-    );
-}

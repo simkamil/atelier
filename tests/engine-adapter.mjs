@@ -1,75 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Sélection de l'éditeur (v1 texte brut ou v2 riche) pour les suites navigateur de l'éditeur (US-219, R7).
-//
-// Toutes les suites concernées acceptent `--engine v1|v2` ; le défaut est `DEFAULT_ENGINE`.
-// Pour une suite non prête en v2, `--engine v2` ne lance rien :
-// la suite écrit un statut JSON « pending » et sort avec `V2_PENDING_EXIT_CODE` (75). Ce code est
-// distinct de 0 (succès), 1 (échec d'une vérification) et 2 (usage) : un « en attente » n'est jamais
-// un succès, et la CI ne doit pas l'accepter comme tel.
-//
-// R7a : l'interface sait créer l'éditeur v2 (`?engine=v2`). Le statut v2 est **par suite** : une suite n'est « prête »
-// que si elle passe réellement en v2 (liste `V2_READY_SUITES`) ; les autres gardent le code 75 avec leur propre raison
-// (`V2_PENDING_REASONS`). Une suite prête en v2 peut sauter des vérifications propres à v1 (recherche, aperçu DOCX,
-// pixels d'images...) : elle les liste dans `skipped` de son rapport avec la raison (docs/r7-ui-parity.md §7).
-// La bascule du défaut (`DEFAULT_ENGINE`) est R7b.
+// Lanceurs des suites navigateur de l'éditeur (US-219). Depuis R8 l'éditeur de l'interface est unique (v2, riche) : l'option
+// `--engine` et le moteur v1 ont disparu avec lui. Ce module garde le point d'entrée commun des lanceurs
+// (`selectEngine`) pour valider les arguments (usage invalide : code 2) ; `engine` vaut toujours "v2", valeur que les pages de
+// test reçoivent encore dans `?engine=v2` et que l'interface rapporte dans `app.engine`.
 
-export const DEFAULT_ENGINE = "v2";
-export const V2_PENDING_EXIT_CODE = 75;
-export const V2_PENDING_MESSAGE = "v2 en attente de R7b (suite non portée)";
-/** Suites qui passent réellement en v2 (R7a). */
-export const V2_READY_SUITES = Object.freeze(["run-ui-browser", "run-image-insert-browser", "run-editor-browser",
-  "run-editor-utilities-browser", "run-frontend-browser", "mouse-selection", "run-latency-browser"]);
-/**
- * Suites ready in v2 because the code they check is shared by v1 and v2 and drives no editor (R7c): same checks, same
- * result under both engines. What is specific to v2 is verified where it lives (the second column).
- */
-export const V2_SHARED_NOTES = Object.freeze({
-  "run-editor-utilities-browser": "modules isolés (menu contextuel, À propos, symboles) sans éditeur ; leur intégration avec l'éditeur v2 est dans run-rich-editor-ui-browser (editor-utilities-integration-v2, document-status-integration-v2)",
-  "run-frontend-browser": "CanvasRenderer et text-input partagés par v1 et v2, sans éditeur ; le rendu des pages v2 (atlas) est dans run-rich-atlas-render-browser et run-rich-editor-ui-browser",
-  "mouse-selection": "module de souris partagé, sans éditeur ; la souris v2 (HitTest, SelectUnit, glisser-déposer MoveText) est dans run-editor-browser --engine v2 et run-rich-editor-ui-browser",
+export const ENGINE = "v2";
+const SHARED_NOTES = Object.freeze({
+  "run-editor-utilities-browser": "modules isolés (menu contextuel, À propos, symboles) sans éditeur ; leur intégration avec l'éditeur est dans run-rich-editor-ui-browser (editor-utilities-integration-v2, document-status-integration-v2)",
+  "run-frontend-browser": "CanvasRenderer et text-input sans éditeur ; le rendu des pages (atlas) est dans run-rich-atlas-render-browser et run-rich-editor-ui-browser",
+  "mouse-selection": "module de souris sans éditeur ; la souris de l'éditeur (HitTest, SelectUnit, glisser-déposer MoveText) est dans run-editor-browser et run-rich-editor-ui-browser",
 });
-export const engineNote = (suite, engine) => (engine === "v2" ? V2_SHARED_NOTES[suite] ?? null : null);
-/** Raison du code 75 des suites non portées, par nom de suite. */
-export const V2_PENDING_REASONS = Object.freeze({
-});
-export const ENGINES = Object.freeze({
-  v1: Object.freeze({ ready: true }),
-  v2: Object.freeze({ ready: false, pending: V2_PENDING_MESSAGE }),
-});
-
-export const isReady = (engine, suite) => ENGINES[engine].ready || (engine === "v2" && V2_READY_SUITES.includes(suite));
-export const pendingReason = suite => V2_PENDING_REASONS[suite] ?? V2_PENDING_MESSAGE;
-
-/** Extrait `--engine <v>` / `--engine=<v>` ; renvoie le moteur et les arguments restants. */
-export function parseEngineArgs(args = process.argv.slice(2)) {
-  const rest = [];
-  let engine = DEFAULT_ENGINE;
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i];
-    if (arg === "--engine") { engine = args[i + 1]; i += 1; }
-    else if (arg.startsWith("--engine=")) engine = arg.slice(9);
-    else rest.push(arg);
-  }
-  if (!Object.hasOwn(ENGINES, engine)) throw new RangeError("--engine attend v1 ou v2");
-  return { engine, rest };
-}
+export const engineNote = suite => SHARED_NOTES[suite] ?? null;
 
 /**
- * Point d'entrée des lanceurs. `isValid(rest)` valide les autres arguments : usage invalide -> code 2,
- * toujours avant le statut « en attente » (code 75) de v2.
+ * Point d'entrée des lanceurs. `isValid(rest)` valide les arguments : usage invalide -> code 2.
+ * `--engine` n'existe plus : il est rejeté comme tout argument inconnu.
  */
 export function selectEngine(suite, usage, isValid = rest => rest.length === 0, args = process.argv.slice(2)) {
-  let parsed;
-  try { parsed = parseEngineArgs(args); } catch (error) {
-    console.error(`${suite} : ${error.message}`);
-    process.exit(2);
-  }
-  if (!isValid(parsed.rest)) { console.error(`Usage : ${usage}`); process.exit(2); }
-  if (!isReady(parsed.engine, suite)) {
-    const reason = pendingReason(suite);
-    console.log(JSON.stringify({ status: "pending", engine: parsed.engine, suite, reason, exitCode: V2_PENDING_EXIT_CODE }));
-    console.error(`${suite} : ${reason} (code de sortie ${V2_PENDING_EXIT_CODE}, ni succès ni échec)`);
-    process.exit(V2_PENDING_EXIT_CODE);
-  }
-  return parsed;
+  if (!isValid(args)) { console.error(`${suite} : usage : ${usage}`); process.exit(2); }
+  return { engine: ENGINE, rest: args };
 }

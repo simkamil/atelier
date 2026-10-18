@@ -145,8 +145,6 @@ jobs:
         run: node tests/wasm-protocol-boundaries.mjs
       - name: Verify editor protocol and actual WASM rollback under ABI memory pressure
         run: |
-          node tests/editor-protocol.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-protocol.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/editor-page-cache.mjs
@@ -154,8 +152,6 @@ jobs:
           node tests/rich-editor-client.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/native-bridge-protocol.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node tests/editor-abi.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-abi.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -167,8 +163,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-move.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node tests/properties-abi.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise real Worker transfers and cancellation
         run: node tests/wasm-worker.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
       - name: Exercise default browser Worker bootstrap in headless Edge
@@ -176,7 +170,7 @@ jobs:
       - name: Check pointer capture, selection ordering and bounded auto-scroll
         run: node tests/mouse-selection.mjs
       - name: Check text drag/drop and automatic French spacing
-        run: node --test tests/replacement-protocol.mjs tests/page-navigation.mjs tests/navigation-query-protocol.mjs tests/zoom.mjs tests/text-drag-drop.mjs tests/french-spacing.mjs tests/rich-preview.mjs tests/rich-preview-protocol.mjs
+        run: node --test tests/page-navigation.mjs tests/zoom.mjs tests/text-drag-drop.mjs tests/french-spacing.mjs tests/rich-preview.mjs tests/rich-preview-protocol.mjs
       - name: Exercise Canvas editor, composition and file adapter in headless Edge
         run: node tests/run-editor-browser.mjs
       - name: Insert images by picker, paste and drop in headless Edge
@@ -191,17 +185,11 @@ jobs:
           node tests/run-document-mirror-browser.mjs
       - name: Check that glyph atlas pages render exactly like the per-glyph painter
         run: node tests/run-rich-atlas-render-browser.mjs
-      - name: Exercise the rich editor (default) and the legacy v1 editor until its removal (R8)
+      - name: Exercise the rich editor (the only editor since R8)
         run: |
           node --test tests/rich-editor-unit.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-rich-editor-ui-browser.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node tests/run-editor-browser.mjs --engine v1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node tests/run-ui-browser.mjs --engine v1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node tests/run-image-insert-browser.mjs --engine v1
 
   linux-musl:
     name: Linux musl build and tests
