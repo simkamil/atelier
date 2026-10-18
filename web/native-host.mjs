@@ -49,21 +49,32 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     const data = event?.data;
     if (typeof data !== "string" || !data.startsWith(PREFIX)) return;
     const fields = data.split("|");
-    if (fields.length !== 5 || fields[0] !== "us120-file" || fields[1] !== "1"
+    if (fields.length < 5 || fields[0] !== "us120-file" || fields[1] !== "1"
         || !/^[1-9][0-9]{0,19}$/.test(fields[2])) return;
     let id;
     try { id = BigInt(fields[2]); } catch { return; }
     if (id > MAX_U64) return;
     const entry = pending.get(id);
     if (!entry) return;
-    const [, , , status, payload] = fields;
+    const [, , , status, ...payloadFields] = fields;
+    const payload = payloadFields.join("|");
     if (status === "cancelled" && payload === "") settle(id, { kind: "cancelled" });
     else if (status === "error" && /^[A-Za-z][A-Za-z0-9_.]{0,63}$/.test(payload)) settle(id, { kind: "error", key: payload });
     else if (status === "ok" && ["open", "openDocx"].includes(entry.operation)) {
       try { settle(id, { kind: "ok", bytes: fromBase64(payload, entry.operation === "openDocx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) }); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && payload === "") settle(id, { kind: "ok" });
-    else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
+    else if (status === "ok" && payload.startsWith("path|")) {
+      // SaveAs with path response
+      const pathPayload = payload.slice(5);
+      try {
+        const pathBytes = fromBase64(pathPayload, MAX_FILE_BYTES);
+        const pathStr = new TextDecoder().decode(pathBytes);
+        settle(id, { kind: "ok", path: pathStr });
+      } catch (error) {
+        settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" });
+      }
+    } else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   }
 
   function settle(id, result) {
@@ -108,6 +119,11 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     save(bytes) {
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_FILE_BYTES) return Promise.reject(new NativeHostError("HOST_FILE_TOO_LARGE"));
       return request("save", toBase64(bytes), bytes.byteLength);
+    },
+    saveAs(bytes, pathHint = null) {
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_FILE_BYTES) return Promise.reject(new NativeHostError("HOST_FILE_TOO_LARGE"));
+      const payload = pathHint ? toBase64(new TextEncoder().encode(pathHint)) : "";
+      return request("saveAs", payload, bytes.byteLength);
     },
     notifyDirty,
     close() {

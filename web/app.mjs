@@ -436,8 +436,8 @@ async function start() {
     }, { signal: listeners.signal });
     nodes.save.addEventListener("click", async () => {
       try {
-        const result = await editor.saveAs();
-        if (result.kind === "ok") showEditorMessage(messages.get("status-saved"));
+        const result = await editor.save();
+        if (result.kind === "ok") showEditorMessage(messages.get(result.path ? "status-saved-new" : "status-saved"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
       } catch (error) { onError(error); }
