@@ -357,6 +357,8 @@ try {
     for (let i = 0; i < data.length; i += 4) {
       if (data[i] >= 250 && data[i + 1] >= 225 && data[i + 1] <= 245 && data[i + 2] >= 165 && data[i + 2] <= 195) yellow += 1;
       else if (data[i] >= 240 && data[i + 1] >= 195 && data[i + 1] <= 212 && data[i + 2] >= 150 && data[i + 2] <= 175) orange += 1;
+      // The current occurrence is also the selection (R7b-1 draws its green highlight over the orange one).
+      else if (data[i] >= 188 && data[i] <= 208 && data[i + 1] >= 171 && data[i + 1] <= 191 && data[i + 2] >= 133 && data[i + 2] <= 153) orange += 1;
     }
     return { yellow, orange };
   };
