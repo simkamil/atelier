@@ -6,6 +6,8 @@ const MAX_DOCX_BYTES = 8 * 1024 * 1024;
 const MAX_QUEUE = 4;
 const MAX_QUEUED_BYTES = MAX_DOCX_BYTES + MAX_FILE_BYTES * MAX_QUEUE;
 const PREFIX = "us120-file|1|";
+const LAUNCH_NOTICE = "us115-launch|1";
+const MAX_LAUNCH_SKIPPED = 99;
 
 export class NativeHostError extends Error {
   constructor(code) { super(code); this.name = "NativeHostError"; this.code = code; }
@@ -44,9 +46,15 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
   let closed = false;
   let queuedBytes = 0;
   const pending = new Map();
+  const launchListeners = new Set();
 
   function receive(event) {
     const data = event?.data;
+    if (data === LAUNCH_NOTICE) {
+      // US-115 : le natif signale des chemins en attente ; le front les réclame par takeLaunch().
+      for (const listener of [...launchListeners]) { try { listener(); } catch { /* un abonné défaillant ne bloque pas les autres */ } }
+      return;
+    }
     if (typeof data !== "string" || !data.startsWith(PREFIX)) return;
     const fields = data.split("|");
     if (fields.length !== 5 || fields[0] !== "us120-file" || fields[1] !== "1"
@@ -62,6 +70,12 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     else if (status === "ok" && ["open", "openDocx"].includes(entry.operation)) {
       try { settle(id, { kind: "ok", bytes: fromBase64(payload, entry.operation === "openDocx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) }); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
+    } else if (status === "ok" && entry.operation === "launch" && payload !== "") {
+      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*)$/.exec(payload);
+      try {
+        if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED) throw new NativeHostError("HOST_INVALID_RESPONSE");
+        settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes: fromBase64(match[3], match[1] === "docx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) } });
+      } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && payload === "") settle(id, { kind: "ok" });
     else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   }
@@ -109,10 +123,19 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
       if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_FILE_BYTES) return Promise.reject(new NativeHostError("HOST_FILE_TOO_LARGE"));
       return request("save", toBase64(bytes), bytes.byteLength);
     },
+    /** US-115 : prochain document demandé par la ligne de commande ou une seconde instance ; `{ kind: "ok" }` sans `document` si rien n'attend. */
+    takeLaunch() { return request("launch"); },
+    /** Appelle `callback` quand des chemins arrivent ; renvoie la fonction de désabonnement. */
+    onLaunch(callback) {
+      if (typeof callback !== "function") throw new TypeError("callback must be a function.");
+      launchListeners.add(callback);
+      return () => { launchListeners.delete(callback); };
+    },
     notifyDirty,
     close() {
       if (closed) return;
       closed = true;
+      launchListeners.clear();
       webview.removeEventListener("message", receive);
       for (const id of [...pending.keys()]) settle(id, { kind: "error", key: "HOST_CLOSED" });
     },
