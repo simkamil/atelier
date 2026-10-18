@@ -183,6 +183,17 @@ fn run_cycle(dir: &Path, dwell: bool) {
             );
             view.post_web_message_as_string("us111-ledger")
                 .expect("PostWebMessageAsString");
+            // US-113 : CreateSharedBuffer / PostSharedBufferToScript passent par le même registre ;
+            // un runtime sans ces interfaces est un repli légitime (la QueryInterface est équilibrée).
+            match view.post_shared_buffer(
+                &[0x5a; 4096],
+                "{\"v\":1,\"reply\":\"us120-file|1|9|ok|sb;4096\"}",
+            ) {
+                Ok(()) | Err(SharedBufferError::Unavailable) => {}
+                Err(SharedBufferError::Failed(error)) => {
+                    panic!("PostSharedBufferToScript: {error}")
+                }
+            }
             view.execute_script("1+1").expect("ExecuteScript");
             pump_for(Duration::from_secs(5), &mut || {
                 view.take_script_result().is_some()

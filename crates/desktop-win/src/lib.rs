@@ -16,6 +16,9 @@ pub mod file_dialog;
 pub mod instance_win32;
 
 #[cfg(windows)]
+mod bridge_ops;
+
+#[cfg(windows)]
 #[path = "file-bridge.rs"]
 mod file_bridge;
 

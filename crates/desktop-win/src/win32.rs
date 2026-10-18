@@ -4,6 +4,7 @@
 use super::{
     MonitorArea, Rect, WindowState, encode_state, load_state, minimum_size, restore_state,
 };
+use crate::bridge_ops::{self, BridgeState, Outcome, StaHost};
 use crate::file_bridge::{self, Request};
 use crate::file_dialog::{DialogOwner, FileFilter, StaFileDialogs};
 use crate::files::{FileBroker, FileError};
@@ -45,6 +46,8 @@ const GWLP_USERDATA: i32 = -21;
 const TIMER_WEBVIEW_INIT: usize = 0x1110;
 const TIMER_WEBVIEW_CLOSE: usize = 0x1111;
 const TIMER_LAUNCH_READ: usize = 0x1112;
+/// Diagnostic du pont seulement : ferme le dialogue commun ouvert pendant `--bridge-self-check`.
+const TIMER_DIAG_DIALOG_CLOSE: usize = 0x1113;
 /// Délai maximal de lecture d'un fichier d'ouverture (partage réseau injoignable).
 const LAUNCH_READ_TIMEOUT_MS: u32 = 30_000;
 const SIZE_MINIMIZED: usize = 1;
@@ -190,6 +193,7 @@ unsafe extern "system" {
     ) -> u32;
     fn SetTimer(hwnd: Hwnd, id: usize, milliseconds: u32, callback: *mut c_void) -> usize;
     fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
+    fn GetLastActivePopup(hwnd: Hwnd) -> Hwnd;
     fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
     fn PostMessageW(hwnd: Hwnd, message: u32, w: Wparam, l: Lparam) -> i32;
     fn IsWindowVisible(hwnd: Hwnd) -> i32;
@@ -236,6 +240,10 @@ unsafe extern "system" {
     fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
 }
 
+#[path = "bridge-check.rs"]
+mod bridge_check;
+pub use bridge_check::bridge_self_check;
+
 struct Context {
     state_file: PathBuf,
     title: Vec<u16>,
@@ -259,6 +267,8 @@ struct FileRuntime {
     launch_inflight: Option<(u64, String)>,
     launch_generation: u64,
     launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead)>>>,
+    /// US-113 : tickets remis au JS, écriture en cours et catalogue de polices.
+    bridge: BridgeState,
 }
 
 impl FileRuntime {
@@ -271,6 +281,7 @@ impl FileRuntime {
             launch_inflight: None,
             launch_generation: 0,
             launch_slot: Arc::new(Mutex::new(None)),
+            bridge: BridgeState::system(),
         })
     }
 }
@@ -317,9 +328,7 @@ fn route_file_request(
             }
             Err(key) => file_reply(&id, Err(key)),
         },
-        Request::Dirty { .. } | Request::Launch { .. } => {
-            unreachable!("dirty and launch messages are handled before dialog routing")
-        }
+        _ => unreachable!("dirty, launch and bridge messages are handled before dialog routing"),
     }
 }
 
@@ -347,12 +356,14 @@ fn with_file_dialog_options(
 /// US-115 : démarre la lecture du prochain fichier d'ouverture sur un thread de travail (un chemin UNC
 /// lent ne doit pas figer l'interface). Renvoie une réponse immédiate si rien n'attend ou si une lecture
 /// est déjà en cours ; sinon `None` et la réponse part à `WM_ATELIER_LAUNCH_DONE` ou à l'expiration.
-fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<String> {
+fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<Outcome> {
     if runtime.launch_inflight.is_some() {
-        return Some(format!("us120-file|1|{id}|error|files.error.queue_full"));
+        return Some(Outcome::Text(format!(
+            "us120-file|1|{id}|error|files.error.queue_full"
+        )));
     }
     let Some(path) = runtime.launch.pop_front() else {
-        return Some(format!("us120-file|1|{id}|ok|"));
+        return Some(Outcome::Text(format!("us120-file|1|{id}|ok|")));
     };
     runtime.launch_generation += 1;
     let generation = runtime.launch_generation;
@@ -367,7 +378,9 @@ fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<Strin
             unsafe { PostMessageW(target as Hwnd, WM_ATELIER_LAUNCH_DONE, 0, 0) };
         });
     if spawned.is_err() {
-        return Some(format!("us120-file|1|{id}|error|files.error.io"));
+        return Some(Outcome::Text(format!(
+            "us120-file|1|{id}|error|files.error.io"
+        )));
     }
     runtime.launch_inflight = Some((generation, id.to_owned()));
     // SAFETY: hwnd est la fenêtre vivante du fil UI ; sans minuterie la lecture reste simplement sans délai.
@@ -377,7 +390,7 @@ fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<Strin
 
 /// Réponse due à la lecture terminée (`expired = false`) ou expirée ; `None` si rien n'est attendu.
 /// Un résultat tardif d'une génération abandonnée est ignoré.
-fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<String> {
+fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<Outcome> {
     let (generation, id) = runtime.launch_inflight.clone()?;
     let ready = runtime
         .launch_slot
@@ -391,17 +404,19 @@ fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<String> {
         }
         _ if expired => {
             runtime.launch_inflight = None;
-            Some(format!("us120-file|1|{id}|error|files.error.timeout"))
+            Some(Outcome::Text(format!(
+                "us120-file|1|{id}|error|files.error.timeout"
+            )))
         }
         _ => None,
     }
 }
 
-fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request) -> String {
+fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request) -> Outcome {
     let id = request.id().to_owned();
     if let Request::Dirty { dirty, .. } = request {
         runtime.dirty = dirty;
-        return format!("us120-file|1|{id}|ok|");
+        return Outcome::Text(format!("us120-file|1|{id}|ok|"));
     }
     if let Request::Launch { .. } = request {
         unreachable!("launch requests are started by begin_launch");
@@ -410,7 +425,21 @@ fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request)
     let owner = unsafe { DialogOwner::from_raw(hwnd) };
     let broker = &runtime.broker;
     let dialogs = &mut runtime.dialogs;
-    route_file_request(request, broker, |kind| {
+    if matches!(
+        request,
+        Request::PickOpen { .. }
+            | Request::PickSave { .. }
+            | Request::ReadTicket { .. }
+            | Request::ReleaseTicket { .. }
+            | Request::WriteTicket { .. }
+            | Request::ListFonts { .. }
+            | Request::ReadFont { .. }
+            | Request::OpenUrl { .. }
+    ) {
+        let mut host = StaHost { dialogs, owner };
+        return bridge_ops::process_bridge_request(request, &mut runtime.bridge, broker, &mut host);
+    }
+    Outcome::Text(route_file_request(request, broker, |kind| {
         with_file_dialog_options(
             kind,
             |title, filters, selected_filter, suggested_name| match kind {
@@ -427,7 +456,7 @@ fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request)
             },
         )
         .map_err(|error| error.message_key)
-    })
+    }))
 }
 
 impl Context {
@@ -878,7 +907,7 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             }
                         });
                         if let (Some(reply), Some(view)) = (reply, (*context).webview.as_ref()) {
-                            if let Err(error) = view.post_web_message_as_string(&reply) {
+                            if let Err(error) = bridge_ops::deliver(view, reply) {
                                 (*context).record(Err(error));
                             }
                         }
@@ -935,7 +964,7 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     if let Some(reply) = reply {
                         let _ = KillTimer(hwnd, TIMER_LAUNCH_READ);
                         if let Some(view) = (*context).webview.as_ref() {
-                            let _ = view.post_web_message_as_string(&reply);
+                            let _ = bridge_ops::deliver(view, reply);
                         }
                     }
                     return 0;
@@ -949,6 +978,17 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     return 0;
                 }
                 WM_TIMER => {
+                    if w == TIMER_DIAG_DIALOG_CLOSE {
+                        // Armé uniquement par `--bridge-self-check` : ferme le dialogue commun
+                        // éventuellement ouvert (WM_CLOSE = annulation), sans effet sinon.
+                        // SAFETY: hwnd est la fenêtre vivante ; GetLastActivePopup lit seulement la chaîne
+                        // de propriété et PostMessageW accepte tout HWND (échec inoffensif).
+                        let popup = GetLastActivePopup(hwnd);
+                        if !popup.is_null() && popup != hwnd {
+                            PostMessageW(popup, WM_CLOSE, 0, 0);
+                        }
+                        return 0;
+                    }
                     if w == TIMER_LAUNCH_READ {
                         let _ = KillTimer(hwnd, TIMER_LAUNCH_READ);
                         let reply = (*context)
@@ -956,7 +996,7 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             .as_mut()
                             .and_then(|runtime| finish_launch(runtime, true));
                         if let (Some(reply), Some(view)) = (reply, (*context).webview.as_ref()) {
-                            let _ = view.post_web_message_as_string(&reply);
+                            let _ = bridge_ops::deliver(view, reply);
                         }
                         return 0;
                     }

@@ -72,6 +72,23 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--bridge-self-check")) {
+        let directory = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--bridge-self-check requires an isolated target directory")?;
+        if arguments.next().is_some() {
+            return Err("--bridge-self-check accepts one target directory".into());
+        }
+        println!(
+            "{}",
+            window::bridge_self_check(
+                &directory.join("window-state.ini"),
+                &directory.join("webview"),
+            )?
+        );
+        return Ok(());
+    }
     if first.as_deref() == Some(std::ffi::OsStr::new("--instance-probe-primary")) {
         let root = arguments
             .next()

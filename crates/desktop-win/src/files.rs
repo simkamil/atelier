@@ -106,6 +106,12 @@ impl ReadTicket {
     pub fn id(self) -> u64 {
         self.0
     }
+
+    /// Rebuild a ticket from its numeric form (US-113 bridge). This grants nothing: the broker
+    /// still looks the number up and rejects unknown, revoked or wrong-capability tickets.
+    pub fn from_id(id: u64) -> Self {
+        Self(id)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -115,6 +121,12 @@ impl WriteTicket {
     /// Numeric transport representation; it contains no path or file metadata.
     pub fn id(self) -> u64 {
         self.0
+    }
+
+    /// Rebuild a ticket from its numeric form (US-113 bridge). This grants nothing: the broker
+    /// still looks the number up and rejects unknown, revoked or wrong-capability tickets.
+    pub fn from_id(id: u64) -> Self {
+        Self(id)
     }
 }
 
