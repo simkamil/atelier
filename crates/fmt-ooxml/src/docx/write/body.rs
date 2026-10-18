@@ -19,7 +19,7 @@ use super::props::{
 use super::xml::{Out, xml_char};
 use atelier_model::NodeId as ModelNodeId;
 use atelier_text_model::rich::{
-    AnchoredObject, BreakKind, CharAttrs, Color, LinkTarget, Node, ParaProps, Paragraph,
+    AnchoredObject, BreakKind, CharAttrs, ClearSide, Color, LinkTarget, Node, ParaProps, Paragraph,
     RichDocument,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -876,6 +876,26 @@ impl<'a> Gen<'a> {
                     BreakKind::Line => self.out.empty(&name, std::iter::empty()),
                     BreakKind::Page => self.out.empty(&name, [(type_name.as_str(), "page")]),
                     BreakKind::Column => self.out.empty(&name, [(type_name.as_str(), "column")]),
+                    BreakKind::Wrapping {
+                        explicit_type,
+                        clear,
+                    } => {
+                        let clear_name = format!("{w}:clear");
+                        let mut attrs: Vec<(&str, &str)> = Vec::new();
+                        if *explicit_type {
+                            attrs.push((type_name.as_str(), "textWrapping"));
+                        }
+                        if let Some(side) = clear {
+                            let value = match side {
+                                ClearSide::None => "none",
+                                ClearSide::Left => "left",
+                                ClearSide::Right => "right",
+                                ClearSide::All => "all",
+                            };
+                            attrs.push((clear_name.as_str(), value));
+                        }
+                        self.out.empty(&name, attrs);
+                    }
                 }
             }
             LegacyItem::Symbol { font, code } => {

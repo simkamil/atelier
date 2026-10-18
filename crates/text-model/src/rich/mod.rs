@@ -44,8 +44,8 @@ pub use node::{
 };
 pub use ops::RichOp;
 pub use paragraph::{
-    AnchoredObject, Bookmark, BreakKind, CharRun, Field, Inline, InlineBreak, InlineSymbol, Link,
-    LinkTarget, Paragraph,
+    AnchoredObject, Bookmark, BreakKind, CharRun, ClearSide, Field, Inline, InlineBreak,
+    InlineSymbol, Link, LinkTarget, Paragraph,
 };
 pub use styles::{
     DocumentStyleDefaults, ResolvedProperties, Style, StyleCatalog, StyleCharAttrs, StyleEngine,

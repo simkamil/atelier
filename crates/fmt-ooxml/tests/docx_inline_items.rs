@@ -318,3 +318,54 @@ fn the_section_gets_its_page_geometry_from_the_sect_pr() {
     let _ = imp.document.paragraph_count();
     let _ = LayoutContext::block_kind(&imp.document, 0);
 }
+
+#[test]
+fn break_attributes_survive_import_and_rewriting() {
+    use atelier_text_model::rich::ClearSide;
+    let xml = concat!(
+        r#"<w:p><w:r><w:t>a</w:t><w:br w:type="textWrapping" w:clear="all"/><w:t>b</w:t><w:br w:clear="left"/>"#,
+        r#"<w:br w:type="textWrapping"/><w:br/></w:r></w:p>"#
+    );
+    let imp = doc(body(xml)).import();
+    let kinds = |p: &Paragraph| p.breaks.iter().map(|b| b.kind).collect::<Vec<_>>();
+    let expected = vec![
+        BreakKind::Wrapping {
+            explicit_type: true,
+            clear: Some(ClearSide::All),
+        },
+        BreakKind::Wrapping {
+            explicit_type: false,
+            clear: Some(ClearSide::Left),
+        },
+        BreakKind::Wrapping {
+            explicit_type: true,
+            clear: None,
+        },
+        BreakKind::Line,
+    ];
+    assert_eq!(kinds(&paragraph(&imp, 0)), expected);
+    for regenerate in [false, true] {
+        let (again, xml, _) = written(&imp, regenerate);
+        assert_eq!(kinds(&paragraph(&again, 0)), expected, "{regenerate}");
+        assert!(xml.contains(r#"w:clear="all""#), "{xml}");
+    }
+    // Added through the model, in the skeleton path and the rebuilt one.
+    let mut imp = doc(body(r#"<w:p><w:r><w:t>xy</w:t></w:r></w:p>"#)).import();
+    let para = imp.paragraph_ids()[0];
+    let id = imp.document.alloc_id().unwrap();
+    apply(
+        &mut imp,
+        vec![RichOp::InsertInline {
+            para,
+            item: Inline::Break(InlineBreak {
+                id,
+                offset: 1,
+                kind: expected[0],
+            }),
+        }],
+    );
+    for regenerate in [false, true] {
+        let (again, _, _) = written(&imp, regenerate);
+        assert_eq!(kinds(&paragraph(&again, 0)), [expected[0]], "{regenerate}");
+    }
+}

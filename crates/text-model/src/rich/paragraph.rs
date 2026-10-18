@@ -42,6 +42,22 @@ pub enum BreakKind {
     Line,
     Page,
     Column,
+    /// A line break with the attributes Word writes on `w:br` kept: an
+    /// explicit `w:type="textWrapping"` and the side `w:clear` (US-204).
+    /// A plain `w:br` or `w:cr` is [`BreakKind::Line`].
+    Wrapping {
+        explicit_type: bool,
+        clear: Option<ClearSide>,
+    },
+}
+
+/// Value of `w:clear` on a line break.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClearSide {
+    None,
+    Left,
+    Right,
+    All,
 }
 
 /// A line, page or column break at a text offset. It is zero-width in `text`

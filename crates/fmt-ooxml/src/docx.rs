@@ -13,8 +13,8 @@ use atelier_font::FontFace;
 use atelier_font::manager::{FontManager, FontSource};
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
-    Alignment, AnchoredObject, BreakKind, CharAttrs, Color, DocumentStyleDefaults, Inline,
-    InlineBreak, InlineSymbol, LineRule, LineSpacing, Node, NodeId, OpaqueAttr, ParaProps,
+    Alignment, AnchoredObject, BreakKind, CharAttrs, ClearSide, Color, DocumentStyleDefaults,
+    Inline, InlineBreak, InlineSymbol, LineRule, LineSpacing, Node, NodeId, OpaqueAttr, ParaProps,
     Paragraph, ResolvedProperties, RichDocument, RichOp, Style, StyleCatalog, StyleCharAttrs,
     StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont, Underline, VerticalAlign,
 };
@@ -1217,9 +1217,22 @@ fn parse_paragraph(
                     let offset = paragraph.text.len();
                     paragraph.text.push('\n');
                     let break_type = item.w_attr("type").map(str::to_owned);
+                    let clear = match item.w_attr("clear") {
+                        Some("none") => Some(ClearSide::None),
+                        Some("left") => Some(ClearSide::Left),
+                        Some("right") => Some(ClearSide::Right),
+                        Some("all") => Some(ClearSide::All),
+                        _ => None,
+                    };
                     let kind = match (item.name.local.as_str(), break_type.as_deref()) {
                         ("br", Some("page")) => BreakKind::Page,
                         ("br", Some("column")) => BreakKind::Column,
+                        ("br", ty) if ty == Some("textWrapping") || clear.is_some() => {
+                            BreakKind::Wrapping {
+                                explicit_type: ty == Some("textWrapping"),
+                                clear,
+                            }
+                        }
                         _ => BreakKind::Line,
                     };
                     // `offset` is in the text of the source until `inline::strip`.
