@@ -15,6 +15,7 @@ mod defaults;
 mod document;
 mod error;
 pub mod flat;
+pub mod flat_double;
 mod node;
 mod ops;
 mod paragraph;
@@ -38,7 +39,8 @@ pub use node::{
 };
 pub use ops::RichOp;
 pub use paragraph::{
-    AnchoredObject, Bookmark, CharRun, Field, Inline, Link, LinkTarget, Paragraph,
+    AnchoredObject, Bookmark, BreakKind, CharRun, Field, Inline, InlineBreak, InlineSymbol, Link,
+    LinkTarget, Paragraph,
 };
 pub use styles::{
     DocumentStyleDefaults, ResolvedProperties, Style, StyleCatalog, StyleCharAttrs, StyleEngine,
