@@ -129,8 +129,7 @@ async function captureShell() {
         const shot = await send("Page.captureScreenshot", { format: "png" });
         await writeFile(join(output, `${forcedColors ? "forced-" : ""}${name}.png`), Buffer.from(shot.data, "base64"));
       }
-      if (v2) skipped.push(`${name}: search pane, statistics dialog and replacement controls are absent in v2 (docs/r7-ui-parity.md)`);
-      else {
+      {
         await evaluate("(()=>{window.atelierScreenshotApp.navigation.openSearch(); const q=document.querySelector('[data-search-query]');q.value='document';q.dispatchEvent(new Event('input',{bubbles:true}));})()");
         for (let tries=0;tries<100;tries++) {
           if (await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2")) break;
@@ -160,7 +159,7 @@ async function captureShell() {
           await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-replace.png`),Buffer.from(shot.data,"base64"));
         }
       }
-      await evaluate(v2 ? "document.querySelector('.document-status-page').click()" : "document.querySelector('[data-search-close]').click();document.querySelector('.document-status-page').click()");
+      await evaluate("document.querySelector('[data-search-close]').click();document.querySelector('.document-status-page').click()");
       assert(await evaluate("(()=>{const d=document.querySelector('[data-status-goto-dialog]');const r=d.getBoundingClientRect();return d.open&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} page dialog fits the viewport`);
       if (screenshots) {
         await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
@@ -198,10 +197,8 @@ try {
   assert(report.checks.length >= 20, "all UI suites must execute");
   await captureShell();
   report.checks.push("real packaged app follows live browser system-theme media changes", "real packaged shell fits 1280px and 420px without horizontal overflow");
-  if (!v2) {
-    report.checks.push("real search pane and statistics dialog fit 1280px and 420px in light/dark themes");
-    report.checks.push("replacement, page dialog and six-field status menu fit 1280px and 420px in light/dark themes");
-  } else report.checks.push("page dialog and six-field status menu fit 1280px and 420px in light/dark themes (v2: no search pane, statistics or replacement controls)");
+  report.checks.push("real search pane and statistics dialog fit 1280px and 420px in light/dark themes");
+  report.checks.push("replacement, page dialog and six-field status menu fit 1280px and 420px in light/dark themes");
   report.checks.push("missing or partial catalog keeps editing available and omits untranslated navigation tools");
   if (forcedColors) report.checks.push("primary button and mark preserve readable forced-colors system pairs");
   console.log(JSON.stringify({ ...report, engine, skipped: [...new Set(skipped.map(item => item.replace(/^[a-z]+: /, "")))], executable, screenshots, environment: "real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence" }));

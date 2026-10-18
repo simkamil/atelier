@@ -42,7 +42,7 @@ const CONTEXT_GRAPHEMES: usize = 30;
 /// Paragraphs of layout `Statistics` may run before it answers (a short document
 /// is complete then; the layout of a long one goes on in the background, and
 /// the reply says whether its line and page counts are final).
-const STATISTICS_LAYOUT_BUDGET: u32 = 1024;
+const STATISTICS_LAYOUT_BUDGET: u32 = 32;
 /// Bytes of paragraph text a `ReplaceAll` may rewrite: each replacement clones
 /// its paragraph twice into the undo history.
 const MAX_REPLACE_WORK_BYTES: usize = 64 * 1024 * 1024;
@@ -281,9 +281,9 @@ impl Session {
     fn complete_layout(&mut self) {
         let mut spent = 0;
         while !self.cache.layout_complete() && spent < STATISTICS_LAYOUT_BUDGET {
-            let more = self.cache.step(&self.doc, 1024);
+            let more = self.cache.step(&self.doc, 16);
             self.carry(more);
-            spent += 1024;
+            spent += 16;
         }
     }
 
@@ -299,7 +299,22 @@ impl Session {
             pages: Some(pages),
             ..StatisticsOptions::default()
         };
-        let whole = document(&self.doc, &stats_options);
+        // The text counts only change with the document: kept per revision.
+        let key = (
+            self.doc.revision(),
+            self.doc.len(),
+            self.doc.paragraph_count(),
+        );
+        let mut whole = match self.stats_memo {
+            Some((k, memo)) if k == key => memo,
+            _ => {
+                let fresh = document(&self.doc, &StatisticsOptions::default());
+                self.stats_memo = Some((key, fresh));
+                fresh
+            }
+        };
+        whole.lines = stats_options.lines;
+        whole.pages = stats_options.pages;
         let (lo, hi) = self.selection_range();
         let picked = selection_counts(&self.doc, lo, hi, &stats_options.rules)?;
         let (picked_lines, picked_pages) = if lo == hi {

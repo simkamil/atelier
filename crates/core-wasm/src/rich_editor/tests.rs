@@ -1249,7 +1249,9 @@ fn moves_reach_a_tail_that_is_not_laid_out_yet() {
     let mut tries = 0;
     while up.focus == end.focus {
         tries += 1;
-        assert!(tries < 20, "the move never completed");
+        assert!(tries < 2000, "the move never completed");
+        // The client pump lays the rest out between two attempts.
+        h.state(Command::Layout { budget: 256 });
         up = h.step(Direction::Up, false);
     }
     assert!(up.focus < end.focus);
@@ -1267,6 +1269,190 @@ fn moves_reach_a_tail_that_is_not_laid_out_yet() {
         start.caret.is_some(),
         "laid out: the caret is there at once"
     );
+}
+
+fn long_txt(n: usize) -> String {
+    (0..n)
+        .map(|i| format!("ligne {i}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Pumps `Layout` (16 paragraphs, like the client) until the caret shows.
+fn pump_to_caret(h: &mut Harness) -> State {
+    for _ in 0..5000 {
+        let s = h.state(Command::Layout { budget: 16 });
+        if s.caret.is_some() {
+            return s;
+        }
+    }
+    panic!("the caret never showed");
+}
+
+#[test]
+fn a_far_jump_answers_without_caret_then_converges_by_layout() {
+    for command in [
+        Command::Move {
+            direction: Direction::DocumentEnd,
+            extend: false,
+        },
+        Command::SetSelection {
+            anchor: 0,
+            focus: 0,
+            upstream: false,
+        },
+    ] {
+        let mut h = Harness::new();
+        let opened = h.txt(&long_txt(4_000));
+        assert!(!opened.layout_complete);
+        let doc_len = opened.doc_len;
+        let command = match command {
+            Command::SetSelection { .. } => Command::SetSelection {
+                anchor: doc_len,
+                focus: doc_len,
+                upstream: false,
+            },
+            other => other,
+        };
+        let s = h.state(command);
+        // Selection posed (flat positions), no caret yet, layout still going.
+        assert_eq!((s.anchor, s.focus), (s.doc_len, s.doc_len));
+        assert!(s.caret.is_none() && !s.layout_complete);
+        let s = pump_to_caret(&mut h);
+        assert_eq!(s.focus, s.doc_len);
+        assert!(s.caret.is_some());
+    }
+    // Shift+Ctrl+End keeps the anchor.
+    let mut h = Harness::new();
+    h.txt(&long_txt(4_000));
+    let s = h.step(Direction::DocumentEnd, true);
+    assert_eq!((s.anchor, s.focus), (0, s.doc_len));
+    assert!(s.caret.is_none());
+    assert_eq!(pump_to_caret(&mut h).anchor, 0);
+}
+
+#[test]
+fn a_far_jump_costs_a_bounded_amount_of_layout() {
+    let mut h = Harness::new();
+    h.txt(&long_txt(4_000));
+    let before = h.state(Command::Layout { budget: 1 }).page_count;
+    let s = h.step(Direction::DocumentEnd, false);
+    // At most REACH_BUDGET + DEFAULT_LAYOUT_BUDGET paragraphs of layout (one
+    // line each here, about 50 lines a page): a few pages, not thousands.
+    assert!(
+        s.page_count <= before + 3,
+        "{before} -> {} pages",
+        s.page_count
+    );
+}
+
+#[test]
+fn typing_while_the_caret_is_absent_edits_at_the_focus() {
+    let mut h = Harness::new();
+    let opened = h.txt(&long_txt(4_000));
+    let end = h.step(Direction::DocumentEnd, false);
+    assert!(end.caret.is_none());
+    let typed = h.insert("zz");
+    assert_eq!(typed.doc_len, opened.doc_len + 2);
+    assert_eq!(typed.focus, opened.doc_len + 2);
+    assert!(typed.caret.is_none());
+    h.state(Command::Layout { budget: 16 });
+    // Deleting at the unlaid focus works too, and a second jump to the start
+    // before the pump finished answers with a caret on page 0.
+    let back = h.delete(false, DeleteUnit::Grapheme);
+    assert_eq!(back.doc_len, opened.doc_len + 1);
+    let start = h.step(Direction::DocumentStart, false);
+    assert_eq!(start.focus, 0);
+    assert_eq!(start.caret.map(|c| c.page), Some(0));
+    // The jump back to the end resumes; the text typed is still there.
+    h.step(Direction::DocumentEnd, false);
+    pump_to_caret(&mut h);
+    assert!(h.text().ends_with("3999z"));
+}
+
+#[test]
+fn a_second_jump_before_the_pump_finishes_and_a_resync_keep_the_session_valid() {
+    let mut h = Harness::new();
+    let opened = h.txt(&long_txt(4_000));
+    let first = h.step(Direction::DocumentEnd, false);
+    assert!(first.caret.is_none());
+    h.state(Command::Layout { budget: 16 });
+    // Second, different jump while the first has not been reached.
+    let mid = h.select(opened.doc_len / 2, opened.doc_len / 2);
+    assert_eq!(mid.focus, opened.doc_len / 2);
+    // A Resync in the middle of the pump: everything invalidated, no caret
+    // invented, the selection intact.
+    let resynced = h.state(Command::Resync);
+    assert_eq!(resynced.focus, opened.doc_len / 2);
+    assert!(resynced.caret.is_none());
+    assert!(resynced.invalidated.iter().any(|&(a, b)| a == 0 && b >= 1));
+    let s = pump_to_caret(&mut h);
+    assert_eq!(s.focus, opened.doc_len / 2);
+}
+
+#[test]
+fn a_far_jump_in_a_read_only_document_and_a_closed_document() {
+    let mut h = Harness::new();
+    let docx = std::fs::read(format!(
+        "{}/../../tests/docx-reference/revisions.docx",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    h.open_state(OpenKind::Docx, Profile::Document, &docx);
+    let s = h.step(Direction::DocumentEnd, false);
+    assert_eq!(s.focus, s.doc_len);
+    assert_eq!(
+        h.error(Command::InsertText { text: "x".into() }),
+        ErrorCode::ReadOnly
+    );
+    let mut h = Harness::new();
+    h.txt(&long_txt(4_000));
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    assert_eq!(
+        h.error(Command::Move {
+            direction: Direction::DocumentEnd,
+            extend: false
+        }),
+        ErrorCode::UnknownDocument
+    );
+    assert_eq!(
+        h.error(Command::Layout { budget: 16 }),
+        ErrorCode::UnknownDocument
+    );
+}
+
+#[test]
+fn statistics_is_bounded_and_follows_the_document() {
+    let mut h = Harness::new();
+    h.txt(&long_txt(4_000));
+    let first = match h.send(1, Command::Statistics) {
+        Response::Statistics {
+            document,
+            layout_complete,
+            ..
+        } => (document, layout_complete),
+        other => panic!("{other:?}"),
+    };
+    // At most a few paragraphs of layout: not complete, counts of the text exact.
+    assert!(!first.1);
+    assert_eq!(first.0.paragraphs, 4_000);
+    let again = match h.send(1, Command::Statistics) {
+        Response::Statistics { document, .. } => document,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(again.words, first.0.words, "memoised counts are the same");
+    h.select(0, 0);
+    h.insert("un deux trois ");
+    let after = match h.send(1, Command::Statistics) {
+        Response::Statistics { document, .. } => document,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(after.words, first.0.words + 3, "an edit refreshes the memo");
+    h.state(Command::Undo);
+    match h.send(1, Command::Statistics) {
+        Response::Statistics { document, .. } => assert_eq!(document.words, first.0.words),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]

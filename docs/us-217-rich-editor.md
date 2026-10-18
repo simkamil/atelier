@@ -39,6 +39,23 @@ Bornes : une page jusqu'à 16 Mio (`MAX_PAGE_DISPLAY_BYTES`, sous les 26 Mio de 
 - Si la mise en page a renoncé (`give_up`), la requête qui échoue reconstruit le `PageCache` du document (toutes les pages sont invalidées) au lieu de rester bloquée jusqu'au prochain `Open`.
 - Réponse perdue : un échec d'encodage de réponse, `STATUS_LIMIT` ou `EDITOR_RESPONSE_LIMIT` pose `resync` (`RichEditor::mark_resync`, appelé par `lib.rs`) ; le `State` suivant invalide `(0, page_count)` et porte la fenêtre de texte, une fois.
 
+## Performances : sauts lointains (perf-layout-jump)
+
+Aucune commande interactive ne met en page plus de `REACH_BUDGET` = 32 paragraphes (tranches de `REACH_SLICE` = 16), plus les 16 de `finish` : environ 0,17 ms par paragraphe en release sur cette machine, soit 8 ms par commande. Si la cible (caret, déplacement vertical, test de position) n'est pas atteinte, le `State` porte la sélection posée (positions plates valides, aussi pour Ctrl+Fin et Maj+Ctrl+Fin), `caret` absent et `layout_complete = 0` ; la pompe `Layout` du client continue (64 paragraphes par pas, environ 10 ms, tant qu'une commande de sélection attend son caret ; 16 sinon) et le caret arrive au `State` suivant, où l'interface fait défiler vers lui (une fois sa page reçue). La mise en page est séquentielle : la page du foyer ne peut pas être servie avant ce qui la précède (pas de priorité de page possible dans le protocole). Les frappes mises en file passent entre deux pas de pompe et s'appliquent au foyer par position plate.
+
+Mesures (`cargo run --release --locked --offline -p atelier-core-wasm --example rich_jump_bench`, texte brut, document neuf non mis en page, pompe `Layout` de 16) :
+
+| Paragraphes | Commande | Avant : 1er appel | Après : 1er appel (max) | Après : total jusqu'au caret |
+|---|---|---|---|---|
+| 3 000 | Ctrl+Fin | 474 ms | 8,8 ms | 494 ms (178 appels) |
+| 3 000 | Maj+Ctrl+Fin | 474 ms | 8,1 ms | 486 ms |
+| 3 000 | clic lointain (`SetSelection`) | 474 ms | 7,8 ms | 472 ms |
+| 12 000 | Ctrl+Fin | 710 ms (puis 470 appels, 2 000 ms au total) | 7,8 ms | 2 011 ms (740 appels) |
+| 12 000 | Maj+Ctrl+Fin | 710 ms | 7,7 ms | 2 032 ms |
+| 12 000 | clic lointain | 710 ms | 7,7 ms | 1 934 ms |
+
+Le travail total pour atteindre la fin est inchangé (la mise en page est la même) ; il ne bloque plus la commande. Le pas de 64 de la pompe réduit les allers-retours à environ 45 (3 000 paragraphes) ou 190 (12 000). `Statistics` suit la même règle : `STATISTICS_LAYOUT_BUDGET` = 32 paragraphes (pas de 16), `layout_complete=0` tant que la mise en page n'est pas finie (le client affiche lignes et pages « inconnues »), et le décompte du texte est mémorisé par révision (`stats_memo`). Mesuré sur 12 000 paragraphes : 177 à 188 ms avant par appel ; 10,6 ms au premier appel et 5,5 ms ensuite après (3 000 : 179 puis 175 ms avant, 7,1 puis 5,6 ms après). Frappe et annulation sans caret (banc, 3 000 et 12 000) : 2,9 ms et 2,8 ms. Haut, Bas, PageHaut, PageBas, Début et Fin sans caret sont mémorisés par le client (dernière commande seulement) et rejoués à l'arrivée du caret ; toute commande plus récente, la fermeture ou un nouvel `Open` l'annule. Le défilement vers le caret en attente est annulé par la molette, le toucher, un clic ou une touche sur la zone de défilement, et par le remplacement ou la fermeture du document. Non traitée : la recherche (`Search`) lit le texte sans mise en page.
+
 ## Limites connues
 
 - Retour arrière et Suppr sur un séparateur entre un paragraphe et un tableau, entre deux cellules ou autour d'un bloc opaque ne font rien : ni révision, ni déplacement du caret (comportement d'`replace_range` d'US-204, rendu explicite). Une sélection qui traverse la structure efface le texte qu'elle couvre sans fusionner ni retirer les cellules, le tableau ou le bloc (testé).

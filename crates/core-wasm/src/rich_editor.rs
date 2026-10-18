@@ -80,6 +80,11 @@ struct Session {
     /// Page changes found by a layout step outside a `State` (while a move
     /// waits for the layout to reach its target); the next `State` reports them.
     pending: PageDelta,
+    /// Document counts of `Statistics` (without lines and pages), by revision.
+    stats_memo: Option<(
+        (u64, usize, usize),
+        atelier_text_model::statistics::Statistics,
+    )>,
     /// A reply was lost (encoding failure, ABI limit): the next `State`
     /// invalidates every page and carries the text window.
     resync: bool,
@@ -88,8 +93,14 @@ struct Session {
     epoch: u32,
 }
 
-/// Paragraphs of layout a move or a hit test may run to reach its target.
-const REACH_BUDGET: u32 = 4096;
+/// Paragraphs of layout a move, a hit test or a caret may run to reach its
+/// target, in slices of `REACH_SLICE`. Measured in release at about 0.17 ms
+/// per paragraph (3 000 and 12 000 paragraph documents): 32 paragraphs plus
+/// the 16 of the closing `finish` stay near 8 ms per interactive command. What
+/// is not reached is finished by the client's `Layout` pump.
+const REACH_BUDGET: u32 = 32;
+/// Paragraphs per layout step while reaching a target.
+const REACH_SLICE: u32 = 16;
 
 impl RichEditor {
     /// Answers one `Editor` message whose payload is an ATED v2 frame.
@@ -282,6 +293,7 @@ impl Session {
             txt,
             origin,
             pending: PageDelta::default(),
+            stats_memo: None,
             resync: false,
             epoch: 0,
         })
@@ -325,9 +337,10 @@ impl Session {
         }
     }
 
-    /// Runs `query` against the layout, laying out the tail in blocks (256,
-    /// then 1024 paragraphs, `REACH_BUDGET` at most) until it answers. `None`
-    /// when the budget is spent or the layout cannot answer.
+    /// Runs `query` against the layout, laying out the tail in slices of
+    /// `REACH_SLICE` paragraphs (`REACH_BUDGET` at most, so a command never
+    /// blocks for long) until it answers. `None` when the budget is spent or
+    /// the layout cannot answer; the caller then answers without a caret.
     fn ready<T>(
         &mut self,
         query: impl Fn(&PageCache) -> Result<T, LayoutError>,
@@ -345,10 +358,9 @@ impl Session {
                 if spent >= REACH_BUDGET {
                     return Ok(None);
                 }
-                let chunk = if spent == 0 { 256 } else { 1024 };
-                let more = self.cache.step(&self.doc, chunk);
+                let more = self.cache.step(&self.doc, REACH_SLICE);
                 self.carry(more);
-                spent += chunk;
+                spent += REACH_SLICE;
             } else if !rebuilt {
                 rebuilt = true;
                 self.rebuild_cache();
