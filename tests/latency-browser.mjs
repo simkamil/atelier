@@ -49,13 +49,14 @@ try {
   if (!wasm.ok) throw new Error("WASM introuvable");
   const worker = new Worker("/web/engine-worker.mjs", { type: "module" });
   client = await createEngineClient({ worker, bytes: await wasm.arrayBuffer() });
-  let responseAt = 0, resolveState = null;
+  let responseAt = 0, resolveState = null, lastError = null;
   const timedClient = { request: async (...args) => { const out = await client.request(...args); responseAt = performance.now(); return out; } };
   const canvas = document.querySelector("#document-canvas"), scrollport = document.querySelector("#document-scroll");
   scrollport.style.height = "900px"; canvas.style.width = "100%";
   const host = { async open() { return { kind: "cancelled" }; }, async save() { return { kind: "ok" }; }, async notifyDirty() { return { kind: "ok" }; }, close() {} };
   editor = createEditor({ client: timedClient, host, canvas, scrollport, spacer: document.querySelector("#page-spacer"),
     textRepresentation: document.querySelector("#document-text"),
+    onError: error => { lastError = error; },
     onState: () => { if (resolveState) { const done = resolveState; resolveState = null; done(performance.now()); } } });
   await editor.initialize();
 
@@ -65,19 +66,45 @@ try {
     if (result.kind !== "ok") throw new Error(`ouverture refusée : ${JSON.stringify(result)}`);
     return { bytes: bytes.length, pages: editor.state.pages.length };
   }
-  // Le plus grand document qui tient : TARGET_PAGES pages de lignes courtes, ou texte plein au plafond.
+  // Le plus grand document qui tient. v1 renvoie toutes les pages à chaque réponse : au-delà de 32 Mio
+  // (MAX_RESPONSE) le moteur répond RESPONSE_LIMIT ; on cherche alors le plus grand document accepté.
+  const refusal = error => /RESPONSE_LIMIT|TOO_LARGE|LIMIT/.test(String(error.message) + String(error.code));
+  async function tryLines(pagesWanted) {
+    let count = 46 * pagesWanted, last;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      try { last = await load(shortLines(count)); } catch (error) { if (refusal(error)) return { refused: true }; throw error; }
+      if (last.pages === pagesWanted) break;
+      count = Math.max(1, Math.round(count * pagesWanted / last.pages) + (last.pages < pagesWanted ? 1 : -1));
+    }
+    return last;
+  }
+  async function tryDense(bytes) {
+    try { return await load(denseText(bytes)); } catch (error) { if (refusal(error)) return { refused: true }; throw error; }
+  }
+  // Recherche dichotomique de la plus grande taille acceptée (lo accepté, hi refusé), puis marge de 10 %.
+  async function largest(attempt, hi, min) {
+    let lo = min;
+    while (hi - lo > Math.max(2, min / 10)) {
+      const mid = Math.floor((lo + hi) / 2);
+      if ((await attempt(mid)).refused) hi = mid; else lo = mid;
+    }
+    return { accepted: lo, margin: Math.max(min, Math.floor(lo * 0.9)) };
+  }
   let doc, note = "";
   if (SHAPE === "lines") {
-    let count = 46 * TARGET_PAGES;
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      doc = await load(shortLines(count));
-      if (doc.pages === TARGET_PAGES) break;
-      count = Math.max(1, Math.round(count * TARGET_PAGES / doc.pages) + (doc.pages < TARGET_PAGES ? 1 : -1));
-    }
-    if (doc.pages !== TARGET_PAGES) note = `${TARGET_PAGES} pages non atteintes (${doc.pages} pages)`;
+    doc = await tryLines(TARGET_PAGES);
+    if (doc.refused) {
+      const { accepted, margin } = await largest(tryLines, TARGET_PAGES, 1);
+      doc = await tryLines(margin);
+      note = `${TARGET_PAGES} pages refusées par le moteur v1 (réponse > 32 Mio) ; plus grand accepté env. ${accepted} pages ; mesuré sur ${doc.pages} pages (marge de 10 % : la frappe ajoute du texte)`;
+    } else if (doc.pages !== TARGET_PAGES) note = `${TARGET_PAGES} pages non atteintes (${doc.pages} pages)`;
   } else {
-    doc = await load(denseText(MAX_TEXT - 4096));
-    note = `texte plein au plafond v1 : ${doc.pages} pages seulement`;
+    doc = await tryDense(MAX_TEXT - 4096);
+    if (doc.refused) {
+      const { accepted, margin } = await largest(tryDense, MAX_TEXT - 4096, 1024);
+      doc = await tryDense(margin);
+      note = `texte plein de ${MAX_TEXT - 4096} octets refusé par le moteur v1 (réponse > 32 Mio) ; plus grand accepté env. ${accepted} octets ; mesuré sur ${doc.bytes} octets / ${doc.pages} pages`;
+    } else note = `texte plein au plafond v1 de 128 Kio : ${doc.pages} pages seulement`;
   }
 
   // Curseur au milieu : sélectionne le marqueur, puis ArrowRight replie la sélection juste après lui.
@@ -96,7 +123,7 @@ try {
     const t0 = performance.now();
     editor.element.dispatchEvent(new KeyboardEvent("keydown", { key: enter ? "Enter" : data, bubbles: true, cancelable: true }));
     editor.element.dispatchEvent(new InputEvent("beforeinput", { inputType: enter ? "insertParagraph" : "insertText", data: enter ? null : data, bubbles: true, cancelable: true }));
-    const drawn = await Promise.race([done, sleep(5000).then(() => { throw new Error("pas de mise à jour après la frappe"); })]);
+    const drawn = await Promise.race([done, sleep(15000).then(() => { throw new Error(`pas de mise à jour après la frappe (${lastError?.code ?? lastError?.message ?? "sans erreur"})`); })]);
     const framed = await frame();
     return { total: drawn - t0, engine: responseAt - t0, draw: drawn - responseAt, frame: framed - t0, enter };
   }

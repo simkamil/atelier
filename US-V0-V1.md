@@ -809,6 +809,8 @@ Réf : D13, §6.14 · Taille : M · Dépend de : US-203, US-217
 - [ ] Suites navigateur exécutées en v1 et v2, v2 par défaut ; latence de frappe inférieure à 16 ms de bout en bout dans Edge sur 300 pages.
 - [ ] Éditeur v1 retiré (`editor-layout.rs`, branches TXT de `editor.rs`, `PlainTextDocument` dans l'éditeur) ; budget WASM mesuré avant et après.
 
+Avancement 2026-10-18 (préparation R7, aucune case cochée) : suites navigateur paramétrées `--engine v1|v2` avec adaptateur de test ; v2 sort « en attente de R7 (lot 3) » (code 75) ; banc `tests/run-latency-browser.mjs` et mesures v1 dans le [plan](docs/us-219-switch-plan.md), qui contient aussi l'inventaire R8. Interface non branchée sur v2.
+
 Réf : [plan de bascule](docs/rich-editor-migration.md) · Taille : M · Dépend de : US-217, US-218, US-209, US-006
 
 ## E1.3 — Édition
