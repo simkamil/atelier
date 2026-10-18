@@ -8,12 +8,12 @@ const checks = [];
 const assert = (value, name) => { if (!value) throw new Error(name); checks.push(name); };
 const forced = new URLSearchParams(location.search).get("forced") === "1";
 const enc = new TextEncoder();
-const item = (start, text, extra = {}) => ({ paraStart: BigInt(start), paraEnd: BigInt(start + enc.encode(text).length), role: 0, level: 0, label: "", text, objects: [], ...extra });
+const item = (start, text, extra = {}) => ({ paraStart: BigInt(start), paraEnd: BigInt(start + enc.encode(text).length), role: 0, level: 0, label: "", text, inlines: [], ...extra });
 // Paragraph starts follow the flat text: one newline byte between paragraphs.
 const specs = [
   ["Titre un", { role: 1, level: 1 }], ["Sous-titre", { role: 1, level: 3 }], ["Très profond", { role: 1, level: 8 }],
   ["Premier", { role: 2, level: 0, label: "1." }], ["Second niveau", { role: 2, level: 1, label: "•" }],
-  ["Voir ￼ et ￼.", { objects: [{ offset: 5n, alt: "Un chat noir" }, { offset: 12n, alt: "" }] }], ["Café crème", {}],
+  ["Voir ￼ et ￼.", { inlines: [{ offset: 5n, kind: 0, value: "Un chat noir" }, { offset: 12n, kind: 0, value: "" }] }], ["Café crème", {}],
 ];
 const starts = [];
 for (let at = 0, i = 0; i < specs.length; i += 1) { starts.push(at); at += enc.encode(specs[i][0]).length + 1; }
@@ -26,15 +26,22 @@ async function main() {
   const t = (key, values) => i18n.t(key, values);
   const host = document.getElementById("host");
   let selection = { anchor: 0n, focus: 0n };
-  const input = attachTextInput({ container: host, getSelection: () => selection, getCaret: () => ({ x: 10, y: 10, width: 1, height: 12 }), onCommand: () => {} });
+  const commands = [], phases = [];
+  let mirror;
+  const input = attachTextInput({
+    container: host, getSelection: () => selection, getCaret: () => ({ x: 10, y: 10, width: 1, height: 12 }),
+    onCommand: command => commands.push(command), onComposition: event => phases.push(event.phase),
+    getClipboardSnapshot: () => ({ text: "Café crème", revision: 1n, selection: { anchor: 0, focus: 5 } }),
+    onScreenReaderMode: on => mirror?.setScreenReaderMode(on),
+  });
   input.focus();
   assert(document.activeElement === input.element, "the input has the focus before the mirror exists");
 
   let revision = 1n;
   let current = baseDoc();
   const calls = [];
-  const mirror = createDocumentMirror({
-    container: host, t, activeDescendantTarget: input.element,
+  mirror = createDocumentMirror({
+    container: host, t, input, announceDelay: 0, activeDescendantTarget: input.element,
     getAccessibleWindow: async (start, end, { signal }) => {
       calls.push([start, end]);
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -92,7 +99,7 @@ async function main() {
   const last = [...root.querySelectorAll("p")].at(-1);
   assert(input.element.getAttribute("aria-activedescendant") === last.id, "aria-activedescendant names the current paragraph");
   const live = root.querySelector("[role=status]");
-  assert(live.getAttribute("aria-live") === "polite" && live.textContent === "C", "live region announces the character after the caret within a paragraph");
+  assert(live.getAttribute("aria-live") === "polite" && live.textContent === "Sélection annulée", "live region announces that the selection was cleared");
   selection = { anchor: 0n, focus: 0n };
   await push();
   assert(live.textContent === "Titre de niveau 1 : Titre un", "live region announces headings with their level");
@@ -112,7 +119,7 @@ async function main() {
   current = baseDoc({ 6: "Café crème brûlée" });
   assert((await push()).status === "applied" && calls.length === callsBefore + 1, "a new revision triggers one request");
   const after = [...root.querySelectorAll("p")];
-  assert(after.length === 2 && after[0] === before[0] && after[1] !== before[1] && after.at(-1).textContent === "Café crème brûlée", "only the edited paragraph is rebuilt");
+  assert(after.length === 2 && after[0] === before[0] && after[1] === before[1] && after.at(-1).textContent === "Café crème brûlée", "the edited paragraph is updated in place (same node and id), the others are untouched");
   assert(document.activeElement === input.element, "focus kept after a content update");
 
   // A superseded request is cancelled and never applied.
@@ -124,6 +131,52 @@ async function main() {
   release();
   assert((await old).status === "stale" && slow.element.querySelector("p") === null && (await newer).status === "stale", "stale revision never reaches the DOM");
   slow.dispose();
+
+  // Screen reader mode (Ctrl+Alt+Z): the focused input holds the paragraph and the selection.
+  assert(input.element.value === "" && !mirror.screenReaderMode(), "reader mode is off by default and the input is empty");
+  selection = { anchor: BigInt(S_LAST + 1), focus: BigInt(S_LAST + 3) };
+  await push();
+  input.element.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
+  assert(mirror.screenReaderMode() && input.screenReaderMode(), "Ctrl+Alt+Z turns screen reader mode on");
+  assert(live.textContent === "Mode lecteur d’écran activé", "the mode change is announced");
+  await push();
+  const ta = input.element;
+  assert(ta.value === "Café crème brûlée" && ta.selectionStart === 1 && ta.selectionEnd === 3 && ta.selectionDirection === "forward", "the input holds the paragraph with the selection");
+  assert(document.activeElement === ta, "focus stays in the input in reader mode");
+  selection = { anchor: BigInt(S_LAST + 5), focus: BigInt(S_LAST) };
+  await push();
+  assert(ta.selectionStart === 0 && ta.selectionEnd === 4 && ta.selectionDirection === "backward", "a reversed selection is reflected with its direction");
+  selection = { anchor: BigInt(S_LAST + 5), focus: BigInt(S_LAST + 5) };
+  await push();
+  assert(ta.selectionStart === 4 && ta.selectionEnd === 4, "the caret is a collapsed selection in UTF-16 units");
+  // Typing is still routed to the editor, not applied to the input.
+  const typed = new InputEvent("beforeinput", { inputType: "insertText", data: "x", bubbles: true, cancelable: true });
+  ta.dispatchEvent(typed);
+  assert(typed.defaultPrevented && commands.at(-1).type === "insertText" && commands.at(-1).text === "x" && ta.value === "Café crème brûlée", "typing goes to the editor and leaves the paragraph text in place");
+  // Copy and cut use the editor snapshot, not the paragraph in the input.
+  const copy = new DataTransfer();
+  const copyEvent = new ClipboardEvent("copy", { clipboardData: copy, bubbles: true, cancelable: true });
+  ta.dispatchEvent(copyEvent);
+  assert(copyEvent.defaultPrevented && copy.getData("text/plain") === "Café", "copy puts the editor selection on the clipboard");
+  const cut = new DataTransfer();
+  ta.dispatchEvent(new ClipboardEvent("cut", { clipboardData: cut, bubbles: true, cancelable: true }));
+  assert(cut.getData("text/plain") === "Café" && commands.some(c => c.type === "deleteSelection"), "cut copies the selection and asks the editor to delete it");
+  // IME composition: transactions as usual, the paragraph is restored afterwards.
+  phases.length = 0;
+  ta.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  ta.dispatchEvent(new CompositionEvent("compositionupdate", { data: "e", bubbles: true }));
+  await push();
+  ta.dispatchEvent(new CompositionEvent("compositionend", { data: "é", bubbles: true }));
+  assert(phases.join() === "start,update,commit" && commands.at(-1).text === "é" && commands.at(-1).inputType === "insertCompositionText", "composition start, update and commit reach the editor");
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert(ta.value === "Café crème brûlée" && document.activeElement === ta, "the paragraph is back in the input after the composition");
+  phases.length = 0;
+  ta.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+  ta.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true }));
+  assert(phases.join() === "start,cancel", "a cancelled composition inserts nothing");
+  ta.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
+  assert(!mirror.screenReaderMode() && ta.value === "" && !ta.hasAttribute("aria-multiline"), "Ctrl+Alt+Z turns the mode off and empties the input");
+  assert(live.textContent === "Mode lecteur d’écran désactivé", "leaving the mode is announced");
 
   mirror.dispose();
   assert(!root.isConnected && !input.element.hasAttribute("aria-activedescendant"), "dispose removes the mirror and the reference");
