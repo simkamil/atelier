@@ -990,6 +990,8 @@ impl<'a> Importer<'a> {
             runs,
             props,
             anchored,
+            breaks: Vec::new(),
+            symbols: Vec::new(),
             fields,
             bookmarks,
             links,

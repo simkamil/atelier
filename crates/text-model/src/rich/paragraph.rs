@@ -32,6 +32,38 @@ pub struct AnchoredObject {
     pub data: Vec<u8>,
 }
 
+/// Kind of an inline break.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BreakKind {
+    Line,
+    Page,
+    Column,
+}
+
+/// A line, page or column break at a text offset. It is zero-width in `text`
+/// and counts as one U+FFFC (3 bytes) in flat text (`rich::flat`).
+///
+/// US-203 freezes the field only; keeping `offset` in step with text edits,
+/// the DOCX import and `validate_local` are R1's (US-204). Items of
+/// `anchored`, `breaks` and `symbols` at one offset are ordered by `id`
+/// across the three lists.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InlineBreak {
+    pub id: NodeId,
+    pub offset: usize,
+    pub kind: BreakKind,
+}
+
+/// A symbol (font + code point, Word `w:sym`) at a text offset. Zero-width in
+/// `text`, one U+FFFC (3 bytes) in flat text. Same status as [`InlineBreak`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InlineSymbol {
+    pub id: NodeId,
+    pub offset: usize,
+    pub font: String,
+    pub code: u32,
+}
+
 /// A field (page number, date, ...) whose displayed result is `start..end`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Field {
@@ -73,6 +105,8 @@ pub struct Link {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Inline {
     Anchored(AnchoredObject),
+    Break(InlineBreak),
+    Symbol(InlineSymbol),
     Field(Field),
     Bookmark(Bookmark),
     Link(Link),
@@ -82,6 +116,8 @@ impl Inline {
     pub fn id(&self) -> NodeId {
         match self {
             Self::Anchored(x) => x.id,
+            Self::Break(x) => x.id,
+            Self::Symbol(x) => x.id,
             Self::Field(x) => x.id,
             Self::Bookmark(x) => x.id,
             Self::Link(x) => x.id,
@@ -98,6 +134,10 @@ pub struct Paragraph {
     pub props: ParaProps,
     /// Sorted by `(offset, id)`.
     pub anchored: Vec<AnchoredObject>,
+    /// Sorted by `(offset, id)`.
+    pub breaks: Vec<InlineBreak>,
+    /// Sorted by `(offset, id)`.
+    pub symbols: Vec<InlineSymbol>,
     /// Sorted by `(start, end, id)`, pairwise disjoint.
     pub fields: Vec<Field>,
     /// Sorted by `(start, end, id)`.
@@ -143,6 +183,8 @@ impl Paragraph {
     pub fn inline_ids(&self) -> Vec<NodeId> {
         let mut ids = Vec::new();
         ids.extend(self.anchored.iter().map(|x| x.id));
+        ids.extend(self.breaks.iter().map(|x| x.id));
+        ids.extend(self.symbols.iter().map(|x| x.id));
         ids.extend(self.fields.iter().map(|x| x.id));
         ids.extend(self.bookmarks.iter().map(|x| x.id));
         ids.extend(self.links.iter().map(|x| x.id));
@@ -155,6 +197,18 @@ impl Paragraph {
             .iter()
             .find(|x| x.id == id)
             .map(|x| Inline::Anchored(x.clone()))
+            .or_else(|| {
+                self.breaks
+                    .iter()
+                    .find(|x| x.id == id)
+                    .map(|x| Inline::Break(x.clone()))
+            })
+            .or_else(|| {
+                self.symbols
+                    .iter()
+                    .find(|x| x.id == id)
+                    .map(|x| Inline::Symbol(x.clone()))
+            })
             .or_else(|| {
                 self.fields
                     .iter()
@@ -186,6 +240,8 @@ impl Paragraph {
 
     fn sort_inline(&mut self) {
         self.anchored.sort_by_key(|x| (x.offset, x.id));
+        self.breaks.sort_by_key(|x| (x.offset, x.id));
+        self.symbols.sort_by_key(|x| (x.offset, x.id));
         self.fields.sort_by_key(|x| (x.start, x.end, x.id));
         self.bookmarks.sort_by_key(|x| (x.start, x.end, x.id));
         self.links.sort_by_key(|x| (x.start, x.end, x.id));
@@ -589,6 +645,8 @@ impl Paragraph {
         }
         match item {
             Inline::Anchored(x) => self.anchored.push(x),
+            Inline::Break(x) => self.breaks.push(x),
+            Inline::Symbol(x) => self.symbols.push(x),
             Inline::Field(x) => self.fields.push(x),
             Inline::Bookmark(x) => self.bookmarks.push(x),
             Inline::Link(x) => self.links.push(x),
@@ -601,6 +659,8 @@ impl Paragraph {
     pub fn remove_inline(&mut self, id: NodeId) -> Result<Inline, RichError> {
         let old = self.inline(id).ok_or(RichError::NodeNotFound(id))?;
         self.anchored.retain(|x| x.id != id);
+        self.breaks.retain(|x| x.id != id);
+        self.symbols.retain(|x| x.id != id);
         self.fields.retain(|x| x.id != id);
         self.bookmarks.retain(|x| x.id != id);
         self.links.retain(|x| x.id != id);

@@ -750,8 +750,7 @@ Stories techniques du [plan de bascule](docs/rich-editor-migration.md) validé l
 
 #### US-203 — Protocole de l'éditeur riche (v2)
 *En tant que* développeur, *je veux* un protocole d'édition versionné et incrémental *afin que* l'éditeur riche n'échange que ce qui change.
-- [ ] Enveloppe ATED v2 : identifiant de document u32, positions plates en octets UTF-8 avec `
-` entre paragraphes, réponse limitée aux pages modifiées, à une fenêtre de texte et à la révision ; v1 inchangée.
+- [x] Enveloppe ATED v2 : identifiant de document u32, positions plates en octets UTF-8 avec `\n` entre paragraphes, réponse limitée aux pages modifiées, à une fenêtre de texte et à la révision ; v1 inchangée.
 - [ ] Codec de référence Rust et JS figé, tests de troncature et de limites ; `web/rich-editor-protocol.mjs` et cache de pages `web/editor-page-cache.mjs`.
 - [ ] Les positions plates n'existent que dans le protocole et la vue : le modèle, le journal de récupération (US-074, US-325) et tout ancrage persistant utilisent identifiant de nœud + décalage (§6.3) ; un test vérifie qu'un journal rejoué après insertion de paragraphes en amont retrouve ses positions.
 

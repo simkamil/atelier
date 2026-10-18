@@ -378,7 +378,7 @@ fn gen_op(rng: &mut Rng, doc: &mut RichDocument) -> RichOp {
                         item: Inline::Link(x),
                     }
                 }
-                None => RichOp::RemoveInline {
+                None | Some(Inline::Break(_) | Inline::Symbol(_)) => RichOp::RemoveInline {
                     para,
                     id: doc.alloc_id().unwrap(),
                 },

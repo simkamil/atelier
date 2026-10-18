@@ -18,7 +18,9 @@ mod images;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod properties;
 pub mod protocol;
+pub mod rich_layout;
 pub mod rich_preview;
+pub mod rich_protocol;
 pub mod rich_session;
 pub mod staged;
 
