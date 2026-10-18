@@ -32,13 +32,17 @@ export function parseEngineArgs(args = process.argv.slice(2)) {
   return { engine, rest };
 }
 
-/** Point d'entrée des lanceurs : sort tout de suite pour v2 tant qu'il n'est pas prêt. */
-export function selectEngine(suite, args = process.argv.slice(2)) {
+/**
+ * Point d'entrée des lanceurs. `isValid(rest)` valide les autres arguments : usage invalide -> code 2,
+ * toujours avant le statut « en attente » (code 75) de v2.
+ */
+export function selectEngine(suite, usage, isValid = rest => rest.length === 0, args = process.argv.slice(2)) {
   let parsed;
   try { parsed = parseEngineArgs(args); } catch (error) {
     console.error(`${suite} : ${error.message}`);
     process.exit(2);
   }
+  if (!isValid(parsed.rest)) { console.error(`Usage : ${usage}`); process.exit(2); }
   if (!ENGINES[parsed.engine].ready) {
     console.log(JSON.stringify({ status: "pending", engine: parsed.engine, suite, reason: ENGINES[parsed.engine].pending,
       exitCode: V2_PENDING_EXIT_CODE }));

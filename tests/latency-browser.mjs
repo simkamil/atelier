@@ -11,6 +11,7 @@ const params = new URL(location.href).searchParams;
 const TARGET_PAGES = Number(params.get("pages") ?? 300);
 const KEYS = Number(params.get("keys") ?? 300);
 // lines : TARGET_PAGES pages de lignes courtes ; dense : texte plein au plafond de l'éditeur v1.
+const ENGINE = params.get("engine") ?? "v1";
 const SHAPE = params.get("shape") ?? "lines";
 const MAX_TEXT = 128 * 1024; // plafond de l'éditeur v1 (MAX_TEXT dans crates/core-wasm/src/editor.rs)
 const MARKER = "MILIEU";
@@ -68,7 +69,7 @@ try {
   }
   // Le plus grand document qui tient. v1 renvoie toutes les pages à chaque réponse : au-delà de 32 Mio
   // (MAX_RESPONSE) le moteur répond RESPONSE_LIMIT ; on cherche alors le plus grand document accepté.
-  const refusal = error => /RESPONSE_LIMIT|TOO_LARGE|LIMIT/.test(String(error.message) + String(error.code));
+  const refusal = error => /EDITOR_RESPONSE_LIMIT|TOO_LARGE/.test(String(error.message) + String(error.code));
   async function tryLines(pagesWanted) {
     let count = 46 * pagesWanted, last;
     for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -136,7 +137,8 @@ try {
   samples.push(await type("enter"));
   const pick = key => stats(samples.map(s => s[key]));
   const total = pick("total");
-  report = { status: "passed", engine: "v1", userAgent: navigator.userAgent, shape: SHAPE, document: { ...doc, note, caretPage },
+  report = { status: "passed", engine: ENGINE, synthetic: true, gpu: "disabled (rendu logiciel, --disable-gpu)",
+    isolatedMachine: false, caveat: "événements clavier synthétiques ; machine non isolée", userAgent: navigator.userAgent, shape: SHAPE, document: { ...doc, note, caretPage },
     keystrokes: samples.length, enterKeys: samples.filter(s => s.enter).length,
     endToEndMs: total, engineRoundTripMs: pick("engine"), decodeAndDrawMs: pick("draw"), untilNextFrameMs: pick("frame"),
     enterOnlyMs: stats(samples.filter(s => s.enter).map(s => s.total)),

@@ -10,10 +10,9 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { rest: suiteArgs } = selectEngine("run-frontend-browser");
+const { rest: suiteArgs } = selectEngine("run-frontend-browser", "node tests/run-frontend-browser.mjs [all|canvas|input] [--engine v1|v2]",
+  rest => rest.length <= 1 && ["all", "canvas", "input"].includes(rest[0] ?? "all"));
 const suite = suiteArgs[0] ?? "all";
-assert(suiteArgs.length <= 1 && ["all", "canvas", "input"].includes(suite),
-  "Usage: node tests/run-frontend-browser.mjs [all|canvas|input] [--engine v1|v2]");
 const candidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",

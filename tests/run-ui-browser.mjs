@@ -10,9 +10,8 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { rest: suiteArgs } = selectEngine("run-ui-browser");
-const args = suiteArgs;
-assert(args.every(arg => ["--forced-colors", "--screenshots"].includes(arg)), "Usage: node tests/run-ui-browser.mjs [--forced-colors] [--screenshots] [--engine v1|v2]");
+const { rest: args } = selectEngine("run-ui-browser", "node tests/run-ui-browser.mjs [--forced-colors] [--screenshots] [--engine v1|v2]",
+  rest => rest.every(arg => ["--forced-colors", "--screenshots"].includes(arg)));
 const forcedColors = args.includes("--forced-colors");
 const screenshots = args.includes("--screenshots");
 let executable;

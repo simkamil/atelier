@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { attachMouseSelection } from "../web/mouse-selection.mjs";
 import { selectEngine } from "./engine-adapter.mjs";
 
-selectEngine("mouse-selection");
+selectEngine("mouse-selection", "node tests/mouse-selection.mjs [--engine v1|v2]");
 
 class Target {
   listeners = new Map();

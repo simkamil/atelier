@@ -12,14 +12,19 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { rest } = selectEngine("run-latency-browser");
 const options = { shape: "lines", pages: "300", keys: "300" };
-for (let i = 0; i < rest.length; i += 2) {
-  const name = rest[i]?.replace(/^--/, "");
-  assert(name in options && rest[i + 1] !== undefined, "Usage: node tests/run-latency-browser.mjs [--engine v1|v2] [--shape lines|dense] [--pages N] [--keys N]");
-  options[name] = rest[i + 1];
+const usage = "node tests/run-latency-browser.mjs [--engine v1|v2] [--shape lines|dense] [--pages N] [--keys N]";
+function parseOptions(rest) {
+  const parsed = { ...options };
+  for (let i = 0; i < rest.length; i += 2) {
+    const name = rest[i]?.replace(/^--/, "");
+    if (!Object.hasOwn(options, name) || rest[i + 1] === undefined) return null;
+    parsed[name] = rest[i + 1];
+  }
+  return ["lines", "dense"].includes(parsed.shape) && /^\d+$/.test(parsed.pages) && /^\d+$/.test(parsed.keys) ? parsed : null;
 }
-assert(["lines", "dense"].includes(options.shape) && /^\d+$/.test(options.pages) && /^\d+$/.test(options.keys), "Invalid latency options.");
+const { engine, rest } = selectEngine("run-latency-browser", usage, rest => parseOptions(rest) !== null);
+Object.assign(options, parseOptions(rest));
 let executable;
 for (const candidate of [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
@@ -60,7 +65,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((yes, no) => { server.once("error", no); server.listen(0, "127.0.0.1", yes); });
 const profile = await mkdtemp(join(tmpdir(), "atelier-latency-browser-"));
-const url = `http://127.0.0.1:${server.address().port}/tests/latency-browser.html?automated=1&shape=${options.shape}&pages=${options.pages}&keys=${options.keys}`;
+const url = `http://127.0.0.1:${server.address().port}/tests/latency-browser.html?automated=1&engine=${engine}&shape=${options.shape}&pages=${options.pages}&keys=${options.keys}`;
 const browser = spawn(executable, ["--headless=new", "--window-size=1280,1000", "--disable-gpu", "--no-first-run",
   "--no-default-browser-check", "--disable-background-networking", "--disable-component-update",
   `--user-data-dir=${profile}`, url], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
