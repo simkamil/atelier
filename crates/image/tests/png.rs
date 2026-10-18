@@ -341,3 +341,13 @@ fn rejects_bad_palette_transparency_unknown_critical_and_filter() {
         .is_err()
     );
 }
+
+#[test]
+fn browser_written_png_ending_with_an_empty_deflate_block_decodes() {
+    // Written by Chromium's canvas encoder: two IDAT chunks, and a zlib stream
+    // whose end-of-block marker follows the last literal (US-270 regression).
+    let bytes = include_bytes!("fixtures/png/browser-200x100-red.png");
+    let image = decode_png(bytes, DecodeLimits::default()).unwrap();
+    assert_eq!((image.width, image.height), (200, 100));
+    assert!(image.pixels.chunks_exact(4).all(|p| p == [255, 0, 0, 255]));
+}

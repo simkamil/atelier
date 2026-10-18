@@ -1618,7 +1618,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
           ];
           paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);
-          paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/build-info.mjs','text/javascript']);
+          paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/build-info.mjs','text/javascript'],['/image-insert.mjs','text/javascript'],['/properties-dialog.mjs','text/javascript'],['/properties-dialog.css','text/css'],['/properties-protocol.mjs','text/javascript']);
           // Keep required log probes within the bounded request log.
           paths.sort((a,b)=>Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(a[0]))-Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(b[0])));
           const assets={};

@@ -29,13 +29,14 @@ function validCaret(caret) {
 
 /** Attach drag/drop and selected-text click handling to the editor Canvas. */
 export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelectionSnapshot,
-  isPointInSelection, probePoint, onDrop, onClick = () => {}, onDragState = () => {},
+  isPointInSelection, probePoint, onDrop, onFilesDrop = null, onClick = () => {}, onDragState = () => {},
   isEnabled = () => true, focus = () => {}, onError = () => {} } = {}) {
   if (!canvas?.addEventListener || !scrollport?.addEventListener ||
       ![getGeometry, getSelectionSnapshot, isPointInSelection, probePoint, onDrop,
         onClick, onDragState, isEnabled, focus, onError].every(fn => typeof fn === "function")) {
     throw new TypeError("text drag/drop requires a Canvas, scrollport, and callbacks");
   }
+  if (onFilesDrop !== null && typeof onFilesDrop !== "function") throw new TypeError("onFilesDrop must be a function");
 
   const raf = globalThis.requestAnimationFrame?.bind(globalThis) ?? (callback => setTimeout(callback, 16));
   const caf = globalThis.cancelAnimationFrame?.bind(globalThis) ?? clearTimeout;
@@ -304,9 +305,14 @@ export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelecti
     if (!types) return false;
     try { return Array.from(types).includes("text/plain"); } catch { return false; }
   }
+  // Files (pictures) dragged from the system: accepted only when the host handles them.
+  function hasFiles(event) {
+    if (!onFilesDrop) return false;
+    try { return Array.from(event.dataTransfer?.types ?? []).includes("Files"); } catch { return false; }
+  }
   function dragOver(event) {
     event.preventDefault?.();
-    if (!hasPlainText(event)) { clearExternal(); return; }
+    if (!hasPlainText(event) && !hasFiles(event)) { clearExternal(); return; }
     if (disposed || gesture || !enabled()) { clearExternal(); return; }
     const snapshot = getSelectionSnapshot();
     if (!validSnapshot(snapshot)) { clearExternal(); return; }
@@ -360,14 +366,22 @@ export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelecti
     // Always suppress browser navigation/HTML/file handling for plain-text drops,
     // including while busy or when the pointer cannot be mapped to a page.
     event.preventDefault?.();
-    if (!hasPlainText(event)) { clearExternal(); return; }
+    const fileDrop = !hasPlainText(event) && hasFiles(event);
+    if (!hasPlainText(event) && !fileDrop) { clearExternal(); return; }
     clearExternal();
     if (disposed || gesture || !enabled()) return;
     // DataTransfer is protected once the native drop event returns to the browser.
     let text;
-    try { text = event.dataTransfer.getData("text/plain"); }
-    catch (error) { report(error); return; }
-    if (typeof text !== "string" || text.length === 0) return;
+    let files = [];
+    if (fileDrop) {
+      try { files = Array.from(event.dataTransfer.files ?? []); }
+      catch (error) { report(error); return; }
+      if (files.length === 0) return;
+    } else {
+      try { text = event.dataTransfer.getData("text/plain"); }
+      catch (error) { report(error); return; }
+      if (typeof text !== "string" || text.length === 0) return;
+    }
     const snapshot = getSelectionSnapshot();
     if (!validSnapshot(snapshot)) return;
     const point = pointAt(event.clientX, event.clientY);
@@ -379,7 +393,8 @@ export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelecti
       if (disposed || gesture || ticket !== serial || !enabled() || !validSnapshot(now) || now.revision !== snapshot.revision ||
           now.anchor !== snapshot.anchor || now.focus !== snapshot.focus || !result ||
           result.revision !== snapshot.revision || !validBoundary(snapshot.text, result.offset) || !validCaret(result.caret)) return;
-      await onDrop({ kind: "external", revision: snapshot.revision,
+      if (fileDrop) await onFilesDrop({ files, revision: snapshot.revision, target: result.offset });
+      else await onDrop({ kind: "external", revision: snapshot.revision,
         sourceAnchor: snapshot.anchor, sourceFocus: snapshot.focus, target: result.offset, text });
       try { await focus(); } catch (error) { report(error); }
     } catch (error) { report(error); }

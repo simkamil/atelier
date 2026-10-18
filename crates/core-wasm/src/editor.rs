@@ -5,6 +5,7 @@ use atelier_text_model::{PlainTextDocument, PlainTextLimits, Selection};
 use atelier_unicode::segmentation::{grapheme_boundaries, word_boundaries};
 
 use crate::editor_layout::Layout;
+use crate::images::{self, ImageInsertError, ImageStore};
 use crate::protocol::{Message, MessageType};
 
 const MAX_TEXT: usize = 128 * 1024;
@@ -19,6 +20,7 @@ pub struct EditorSession {
     saved_bytes: Vec<u8>,
     layout: Option<Layout>,
     preferred_x: Option<f64>,
+    images: ImageStore,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +69,7 @@ impl EditorSession {
             let exported = document
                 .export_utf8()
                 .map_err(|_| EditorError("EDITOR_LIMIT"))?;
+            let exported = candidate.images.plain_bytes(exported);
             let mut out = Writer::with_capacity(
                 16usize
                     .checked_add(exported.len())
@@ -101,8 +104,46 @@ impl EditorSession {
             out.u32(u32_len(caret.page)?);
             out.f64(caret.x);
             out.f64(caret.y);
-            out.f64(14.0);
+            out.f64(caret.height);
             return Ok((candidate, out.finish(48)?));
+        }
+        if opcode == 29 {
+            let slot = Reader::new(body).u32()? as usize;
+            let image = candidate
+                .images
+                .get(slot)
+                .ok_or(EditorError("EDITOR_IMAGE_UNKNOWN"))?;
+            let bitmap = images::render_bitmap(image).map_err(map_image_error)?;
+            let mut out = Writer::with_capacity(
+                20usize
+                    .checked_add(bitmap.rgba.len())
+                    .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?,
+            )?;
+            out.bytes(b"ATIM");
+            out.u16(1);
+            out.u16(0);
+            out.u32(u32_len(slot)?);
+            out.u32(bitmap.width);
+            out.u32(bitmap.height);
+            out.u32(u32_len(bitmap.rgba.len())?);
+            out.bytes(&bitmap.rgba);
+            return Ok((candidate, out.finish(MAX_RESPONSE)?));
+        }
+        if opcode == 30 {
+            let text = candidate.ensure_document()?.text().to_owned();
+            let exported = crate::docx_export::export_docx(&text, &candidate.images)?;
+            let mut out = Writer::with_capacity(
+                16usize
+                    .checked_add(exported.bytes.len())
+                    .ok_or(EditorError("EDITOR_RESPONSE_LIMIT"))?,
+            )?;
+            out.bytes(b"ATDX");
+            out.u16(1);
+            out.u16(0);
+            out.u32(exported.notices);
+            out.u32(exported.pictures);
+            out.bytes(&exported.bytes);
+            return Ok((candidate, out.finish(MAX_RESPONSE)?));
         }
         if opcode == 19 {
             let mut r = Reader::new(body);
@@ -250,7 +291,11 @@ impl EditorSession {
                 let content_changed = candidate
                     .document
                     .as_ref()
-                    .map(|current| current.export_utf8().map(|bytes| bytes != loaded_bytes))
+                    .map(|current| {
+                        current
+                            .export_utf8()
+                            .map(|bytes| candidate.images.plain_bytes(bytes) != loaded_bytes)
+                    })
                     .transpose()
                     .map_err(|_| EditorError("EDITOR_LIMIT"))?
                     .unwrap_or(!loaded_bytes.is_empty());
@@ -259,6 +304,7 @@ impl EditorSession {
                 // document instance and must never survive that replacement.
                 candidate.layout = None;
                 candidate.preferred_x = None;
+                candidate.images.reset(doc.text());
                 candidate.document = Some(doc);
                 if content_changed {
                     candidate.bump_revision()?;
@@ -569,7 +615,34 @@ impl EditorSession {
                     .ensure_document()?
                     .export_utf8()
                     .map_err(|_| EditorError("EDITOR_LIMIT"))?;
-                candidate.saved_bytes = exported;
+                candidate.saved_bytes = candidate.images.plain_bytes(exported);
+            }
+            28 => {
+                let mut r = Reader::new(body);
+                let now = r.u64()?;
+                let alt_len = usize::from(r.u16()?);
+                r.reserved_u16()?;
+                if alt_len > atelier_text_model::inline_image::MAX_ALT_BYTES {
+                    return Err(EditorError("EDITOR_INVALID_COMMAND"));
+                }
+                let alt = core::str::from_utf8(r.take(alt_len)?)
+                    .map_err(|_| EditorError("EDITOR_INVALID_UTF8"))?
+                    .to_owned();
+                let image = images::analyze(r.rest())
+                    .map_err(map_image_error)?
+                    .with_alt(&alt);
+                let ch = candidate.images.add(image).map_err(map_image_error)?;
+                let doc = candidate.ensure_document()?;
+                let selection = doc.selection();
+                let range =
+                    selection.anchor.min(selection.focus)..selection.anchor.max(selection.focus);
+                let mut buf = [0u8; 4];
+                // One isolated history entry: a single Undo removes the picture
+                // (and restores any selected text it replaced).
+                doc.replace_range_isolated(range, ch.encode_utf8(&mut buf), now)
+                    .map_err(map_text_error)?;
+                candidate.bump_revision()?;
+                candidate.preferred_x = None;
             }
             _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),
         }
@@ -599,17 +672,21 @@ impl EditorSession {
         if self.layout.is_none() {
             let doc = self.document.as_ref().unwrap();
             self.layout = Some(
-                Layout::new(doc.text(), doc.selection().anchor, doc.selection().focus).map_err(
-                    |e| match e {
-                        crate::editor_layout::LayoutError::TooManyPages => {
-                            EditorError("EDITOR_PAGE_LIMIT")
-                        }
-                        crate::editor_layout::LayoutError::TooLarge => {
-                            EditorError("EDITOR_RESPONSE_LIMIT")
-                        }
-                        _ => EditorError("EDITOR_LAYOUT_FAILED"),
-                    },
-                )?,
+                Layout::new(
+                    doc.text(),
+                    doc.selection().anchor,
+                    doc.selection().focus,
+                    &self.images,
+                )
+                .map_err(|e| match e {
+                    crate::editor_layout::LayoutError::TooManyPages => {
+                        EditorError("EDITOR_PAGE_LIMIT")
+                    }
+                    crate::editor_layout::LayoutError::TooLarge => {
+                        EditorError("EDITOR_RESPONSE_LIMIT")
+                    }
+                    _ => EditorError("EDITOR_LAYOUT_FAILED"),
+                })?,
             );
         }
         Ok(self.layout.as_ref().unwrap())
@@ -619,17 +696,21 @@ impl EditorSession {
         if self.layout.is_none() {
             let doc = self.document.as_ref().unwrap();
             self.layout = Some(
-                Layout::new(doc.text(), doc.selection().anchor, doc.selection().focus).map_err(
-                    |e| match e {
-                        crate::editor_layout::LayoutError::TooManyPages => {
-                            EditorError("EDITOR_PAGE_LIMIT")
-                        }
-                        crate::editor_layout::LayoutError::TooLarge => {
-                            EditorError("EDITOR_RESPONSE_LIMIT")
-                        }
-                        _ => EditorError("EDITOR_LAYOUT_FAILED"),
-                    },
-                )?,
+                Layout::new(
+                    doc.text(),
+                    doc.selection().anchor,
+                    doc.selection().focus,
+                    &self.images,
+                )
+                .map_err(|e| match e {
+                    crate::editor_layout::LayoutError::TooManyPages => {
+                        EditorError("EDITOR_PAGE_LIMIT")
+                    }
+                    crate::editor_layout::LayoutError::TooLarge => {
+                        EditorError("EDITOR_RESPONSE_LIMIT")
+                    }
+                    _ => EditorError("EDITOR_LAYOUT_FAILED"),
+                })?,
             );
         }
         let layout = self.layout.as_ref().unwrap();
@@ -637,6 +718,7 @@ impl EditorSession {
         let selection = doc.selection();
         let text = doc.text().as_bytes();
         let exported = doc.export_utf8().map_err(|_| EditorError("EDITOR_LIMIT"))?;
+        let exported = self.images.plain_bytes(exported);
         let dirty = exported != self.saved_bytes;
         let caret = layout.caret(selection.focus);
         let capacity = layout
@@ -679,7 +761,7 @@ impl EditorSession {
         out.u32(u32_len(caret.page)?);
         out.f64(caret.x);
         out.f64(caret.y);
-        out.f64(14.0);
+        out.f64(caret.height);
         out.u32(u32_len(layout.selection_rects.len())?);
         out.bytes(text);
         for page in &layout.pages {
@@ -872,6 +954,14 @@ fn map_text_error(error: atelier_text_model::PlainTextError) -> EditorError {
         HistoryFailure => EditorError("EDITOR_HISTORY_FAILED"),
     }
 }
+fn map_image_error(error: ImageInsertError) -> EditorError {
+    match error {
+        ImageInsertError::Unsupported => EditorError("EDITOR_IMAGE_UNSUPPORTED"),
+        ImageInsertError::Corrupt => EditorError("EDITOR_IMAGE_CORRUPT"),
+        ImageInsertError::TooLarge => EditorError("EDITOR_IMAGE_TOO_LARGE"),
+        ImageInsertError::StoreFull => EditorError("EDITOR_IMAGE_LIMIT"),
+    }
+}
 fn u32_len(value: usize) -> Result<u32, EditorError> {
     u32::try_from(value).map_err(|_| EditorError("EDITOR_LIMIT"))
 }
@@ -886,7 +976,7 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
     let opcode = u16::from_le_bytes([payload[6], payload[7]]);
     let body = &payload[8..];
     let expected = match opcode {
-        0 | 5 | 6 | 10 => Some(0),
+        0 | 5 | 6 | 10 | 30 => Some(0),
         1 => None,
         2 => {
             if body.len() >= 8 {
@@ -909,6 +999,8 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         26 | 27 if crate::properties::body_len_ok(opcode, body.len()) => None,
         19 if (16..=16 + MAX_QUERY_BYTES).contains(&body.len()) => None,
         20 => Some(8),
+        28 if (13..=12 + images::MAX_ALT + images::MAX_IMAGE_BYTES).contains(&body.len()) => None,
+        29 => Some(4),
         21 if (36..=36 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
         22 if (28..=28 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
         _ => return Err(EditorError("EDITOR_INVALID_COMMAND")),

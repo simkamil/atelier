@@ -996,10 +996,10 @@ Réf : F-TXT-030 · Taille : M · Dépend de : US-263
 
 #### US-270 — Insérer une image
 *En tant qu'*utilisateur, *je veux* insérer une image *afin d'illustrer* mon document.
-- [ ] Depuis un fichier (PNG, JPEG, GIF, BMP), par collage ou par glisser-déposer.
-- [ ] Insérée alignée sur le texte, réduite à la largeur de la zone de texte si nécessaire, orientation EXIF appliquée.
-- [ ] Image stockée dans le document (format d'origine conservé).
-- [ ] Format non pris en charge → message clair.
+- [x] Depuis un fichier (PNG, JPEG, GIF, BMP), par collage ou par glisser-déposer.
+- [x] Insérée alignée sur le texte, réduite à la largeur de la zone de texte si nécessaire, orientation EXIF appliquée.
+- [ ] Image stockée dans le document (format d'origine conservé). *Moteur et export DOCX prouvés ([détail](docs/us-270-insert-image.md)) ; reste ouvert tant qu'aucune commande d'enregistrement DOCX n'est branchée dans l'interface.*
+- [x] Format non pris en charge → message clair.
 
 Réf : F-TXT-032 · Taille : M · Dépend de : US-040, US-042, US-043, US-200
 

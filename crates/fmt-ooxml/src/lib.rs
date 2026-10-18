@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod docx;
+pub mod docx_image;
 mod properties;
 pub use docx::{
     Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,

@@ -56,6 +56,26 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/about-dialog.css"),
     },
     Resource {
+        path: "/image-insert.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/image-insert.mjs"),
+    },
+    Resource {
+        path: "/properties-dialog.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/properties-dialog.mjs"),
+    },
+    Resource {
+        path: "/properties-dialog.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/properties-dialog.css"),
+    },
+    Resource {
+        path: "/properties-protocol.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/properties-protocol.mjs"),
+    },
+    Resource {
         path: "/about-licenses.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/about-licenses.mjs"),

@@ -3,7 +3,7 @@
 `atelier-image` exposes `decode_jpeg(data, limits) -> Result<Image, ImageError>`
 for pixels and `decode_jpeg_with_metadata(data, limits) ->
 Result<DecodedJpeg, ImageError>` when the EXIF orientation is also needed.
-`DecodedJpeg.orientation` is always 1–8; a missing EXIF orientation yields 1.
+`DecodedJpeg.orientation` is always 1–8; a missing, malformed or out-of-range EXIF orientation yields 1 (the image is still decoded).
 The decoder returns the encoded top-down raster and does not apply orientation.
 Applications that display an image should apply the returned EXIF transform at
 their presentation boundary. `decode_jpeg` deliberately keeps the same `Image`

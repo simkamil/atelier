@@ -425,7 +425,9 @@ impl<'a> Decoder<'a> {
     fn read_exif(&mut self) -> Result<(), ImageError> {
         let p = self.segment()?;
         if p.starts_with(b"Exif\0\0") {
-            self.orientation = parse_exif_orientation(&p[6..])?;
+            // Orientation is metadata: a malformed EXIF block or an orientation
+            // outside 1..=8 means "as stored", never a refused image.
+            self.orientation = parse_exif_orientation(&p[6..]).unwrap_or(1);
         }
         Ok(())
     }

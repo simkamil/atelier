@@ -424,7 +424,10 @@ fn chunk_crc(kind: &[u8; 4], payload: &[u8]) -> u32 {
 }
 
 fn inflate_exact(input: &[u8], output: &mut [u8]) -> Result<(), ImageError> {
-    let mut decoder = InflateState::new(Format::Zlib, output.len() as u64);
+    // One spare byte of limit: the decoder asks for output room before it reads
+    // the next symbol, even when that symbol is an end-of-block marker (zlib
+    // streams that end with an empty block, as browsers write them).
+    let mut decoder = InflateState::new(Format::Zlib, output.len() as u64 + 1);
     let first = decoder.push(input, output, true).map_err(|e| match e {
         InflateError::UnexpectedEof => ImageError::Truncated,
         InflateError::OutputLimit => ImageError::InvalidData("zlib output exceeds PNG scanlines"),
@@ -439,8 +442,9 @@ fn inflate_exact(input: &[u8], output: &mut [u8]) -> Result<(), ImageError> {
         // InflateState can fill the caller's exact-size buffer before it has
         // consumed the DEFLATE end marker and zlib checksum. Drain that tail
         // without permitting another output byte.
+        let mut spare = [0u8; 1];
         let tail = decoder
-            .push(&input[first.consumed..], &mut [], true)
+            .push(&input[first.consumed..], &mut spare, true)
             .map_err(|e| match e {
                 InflateError::UnexpectedEof => ImageError::Truncated,
                 InflateError::OutputLimit => {
@@ -448,6 +452,9 @@ fn inflate_exact(input: &[u8], output: &mut [u8]) -> Result<(), ImageError> {
                 }
                 InflateError::InvalidData(_) => ImageError::InvalidData("invalid PNG zlib stream"),
             })?;
+        if tail.produced != 0 {
+            return Err(ImageError::InvalidData("zlib output exceeds PNG scanlines"));
+        }
         (tail.status, first.consumed + tail.consumed)
     } else {
         (first.status, first.consumed)

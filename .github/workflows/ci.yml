@@ -147,6 +147,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/editor-abi.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/properties-abi.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise real Worker transfers and cancellation
         run: node tests/wasm-worker.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
       - name: Exercise default browser Worker bootstrap in headless Edge
@@ -157,6 +159,11 @@ jobs:
         run: node --test tests/replacement-protocol.mjs tests/page-navigation.mjs tests/navigation-query-protocol.mjs tests/zoom.mjs tests/text-drag-drop.mjs tests/french-spacing.mjs tests/rich-preview.mjs tests/rich-preview-protocol.mjs
       - name: Exercise Canvas editor, composition and file adapter in headless Edge
         run: node tests/run-editor-browser.mjs
+      - name: Insert images by picker, paste and drop in headless Edge
+        run: |
+          node tests/image-insert.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/run-image-insert-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests
