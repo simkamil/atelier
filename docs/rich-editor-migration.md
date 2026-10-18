@@ -10,7 +10,7 @@ Réutilisable :
 - Recherche, statistiques et TXT ont déjà leur version riche : `ParagraphSource for RichDocument` (`search/source.rs:92`), `statistics/rich.rs`, `rich_to_text` avec rapport de perte (`plain_io/rich.rs:107`).
 - Import et écrivain DOCX déjà liés au WASM (`core-wasm/src/staged.rs:26`, `docx_export.rs:7`) ; document par défaut `default_rich_document`.
 - Mise en page incrémentale (`text-layout/src/incremental.rs:106`) et géométrie du curseur (`caret.rs:161`) validées, mais absentes du WASM.
-- `CanvasRenderer` déjà partagé avec l'aperçu (`web/rich-preview.mjs:2`).
+- `CanvasRenderer` déjà partagé avec l'aperçu (`web/rich-preview.mjs:2`, supprimé en R8b).
 
 Manquant :
 
