@@ -229,6 +229,11 @@ pub enum WriteNotice {
     ThemeNotWritten,
     /// Headers and footers of the model are not written (US-304).
     HeaderFooterNotWritten,
+    /// A paragraph refers to a list (`w:numId` = identifier + 1) that the numbering
+    /// part of the package does not define; Word shows it without numbering.
+    ListDefinitionMissing {
+        list_id: u32,
+    },
     /// Further notices were dropped.
     MoreNotices {
         count: usize,
@@ -634,7 +639,9 @@ pub fn write_docx(
             )?;
         }
         if !lists.is_empty() {
-            add_numbering_if_missing(&mut package, &main_uri, &lists)?;
+            for list_id in add_numbering_if_missing(&mut package, &main_uri, &lists)? {
+                notices.push(WriteNotice::ListDefinitionMissing { list_id });
+            }
         }
         regenerated.push(part.uri.clone());
     } else if let Some(part) = &imported.preserved.document {
@@ -726,13 +733,24 @@ fn add_numbering_if_missing(
     package: &mut Package,
     main: &PartUri,
     lists: &BTreeSet<u32>,
-) -> Result<(), WriteError> {
-    if package
+) -> Result<Vec<u32>, WriteError> {
+    let existing = package
         .relationships(Some(main))
         .iter()
-        .any(|r| r.rel_type == REL_NUMBERING)
-    {
-        return Ok(());
+        .find(|r| r.rel_type == REL_NUMBERING)
+        .and_then(|r| r.resolved_target.clone());
+    if let Some(uri) = existing {
+        // The model holds list references, not definitions: a reference to a
+        // list the copied numbering part does not define is reported.
+        let defined = package
+            .part(&uri)
+            .map(|p| defined_num_ids(&p.bytes))
+            .unwrap_or_default();
+        return Ok(lists
+            .iter()
+            .copied()
+            .filter(|id| !defined.contains(&(id + 1)))
+            .collect());
     }
     let uri = part_uri("word/numbering.xml")?;
     package.insert_part(uri, CT_NUMBERING, parts::numbering_new(lists))?;
@@ -743,7 +761,34 @@ fn add_numbering_if_missing(
         "numbering.xml",
         TargetMode::Internal,
     )?;
-    Ok(())
+    Ok(Vec::new())
+}
+
+/// `w:numId` of every `w:num` of a numbering part (any prefix).
+fn defined_num_ids(bytes: &[u8]) -> BTreeSet<u32> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = BTreeSet::new();
+    for tag in text.split('<').skip(1) {
+        let tag = tag.split('>').next().unwrap_or("");
+        let name = tag
+            .split(|c: char| c.is_whitespace() || c == '/')
+            .next()
+            .unwrap_or("");
+        if name.rsplit(':').next() != Some("num") {
+            continue;
+        }
+        for attr in tag.split_whitespace().skip(1) {
+            let Some((k, v)) = attr.split_once('=') else {
+                continue;
+            };
+            if k.rsplit(':').next() == Some("numId") {
+                if let Ok(n) = v.trim_matches(|c| matches!(c, '"' | '\'' | '/')).parse() {
+                    out.insert(n);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Writes a rich document created from scratch.
