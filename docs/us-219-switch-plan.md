@@ -107,3 +107,46 @@ L'interface crée l'éditeur v2 avec `?engine=v2` (ou `localStorage["atelier.eng
 À faire en R7b avant de basculer le défaut : surbrillance de la sélection (protocole), dessin des images, sélection par mot et paragraphe, mesure de latence v2 (`run-latency-browser --engine v2` : le banc pilote encore `createEditor`), recopie de la CI (`run-rich-editor-ui-browser`, `rich-editor-unit`, lignes `--engine v2` des trois suites ; le code 75 des autres reste accepté comme « en attente »).
 
 **R7b-1 (2026-10-18, aucune case d'US-219 cochée)** : surbrillance de la sélection, images dessinées et double et triple clic sont livrés en v2 ([spec](us-203-r7b1-selection-images.md), [écarts fermés](r7-ui-parity.md) §8 points 1 à 3) ; il reste, pour cette liste, la mesure de latence v2 et la recopie de la CI.
+
+## 6. R7c — bascule de l'interface sur v2 (2026-10-18)
+
+**Décision : la bascule est faite.** `web/engine-choice.mjs` : v2 par défaut ; `?engine=v1` dans l'URL de la page, ou l'option persistée `localStorage.setItem("atelier.engine", "v1")`, ramène à v1 (`removeItem` revient au défaut ; l'URL l'emporte sur l'option ; toute autre valeur donne v2). `DEFAULT_ENGINE` de `tests/engine-adapter.mjs` passe à `"v2"` : une suite lancée sans option teste le moteur par défaut, `--engine v1` teste v1. Les conditions posées à la bascule : (1) toutes les suites passent en v2, (2) le banc v2 est meilleur que v1 sur la moyenne et le p95.
+
+### Glisser-déposer de texte (dernier écart fonctionnel)
+
+`MoveText` `0x0140` ([protocole](us-203-rich-editor-protocol.md), « R7c ») : déplacement ou copie d'une plage en une étape d'annulation, mise en forme des caractères conservée, erreur `RICH_MOVE_UNSUPPORTED` (50). `RICH_CAPABILITIES.textDragDrop` vaut `true` ; `web/rich-editor.mjs` branche `web/text-drag-drop.mjs` (instantané sans texte : le moteur contrôle les frontières). Limites connues : pas de repère de dépôt (le module n'en reçoit pas du moteur, un `HitTest` ne rend pas de caret) ; une plage qui contient une image, un symbole, un lien, un champ, un signet, un tableau ou un bloc opaque est refusée (`RICH_MOVE_UNSUPPORTED`, message `status-move-unsupported` dans la région de statut) ; les paragraphes créés prennent les propriétés du paragraphe cible.
+
+### État de parité final des suites
+
+| Suite | v1 | v2 | Détail |
+|---|---|---|---|
+| `run-editor-browser` | vert | vert | v2 : scénario `editor-browser-v2.mjs` (double et triple clic, glisser-déposer, MoveText, recherche, zoom portés). `skipped` v2 : refus d'un fichier UTF-8 invalide (v2 détecte l'encodage), aperçu DOCX (remplacé par l'ouverture dans l'éditeur), boîte des propriétés sur l'aperçu (elle lit le document ouvert ; son scénario est dans `run-rich-editor-ui-browser`) |
+| `run-rich-editor-ui-browser` | sans objet | vert | produit réel en v2 ; ajouts R7c : intégration des utilitaires (symboles, Ctrl+Maj+Espace, menu contextuel, presse-papiers, À propos : `editor-utilities-integration-v2.mjs`), barre d'état (`document-status-integration-v2.mjs`), Ctrl+N, Ctrl+O, documents lancés par le shell (US-115), dépôt de texte |
+| `run-image-insert-browser` | vert | vert | v2 ne saute plus rien |
+| `run-ui-browser` (et `--forced-colors`) | vert | vert | `skipped` v2 propre à la suite (rapporté dans sa sortie) |
+| `run-editor-utilities-browser` | vert | vert | modules isolés (menu contextuel, À propos, symboles) sans éditeur : mêmes vérifications sous les deux moteurs ; l'intégration avec l'éditeur v2 est dans `run-rich-editor-ui-browser` |
+| `run-frontend-browser` | vert | vert | `CanvasRenderer` et `text-input` partagés, sans éditeur ; le rendu des pages v2 est dans `run-rich-atlas-render-browser` |
+| `mouse-selection.mjs` | vert | vert | module partagé ; la souris v2 est dans `run-editor-browser --engine v2` |
+| `run-latency-browser` | mesuré | mesuré | voir ci-dessous |
+
+Plus de code 75 : `V2_PENDING_REASONS` est vide ; un 75 reste un échec pour la CI.
+
+### Latence de bout en bout (banc de R7c)
+
+`tests/latency-browser.mjs` pilote `createEditor` (v1) ou `createRichEditor` (v2, configuration du produit : textes i18n, donc miroir DOM) ; document déterministe de lignes courtes (générateur congruentiel fixe) ; curseur au milieu (juste après un marqueur) ; 5 frappes d'échauffement non comptées, 300 caractères, puis 40 paires Entrée / Retour arrière ; 20 ms entre frappes ; temps de l'événement clavier à la **fin du dessin Canvas**. v1 : `onState` suit le dessin synchrone. v2 : `syncPages` dessine avant `onState` ; le banc enveloppe `CanvasRenderer.setPages` et `EditorPageCache.apply` et retient le premier dessin où la révision du cache a changé et où aucune page visible ne manque. Banc lancé **seul** (aucun autre test ni processus lourd en parallèle ; `machine.ranAlone: true` dans le JSON), Edge 155 headless, rendu logiciel, événements clavier synthétiques, i9-13900KF, Windows 11. Brut : `target/us-219/latency-{v1,v2}-r7c.json` (non versionné).
+
+| Moteur, document | frappes | moyenne | p50 | p95 | max |
+|---|---|---|---|---|---|
+| v1, 98 pages (300 refusées : `EDITOR_RESPONSE_LIMIT` ; plus grand accepté env. 109) | 380 | 739,6 | 736,8 | 767,1 | 802,4 |
+| v2, **300 pages** (79 489 octets) | 380 | **4,0** | 4,1 | **6,5** | **7,7** |
+
+Par type de frappe (v1 / v2), moyenne, p95, max : caractères 738,2 / 765,5 / 802,4 contre 3,7 / 5,5 / 7,6 ; Entrée 741,8 / 765,7 / 768,4 contre 5,2 / 6,6 / 7,3 ; Retour arrière 748,2 / 775,9 / 784,6 contre 5,2 / 7,1 / 7,7. v2 : aller-retour moteur 3,4 ms en moyenne, décodage et dessin 0,6 ms. `untilNextFrameMs` (attente de l'image d'animation suivante, qui dépend de la cadence de l'écran) : v2 moyenne 10,6, p95 17,7, max 20,3.
+
+Lecture : v2 est meilleur que v1 sur la moyenne (4,0 contre 739,6) et sur le p95 (6,5 contre 767,1), sur un document trois fois plus grand que le plus grand accepté en v1. Le critère « moins de 16 ms de bout en bout sur 300 pages » est tenu **au p95 (6,5) et au max (7,7)**, au sens du banc (fin du dessin Canvas) ; il ne l'est pas si l'on compte l'attente de l'image suivante (p95 17,7, max 20,3), qui n'est pas du calcul : c'est le rafraîchissement de l'écran à 60 Hz (16,7 ms entre images). Réserves : événements synthétiques (pas de clavier physique ni d'IME), Edge headless en rendu logiciel, une seule machine.
+
+### Commandes à changer dans la CI (intégrateur ; la CI n'est pas modifiée ici)
+
+- Chaque ligne de suite sans option teste maintenant **v2** : garder les lignes actuelles (`node tests/run-editor-browser.mjs`, `run-image-insert-browser`, `run-ui-browser`, `run-ui-browser --forced-colors`, `run-editor-utilities-browser`, `run-frontend-browser`, `mouse-selection.mjs`) et **ajouter** la même ligne avec `--engine v1` pour les sept ; supprimer les lignes `--engine v2` redondantes ou les garder explicites.
+- Supprimer le traitement du code 75 s'il existe (75 = échec).
+- Ajouter `node tests/run-rich-editor-ui-browser.mjs` (si absent), `node tests/rich-editor-move.mjs`, `node tests/rich-editor-unit.mjs`, `cargo test --locked --offline -p atelier-core-wasm -p atelier-text-model` (nouveaux : `--test rich_move`, `--test flat_move`, `rich_protocol::move_tests`).
+- Banc de latence (hors blocage, machine dédiée) : `ATELIER_BENCH_ALONE=1 node tests/run-latency-browser.mjs --engine v2` ; v1 : `... --engine v1`.

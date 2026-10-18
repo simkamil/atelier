@@ -67,6 +67,20 @@ pub(super) fn parse_command(opcode: u16, r: &mut Reader<'_>) -> Result<Command, 
                 extend,
             }
         }
+        super::opcode::MOVE_TEXT => {
+            let (start, end, target) = (r.u64()?, r.u64()?, r.u64()?);
+            let copy = r.flag()?;
+            r.zero(3)?;
+            if start > end {
+                return Err(ErrorCode::InvalidRange);
+            }
+            Command::MoveText {
+                start,
+                end,
+                target,
+                copy,
+            }
+        }
         _ => return Err(ErrorCode::UnknownOpcode),
     })
 }
@@ -90,6 +104,18 @@ pub(super) fn encode_command(command: &Command, b: &mut Vec<u8>) -> Result<u16, 
             put_u64(b, *position);
             b.extend_from_slice(&[*unit as u8, u8::from(*extend), 0, 0]);
             super::opcode::SELECT_UNIT
+        }
+        Command::MoveText {
+            start,
+            end,
+            target,
+            copy,
+        } => {
+            put_u64(b, *start);
+            put_u64(b, *end);
+            put_u64(b, *target);
+            b.extend_from_slice(&[u8::from(*copy), 0, 0, 0]);
+            super::opcode::MOVE_TEXT
         }
         _ => return Err(ErrorCode::Internal),
     })

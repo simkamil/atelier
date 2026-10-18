@@ -88,6 +88,7 @@ const FALLBACK = new Map(Object.entries({
   "readonly-copy": "Créer une copie modifiable",
   "status-atlas-full": "Ce document contient trop de glyphes différents pour l’affichage ; fermez-le puis rouvrez-le.",
   "status-readonly-refused": "Ce document est en lecture seule : créez une copie modifiable pour le modifier.",
+  "status-move-unsupported": "Ce texte contient un lien, un champ, un signet ou un objet : il ne peut pas être déplacé par glisser-déposer.",
   "status-readonly-opened": "Document ouvert en lecture seule : modifications acceptées affichées.",
   "status-copy-created": "Copie modifiable créée : modifications acceptées, commentaires retirés.",
   "status-copy-error": "La copie modifiable n’a pas pu être créée.",
@@ -173,6 +174,7 @@ function messageForError(error, messages) {
     : error?.code === "EDITOR_UNSUPPORTED_INPUT" ? "status-unsupported-input"
       : ["EDITOR_INVALID_STATE", "EDITOR_INVALID_EXPORT", "INVALID_RESPONSE"].includes(error?.code) ? "status-invalid-document"
         : error?.code === "EDITOR_READ_ONLY" ? "status-readonly-refused"
+        : error?.code === "EDITOR_MOVE_UNSUPPORTED" ? "status-move-unsupported"
           : error?.code === "EDITOR_UNSUPPORTED_V2" ? "status-unsupported-v2"
             : ["EDITOR_CLIPBOARD_UNAVAILABLE"].includes(error?.code) ? "status-clipboard-unavailable"
               : error?.code === "EDITOR_SELECTION_TOO_LARGE" ? "status-selection-too-large"

@@ -72,6 +72,9 @@ pub enum FlatError {
     Limit,
     /// A style cascade failed (missing reference, inheritance loop).
     Style,
+    /// A move or copy whose range holds objects, a table or an opaque block,
+    /// or whose ends lie in different containers (protocol `RICH_MOVE_UNSUPPORTED`).
+    Unsupported,
 }
 
 /// A position as paragraph index and byte offset inside that paragraph's flat

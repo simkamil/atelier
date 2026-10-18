@@ -7,17 +7,18 @@ import { countDocxPictures, EditorError, mirrorWindow, RICH_CAPABILITIES, saniti
 import { RichClientError } from "../web/rich-editor-client.mjs";
 import { RichProtocolError } from "../web/rich-editor-protocol.mjs";
 
-test("engine choice: v1 by default, the URL wins, then the persisted option", () => {
+test("engine choice: v2 by default, the URL wins, then the persisted option", () => {
   const storage = value => ({ getItem: key => (key === ENGINE_STORAGE_KEY ? value : null) });
-  assert.equal(chooseEngine({ search: "", storage: null }), "v1");
-  assert.equal(chooseEngine({ search: "?engine=v2", storage: null }), "v2");
-  assert.equal(chooseEngine({ search: "?a=1&engine=v2", storage: storage(null) }), "v2");
-  assert.equal(chooseEngine({ search: "", storage: storage("v2") }), "v2");
+  assert.equal(chooseEngine({ search: "", storage: null }), "v2", "v2 is the default");
+  assert.equal(chooseEngine({ search: "?engine=v1", storage: null }), "v1");
+  assert.equal(chooseEngine({ search: "?a=1&engine=v1", storage: storage(null) }), "v1");
+  assert.equal(chooseEngine({ search: "", storage: storage("v1") }), "v1", "the persisted option brings back v1");
+  assert.equal(chooseEngine({ search: "?engine=v2", storage: storage("v1") }), "v2", "the URL forces v2 even when v1 is persisted");
   assert.equal(chooseEngine({ search: "?engine=v1", storage: storage("v2") }), "v1", "the URL forces v1 even when v2 is persisted");
-  assert.equal(chooseEngine({ search: "?engine=v3", storage: storage("v1") }), "v1", "an unknown value falls back to v1");
-  assert.equal(chooseEngine({ search: "?engine=v3", storage: storage("v2") }), "v2", "an unknown URL value defers to the persisted option");
-  assert.equal(chooseEngine({ search: "", storage: storage("v3") }), "v1");
-  assert.equal(chooseEngine({ search: "", storage: { getItem() { throw new Error("blocked"); } } }), "v1", "blocked storage keeps v1");
+  assert.equal(chooseEngine({ search: "?engine=v3", storage: storage("v2") }), "v2", "an unknown value falls back to v2");
+  assert.equal(chooseEngine({ search: "?engine=v3", storage: storage("v1") }), "v1", "an unknown URL value defers to the persisted option");
+  assert.equal(chooseEngine({ search: "", storage: storage("v3") }), "v2");
+  assert.equal(chooseEngine({ search: "", storage: { getItem() { throw new Error("blocked"); } } }), "v2", "blocked storage keeps the default");
 });
 
 test("edit text is normalised to what the engine accepts", () => {
@@ -81,9 +82,9 @@ test("the mirror takes role and inline kind numbers, the codec names them", () =
 test("capabilities are frozen and list what v2 offers", () => {
   assert.ok(Object.isFrozen(RICH_CAPABILITIES));
   assert.deepEqual(Object.keys(RICH_CAPABILITIES).sort(), ["preview", "properties", "replace", "search", "statistics", "textDragDrop"]);
-  // R7b-2: search, replace, statistics and properties work in v2; the rest is still absent.
-  for (const name of ["search", "replace", "statistics", "properties"]) assert.equal(RICH_CAPABILITIES[name], true, name);
-  for (const name of ["textDragDrop", "preview"]) assert.equal(RICH_CAPABILITIES[name], false, name);
+  // R7b-2 and R7c: search, replace, statistics, properties and text drag and drop work in v2; only the DOCX preview is absent.
+  for (const name of ["search", "replace", "statistics", "properties", "textDragDrop"]) assert.equal(RICH_CAPABILITIES[name], true, name);
+  assert.equal(RICH_CAPABILITIES.preview, false, "preview");
 });
 
 test("R7b-2: the codes of queries and replacements keep the names of the plain editor", () => {

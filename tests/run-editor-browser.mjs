@@ -93,7 +93,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((yes, no) => { server.once("error", no); server.listen(0, "127.0.0.1", yes); });
 const profile = await mkdtemp(join(tmpdir(), "atelier-editor-browser-"));
-const url = `http://127.0.0.1:${server.address().port}/tests/editor-browser.html?automated=1${engine === "v2" ? "&engine=v2" : ""}`;
+const url = `http://127.0.0.1:${server.address().port}/tests/editor-browser.html?automated=1&engine=${engine}`;
 const browser = spawn(executable, ["--headless=new", "--window-size=1280,900", "--disable-gpu", "--no-first-run",
   "--no-default-browser-check", "--disable-background-networking", "--disable-component-update",
   `--user-data-dir=${profile}`, url], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });

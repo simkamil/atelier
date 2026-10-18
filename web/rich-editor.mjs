@@ -8,6 +8,7 @@
 // text around the focus comes with each State (`cache.window`) and the rest is asked with `TextWindow`.
 import { attachTextInput } from "./text-input.mjs";
 import { attachMouseSelection } from "./mouse-selection.mjs";
+import { attachTextDragDrop } from "./text-drag-drop.mjs";
 import { frenchSpacingEdit } from "./french-spacing.mjs";
 import { decodeDisplayList } from "./display-list.mjs";
 import { CanvasRenderer } from "./canvas-renderer.mjs";
@@ -16,7 +17,7 @@ import { RICH_LIMITS, RichProtocolError, PROPERTY_FIELDS } from "./rich-editor-p
 import { createRichEditorClient, EditorPageCache, RichClientError } from "./rich-editor-client.mjs";
 import { createRichImageCache } from "./rich-image-cache.mjs";
 import { createDocumentMirror } from "./document-mirror.mjs";
-import { attachImagePaste, filesFromTransfer, imageAltText, insertImageFiles, transferHasFiles } from "./image-insert.mjs";
+import { attachImagePaste, imageAltText, insertImageFiles } from "./image-insert.mjs";
 import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
 import { visiblePage, pageScrollTop } from "./page-navigation.mjs";
 
@@ -30,7 +31,7 @@ export class EditorError extends Error {
 
 /** What the v2 editor does not offer (docs/r7-ui-parity.md §7); the interface greys the matching commands. */
 export const RICH_CAPABILITIES = Object.freeze({
-  search: true, replace: true, statistics: true, textDragDrop: false, preview: false, properties: true,
+  search: true, replace: true, statistics: true, textDragDrop: true, preview: false, properties: true,
 });
 
 const A4 = Object.freeze({ width: 595.276, height: 841.89 });
@@ -112,6 +113,7 @@ export function toEditorError(error, context = "") {
   else if (code === "RICH_QUERY_TOO_LARGE") mapped = "MESSAGE_TOO_LARGE";
   else if (error instanceof RichProtocolError) mapped = "EDITOR_UNSUPPORTED_INPUT";
   else if (code === "RICH_READ_ONLY") mapped = "EDITOR_READ_ONLY";
+  else if (code === "RICH_MOVE_UNSUPPORTED") mapped = "EDITOR_MOVE_UNSUPPORTED";
   else if (code === "RICH_STALE_REVISION") mapped = context === "save" ? "EDITOR_STALE_SAVE" : context === "query" ? "EDITOR_STALE_QUERY" : "EDITOR_STALE_EDIT";
   else if (code === "RICH_STALE_MATCH") mapped = "EDITOR_STALE_MATCH";
   else if (code === "RICH_TOO_MANY_MATCHES") mapped = "EDITOR_TOO_MANY_MATCHES";
@@ -224,6 +226,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   let readOnlyKey = null;
   let origin = { format: "txt", name: null };
   let mouseSelection;
+  let textDragDrop;
   let mirror = null;
   let mirrorTimer = 0;
   let visibleFlat = null;
@@ -270,7 +273,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     busy = value;
     try { onBusy(value); } catch { /* UI callbacks are isolated */ }
     input.element.disabled = value;
-    if (value) mouseSelection?.cancel();
+    if (value) { mouseSelection?.cancel(); textDragDrop?.cancel(); }
   }
 
   // ---- pages and geometry -------------------------------------------------------------------------------
@@ -755,6 +758,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     if (preview.phase === "start") {
       compositionStart = { selection: preview.selection, revision: state?.revision };
       mouseSelection?.cancel();
+      textDragDrop?.cancel();
     }
     const caret = preview.caret;
     const bounds = canvas.getBoundingClientRect();
@@ -799,23 +803,6 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     onError: error => reportError(toEditorError(error)),
   });
 
-  function pagePoint(clientX, clientY) {
-    const bounds = canvas.getBoundingClientRect();
-    const x = clientX - bounds.left;
-    const y = clientY - bounds.top;
-    let top = -renderer.scrollY;
-    for (let i = 0; i < pageLists.length; i += 1) {
-      const page = pageLists[i].page.bounds;
-      const height = page.height * renderer.zoom;
-      if (y <= top + height + renderer.pageGap / 2 || i === pageLists.length - 1) {
-        const clamp = (value, max) => Math.max(0, Math.min(max, value));
-        return { page: i, x: page.min.x + clamp((x + renderer.scrollX) / renderer.zoom, page.width), y: page.min.y + clamp((y - top) / renderer.zoom, page.height) };
-      }
-      top += height + renderer.pageGap;
-    }
-    return null;
-  }
-
   async function insertImages(files, { revision, target } = {}) {
     const result = await insertImageFiles(files, {
       insertBytes: (bytes, file) => enqueueTask(async () => {
@@ -843,33 +830,50 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   const imagePaste = attachImagePaste({ target: input.element, onFiles: files => { void insertImages(files); },
     isEnabled: () => Boolean(state && !busy && !compositionStart && !disposed && !state.readOnly) });
 
-  const hasPlainText = transfer => { try { return Array.from(transfer?.types ?? []).includes("text/plain"); } catch { return false; } };
-  const onDragOver = event => {
-    if (disposed) return;
-    const files = transferHasFiles(event.dataTransfer);
-    if (!files && !hasPlainText(event.dataTransfer)) return;
-    event.preventDefault();
-    try { event.dataTransfer.dropEffect = files ? "copy" : "none"; } catch { /* read-only transfer */ }
-  };
-  const onDrop = event => {
-    if (disposed) return;
-    const transfer = event.dataTransfer;
-    const files = transferHasFiles(transfer);
-    if (!files && !hasPlainText(transfer)) return;
-    event.preventDefault();
-    if (!files) { reportError(new EditorError("EDITOR_UNSUPPORTED_V2")); return; }
-    const images = filesFromTransfer(transfer).filter(file => typeof file.type === "string" && file.type.startsWith("image/"));
-    if (images.length === 0 || !state || busy || compositionStart || state.readOnly) return;
-    const point = pagePoint(event.clientX, event.clientY);
-    const revision = state.revision;
-    if (!point) return;
-    void enqueueTask(() => rich.command({ type: "hitTest", page: point.page, mode: "probe", x: point.x, y: point.y }))
-      .then(({ response }) => insertImages(images, { revision, target: Number(response.position) }))
-      .then(() => input.focus())
-      .catch(error => reportError(toEditorError(error)));
-  };
-  canvas.addEventListener("dragover", onDragOver);
-  canvas.addEventListener("drop", onDrop);
+  // Text drag and drop (R7c): the module of v1 over the v2 commands. The snapshot carries no text (`text: null`: the engine checks
+  // the boundaries, `RICH_POSITION_NOT_BOUNDARY`); a probe gives a position, no caret (no drop marker). Dropped pictures go
+  // through `insertImages` as before; text dropped from outside is inserted at the position; an internal drag is `MoveText`.
+  const dragReady = () => Boolean(state && !busy && !compositionStart && !disposed && !state.readOnly);
+  textDragDrop = attachTextDragDrop({
+    allowNoCaret: true,
+    canvas, scrollport, getGeometry,
+    getSelectionSnapshot: () => state ? { text: null, anchor: state.anchor, focus: state.focus, revision: state.revision } : null,
+    isPointInSelection: (x, y) => {
+      if (!state) return false;
+      const bounds = canvas.getBoundingClientRect();
+      return highlight.some(rect => {
+        if (!pageLists[rect.page]) return false;
+        const r = viewportRect(rect, rect.page);
+        return x >= bounds.left + r.x && x <= bounds.left + r.x + r.width && y >= bounds.top + r.y && y <= bounds.top + r.y + r.height;
+      });
+    },
+    isEnabled: dragReady,
+    probePoint: point => enqueueTask(async () => {
+      if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
+      const { response } = await rich.command({ type: "hitTest", page: point.page, mode: "probe", x: point.x, y: point.y });
+      return { offset: Number(response.position), revision: response.revision, caret: null };
+    }),
+    onDrop: drop => enqueueTask(async () => {
+      if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
+      if (state.readOnly) throw new EditorError("EDITOR_READ_ONLY");
+      if (drop.revision !== state.revision) throw new EditorError("EDITOR_STALE_EDIT");
+      if (drop.kind === "external") {
+        return send({ type: "replaceRange", start: BigInt(drop.target), end: BigInt(drop.target), text: sanitizeEditText(drop.text) });
+      }
+      const start = Math.min(drop.sourceAnchor, drop.sourceFocus);
+      const end = Math.max(drop.sourceAnchor, drop.sourceFocus);
+      return send({ type: "moveText", start: BigInt(start), end: BigInt(end), target: BigInt(drop.target), copy: drop.kind === "copy" });
+    }),
+    onFilesDrop: drop => insertImages(drop.files.filter(file => typeof file.type === "string" && file.type.startsWith("image/")), { revision: drop.revision, target: drop.target }),
+    onClick: point => enqueueTask(async () => {
+      if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
+      if (point.revision !== state.revision) throw new EditorError("EDITOR_STALE_EDIT");
+      return setSelection(point.offset, point.offset);
+    }),
+    onDragState: () => {},
+    focus: () => input.focus(),
+    onError: error => reportError(toEditorError(error)),
+  });
 
   scrollport.addEventListener("scroll", updateViewport, { passive: true });
   const onWheel = event => wheelZoom(event, { active: Boolean(state && !busy && !disposed && !compositionStart
@@ -1289,8 +1293,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       scrollport.removeEventListener("wheel", onWheel);
       for (const type of USER_SCROLL) scrollport.removeEventListener(type, onUserScroll);
       scrollWanted = false;
-      canvas.removeEventListener("dragover", onDragOver);
-      canvas.removeEventListener("drop", onDrop);
+      textDragDrop.dispose();
       mouseSelection.dispose();
       imagePaste.dispose();
       rich.dispose();

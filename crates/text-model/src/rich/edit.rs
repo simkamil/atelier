@@ -1004,3 +1004,315 @@ impl RichDocument {
         ))
     }
 }
+
+/// Source of a move or copy: its text split by paragraph, with the character
+/// runs of each segment relative to the start of the segment's text.
+struct Fragment {
+    segments: Vec<(String, Vec<CharRun>)>,
+}
+
+impl RichDocument {
+    /// Reads the formatted text of `start..end` (valid positions, `start <
+    /// end`). The range must lie in plain paragraphs of one container and
+    /// hold no object, link, field or bookmark (`Unsupported` otherwise).
+    fn fragment(&self, start: usize, end: usize) -> Result<Fragment, FlatError> {
+        let found = self.with_flat(|t| {
+            let (p1, o1) = t.find(start)?;
+            let (p2, o2) = t.find(end)?;
+            Some((o1, o2, t.range(p1, p2 - p1 + 1)))
+        });
+        let (o1, o2, entries) = found.ok_or(FlatError::OutOfRange)?;
+        let Some(first) = entries.first().copied() else {
+            return Err(FlatError::OutOfRange);
+        };
+        if entries
+            .iter()
+            .any(|e| e.opaque || e.cell.is_some() || e.parent != first.parent)
+        {
+            return Err(FlatError::Unsupported);
+        }
+        let mut segments = Vec::with_capacity(entries.len());
+        let count = entries.len();
+        for (i, entry) in entries.iter().enumerate() {
+            let p = self.paragraph(entry.id).map_err(model_error)?;
+            let from = if i == 0 { o1 } else { 0 };
+            let to = if i + 1 == count { o2 } else { entry.len };
+            let (ts, ks) = p.cut(from)?;
+            let (te, ke) = p.cut(to)?;
+            // Links, fields and bookmarks do not follow a move: refused, not lost.
+            if p.links.iter().any(|l| l.start < te && l.end > ts)
+                || p.fields.iter().any(|f| f.start < te && f.end > ts)
+                || p.bookmarks.iter().any(|b| {
+                    (b.start < te && b.end > ts)
+                        || (b.start == b.end && b.start >= ts && b.start <= te)
+                })
+            {
+                return Err(FlatError::Unsupported);
+            }
+            if ks != ke {
+                return Err(FlatError::Unsupported);
+            }
+            let runs = p
+                .runs
+                .iter()
+                .filter(|r| r.end > ts && r.start < te)
+                .map(|r| CharRun {
+                    start: r.start.max(ts) - ts,
+                    end: r.end.min(te) - ts,
+                    attrs: r.attrs.clone(),
+                })
+                .collect();
+            segments.push((p.text[ts..te].to_owned(), runs));
+        }
+        Ok(Fragment { segments })
+    }
+
+    /// Gives the text just inserted at flat `at` (segments of `fragment`, a
+    /// `\n` between them) the character formatting it had at its source, as
+    /// one history item. Returns its span, `None` when nothing differs.
+    fn restyle_inserted(
+        &mut self,
+        at: usize,
+        fragment: &Fragment,
+    ) -> Result<Option<Span>, FlatError> {
+        let (index, offset) = self
+            .with_flat(|t| t.find(at))
+            .ok_or(FlatError::OutOfRange)?;
+        let count = fragment.segments.len();
+        let before = self.with_flat(|t| t.range(index, count));
+        if before.len() != count || before.iter().any(|e| e.opaque) {
+            return Err(FlatError::Unsupported);
+        }
+        let mut tree = self.take_flat();
+        let mut applier = Applier {
+            doc: self,
+            inverses: Vec::new(),
+        };
+        let mut result = Ok(());
+        for (i, ((text, runs), entry)) in fragment.segments.iter().zip(&before).enumerate() {
+            result = Self::restyle_one(
+                &mut applier,
+                entry.id,
+                if i == 0 { offset } else { 0 },
+                text.len(),
+                runs,
+            );
+            if result.is_err() {
+                break;
+            }
+        }
+        let inverses = std::mem::take(&mut applier.inverses);
+        if let Err(error) = result {
+            for inverse in inverses.iter().rev() {
+                let _ = inverse.apply_to(self);
+            }
+            self.put_flat(tree);
+            return Err(error);
+        }
+        if inverses.is_empty() {
+            self.put_flat(tree);
+            return Ok(None);
+        }
+        // Flat lengths are unchanged: the index needs no update.
+        tree.splice(index, count, &before);
+        self.put_flat(tree);
+        let mut ops = inverses;
+        ops.reverse();
+        let meta = Meta {
+            start: at,
+            removed_bytes: 0,
+            inserted_bytes: 0,
+            first: index,
+            removed_paragraphs: count,
+            inserted_paragraphs: count,
+            before: before.clone(),
+            after: before,
+            here: (at, at),
+            back: (at, at),
+        };
+        let span = Span::of(&meta);
+        let id = self.history.next_id();
+        self.history.push_undo(Item {
+            id,
+            ops,
+            meta,
+            group: 1,
+        });
+        Ok(Some(span))
+    }
+
+    fn restyle_one(
+        applier: &mut Applier<'_>,
+        id: NodeId,
+        flat_at: usize,
+        len: usize,
+        runs: &[CharRun],
+    ) -> Result<(), FlatError> {
+        let mut p = applier.paragraph(id)?;
+        let (base, _) = p.cut(flat_at)?;
+        let shifted: Vec<CharRun> = runs
+            .iter()
+            .map(|r| CharRun {
+                start: r.start + base,
+                end: r.end + base,
+                attrs: r.attrs.clone(),
+            })
+            .collect();
+        let before = p.runs.clone();
+        p.overwrite_runs(base, base + len, &shifted);
+        if p.runs != before {
+            applier.exec(restore(id, p))?;
+        }
+        Ok(())
+    }
+
+    /// Moves (or, with `copy`, duplicates) the flat range `start..end` to the
+    /// position `target`, keeping the character formatting of the text, as
+    /// one history step (one undo, one revision). A target strictly inside
+    /// the range is `InvalidRange`; moving onto either end of the range
+    /// changes nothing; a range with objects, tables or opaque blocks, or
+    /// ends in different containers, is `Unsupported`. Paragraphs created by
+    /// the move take the properties of the paragraph of the target. All or
+    /// nothing. The selection after the call is the moved text.
+    pub fn move_range(
+        &mut self,
+        start: usize,
+        end: usize,
+        target: usize,
+        copy: bool,
+    ) -> Result<EditOutcome, FlatError> {
+        if start > end {
+            return Err(FlatError::InvalidRange);
+        }
+        if end > self.len() || target > self.len() {
+            return Err(FlatError::OutOfRange);
+        }
+        self.check_position(start)?;
+        self.check_position(end)?;
+        self.check_position(target)?;
+        if start == end {
+            return Ok(self.idle_outcome(target));
+        }
+        if target > start && target < end {
+            return Err(FlatError::InvalidRange);
+        }
+        if !copy && (target == start || target == end) {
+            return Ok(self.idle_outcome(start));
+        }
+        let fragment = self.fragment(start, end)?;
+        let text = fragment
+            .segments
+            .iter()
+            .map(|(t, _)| t.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let width = end - start;
+        if text.len() != width {
+            return Err(FlatError::Unsupported);
+        }
+        // The target paragraph must be a plain one of the same container.
+        let target_ok = self.with_flat(|t| {
+            let source = t.find(start).and_then(|(i, _)| t.entry(i).copied());
+            let here = t.find(target).and_then(|(i, _)| t.entry(i).copied());
+            matches!((source, here), (Some(s), Some(h)) if !h.opaque && h.cell.is_none() && h.parent == s.parent)
+        });
+        if !target_ok {
+            return Err(FlatError::Unsupported);
+        }
+        check_text(&text)?;
+        let revision = self.history.revision;
+        let saved_redo = std::mem::take(&mut self.history.redo);
+        make_room(&mut self.history.undo, 3);
+        let mut steps = 0usize;
+        let result = self.move_steps(start, end, target, copy, &fragment, &text, &mut steps);
+        let (span, landed) = match result {
+            Ok(done) => done,
+            Err(error) => {
+                for _ in 0..steps {
+                    let _ = self.step(true);
+                }
+                self.history.redo = saved_redo;
+                self.history.revision = revision;
+                return Err(error);
+            }
+        };
+        let first = self.history.undo.len().saturating_sub(steps);
+        // Undo ends on the first item of the group (it selects the source
+        // range again), redo on the last one (it selects the moved text).
+        if let Some(item) = self.history.undo.get_mut(first) {
+            item.meta.here = (start, end);
+        }
+        if let Some(top) = self.history.undo.last_mut() {
+            top.group = steps;
+            top.meta.back = (landed, landed + width);
+        }
+        self.history.revision = revision + 1;
+        Ok(EditOutcome {
+            revision: self.history.revision,
+            start: span.start,
+            removed_bytes: span.removed,
+            inserted_bytes: span.inserted,
+            doc_len: self.len(),
+            first_paragraph: span.first,
+            removed_paragraphs: span.removed_paragraphs,
+            inserted_paragraphs: span.inserted_paragraphs,
+            layout_scope: LayoutScope::Paragraphs,
+            selection: (landed, landed + width),
+            can_undo: !self.history.undo.is_empty(),
+            can_redo: false,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn move_steps(
+        &mut self,
+        start: usize,
+        end: usize,
+        target: usize,
+        copy: bool,
+        fragment: &Fragment,
+        text: &str,
+        steps: &mut usize,
+    ) -> Result<(Span, usize), FlatError> {
+        let span_of = |o: &EditOutcome| Span {
+            start: o.start,
+            removed: o.removed_bytes,
+            inserted: o.inserted_bytes,
+            first: o.first_paragraph,
+            removed_paragraphs: o.removed_paragraphs,
+            inserted_paragraphs: o.inserted_paragraphs,
+        };
+        let width = end - start;
+        let before = self.history.revision;
+        let inserted = self.replace_range(target, target, text)?;
+        if self.history.revision == before {
+            return Err(FlatError::Style);
+        }
+        *steps += 1;
+        let mut span = span_of(&inserted);
+        if let Some(styled) = self.restyle_inserted(target, fragment)? {
+            *steps += 1;
+            span = span.then(styled);
+        }
+        if copy {
+            return Ok((span, target));
+        }
+        // The source, in coordinates after the insertion.
+        let (s, e) = if target >= end {
+            (start, end)
+        } else {
+            (start + width, end + width)
+        };
+        let deleted = self.replace_range(s, e, "")?;
+        *steps += 1;
+        span = span.then(span_of(&deleted));
+        Ok((
+            span,
+            if target >= end {
+                target - width
+            } else {
+                target
+            },
+        ))
+    }
+}

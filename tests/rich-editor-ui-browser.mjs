@@ -26,6 +26,7 @@ const fromB64 = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
 function createFakeBridge() {
   const listeners = new Set();
   const bridge = {
+    launchReplies: [], notify(data) { for (const listener of listeners) listener({ data }); },
     calls: [], files: [], released: [], nextOpen: { cancelled: true }, nextSave: {}, failWrite: false, holdSave: null,
     lastSaveSpec: null, lastOpenSpec: null, reads: new Map(), writes: new Map(), serial: 1,
     webview: {
@@ -78,6 +79,7 @@ function createFakeBridge() {
           }
           return reply("ok");
         }
+        if (operation === "launch") { const next = bridge.launchReplies.shift() ?? { status: "ok", payload: "" }; return reply(next.status, next.payload); }
         if (operation === "releaseTicket") { bridge.released.push(payload); bridge.writes.delete(payload); bridge.reads.delete(payload); return reply("ok"); }
         return reply("ok");
       },
@@ -347,7 +349,7 @@ try {
     assert(button && !button.disabled && !button.hasAttribute("aria-disabled") && !/nouvel éditeur/.test(button.title), `${id} is enabled in v2`);
   }
   assert(editor.capabilities.search && editor.capabilities.replace && editor.capabilities.statistics && editor.capabilities.properties
-    && !editor.capabilities.textDragDrop && !editor.capabilities.preview, "capabilities list what v2 offers now");
+    && editor.capabilities.textDragDrop && !editor.capabilities.preview, "capabilities list what v2 offers now");
   const tintOf = () => {
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
@@ -513,8 +515,10 @@ try {
   const dropLength = state().docLen;
   const textDrop = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: (() => { const t = new DataTransfer(); t.setData("text/plain", "déposé"); return t; })(), clientX: 100, clientY: 100 });
   canvas.dispatchEvent(textDrop);
-  await waitFor(() => message() === "Cette fonction n’est pas encore disponible avec le nouvel éditeur.", "dropped text is refused with a message");
-  assert(textDrop.defaultPrevented && state().docLen === dropLength, "text drag and drop is refused, the document is unchanged");
+  await waitFor(() => state().docLen === dropLength + 8, "dropped text is inserted at the drop point (R7c)");
+  assert(textDrop.defaultPrevented && editor.capabilities.textDragDrop, "text drag and drop is offered in v2: the drop is handled, not refused");
+  await editor.undo();
+  await waitFor(() => state().docLen === dropLength, "one undo removes the dropped text");
   app.ribbon.selectTab("file");
 
 
@@ -797,6 +801,57 @@ try {
     second.dispose();
     stage.remove();
     real.close();
+  }
+
+  // --- R7c: the utilities (symbols, NBSP, context menu, clipboard, About) through the product with the v2 editor ------------------------
+  {
+    const { checkEditorUtilitiesV2 } = await import("/tests/editor-utilities-integration-v2.mjs");
+    const openAppText = async value => { window.confirm = () => true; await editor.openDocument(async () => ({ kind: "ok", bytes: encoder.encode(value), format: "txt" })); };
+    await checkEditorUtilitiesV2({ app, assert, waitFor, key, inputText, openText: openAppText });
+    const { checkDocumentStatusV2 } = await import("/tests/document-status-integration-v2.mjs");
+    await checkDocumentStatusV2({ app, assert, waitFor, key, inputText, openText: openAppText });
+  }
+
+  // --- R7c: application shortcuts and documents launched by the shell (US-115) with the v2 editor -------------------------------------
+  {
+    const statusText = () => document.querySelector("#editor-status").textContent;
+    const callsBefore = bridge.calls.length;
+    window.confirm = () => true;
+    await editor.openDocument(async () => ({ kind: "ok", bytes: encoder.encode(""), format: "txt" }));
+    inputText(editor.element, "N");
+    await waitFor(async () => (await text()) === "N" && state().dirty, "app editor becomes dirty");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "n", ctrlKey: true, bubbles: true, cancelable: true }));
+    await waitFor(async () => state().docLen === 0 && !state().dirty, "Ctrl+N invokes the app New action");
+    assert(bridge.calls.slice(callsBefore).every(message => !/\|(pickOpen|pickSave)\|/.test(message)), "Ctrl+N does not request file access");
+    const before = bridge.calls.length;
+    bridge.nextOpen = { cancelled: true };
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "o", ctrlKey: true, bubbles: true, cancelable: true }));
+    await waitFor(() => bridge.calls.slice(before).some(message => message.includes("|pickOpen|")), "Ctrl+O sends an open request to the native host");
+    await waitFor(() => statusText().includes("annul"), "Ctrl+O cancellation is surfaced");
+    const largeText = Array.from({ length: 300 }, () => "app page").join("\n");
+    bridge.nextOpen = { name: "grand.txt", format: "txt", bytes: encoder.encode(largeText) };
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "o", ctrlKey: true, bubbles: true, cancelable: true }));
+    await waitFor(async () => (await text()) === largeText && !state().dirty, "Ctrl+O loads the multi-page fixture through the ticket dialogs");
+    assert(document.documentElement.scrollHeight <= innerHeight && document.body.scrollHeight <= innerHeight,
+      "a long v2 document does not grow the product body or move the toolbar and footer outside the viewport");
+    const launchBase64 = value => b64(encoder.encode(value));
+    const notifyLaunch = () => bridge.notify("us115-launch|1");
+    bridge.launchReplies.push({ status: "ok", payload: `txt;2;${launchBase64("lancé par argument")}` });
+    notifyLaunch();
+    await waitFor(async () => (await text()) === "lancé par argument", "a launched .txt opens in the v2 editor");
+    assert(statusText().startsWith("Document ouvert.") && statusText().includes("2 autres fichiers n’ont pas été ouverts"), "opening and the plural skipped count are announced in a single message");
+    bridge.launchReplies.push({ status: "error", payload: "files.error.unsupported_type" }, { status: "ok", payload: `txt;1;${launchBase64("deuxième")}` });
+    notifyLaunch();
+    await waitFor(async () => (await text()) === "deuxième", "an unsupported launched file does not hide the next one");
+    assert(statusText().startsWith("Document ouvert.") && statusText().includes("1 autre fichier n’a pas été ouvert"), "singular skipped message");
+    bridge.launchReplies.push({ status: "error", payload: "files.error.unsupported_type" });
+    notifyLaunch();
+    await waitFor(() => statusText().includes(".txt ou .docx"), "an unsupported launched file is explained");
+    assert((await text()) === "deuxième", "a refused launched file leaves the document unchanged");
+    bridge.launchReplies.push({ status: "ok", payload: "txt;0;***" });
+    notifyLaunch();
+    await sleep(50);
+    assert((await text()) === "deuxième", "a malformed launch reply is ignored");
   }
 
   // --- a second product instance: persisted reader mode, close during a save ---------------------------------------------------------------------

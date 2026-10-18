@@ -64,7 +64,7 @@ Avancement du 2026-10-18 (R2b) : livré sur la branche `r2b-glyph-atlas`. Les pa
 ## Risques et parades
 
 - **Régression TXT** (11 fichiers de test liés au protocole, 35 suites navigateur) : v1 gelée jusqu'à R7, suites exécutées en v1 et v2, aller-retour TXT octet pour octet bloquant.
-- **Performance sur 300 pages** : application en place, incrémental, pages modifiées seulement, aucun export par frappe. Critère R7 : moins de 16 ms de bout en bout dans Edge.
+- **Performance sur 300 pages** : application en place, incrémental, pages modifiées seulement, aucun export par frappe. Critère R7 : latence de frappe inférieure à 16 ms, de l'événement clavier à la fin du dessin Canvas, sur 300 pages (Edge headless, rendu logiciel, événements synthétiques) ; mesuré en R7c (p95 6,5 ms, max 7,7 ms) ; avec l'attente de l'image suivante p95 17,7 ms, max 20,3 ms, à cause du rafraîchissement à 60 Hz.
 - **IME** : aperçu de composition aujourd'hui estimé à 7 px par caractère (`editor.mjs:417`) ; la géométrie de composition viendra du moteur. Les essais AZERTY et IME physiques restent manuels.
 - **Accessibilité du Canvas** : R5 est obligatoire avant R7.
 - **ABI** : v2 versionnée, v1 gelée.

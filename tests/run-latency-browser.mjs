@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Lanceur du banc de latence de frappe (tests/latency-browser.mjs) dans Edge/Chromium headless.
 // Usage : node tests/run-latency-browser.mjs [--engine v1|v2] [--shape lines|dense] [--pages N] [--keys N]
-// v2 : sort avec le code 75 « v2 en attente de R7 (lot 3) » (voir tests/engine-adapter.mjs).
+// v2 (R7c) : l'éditeur riche, par `createRichEditor` (document de 300 pages sans limite de 128 Kio). Lancer le banc SEUL, sans autre test ni
+// processus lourd : définir ATELIER_BENCH_ALONE=1 pour l'inscrire dans le JSON (`machine.ranAlone`).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import os, { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const options = { shape: "lines", pages: "300", keys: "300" };
-const usage = "node tests/run-latency-browser.mjs [--engine v1|v2] [--shape lines|dense] [--pages N] [--keys N]";
+const options = { shape: "lines", pages: "300", keys: "300", pairs: "40" };
+const usage = "node tests/run-latency-browser.mjs [--engine v1|v2] [--shape lines|dense] [--pages N] [--keys N] [--pairs N]";
 function parseOptions(rest) {
   const parsed = { ...options };
   for (let i = 0; i < rest.length; i += 2) {
@@ -34,7 +35,8 @@ for (const candidate of [process.env.ATELIER_BROWSER_EXECUTABLE,
 assert(executable, "An installed Edge/Chromium browser is required for this check.");
 const mimes = { ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8" };
 const files = new Map([["/target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm",
-  ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]]]);
+  ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
+  ["/i18n/fr-FR.txt", ["web/i18n/fr-FR.txt", "text/plain; charset=utf-8"]]]);
 for (const folder of ["web", "tests"]) {
   for (const entry of await readdir(join(root, folder), { withFileTypes: true })) {
     const extension = entry.name.slice(entry.name.lastIndexOf("."));
@@ -65,7 +67,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((yes, no) => { server.once("error", no); server.listen(0, "127.0.0.1", yes); });
 const profile = await mkdtemp(join(tmpdir(), "atelier-latency-browser-"));
-const url = `http://127.0.0.1:${server.address().port}/tests/latency-browser.html?automated=1&engine=${engine}&shape=${options.shape}&pages=${options.pages}&keys=${options.keys}`;
+const url = `http://127.0.0.1:${server.address().port}/tests/latency-browser.html?automated=1&engine=${engine}&shape=${options.shape}&pages=${options.pages}&keys=${options.keys}&pairs=${options.pairs}`;
 const browser = spawn(executable, ["--headless=new", "--window-size=1280,1000", "--disable-gpu", "--no-first-run",
   "--no-default-browser-check", "--disable-background-networking", "--disable-component-update",
   `--user-data-dir=${profile}`, url], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
@@ -78,7 +80,7 @@ try {
   const report = await reportPromise;
   assert.equal(report.status, "passed", JSON.stringify(report));
   assert.match(report.userAgent, /(?:Chrome|Edg)\//);
-  console.log(JSON.stringify({ ...report, executable }));
+  console.log(JSON.stringify({ ...report, machine: { ranAlone: process.env.ATELIER_BENCH_ALONE === "1", note: process.env.ATELIER_BENCH_ALONE === "1" ? "banc lancé seul : aucun autre test ni processus lourd en parallèle" : "isolation non déclarée", cpus: os.cpus().length, cpuModel: os.cpus()[0]?.model, platform: `${os.platform()} ${os.release()}`, node: process.version, date: new Date().toISOString() }, executable }));
 } finally {
   clearTimeout(timer);
   if (browser.exitCode === null && browser.signalCode === null) {

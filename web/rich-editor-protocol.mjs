@@ -59,6 +59,8 @@ export const RichOpcode = Object.freeze({
   Resync: 0x0118,
   // R7b-1
   SelectionRects: 0x0120, ImageBitmap: 0x0121, SelectUnit: 0x0122,
+  // R7c: text drag and drop.
+  MoveText: 0x0140,
   // R7b-2: search, replace, statistics, properties.
   Search: 0x0130, Statistics: 0x0131, SearchRects: 0x0132, Replace: 0x0133, ReplaceAll: 0x0134,
   PropertiesRead: 0x0135, PropertiesApply: 0x0136,
@@ -83,6 +85,8 @@ export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
   RICH_UNKNOWN_OBJECT: 30,
   // R7b-2 (codes 40 to 49)
   RICH_EMPTY_QUERY: 40, RICH_STALE_MATCH: 41, RICH_QUERY_TOO_LARGE: 42, RICH_PROPERTIES_FAILED: 43, RICH_TOO_MANY_MATCHES: 44,
+  // R7c (codes 50 to 59)
+  RICH_MOVE_UNSUPPORTED: 50,
 }));
 const ERROR_NAMES = new Map(Object.entries(RichErrorCode).map(([name, code]) => [code, name]));
 
@@ -345,6 +349,16 @@ function parseCommand(opcode, body) {
       command = { type: "selectUnit", position, unit, extend };
       break;
     }
+    case RichOpcode.MoveText: {
+      const start = r.u64();
+      const end = r.u64();
+      const target = r.u64();
+      const copy = r.flag();
+      r.zero(3);
+      if (start > end) fail("RICH_INVALID_RANGE");
+      command = { type: "moveText", start, end, target, copy };
+      break;
+    }
     case RichOpcode.Search: case RichOpcode.Statistics: case RichOpcode.SearchRects: case RichOpcode.Replace:
     case RichOpcode.ReplaceAll: case RichOpcode.PropertiesRead: case RichOpcode.PropertiesApply:
       command = readFindCommand(opcode, r); break;
@@ -418,6 +432,9 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "selectionRects": w.u32(u32(command.first)); w.u32(u32(command.count)); opcode = RichOpcode.SelectionRects; break;
     case "imageBitmap": w.u64(u64(command.objectId)); opcode = RichOpcode.ImageBitmap; break;
     case "selectUnit": w.u64(u64(command.position)); w.u8(enumIndex(SELECTION_UNITS, command.unit), command.extend ? 1 : 0, 0, 0); opcode = RichOpcode.SelectUnit; break;
+    case "moveText":
+      w.u64(u64(command.start)); w.u64(u64(command.end)); w.u64(u64(command.target)); w.u8(command.copy ? 1 : 0, 0, 0, 0);
+      opcode = RichOpcode.MoveText; break;
     case "search": case "statistics": case "searchRects": case "replace": case "replaceAll":
     case "propertiesRead": case "propertiesApply":
       opcode = writeFindCommand(w, command); break;

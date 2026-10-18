@@ -58,7 +58,7 @@ Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{k
 | `confirmReplace()` | idem | couvert |
 | `dispose()` | idem + client v2 + miroir ; une opération en cours est rejetée `CLIENT_CLOSED`, les tickets d'écriture ouverts sont libérés | couvert |
 | (nouveau) `engine` | `"v2"` (`"v1"` n'existe pas sur l'objet v1 : `app.mjs` lit sa propre constante) | v2 seulement |
-| (nouveau) `capabilities` | `{search:true, replace:true, statistics:true, textDragDrop:false, preview:false, properties:true}` (R7b-2 : recherche, remplacement, statistiques et propriétés levées ; la clé `wordSelect` a disparu avec R7b-1 : la sélection par mot et paragraphe est offerte) : `app.mjs` grise et explique ce qui reste à `false` | v2 seulement |
+| (nouveau) `capabilities` | `{search:true, replace:true, statistics:true, textDragDrop:true, preview:false, properties:true}` (R7c : `textDragDrop` levé ; R7b-2 : recherche, remplacement, statistiques et propriétés levées ; la clé `wordSelect` a disparu avec R7b-1 : la sélection par mot et paragraphe est offerte) : `app.mjs` grise et explique ce qui reste à `false` | v2 seulement |
 | (nouveau) `readText(start, end)` | `TextWindow` (tests, presse-papiers, remplace `state.text`) | v2 seulement |
 | (nouveau) `selectedText(snapshot)` | texte de la sélection du cliché (fenêtre de l'État, sinon `TextWindow`) pour le menu contextuel | v2 seulement |
 | (nouveau) `readOnlyInfo` / `onReadOnly` | `{readOnly, hasRevisions}` pour le bandeau | v2 seulement |
@@ -99,7 +99,7 @@ Chaque ligne cite la donnée utilisée et le comportement en v2, chemins d'erreu
 | `editor-context-menu.mjs` | cliché : `revision, anchor, focus, text, canUndo, canRedo, enabled, busy` ; copier/couper lisent `snapshot.text` | v2 : le cliché porte `docLen`, la sélection, et le menu reçoit `hasText` (ajouté) ; copier/couper appellent `selectedText(cliché)` (fenêtre de l'État ou `TextWindow` de 256 Kio au plus ; au-delà `EDITOR_SELECTION_TOO_LARGE`) ; couper = `ReplaceRange` vide ; tout sélectionner = `SetSelection(0, docLen)` |
 | `text-input.mjs` | `getSelection`, `getCaret`, `getClipboardSnapshot` (`text`, `revision` BigInt, sélection) | v2 : instantané construit sur la fenêtre de texte de l'État, sinon sur la dernière `TextWindow` préchargée pour la sélection ; absent -> `onError(EDITOR_CLIPBOARD_UNAVAILABLE)` (jamais une copie vide silencieuse) |
 | `mouse-selection.mjs` | `selectPoint(values)` -> `{anchor, focus}` entiers | v2 : `HitTest` `setCaret` ou `extend` (le moteur calcule l'affinité) ; unités mot et paragraphe (double et triple clic, R7b-1) : sonde `HitTest` puis `SelectUnit` (`0x0122`, `extend` pendant le glisser et pour Maj + double clic ; clé `wordSelect` retirée de `capabilities`) |
-| `text-drag-drop.mjs` | `probePoint`, `onDrop`, `onFilesDrop`, `getSelectionSnapshot` (avec `text` entier) | **non branché en v2** : glisser-déposer de texte absent (le texte déposé est refusé par `EDITOR_UNSUPPORTED_V2`, la sélection ne se déplace pas) ; dépôt de fichiers image : géré directement par `rich-editor.mjs` (`HitTest` probe puis `InsertImage`) |
+| `text-drag-drop.mjs` | `probePoint`, `onDrop`, `onFilesDrop`, `getSelectionSnapshot` (avec `text` entier) | **branché en v2 (R7c)** : instantané sans texte (`text: null`, le moteur contrôle les frontières), `probePoint` = `HitTest` probe (position, pas de caret : pas de repère de dépôt), `onDrop` = `MoveText` `0x0140` (déplacement ou, avec Ctrl, copie ; une étape d'annulation) ou, pour un texte venu de l'extérieur, `ReplaceRange` à la position ; `onFilesDrop` = `InsertImage` comme avant |
 | `french-spacing.mjs` | cliché `{text, anchor, focus}` après l'insertion | v2 : fenêtre de l'État (2 Kio autour du curseur), décalages ramenés à des positions plates |
 | `image-insert.mjs` | `insertImageFiles(files, {insertBytes, onError})` | identique (`insertBytes` = `InsertImage`) ; le magasin JS `imageCache` ne concerne que v1 |
 | `document-mirror.mjs` | `getAccessibleWindow(start, end, {signal})`, `update({revision, docLen, selection, visible})` | v2 seulement ; fenêtre fournie par `accessibleWindow` du client **après conversion** (`mirrorWindow` : le codec nomme les rôles et genres d'objets, le miroir attend leurs numéros ; l'écart a été trouvé par la suite navigateur) ; `update` après chaque `State` ; `visible` = positions plates du haut et du bas de la fenêtre, obtenues par deux `HitTest` de sonde 150 ms après le dernier défilement |
@@ -118,7 +118,7 @@ Chaque ligne cite la donnée utilisée et le comportement en v2, chemins d'erreu
 1. ~~Rechercher, Remplacer, Statistiques~~ : levé par R7b-2 (2026-10-18), commandes du ruban et Ctrl+F/Ctrl+H actives.
 2. ~~Propriétés du document~~ : levé par R7b-2, la boîte lit le document ouvert.
 3. Aperçu DOCX en lecture seule distinct (remplacé par l'ouverture dans l'éditeur).
-4. Glisser-déposer de texte (interne et externe) ; le dépôt d'images fonctionne.
+4. ~~Glisser-déposer de texte (interne et externe)~~ : disponible depuis R7c (`MoveText`) ; limites : pas de repère de dépôt, plage avec objets ou tableaux refusée (`RICH_MOVE_UNSUPPORTED`).
 5. ~~Sélection du mot et du paragraphe à la souris~~ : disponible depuis R7b-1.
 6. ~~Affichage des images insérées~~ : disponible depuis R7b-1.
 7. Texte entier de l'état (`state.text`) ; la géométrie de sélection existe (`editor.selectionRects`, hors de l'objet d'état).
@@ -128,7 +128,7 @@ Chaque ligne cite la donnée utilisée et le comportement en v2, chemins d'erreu
 1. ~~**Sélection invisible à l'écran**~~ **Fermé (R7b-1, 2026-10-18)** : `SelectionRects` `0x0120` -> `SelectionRects` `0x8110` ; vérifié au pixel par `run-rich-editor-ui-browser`.
 2. ~~Images insérées non dessinées~~ **Fermé (R7b-1)** : boîtes en ligne dans la mise en page (`text-layout::layout_paragraph_boxes`), `DrawImage` dans les pages, `ImageBitmap` `0x0121` -> `0x8111`, cache client borné ; `run-image-insert-browser --engine v2` ne saute plus rien (géométrie, pixels, EXIF, réduction, annuler et rétablir).
 3. ~~Double et triple clic : un clic simple~~ **Fermé (R7b-1)** : `SelectUnit` `0x0122` (mot : `FlatIndex::word_at` ; paragraphe : avec sa coupure ; `extend` par unités).
-4. Glisser-déposer de texte : refusé avec `EDITOR_UNSUPPORTED_V2` ; le dépôt de fichiers image fonctionne.
+4. ~~Glisser-déposer de texte~~ **Fermé (R7c, 2026-10-18)** : `MoveText` `0x0140`, vecteurs `tests/rich-editor-move-vectors.txt`, `run-editor-browser --engine v2` (déplacer, copier avec Ctrl, Échap, dépôt externe, annuler et rétablir).
 5. ~~Recherche, remplacement, statistiques, propriétés~~ : levé par R7b-2 (commandes `0x0130-0x0136`). Restent : en-têtes et pieds non cherchés (hors texte plat), Tout remplacer limité à 5000 occurrences, lignes et pages des statistiques provisoires tant que la mise en page n'est pas terminée, propriétés d'un document non DOCX écrites seulement dans un DOCX (la boîte le dit).
 6. Encodage : un fichier TXT n'est jamais refusé pour UTF-8 invalide (le moteur détecte l'encodage ; v1 répondait `EDITOR_INVALID_UTF8`).
 7. Aperçu de composition IME : largeur estimée à 7 px par caractère comme en v1 (la géométrie viendra du moteur en R7b).
