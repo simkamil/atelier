@@ -4,15 +4,34 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const args = process.argv.slice(2);
+const rootArg = args.find(arg => arg.startsWith("--root="));
+// --root=<dir> redirects the reference, data/fonts and data/engine/manifest.json (used by the test).
+const repoRoot = rootArg
+  ? resolve(rootArg.slice("--root=".length))
+  : resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const referencePath = resolve(repoRoot, "tools/bench/references/wasm-size.json");
+const manifestPath = resolve(repoRoot, "data/engine/manifest.json");
 const fontRoot = resolve(repoRoot, "data/fonts");
 const defaultArtifact = resolve(
   repoRoot,
   "target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm",
 );
-const artifactPath = resolve(process.argv.filter(arg => arg !== "--measure")[2] ?? defaultArtifact);
-const measureOnly = process.argv.includes("--measure");
+const positional = args.filter(arg => !arg.startsWith("--"));
+const artifactPath = resolve(positional[0] ?? defaultArtifact);
+const measureOnly = args.includes("--measure");
+
+const FONT_PATH = /^data\/fonts\/(?:[^/\\.:][^/\\:]*\/)*[^/\\.:][^/\\:]*\.(?:ttf|otf)$/i;
+const SHA256 = /^[0-9a-f]{64}$/;
+
+async function readJson(path, what) {
+  const text = await readFile(path, "utf8");
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${what} ${path} is not valid JSON (${error.message})`);
+  }
+}
 
 async function fontFiles(directory) {
   const files = [];
@@ -31,44 +50,86 @@ function occurrences(haystack, needle) {
 }
 
 // Embedded fonts are frozen data: they are measured exactly, apart from the code budget.
+// `disk` lists every font file of data/fonts, `found` those present verbatim in the artifact.
+// Byte-identical files are counted once (by SHA-256) so duplicates cannot inflate the font total.
 async function embeddedFonts(artifact) {
-  const found = [];
+  const disk = [];
+  const byHash = new Map();
   for (const path of (await fontFiles(fontRoot)).sort()) {
     const bytes = await readFile(path);
-    const count = occurrences(artifact, bytes);
-    if (count > 0) {
-      found.push({
-        path: relative(repoRoot, path).split(sep).join("/"),
-        bytes: bytes.length,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-        count,
-      });
-    }
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    if (!byHash.has(sha256)) byHash.set(sha256, { bytes: bytes.length, count: occurrences(artifact, bytes) });
+    disk.push({
+      path: relative(repoRoot, path).split(sep).join("/"),
+      bytes: bytes.length,
+      sha256,
+      count: byHash.get(sha256).count,
+    });
   }
-  return found;
+  const fontBytes = [...byHash.values()].reduce((sum, font) => sum + font.bytes * font.count, 0);
+  return { disk, found: disk.filter(font => font.count > 0), fontBytes };
+}
+
+function validateReference(reference) {
+  if (reference === null || typeof reference !== "object" || Array.isArray(reference)
+      || reference.schema_version !== 2
+      || reference.target !== "wasm32-unknown-unknown"
+      || reference.profile !== "wasm-release"
+      || !Number.isSafeInteger(reference.code_reference_bytes)
+      || reference.code_reference_bytes <= 0
+      || !Number.isSafeInteger(reference.allowed_growth_percent)
+      || reference.allowed_growth_percent < 0
+      || reference.allowed_growth_percent > 100
+      || !Array.isArray(reference.fonts)) {
+    throw new Error(`invalid or unsupported WASM size reference fields in ${referencePath}`);
+  }
+  const seen = new Set();
+  reference.fonts.forEach((font, index) => {
+    const where = `${referencePath}: fonts[${index}]`;
+    if (font === null || typeof font !== "object") throw new Error(`${where} is not an object`);
+    if (typeof font.path !== "string" || !FONT_PATH.test(font.path) || font.path.split("/").includes("..")) {
+      throw new Error(`${where}.path must be a relative data/fonts/**/*.ttf|otf path, got ${JSON.stringify(font.path)}`);
+    }
+    if (typeof font.sha256 !== "string" || !SHA256.test(font.sha256)) {
+      throw new Error(`${where}.sha256 must be 64 lowercase hexadecimal digits`);
+    }
+    if (!Number.isSafeInteger(font.bytes) || font.bytes <= 0) throw new Error(`${where}.bytes must be a positive integer`);
+    if (seen.has(font.path)) throw new Error(`${where}.path ${font.path} is listed twice`);
+    seen.add(font.path);
+  });
+}
+
+// Why is a listed font not found verbatim in the artifact?
+async function absenceCause(frozen, disk) {
+  const onDisk = disk.find(font => font.path === frozen.path);
+  if (!onDisk) return `${frozen.path} is listed but missing from data/fonts`;
+  if (onDisk.sha256 !== frozen.sha256 || onDisk.bytes !== frozen.bytes) {
+    return `${frozen.path} is listed but its file in data/fonts changed (reference out of date) and its new bytes are not in the WASM`;
+  }
+  let recorded;
+  try {
+    recorded = (await readJson(manifestPath, "engine manifest")).sources_sha256?.[frozen.path];
+  } catch {
+    recorded = undefined;
+  }
+  if (recorded !== undefined && recorded !== onDisk.sha256) {
+    return `${frozen.path} is listed and unchanged, but the WASM is stale: its manifest records another version of this font; rebuild the engine`;
+  }
+  return `${frozen.path} is listed and unchanged in data/fonts but its bytes are not in the WASM verbatim: `
+    + "the WASM was probably built before this font was embedded, or the font is now stored truncated, compressed or split "
+    + "(it would then be counted as code); rebuild the engine and check how the font is embedded";
 }
 
 try {
   const artifact = await readFile(artifactPath);
-  const fonts = await embeddedFonts(artifact);
-  const fontBytes = fonts.reduce((sum, font) => sum + font.bytes * font.count, 0);
+  const { disk, found: fonts, fontBytes } = await embeddedFonts(artifact);
   const codeBytes = artifact.length - fontBytes;
   if (measureOnly) {
     console.log(JSON.stringify({ total_bytes: artifact.length, code_bytes: codeBytes, font_bytes: fontBytes,
       fonts: fonts.map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })) }, null, 2));
   } else {
-    const reference = JSON.parse(await readFile(referencePath, "utf8"));
-    if (reference.schema_version !== 2
-        || reference.target !== "wasm32-unknown-unknown"
-        || reference.profile !== "wasm-release"
-        || !Number.isSafeInteger(reference.code_reference_bytes)
-        || reference.code_reference_bytes <= 0
-        || !Number.isSafeInteger(reference.allowed_growth_percent)
-        || reference.allowed_growth_percent < 0
-        || reference.allowed_growth_percent > 100
-        || !Array.isArray(reference.fonts)) {
-      throw new Error("invalid or unsupported WASM size reference fields");
-    }
+    const reference = await readJson(referencePath, "WASM size reference");
+    validateReference(reference);
 
     const problems = [];
     const expected = new Map(reference.fonts.map(font => [font.path, font]));
@@ -79,7 +140,7 @@ try {
       if (font.count !== 1) problems.push(`${font.path} is embedded ${font.count} times`);
       expected.delete(font.path);
     }
-    for (const path of expected.keys()) problems.push(`${path} is listed but no longer embedded`);
+    for (const frozen of expected.values()) problems.push(await absenceCause(frozen, disk));
 
     const allowedPercent = BigInt(reference.allowed_growth_percent);
     const codeReference = BigInt(reference.code_reference_bytes);
