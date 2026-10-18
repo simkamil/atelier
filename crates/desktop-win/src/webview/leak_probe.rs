@@ -174,7 +174,8 @@ fn run_cycle(dir: &Path, dwell: bool) {
         if dwell && VARIANT.load(Ordering::Acquire) == 0 {
             // Exercise the resource request/stream/response path, the web-message, script and
             // focus calls, and the DevTools getter on every cycle.
-            pump_for(Duration::from_secs(3), &mut || {
+            // Machine chargée : le premier chargement de page peut dépasser plusieurs secondes.
+            pump_for(Duration::from_secs(20), &mut || {
                 !view.resource_log_snapshot().is_empty()
             });
             assert!(
@@ -375,7 +376,13 @@ fn com_reference_ledger_balances_over_100_cycles() {
     for _ in 0..100 {
         run_cycle(&dir, true);
     }
-    pump_for(Duration::from_millis(500), &mut || false);
+    // Les derniers Release de nos objets arrivent depuis les fils du runtime : attendre leur
+    // retour à l'équilibre (10 s au plus) plutôt qu'un délai fixe.
+    pump_for(Duration::from_secs(10), &mut || {
+        ledger::read_ours(&ledger::OUR_ADD_REF) - added0
+            == ledger::read_ours(&ledger::OUR_RELEASE) - dropped0
+            && LIVE_CALLBACK_OBJECTS.load(Ordering::Acquire) == baseline
+    });
     let acquired = ledger::read(&ledger::ACQUIRED) - acquired0;
     let released = ledger::read(&ledger::RELEASED) - released0;
     let added = ledger::read_ours(&ledger::OUR_ADD_REF) - added0;

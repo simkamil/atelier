@@ -322,7 +322,7 @@ motivés. Les limites de wrapping et de Tab sont également décrites dans le co
 Le premier parcours TXT est testable avec `cargo run -p atelier-desktop-win --release --locked --offline`. La tranche reste limitée à
 128 Kio, latin gauche à droite et mise en page complète à chaque modification.
 Les dialogues manuels, AZERTY/IME physique et mesures de 300 pages/démarrage restent
-ouverts pour US-120. US-113 conserve SharedBuffer, polices/URL ; US-111 conserve
+ouverts pour US-120. US-113 : mise à jour 2026-10-18, SharedBuffer, polices et URL sont livrés (critères 1 et 3), le critère 2 attend les essais manuels ([détail](us-113-native-bridge.md)) ; US-111 conserve
 l’échec strict de handles. Les **35/158 US complètes** sont inchangées. Les tests
 musl sont compilés localement ; leur exécution appartient à la CI Linux publiée.
 
@@ -526,8 +526,9 @@ n’est différé. Les [échecs exploratoires](../_bmad-output/implementation-ar
 restent conservés.
 
 US-112 reste ouverte pour la journalisation des violations CSP internes aux
-Workers et les scénarios service-worker. US-113 reste ouverte pour le pont
-fichiers JS, SharedBuffer, les polices/URL et les essais de dialogues natifs.
+Workers et les scénarios service-worker. US-113 (mise à jour 2026-10-18) :
+critères 1 (SharedBuffer, 100 Mio en 70 ms) et 3 (erreurs traduisibles) livrés ; le critère 2
+attend les essais manuels des dialogues et de l’URL ([détail](us-113-native-bridge.md)).
 US-120 reste ouverte pour la mise en page et la connexion saisie/modèle/rendu,
 ainsi que ses mesures de latence et démarrage. US-111 conserve l’échec strict
 de handles ; ses contrôles fonctionnels de 100 cycles et callbacks passent.

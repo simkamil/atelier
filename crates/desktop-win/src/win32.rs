@@ -4,7 +4,7 @@
 use super::{
     MonitorArea, Rect, WindowState, encode_state, load_state, minimum_size, restore_state,
 };
-use crate::bridge_ops::{self, BridgeState, Outcome, StaHost};
+use crate::bridge_ops::{self, BridgeState, JobResult, Outcome, StaHost, Step};
 use crate::file_bridge::{self, Request};
 use crate::file_dialog::{DialogOwner, FileFilter, StaFileDialogs};
 use crate::files::{FileBroker, FileError};
@@ -41,6 +41,8 @@ const WM_COPYDATA: u32 = 0x004a;
 const WM_ATELIER_LAUNCH: u32 = 0x8000 + 0x115;
 /// Lecture d'un fichier d'ouverture terminée sur le thread de travail.
 const WM_ATELIER_LAUNCH_DONE: u32 = 0x8000 + 0x116;
+/// US-113 : un travail du pont (lecture, écriture, polices) a fini sur son fil de travail.
+const WM_ATELIER_BRIDGE_DONE: u32 = 0x8000 + 0x117;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const GWLP_USERDATA: i32 = -21;
 const TIMER_WEBVIEW_INIT: usize = 0x1110;
@@ -48,6 +50,10 @@ const TIMER_WEBVIEW_CLOSE: usize = 0x1111;
 const TIMER_LAUNCH_READ: usize = 0x1112;
 /// Diagnostic du pont seulement : ferme le dialogue commun ouvert pendant `--bridge-self-check`.
 const TIMER_DIAG_DIALOG_CLOSE: usize = 0x1113;
+/// Reprise de la remise des résultats du pont différée pendant un dialogue modal.
+const TIMER_BRIDGE_RETRY: usize = 0x1114;
+const BRIDGE_RETRY_MS: u32 = 50;
+const MAX_BRIDGE_JOBS: usize = 4;
 /// Délai maximal de lecture d'un fichier d'ouverture (partage réseau injoignable).
 const LAUNCH_READ_TIMEOUT_MS: u32 = 30_000;
 const SIZE_MINIMIZED: usize = 1;
@@ -258,7 +264,7 @@ struct Context {
 }
 
 struct FileRuntime {
-    broker: FileBroker,
+    broker: Arc<FileBroker>,
     dialogs: StaFileDialogs,
     dirty: bool,
     /// Chemins demandés (ligne de commande, seconde instance) pas encore réclamés par le front.
@@ -269,12 +275,15 @@ struct FileRuntime {
     launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead)>>>,
     /// US-113 : tickets remis au JS, écriture en cours et catalogue de polices.
     bridge: BridgeState,
+    /// Résultats des travaux du pont terminés sur un fil de travail, en attente de remise.
+    bridge_done: Arc<Mutex<std::collections::VecDeque<JobResult>>>,
+    bridge_inflight: usize,
 }
 
 impl FileRuntime {
     fn new() -> Result<Self, crate::files::FileError> {
         Ok(Self {
-            broker: FileBroker::new(),
+            broker: Arc::new(FileBroker::new()),
             dialogs: StaFileDialogs::initialize_current_thread()?,
             dirty: false,
             launch: std::collections::VecDeque::new(),
@@ -282,6 +291,8 @@ impl FileRuntime {
             launch_generation: 0,
             launch_slot: Arc::new(Mutex::new(None)),
             bridge: BridgeState::system(),
+            bridge_done: Arc::new(Mutex::new(std::collections::VecDeque::new())),
+            bridge_inflight: 0,
         })
     }
 }
@@ -412,11 +423,15 @@ fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<Outcome> {
     }
 }
 
-fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request) -> Outcome {
+fn process_file_request(
+    hwnd: Hwnd,
+    runtime: &mut FileRuntime,
+    request: Request,
+) -> Option<Outcome> {
     let id = request.id().to_owned();
     if let Request::Dirty { dirty, .. } = request {
         runtime.dirty = dirty;
-        return Outcome::Text(format!("us120-file|1|{id}|ok|"));
+        return Some(Outcome::Text(format!("us120-file|1|{id}|ok|")));
     }
     if let Request::Launch { .. } = request {
         unreachable!("launch requests are started by begin_launch");
@@ -437,9 +452,23 @@ fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request)
             | Request::OpenUrl { .. }
     ) {
         let mut host = StaHost { dialogs, owner };
-        return bridge_ops::process_bridge_request(request, &mut runtime.bridge, broker, &mut host);
+        return match bridge_ops::begin_bridge_request(
+            request,
+            &mut runtime.bridge,
+            broker,
+            &mut host,
+        ) {
+            Step::Done(outcome) => Some(outcome),
+            Step::Job(job) => spawn_bridge_job(
+                hwnd,
+                &mut runtime.bridge_inflight,
+                &runtime.bridge_done,
+                id,
+                job,
+            ),
+        };
     }
-    Outcome::Text(route_file_request(request, broker, |kind| {
+    Some(Outcome::Text(route_file_request(request, broker, |kind| {
         with_file_dialog_options(
             kind,
             |title, filters, selected_filter, suggested_name| match kind {
@@ -456,7 +485,71 @@ fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request)
             },
         )
         .map_err(|error| error.message_key)
-    }))
+    })))
+}
+
+/// Lance un travail bloquant du pont sur un fil de travail ; sa réponse est postée à la fenêtre par
+/// `WM_ATELIER_BRIDGE_DONE`. Renvoie une réponse immédiate seulement en cas de refus.
+fn spawn_bridge_job(
+    hwnd: Hwnd,
+    inflight: &mut usize,
+    done: &Arc<Mutex<std::collections::VecDeque<JobResult>>>,
+    id: String,
+    job: bridge_ops::Job,
+) -> Option<Outcome> {
+    if *inflight >= MAX_BRIDGE_JOBS {
+        return Some(Outcome::Text(format!(
+            "us120-file|1|{id}|error|files.error.queue_full"
+        )));
+    }
+    let slot = Arc::clone(done);
+    let target = hwnd as usize;
+    let spawned = std::thread::Builder::new()
+        .name("atelier-bridge-job".into())
+        .spawn(move || {
+            let result = job();
+            slot.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push_back(result);
+            // SAFETY: PostMessageW est sûr sur tout thread ; un HWND détruit fait seulement échouer l'appel.
+            unsafe { PostMessageW(target as Hwnd, WM_ATELIER_BRIDGE_DONE, 0, 0) };
+        });
+    if spawned.is_err() {
+        return Some(Outcome::Text(format!(
+            "us120-file|1|{id}|error|files.error.io"
+        )));
+    }
+    *inflight += 1;
+    None
+}
+
+/// Réponses des travaux terminés. Différé (`None`) tant qu'un dialogue ou un traitement de messages
+/// détient l'état du pont : la boucle modale d'un dialogue peut distribuer ce message.
+fn take_bridge_results(context: *mut Context) -> Option<Vec<Outcome>> {
+    // SAFETY: appelé depuis la procédure de fenêtre sur le fil UI avec le contexte vivant.
+    unsafe {
+        let busy = (*context)
+            .webview
+            .as_ref()
+            .is_some_and(WebView::file_work_active);
+        if busy {
+            return None;
+        }
+        let runtime = (*context).file_runtime.as_mut()?;
+        let results: Vec<JobResult> = runtime
+            .bridge_done
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect();
+        runtime.bridge_inflight = runtime.bridge_inflight.saturating_sub(results.len());
+        Some(
+            results
+                .into_iter()
+                .map(|result| runtime.bridge.finish(result))
+                .collect(),
+        )
+    }
 }
 
 impl Context {
@@ -903,7 +996,7 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             if let Request::Launch { id } = &request {
                                 begin_launch(hwnd, runtime, id)
                             } else {
-                                Some(process_file_request(hwnd, runtime, request))
+                                process_file_request(hwnd, runtime, request)
                             }
                         });
                         if let (Some(reply), Some(view)) = (reply, (*context).webview.as_ref()) {
@@ -956,6 +1049,23 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                         None => 0,
                     };
                 }
+                WM_ATELIER_BRIDGE_DONE => {
+                    match take_bridge_results(context) {
+                        Some(outcomes) => {
+                            if let Some(view) = (*context).webview.as_ref() {
+                                for outcome in outcomes {
+                                    if let Err(error) = bridge_ops::deliver(view, outcome) {
+                                        (*context).record(Err(error));
+                                    }
+                                }
+                            }
+                        }
+                        None => {
+                            SetTimer(hwnd, TIMER_BRIDGE_RETRY, BRIDGE_RETRY_MS, null_mut());
+                        }
+                    }
+                    return 0;
+                }
                 WM_ATELIER_LAUNCH_DONE => {
                     let reply = (*context)
                         .file_runtime
@@ -978,6 +1088,11 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     return 0;
                 }
                 WM_TIMER => {
+                    if w == TIMER_BRIDGE_RETRY {
+                        let _ = KillTimer(hwnd, TIMER_BRIDGE_RETRY);
+                        PostMessageW(hwnd, WM_ATELIER_BRIDGE_DONE, 0, 0);
+                        return 0;
+                    }
                     if w == TIMER_DIAG_DIALOG_CLOSE {
                         // Armé uniquement par `--bridge-self-check` : ferme le dialogue commun
                         // éventuellement ouvert (WM_CLOSE = annulation), sans effet sinon.

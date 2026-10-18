@@ -3,7 +3,7 @@
 //! famille et style de la table `name` (sans GDI ni DirectWrite) et n'expose au JS que des
 //! identifiants opaques ; le JS ne fournit jamais de chemin. Toute lecture est bornée.
 
-use std::fs::{self, File};
+use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -251,7 +251,7 @@ impl FontCatalog {
                     .unwrap_or_default();
                 if !cached.is_empty() {
                     entries.extend(cached.into_iter().cloned());
-                } else if let Ok(mut file) = File::open(&path) {
+                } else if let Ok(mut file) = crate::files::open_read_without_reparse(&path) {
                     for (face, (family, style)) in
                         parse_faces(&mut file, size).into_iter().enumerate()
                     {
@@ -333,7 +333,9 @@ impl FontCatalog {
     /// fichier a changé depuis le balayage.
     pub fn read(&self, id: &str) -> Result<Vec<u8>, &'static str> {
         let entry = self.lookup(id)?;
-        let file = File::open(&entry.path).map_err(|_| "fonts.error.read_failed")?;
+        // Les points d'analyse (liens, jonctions) ne sont pas suivis, comme dans le courtier.
+        let file = crate::files::open_read_without_reparse(&entry.path)
+            .map_err(|_| "fonts.error.read_failed")?;
         let length = file
             .metadata()
             .map_err(|_| "fonts.error.read_failed")?

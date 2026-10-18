@@ -13,6 +13,7 @@ use crate::files::{FileBroker, FileError, ReadTicket, WriteTicket};
 use crate::fonts::FontCatalog;
 use crate::webview::{SharedBufferError, WebView};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Au-delà, une lecture part par SharedBuffer ; en deçà, en Base64 dans le message.
@@ -261,12 +262,37 @@ struct Staging {
     bytes: Vec<u8>,
 }
 
+/// Travail bloquant (lecture de fichier, balayage des polices, écriture atomique) exécuté sur un fil
+/// de travail ; il ne touche pas à l'état du pont, seulement au courtier (partagé) et à ses propres
+/// données. Le résultat revient sur la STA par `BridgeState::finish`.
+pub(crate) type Job = Box<dyn FnOnce() -> JobResult + Send + 'static>;
+
+pub(crate) struct JobResult {
+    outcome: Outcome,
+    fonts: Option<Arc<FontCatalog>>,
+}
+
+impl JobResult {
+    fn outcome(outcome: Outcome) -> Self {
+        Self {
+            outcome,
+            fonts: None,
+        }
+    }
+}
+
+/// Suite d'une requête : réponse immédiate, ou travail à exécuter hors du fil UI.
+pub(crate) enum Step {
+    Done(Outcome),
+    Job(Job),
+}
+
 /// État de pont propre à la fenêtre : tickets remis au JS, écriture en cours, catalogue de polices.
 pub(crate) struct BridgeState {
     read_tickets: Vec<u64>,
     write_tickets: Vec<u64>,
     staging: Option<Staging>,
-    fonts: Option<FontCatalog>,
+    fonts: Option<Arc<FontCatalog>>,
     font_dirs: Vec<PathBuf>,
 }
 
@@ -322,6 +348,27 @@ impl BridgeState {
         Ok(format!("w{}", ticket.id()))
     }
 
+    /// Applique le résultat d'un travail terminé (sur la STA) et renvoie la réponse à poster.
+    pub(crate) fn finish(&mut self, result: JobResult) -> Outcome {
+        if let Some(catalog) = result.fonts {
+            self.fonts = Some(catalog);
+        }
+        result.outcome
+    }
+
+    /// Retire un ticket d'écriture (et l'écriture en cours) sans le révoquer : le travail qui
+    /// l'utilise encore le révoque lui-même.
+    fn detach_write(&mut self, ticket: u64) {
+        self.write_tickets.retain(|held| *held != ticket);
+        if self
+            .staging
+            .as_ref()
+            .is_some_and(|staging| staging.ticket == ticket)
+        {
+            self.staging = None;
+        }
+    }
+
     fn forget_read(&mut self, ticket: u64, broker: &FileBroker) {
         self.read_tickets.retain(|held| *held != ticket);
         broker.revoke_read(ReadTicket::from_id(ticket));
@@ -340,18 +387,19 @@ impl BridgeState {
     }
 }
 
-/// Exécute une requête du pont étendu. Les requêtes historiques (open, openDocx, save, dirty,
-/// launch) ne passent pas ici.
-pub(crate) fn process_bridge_request(
+/// Démarre une requête du pont étendu. Les requêtes historiques (open, openDocx, save, dirty,
+/// launch) ne passent pas ici. Les dialogues et ShellExecute restent sur la STA ; les lectures,
+/// l'écriture finale et le balayage des polices deviennent un `Job` pour un fil de travail.
+pub(crate) fn begin_bridge_request(
     request: Request,
     state: &mut BridgeState,
-    broker: &FileBroker,
+    broker: &Arc<FileBroker>,
     host: &mut dyn BridgeHost,
-) -> Outcome {
+) -> Step {
     match request {
-        Request::PickOpen { id, spec } => pick_open(&id, &spec, state, broker, host),
-        Request::PickSave { id, spec } => pick_save(&id, &spec, state, broker, host),
-        Request::ReadTicket { id, ticket } => read_ticket(&id, ticket, state, broker),
+        Request::PickOpen { id, spec } => Step::Done(pick_open(&id, &spec, state, broker, host)),
+        Request::PickSave { id, spec } => Step::Done(pick_save(&id, &spec, state, broker, host)),
+        Request::ReadTicket { id, ticket } => read_ticket(id, ticket, state, broker),
         Request::ReleaseTicket { id, ticket, write } => {
             let known = if write {
                 state.write_tickets.contains(&ticket)
@@ -359,14 +407,14 @@ pub(crate) fn process_bridge_request(
                 state.read_tickets.contains(&ticket)
             };
             if !known {
-                return error_reply(&id, "files.error.unknown_ticket");
+                return Step::Done(error_reply(&id, "files.error.unknown_ticket"));
             }
             if write {
                 state.forget_write(ticket, broker);
             } else {
                 state.forget_read(ticket, broker);
             }
-            ok_reply(&id, "")
+            Step::Done(ok_reply(&id, ""))
         }
         Request::WriteTicket {
             id,
@@ -374,33 +422,58 @@ pub(crate) fn process_bridge_request(
             seq,
             last,
             bytes,
-        } => write_ticket(&id, ticket, seq, last, bytes, state, broker),
+        } => write_ticket(id, ticket, seq, last, bytes, state, broker),
         Request::ListFonts { id } => {
-            let catalog = crate::fonts::FontCatalog::scan(&state.font_dirs, state.fonts.as_ref());
-            let listing = catalog.list_tsv().into_bytes();
-            state.fonts = Some(catalog);
-            let size = listing.len();
-            bytes_outcome(&id, "b64;", &shared_payload(size), "fb;", listing)
-        }
-        Request::ReadFont { id, font } => match state.fonts.as_ref() {
-            None => error_reply(&id, "fonts.error.unknown_id"),
-            Some(catalog) => match catalog.read(&font) {
-                Ok(bytes) => {
-                    let payload = shared_payload(bytes.len());
-                    bytes_outcome(&id, "b64;", &payload, "fb;", bytes)
+            let previous = state.fonts.clone();
+            let dirs = state.font_dirs.clone();
+            Step::Job(Box::new(move || {
+                let catalog = Arc::new(FontCatalog::scan(&dirs, previous.as_deref()));
+                let listing = catalog.list_tsv().into_bytes();
+                let size = listing.len();
+                JobResult {
+                    outcome: bytes_outcome(&id, "b64;", &shared_payload(size), "fb;", listing),
+                    fonts: Some(catalog),
                 }
-                Err(key) => error_reply(&id, key),
-            },
+            }))
+        }
+        Request::ReadFont { id, font } => match state.fonts.clone() {
+            None => Step::Done(error_reply(&id, "fonts.error.unknown_id")),
+            Some(catalog) => Step::Job(Box::new(move || {
+                JobResult::outcome(match catalog.read(&font) {
+                    Ok(bytes) => {
+                        let payload = shared_payload(bytes.len());
+                        bytes_outcome(&id, "b64;", &payload, "fb;", bytes)
+                    }
+                    Err(key) => error_reply(&id, key),
+                })
+            })),
         },
-        Request::OpenUrl { id, url } => match host.open_url(&url) {
+        Request::OpenUrl { id, url } => Step::Done(match host.open_url(&url) {
             Ok(()) => ok_reply(&id, ""),
             Err(key) => error_reply(&id, key),
-        },
+        }),
         Request::Open { id }
         | Request::OpenDocx { id }
         | Request::Launch { id }
         | Request::Dirty { id, .. }
-        | Request::Save { id, .. } => error_reply(&id, INVALID_REQUEST),
+        | Request::Save { id, .. } => Step::Done(error_reply(&id, INVALID_REQUEST)),
+    }
+}
+
+/// Version synchrone (tests) : exécute le travail dans le fil appelant et applique son résultat.
+#[cfg(test)]
+pub(crate) fn process_bridge_request(
+    request: Request,
+    state: &mut BridgeState,
+    broker: &Arc<FileBroker>,
+    host: &mut dyn BridgeHost,
+) -> Outcome {
+    match begin_bridge_request(request, state, broker, host) {
+        Step::Done(outcome) => outcome,
+        Step::Job(job) => {
+            let result = job();
+            state.finish(result)
+        }
     }
 }
 
@@ -445,6 +518,11 @@ fn pick_save(
     broker: &FileBroker,
     host: &mut dyn BridgeHost,
 ) -> Outcome {
+    // Une nouvelle demande d'enregistrement abandonne l'écriture restée en cours : son ticket est
+    // révoqué pour qu'elle ne bloque pas les autres.
+    if let Some(abandoned) = state.staging.as_ref().map(|staging| staging.ticket) {
+        state.forget_write(abandoned, broker);
+    }
     if state.write_tickets.len() >= MAX_WRITE_TICKETS {
         return error_reply(id, "files.error.ticket_exhausted");
     }
@@ -476,38 +554,44 @@ fn file_name_b64(path: &Path) -> String {
     encode_base64(name.as_bytes())
 }
 
-fn read_ticket(id: &str, ticket: u64, state: &mut BridgeState, broker: &FileBroker) -> Outcome {
+fn read_ticket(id: String, ticket: u64, state: &mut BridgeState, broker: &Arc<FileBroker>) -> Step {
     if !state.read_tickets.contains(&ticket) {
-        return error_reply(id, "files.error.unknown_ticket");
+        return Step::Done(error_reply(&id, "files.error.unknown_ticket"));
     }
-    // Un ticket de lecture sert une fois : révoqué quel que soit le résultat.
-    let result = broker.read(ReadTicket::from_id(ticket));
-    state.forget_read(ticket, broker);
-    match result {
-        Ok(bytes) => {
-            let payload = shared_payload(bytes.len());
-            bytes_outcome(id, "b64;", &payload, "fb;", bytes)
-        }
-        Err(error) => error_reply(id, error.message_key),
-    }
+    // Un ticket de lecture sert une fois : retiré tout de suite, révoqué par le travail quel que
+    // soit le résultat. La lecture (jusqu'à 256 Mio) ne bloque pas le fil UI.
+    state.read_tickets.retain(|held| *held != ticket);
+    let broker = Arc::clone(broker);
+    Step::Job(Box::new(move || {
+        let ticket = ReadTicket::from_id(ticket);
+        let result = broker.read(ticket);
+        broker.revoke_read(ticket);
+        JobResult::outcome(match result {
+            Ok(bytes) => {
+                let payload = shared_payload(bytes.len());
+                bytes_outcome(&id, "b64;", &payload, "fb;", bytes)
+            }
+            Err(error) => error_reply(&id, error.message_key),
+        })
+    }))
 }
 
 fn write_ticket(
-    id: &str,
+    id: String,
     ticket: u64,
     seq: u32,
     last: bool,
     bytes: Vec<u8>,
     state: &mut BridgeState,
-    broker: &FileBroker,
-) -> Outcome {
+    broker: &Arc<FileBroker>,
+) -> Step {
     if !state.write_tickets.contains(&ticket) {
-        return error_reply(id, "files.error.unknown_ticket");
+        return Step::Done(error_reply(&id, "files.error.unknown_ticket"));
     }
-    let staging = match state.staging.take() {
+    let mut staging = match state.staging.take() {
         Some(staging) if staging.ticket != ticket => {
             state.staging = Some(staging);
-            return error_reply(id, "files.error.queue_full");
+            return Step::Done(error_reply(&id, "files.error.queue_full"));
         }
         Some(staging) => staging,
         None => Staging {
@@ -516,28 +600,33 @@ fn write_ticket(
             bytes: Vec::new(),
         },
     };
-    let mut staging = staging;
     if seq != staging.next_seq || bytes.len() > MAX_CHUNK_BYTES {
         state.forget_write(ticket, broker);
-        return error_reply(id, "files.error.write_sequence");
+        return Step::Done(error_reply(&id, "files.error.write_sequence"));
     }
     if staging.bytes.len() + bytes.len() > MAX_WRITE_BYTES {
         state.forget_write(ticket, broker);
-        return error_reply(id, "files.error.too_large");
+        return Step::Done(error_reply(&id, "files.error.too_large"));
     }
     staging.bytes.extend_from_slice(&bytes);
     staging.next_seq += 1;
     if !last {
         state.staging = Some(staging);
-        return ok_reply(id, "");
+        return Step::Done(ok_reply(&id, ""));
     }
-    // Écriture atomique par le courtier ; le ticket est consommé quel que soit le résultat.
-    let result = broker.write(WriteTicket::from_id(ticket), &staging.bytes);
-    state.forget_write(ticket, broker);
-    match result {
-        Ok(()) => ok_reply(id, ""),
-        Err(error) => error_reply(id, error.message_key),
-    }
+    // Écriture atomique par le courtier, hors du fil UI ; le ticket est consommé quel que soit le
+    // résultat.
+    state.detach_write(ticket);
+    let broker = Arc::clone(broker);
+    Step::Job(Box::new(move || {
+        let ticket = WriteTicket::from_id(ticket);
+        let result = broker.write(ticket, &staging.bytes);
+        broker.revoke_write(ticket);
+        JobResult::outcome(match result {
+            Ok(()) => ok_reply(&id, ""),
+            Err(error) => error_reply(&id, error.message_key),
+        })
+    }))
 }
 
 /// Services natifs réels sur la STA : dialogues communs et ShellExecute.
@@ -963,7 +1052,7 @@ mod tests {
         let dir = work_dir("open");
         let file = dir.join("Lettre é.docx");
         std::fs::write(&file, b"docx bytes").unwrap();
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let mut host = FakeHost::new(Some(file.clone()));
         let reply = process_bridge_request(
@@ -1030,7 +1119,7 @@ mod tests {
         let file = dir.join("big.txt");
         let bytes = vec![b'z'; INLINE_MAX_BYTES + 1];
         std::fs::write(&file, &bytes).unwrap();
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let mut host = FakeHost::new(Some(file));
         let reply = process_bridge_request(
@@ -1096,7 +1185,7 @@ mod tests {
         let dir = work_dir("cancel");
         let pdf = dir.join("a.pdf");
         std::fs::write(&pdf, b"x").unwrap();
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let pick = |host: &mut FakeHost, state: &mut BridgeState| {
             text_of(&process_bridge_request(
@@ -1139,7 +1228,7 @@ mod tests {
         let dir = work_dir("cap");
         let file = dir.join("a.txt");
         std::fs::write(&file, b"x").unwrap();
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let mut host = FakeHost::new(Some(file));
         for index in 0..MAX_OPEN_TICKETS {
@@ -1179,7 +1268,7 @@ mod tests {
         dir: &Path,
         name: &str,
         state: &mut BridgeState,
-        broker: &FileBroker,
+        broker: &Arc<FileBroker>,
     ) -> u64 {
         let mut host = FakeHost::new(Some(dir.join(name)));
         let spec = parse_dialog_spec(
@@ -1206,7 +1295,7 @@ mod tests {
         last: bool,
         bytes: &[u8],
         state: &mut BridgeState,
-        broker: &FileBroker,
+        broker: &Arc<FileBroker>,
     ) -> String {
         let mut host = FakeHost::new(None);
         text_of(&process_bridge_request(
@@ -1226,7 +1315,7 @@ mod tests {
     #[test]
     fn chunked_write_is_atomic_and_consumes_the_ticket() {
         let dir = work_dir("write");
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let ticket = pick_save_ticket(&dir, "out.docx", &mut state, &broker);
         let target = dir.join("out.docx");
@@ -1264,7 +1353,7 @@ mod tests {
     #[test]
     fn write_sequence_errors_discard_the_ticket_and_keep_the_destination() {
         let dir = work_dir("sequence");
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let target = dir.join("keep.txt");
         std::fs::write(&target, b"original").unwrap();
@@ -1305,9 +1394,80 @@ mod tests {
     }
 
     #[test]
+    fn an_abandoned_write_is_released_by_the_next_save_request() {
+        let dir = work_dir("abandoned");
+        let broker = Arc::new(FileBroker::new());
+        let mut state = BridgeState::new(Vec::new());
+        let first = pick_save_ticket(&dir, "a.txt", &mut state, &broker);
+        assert_eq!(
+            write(first, 0, false, b"partial", &mut state, &broker),
+            "us120-file|1|5|ok|"
+        );
+        let second = pick_save_ticket(&dir, "b.txt", &mut state, &broker);
+        assert_eq!(
+            state.outstanding(),
+            (0, 1),
+            "the abandoned ticket was dropped"
+        );
+        assert_eq!(
+            write(first, 1, true, b"x", &mut state, &broker),
+            "us120-file|1|5|error|files.error.unknown_ticket"
+        );
+        assert_eq!(
+            write(second, 0, true, b"fine", &mut state, &broker),
+            "us120-file|1|5|ok|"
+        );
+        assert_eq!(std::fs::read(dir.join("b.txt")).unwrap(), b"fine");
+        assert!(!dir.join("a.txt").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn blocking_work_is_a_job_that_runs_off_the_calling_thread() {
+        let dir = work_dir("job");
+        let file = dir.join("a.txt");
+        std::fs::write(&file, b"x").unwrap();
+        let broker = Arc::new(FileBroker::new());
+        let mut state = BridgeState::new(vec![dir.clone()]);
+        let ticket = state
+            .issue_read_ticket(&broker, &file, TICKET_READ_LIMIT)
+            .unwrap();
+        let mut host = FakeHost::new(None);
+        let caller = std::thread::current().id();
+        let steps = [
+            begin_bridge_request(
+                Request::ReadTicket {
+                    id: "1".into(),
+                    ticket: parse_ticket(&ticket).unwrap().1,
+                },
+                &mut state,
+                &broker,
+                &mut host,
+            ),
+            begin_bridge_request(
+                Request::ListFonts { id: "2".into() },
+                &mut state,
+                &broker,
+                &mut host,
+            ),
+        ];
+        for step in steps {
+            let Step::Job(job) = step else {
+                panic!("read and font scan must be deferred to a worker");
+            };
+            let worker = std::thread::spawn(move || (std::thread::current().id(), job()));
+            let (thread, result) = worker.join().unwrap();
+            assert_ne!(thread, caller);
+            let outcome = state.finish(result);
+            assert!(outcome.text().contains("|ok|b64;"), "{}", outcome.text());
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn save_with_an_unlisted_extension_gets_no_ticket_and_release_revokes() {
         let dir = work_dir("release");
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let mut host = FakeHost::new(Some(dir.join("x.exe")));
         let spec = parse_dialog_spec(&spec_b64("S\nfilter:txt=Texte"), true).unwrap();
@@ -1353,7 +1513,7 @@ mod tests {
         let dir = work_dir("forged");
         let file = dir.join("secret.txt");
         std::fs::write(&file, b"secret").unwrap();
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         // Un ticket existant du courtier mais jamais remis au JS par le pont.
         let internal = broker.grant_read(&file, 100).unwrap();
         let mut state = BridgeState::new(Vec::new());
@@ -1395,7 +1555,7 @@ mod tests {
     fn font_list_then_read_by_opaque_id_only() {
         let dir = work_dir("fonts");
         write_test_font(&dir, "a.ttf", "Zeta");
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(vec![dir.clone()]);
         let mut host = FakeHost::new(None);
         let early = process_bridge_request(
@@ -1450,7 +1610,7 @@ mod tests {
 
     #[test]
     fn open_url_goes_through_the_host_and_reports_its_error_key() {
-        let broker = FileBroker::new();
+        let broker = Arc::new(FileBroker::new());
         let mut state = BridgeState::new(Vec::new());
         let mut host = FakeHost::new(None);
         let ok = process_bridge_request(

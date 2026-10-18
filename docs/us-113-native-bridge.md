@@ -79,6 +79,19 @@ ajoutée). Les deux interfaces sont obtenues par `QueryInterface` à chaque envo
   `note_acquired`/`release_interface` : le test `com_reference_ledger_balances_over_100_cycles`
   poste un tampon à chaque cycle et exige `acquired == released`.
 
+## Fil UI et fils de travail
+
+Les dialogues et `ShellExecuteW` restent sur la STA (modaux par nature). La lecture d'un
+ticket, l'écriture atomique finale et le balayage des polices (`readTicket`, dernier
+`writeTicket`, `listFonts`, `readFont`) sont des travaux (`bridge_ops::Job`) exécutés sur un
+fil `atelier-bridge-job` (4 au plus en parallèle, sinon `files.error.queue_full`) ; ils ne
+touchent qu'au courtier partagé et à leurs propres données. Le fil poste
+`WM_ATELIER_BRIDGE_DONE` ; la STA applique le résultat (`BridgeState::finish`) et poste la
+réponse, différée par minuterie de 50 ms tant qu'un dialogue modal détient l'état du pont.
+Un ticket de lecture est retiré de l'état dès la requête, un ticket d'écriture dès le dernier
+morceau. Une écriture abandonnée en cours de morceaux est libérée (ticket révoqué) par la
+demande `pickSave` suivante.
+
 ## Mesure : fichier de 100 Mio
 
 `target/debug/atelier.exe --bridge-self-check target/res-us113-bridge` (ou
@@ -94,7 +107,7 @@ WebView2 runtime 155.0.4283.62) :
 | release | 5 | **70,4 ms** (66,6 à 72,2) | 56,3 / 76,0 ms |
 | debug | 8 | **70,3 ms** (66,6 à 74,2) | 54,9 / 77,3 ms |
 
-La cible « < 300 ms » est atteinte avec une marge de plus de quatre fois. Le test
+Après le passage des lectures sur un fil de travail (3 passes release : médianes 68,4 / 62,0 / 71,3 ms ; debug 67,6 ms ; un essai isolé a atteint 916 ms et 334 ms sous charge machine, hors médiane), la cible « < 300 ms » est atteinte avec une marge de plus de quatre fois. Le test
 d’intégration `crates/desktop-win/tests/us113_bridge.rs` la fait respecter
 (médiane < 300 ms, tampons reçus = libérés, aucune fuite d’objet de callback). Le coût
 est dominé par deux copies de 100 Mio (lecture du fichier, puis tampon partagé) ; une
@@ -103,11 +116,11 @@ lecture directe dans le tampon n’a pas été nécessaire.
 Le même diagnostic vérifie sans dialogue interactif : lecture en ligne, écriture
 atomique par morceaux (300 000 octets vérifiés sur disque), liste de 568 polices et
 lecture d’une police par SharedBuffer, refus d’un ticket consommé et d’un
-identifiant de police inconnu, et **ouvre réellement les dialogues communs d’ouverture
+identifiant de police inconnu, et, seulement avec `ATELIER_BRIDGE_DIALOGS=1`, **ouvre réellement les dialogues communs d’ouverture
 et d’enregistrement** avec les six filtres de format avant de les fermer par `WM_CLOSE`
 (minuterie réservée au diagnostic) : les appels `SetFileTypes`, `SetOptions`,
 `SetTitle`, `SetDefaultExtension`, `SetFileName` réussissent et `Show` renvoie
-l’annulation. Une fenêtre de dialogue apparaît donc brièvement pendant ce diagnostic.
+l’annulation. Sans cette variable le diagnostic saute `pickOpen`/`pickSave` (couverts par l'hôte injectable) et le signale dans sa sortie ; avec elle, une fenêtre de dialogue apparaît brièvement.
 
 ## Polices système
 

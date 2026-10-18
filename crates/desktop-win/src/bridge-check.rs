@@ -58,8 +58,11 @@ const START: &str = r#"(()=>{
       const again=await host.readTicket(cfg.trials[0]);
       const all=['txt','docx','docm','dotx','odt','doc'];
       const filters=all.map(format=>({format,label:'Format '+format}));
-      const dialogOpen=await host.pickOpen({title:'Ouvrir (diagnostic)',filters});
-      const dialogSave=await host.pickSave({title:'Enregistrer (diagnostic)',filters,suggestedName:'Document.docx'});
+      let dialogOpen={kind:'skipped'},dialogSave={kind:'skipped'};
+      if(cfg.dialogs){
+        dialogOpen=await host.pickOpen({title:'Ouvrir (diagnostic)',filters});
+        dialogSave=await host.pickSave({title:'Enregistrer (diagnostic)',filters,suggestedName:'Document.docx'});
+      }
       const stats=host.stats();
       window.__atelierUs113Result={
         ok:true,times,median,min:sorted[0],max:sorted[sorted.length-1],smallOk,
@@ -171,8 +174,9 @@ fn run_bridge_cycle(state_file: &Path, cache: &Path) -> io::Result<String> {
         .bridge
         .issue_write_ticket(&runtime.broker, &write_target)
         .map_err(issue)?;
+    let dialogs = std::env::var("ATELIER_BRIDGE_DIALOGS").is_ok_and(|value| value == "1");
     let config = format!(
-        "{{trials:[{}],small:'{small_ticket}',smallText:'{small_text}',write:'{write_ticket}',big:{BIG_BYTES},writeBytes:{WRITE_BYTES}}}",
+        "{{trials:[{}],small:'{small_ticket}',smallText:'{small_text}',write:'{write_ticket}',big:{BIG_BYTES},writeBytes:{WRITE_BYTES},dialogs:{dialogs}}}",
         trials
             .iter()
             .map(|ticket| format!("'{ticket}'"))
@@ -201,7 +205,7 @@ fn run_bridge_cycle(state_file: &Path, cache: &Path) -> io::Result<String> {
     pump_until_webview_ready(hwnd, &mut context)?;
     // Les dialogues communs ouverts par le diagnostic sont fermés (annulés) par cette minuterie.
     // SAFETY: hwnd est la fenêtre masquée du diagnostic.
-    if unsafe { SetTimer(hwnd, TIMER_DIAG_DIALOG_CLOSE, 150, null_mut()) } == 0 {
+    if dialogs && unsafe { SetTimer(hwnd, TIMER_DIAG_DIALOG_CLOSE, 150, null_mut()) } == 0 {
         return Err(error_from_last("SetTimer(bridge dialog close)"));
     }
 
@@ -249,12 +253,21 @@ fn run_bridge_cycle(state_file: &Path, cache: &Path) -> io::Result<String> {
         "\"badKey\":\"fonts.error.unknown_id\"",
         "\"spentKey\":\"files.error.unknown_ticket\"",
         "\"held\":0",
-        "\"dialogOpen\":\"cancelled\"",
-        "\"dialogSave\":\"cancelled\"",
     ] {
         if !payload.contains(needle) {
             return Err(io::Error::other(format!(
                 "bridge self-check failed ({needle} missing; shared posted={posted} failed={failed}): {payload}"
+            )));
+        }
+    }
+    let dialog_state = if dialogs { "cancelled" } else { "skipped" };
+    for needle in [
+        format!("\"dialogOpen\":\"{dialog_state}\""),
+        format!("\"dialogSave\":\"{dialog_state}\""),
+    ] {
+        if !payload.contains(&needle) {
+            return Err(io::Error::other(format!(
+                "bridge self-check failed ({needle} missing): {payload}"
             )));
         }
     }
@@ -292,6 +305,11 @@ fn run_bridge_cycle(state_file: &Path, cache: &Path) -> io::Result<String> {
         )));
     }
     let version = webview::probe_runtime()?.unwrap_or_default();
+    let dialog_report = if dialogs {
+        "real common open/save dialogs shown with 6 format filters and cancelled"
+    } else {
+        "interactive dialogs skipped (set ATELIER_BRIDGE_DIALOGS=1 to open and cancel the real ones)"
+    };
     let verdict = if median < TARGET_MS { "MET" } else { "NOT MET" };
 
     // SAFETY: même fenêtre ; la minuterie n'est plus utile.
@@ -327,7 +345,7 @@ fn run_bridge_cycle(state_file: &Path, cache: &Path) -> io::Result<String> {
     let _ = std::fs::remove_file(&write_target);
     Ok(format!(
         "bridge: shared-buffer read of {} MiB x{TRIALS}: median={median:.1} ms min={min:.1} ms max={max:.1} ms (target < {TARGET_MS} ms: {verdict}); \
-         buffers posted={posted} received={received} released={released}; real common open/save dialogs shown with 6 format filters and cancelled, small inline read, {WRITE_BYTES}-byte chunked atomic write, \
+         buffers posted={posted} received={received} released={released}; {dialog_report}, small inline read, {WRITE_BYTES}-byte chunked atomic write, \
          fonts={} (font read {}), spent/unknown tickets refused; WebView2 runtime {version}",
         BIG_BYTES >> 20,
         json_number(&payload, "fonts").unwrap_or(0.0),

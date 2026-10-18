@@ -672,7 +672,7 @@ fn identity_for_file(file: &File, metadata: &fs::Metadata) -> Result<FileIdentit
 }
 
 #[cfg(windows)]
-fn open_read_without_reparse(path: &Path) -> io::Result<File> {
+pub(crate) fn open_read_without_reparse(path: &Path) -> io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     OpenOptions::new()
@@ -713,7 +713,7 @@ fn read_bounded(
 }
 
 #[cfg(not(windows))]
-fn open_read_without_reparse(path: &Path) -> io::Result<File> {
+pub(crate) fn open_read_without_reparse(path: &Path) -> io::Result<File> {
     OpenOptions::new().read(true).open(path)
 }
 
