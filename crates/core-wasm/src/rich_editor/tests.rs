@@ -1422,6 +1422,40 @@ fn a_far_jump_in_a_read_only_document_and_a_closed_document() {
 }
 
 #[test]
+fn statistics_is_bounded_and_follows_the_document() {
+    let mut h = Harness::new();
+    h.txt(&long_txt(4_000));
+    let first = match h.send(1, Command::Statistics) {
+        Response::Statistics {
+            document,
+            layout_complete,
+            ..
+        } => (document, layout_complete),
+        other => panic!("{other:?}"),
+    };
+    // At most a few paragraphs of layout: not complete, counts of the text exact.
+    assert!(!first.1);
+    assert_eq!(first.0.paragraphs, 4_000);
+    let again = match h.send(1, Command::Statistics) {
+        Response::Statistics { document, .. } => document,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(again.words, first.0.words, "memoised counts are the same");
+    h.select(0, 0);
+    h.insert("un deux trois ");
+    let after = match h.send(1, Command::Statistics) {
+        Response::Statistics { document, .. } => document,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(after.words, first.0.words + 3, "an edit refreshes the memo");
+    h.state(Command::Undo);
+    match h.send(1, Command::Statistics) {
+        Response::Statistics { document, .. } => assert_eq!(document.words, first.0.words),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn a_lost_reply_makes_the_next_state_invalidate_everything() {
     let mut h = Harness::new();
     h.txt(&"mot ".repeat(2000));

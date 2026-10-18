@@ -54,7 +54,7 @@ Mesures (`cargo run --release --locked --offline -p atelier-core-wasm --example 
 | 12 000 | Maj+Ctrl+Fin | 710 ms | 7,7 ms | 2 032 ms |
 | 12 000 | clic lointain | 710 ms | 7,7 ms | 1 934 ms |
 
-Le travail total pour atteindre la fin est inchangé (la mise en page est la même) ; il ne bloque plus la commande. Le pas de 64 de la pompe réduit les allers-retours à environ 45 (3 000 paragraphes) ou 190 (12 000). Non traités ici : `Statistics` (`STATISTICS_LAYOUT_BUDGET`) et la recherche, qui complètent la mise en page à la demande.
+Le travail total pour atteindre la fin est inchangé (la mise en page est la même) ; il ne bloque plus la commande. Le pas de 64 de la pompe réduit les allers-retours à environ 45 (3 000 paragraphes) ou 190 (12 000). `Statistics` suit la même règle : `STATISTICS_LAYOUT_BUDGET` = 32 paragraphes (pas de 16), `layout_complete=0` tant que la mise en page n'est pas finie (le client affiche lignes et pages « inconnues »), et le décompte du texte est mémorisé par révision (`stats_memo`). Mesuré sur 12 000 paragraphes : 177 à 188 ms avant par appel ; 10,6 ms au premier appel et 5,5 ms ensuite après (3 000 : 179 puis 175 ms avant, 7,1 puis 5,6 ms après). Frappe et annulation sans caret (banc, 3 000 et 12 000) : 2,9 ms et 2,8 ms. Haut, Bas, PageHaut, PageBas, Début et Fin sans caret sont mémorisés par le client (dernière commande seulement) et rejoués à l'arrivée du caret ; toute commande plus récente, la fermeture ou un nouvel `Open` l'annule. Le défilement vers le caret en attente est annulé par la molette, le toucher, un clic ou une touche sur la zone de défilement, et par le remplacement ou la fermeture du document. Non traitée : la recherche (`Search`) lit le texte sans mise en page.
 
 ## Limites connues
 

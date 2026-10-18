@@ -80,6 +80,11 @@ struct Session {
     /// Page changes found by a layout step outside a `State` (while a move
     /// waits for the layout to reach its target); the next `State` reports them.
     pending: PageDelta,
+    /// Document counts of `Statistics` (without lines and pages), by revision.
+    stats_memo: Option<(
+        (u64, usize, usize),
+        atelier_text_model::statistics::Statistics,
+    )>,
     /// A reply was lost (encoding failure, ABI limit): the next `State`
     /// invalidates every page and carries the text window.
     resync: bool,
@@ -288,6 +293,7 @@ impl Session {
             txt,
             origin,
             pending: PageDelta::default(),
+            stats_memo: None,
             resync: false,
             epoch: 0,
         })

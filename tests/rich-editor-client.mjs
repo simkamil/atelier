@@ -891,5 +891,34 @@ await test("a second jump before the pump finishes, a Resync and a closed docume
   client.dispose();
 });
 
+await test("an Up or End that found no caret is replayed once the caret arrives; a newer command cancels it", async () => {
+  const { client, transport, engine } = jumpSetup({ layoutBudget: 4 });
+  await client.open(OPEN);
+  client.stopPump();
+  await client.idle();
+  await client.command({ type: "setSelection", anchor: 99999n, focus: 99999n, upstream: false });
+  await client.command({ type: "move", direction: "up", extend: false });
+  const moves = () => transport.log.filter((x) => x === "move").length;
+  assert.equal(moves(), 1);
+  client.startPump();
+  await client.whenLayoutComplete();
+  await client.idle();
+  assert.equal(moves(), 2, "the Up was replayed once the caret was there");
+  assert.notEqual(client.cache.caret, null);
+  // Not replayed after a newer command.
+  const { client: second, transport: t2 } = jumpSetup({ layoutBudget: 4 });
+  await second.open(OPEN);
+  second.stopPump();
+  await second.idle();
+  await second.command({ type: "setSelection", anchor: 99999n, focus: 99999n, upstream: false });
+  await second.command({ type: "move", direction: "pageDown", extend: false });
+  await second.command({ type: "insertText", text: "a" });
+  second.startPump();
+  await second.whenLayoutComplete();
+  await second.idle();
+  assert.equal(t2.log.filter((x) => x === "move").length, 1, "superseded move is dropped");
+  client.dispose(); second.dispose();
+});
+
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }
 console.log("rich-editor-client: all tests passed");

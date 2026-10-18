@@ -465,7 +465,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     if (documentReplaced || key !== publishedKey) {
       publishedKey = key;
       replacedPending = false;
-      if (selectionMoved && next.caret) scrollWanted = true;
+      if (selectionMoved && (next.caret || !next.layoutComplete)) scrollWanted = true;
       updateViewport();
       if (documentReplaced || previous?.readOnly !== next.readOnly || previous?.hasRevisions !== next.hasRevisions) announceReadOnly(next);
       try { onState(next, { documentReplaced }); } catch { /* UI callbacks are isolated */ }
@@ -877,6 +877,10 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     modalOpen: isZoomModalOpen(globalThis.document), getZoom: () => pageZoom,
     setZoom: (value, point) => applyZoom(value, point), scrollport });
   scrollport.addEventListener("wheel", onWheel, { passive: false });
+  // The user takes the scroll over (wheel, touch, scrollbar or scrolling keys): a caret still to come no longer scrolls the view.
+  const onUserScroll = () => { scrollWanted = false; };
+  const USER_SCROLL = ["wheel", "touchmove", "pointerdown", "keydown"];
+  for (const type of USER_SCROLL) scrollport.addEventListener(type, onUserScroll, { passive: true });
   globalThis.addEventListener?.("resize", scheduleViewport);
   let fitResizeFrame = 0;
   const scheduleRefit = () => {
@@ -895,6 +899,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     const spec = format === "blank" ? { kind: "blank", profile: "txt", data: new Uint8Array() }
       : format === "txt" ? { kind: "txt", profile: "txt", data } : { kind: "docx", profile: "document", data };
     replacedPending = true;
+    scrollWanted = false;
     publishedKey = null;
     images.clear();
     highlight = [];
@@ -1282,6 +1287,8 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       if (viewportFrame) cancelAnimationFrame(viewportFrame);
       scrollport.removeEventListener("scroll", updateViewport);
       scrollport.removeEventListener("wheel", onWheel);
+      for (const type of USER_SCROLL) scrollport.removeEventListener(type, onUserScroll);
+      scrollWanted = false;
       canvas.removeEventListener("dragover", onDragOver);
       canvas.removeEventListener("drop", onDrop);
       mouseSelection.dispose();

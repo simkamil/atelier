@@ -64,6 +64,8 @@ function linkSignals(signals) {
  */
 /** Paragraphs per Layout command while a selection waits for its caret (about 10 ms in release). */
 const JUMP_LAYOUT_BUDGET = 64;
+/** Moves the engine refuses while their target is not laid out (no caret): replayed once the caret is there. */
+const REPLAYED_MOVES = new Set(["up", "down", "pageUp", "pageDown", "home", "end"]);
 const CARET_COMMANDS = new Set(["move", "setSelection", "selectUnit", "insertText", "delete", "replaceRange", "undo", "redo", "insertImage"]);
 
 export function createRichEditorClient({
@@ -252,6 +254,8 @@ export function createRichEditorClient({
   }
 
   let awaitingCaret = false;
+  /** Last Up/Down/PageUp/PageDown/Home/End that found no caret to start from; replayed when the caret arrives. */
+  let replayMove = null;
 
   function pumpWanted() { return opened && !pumpHalt && !cache.layoutComplete; }
 
@@ -264,6 +268,12 @@ export function createRichEditorClient({
         report(error);
         return false;
       }
+      return true;
+    }
+    if (replayMove && opened && cache.caret) {
+      const move = replayMove;
+      replayMove = null;
+      try { await guarded(move, undefined); } catch (error) { if (disposed) return false; report(error); }
       return true;
     }
     if (visible && opened && fillBlockedVersion !== cache.version) {
@@ -424,6 +434,7 @@ export function createRichEditorClient({
         pumpHalt = null;
         fillBlockedVersion = -1;
         awaitingCaret = false;
+        replayMove = null;
         needsResync = false;
         pumpController = new AbortController();
         dropSelection();
@@ -444,8 +455,10 @@ export function createRichEditorClient({
     command(command, { signal: callerSignal } = {}) {
       if (command?.type === "open") return Promise.reject(new TypeError("Use open() to open a document."));
       return enqueue(async () => {
-        if (command?.type === "close") return closeExchange(callerSignal);
+        if (command?.type === "close") { replayMove = null; return closeExchange(callerSignal); }
+        replayMove = null; // a newer command supersedes a move that waited for its caret
         const result = await guarded(command, callerSignal);
+        if (command?.type === "move" && REPLAYED_MOVES.has(command.direction) && cache.caret === null && !cache.layoutComplete) replayMove = command;
         // A selection command that left the caret unplaced (target not laid out yet): the pump steps faster until it shows.
         if (CARET_COMMANDS.has(command?.type)) awaitingCaret = cache.caret === null && !cache.layoutComplete;
         return result;

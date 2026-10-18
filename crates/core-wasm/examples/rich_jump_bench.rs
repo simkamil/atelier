@@ -55,12 +55,57 @@ mod host {
         (first, max, calls, total)
     }
 
+    /// Statistics (twice: the second is memoised), a keystroke and an undo
+    /// while the caret is absent, on a document of `paragraphs` paragraphs.
+    fn others(paragraphs: usize, text: &str) {
+        let (mut editor, mut n) = (RichEditor::default(), 0u32);
+        send(
+            &mut editor,
+            &mut n,
+            Command::Open {
+                kind: OpenKind::Txt,
+                profile: Profile::Txt,
+                data: text.as_bytes().to_vec(),
+            },
+        );
+        let (_, first) = send(&mut editor, &mut n, Command::Statistics);
+        let (_, second) = send(&mut editor, &mut n, Command::Statistics);
+        let (_, third) = send(&mut editor, &mut n, Command::Statistics);
+        println!(
+            "{paragraphs} paragraphs Statistics: 1st {first:.1} ms, 2nd {second:.1} ms, 3rd {third:.1} ms"
+        );
+        let (r, jump) = send(
+            &mut editor,
+            &mut n,
+            Command::Move {
+                direction: Direction::DocumentEnd,
+                extend: false,
+            },
+        );
+        let s = state(r);
+        let (r, typed) = send(
+            &mut editor,
+            &mut n,
+            Command::InsertText { text: "x".into() },
+        );
+        let t = state(r);
+        let (r, undone) = send(&mut editor, &mut n, Command::Undo);
+        let u = state(r);
+        println!(
+            "{paragraphs} paragraphs without caret (caret after jump: {}): jump {jump:.1} ms, keystroke {typed:.1} ms (caret {}), undo {undone:.1} ms (caret {})",
+            s.caret.is_some(),
+            t.caret.is_some(),
+            u.caret.is_some()
+        );
+    }
+
     pub fn run() {
         for paragraphs in [3_000usize, 12_000] {
             let text: String = (0..paragraphs)
                 .map(|i| format!("Paragraphe numero {i} avec quelques mots"))
                 .collect::<Vec<_>>()
                 .join("\n");
+            others(paragraphs, &text);
             let far = (paragraphs as u64) * 40;
             let scenarios: [(&str, bool, Command); 3] = [
                 (
