@@ -664,3 +664,48 @@ fn properties_of_an_opened_docx_are_edited_in_its_package() {
     f.state(Command::InsertText { text: "x".into() });
     assert_eq!(f.properties().editable[6], "alpha, beta");
 }
+
+#[test]
+fn undo_back_to_the_saved_point_makes_the_document_clean_again() {
+    let mut f = Find::new();
+    f.txt("");
+    let typed = f.state(Command::InsertText { text: "ab".into() });
+    assert!(typed.modified);
+    let saved = f.save(SaveFormat::Txt);
+    assert!(!saved.is_empty());
+    assert!(!f.state(Command::MarkSaved { revision: 1 }).modified);
+    let more = f.state(Command::InsertText { text: "cd".into() });
+    assert!(more.modified);
+    let undone = f.state(Command::Undo);
+    assert_eq!(f.text(), "ab");
+    assert!(
+        undone.revision > 1 && !undone.modified,
+        "the history is back at the saved point"
+    );
+    assert!(f.state(Command::Redo).modified);
+    assert!(!f.state(Command::Undo).modified);
+    // Undoing past the saved point is a change; redoing returns to it.
+    assert!(f.state(Command::Undo).modified);
+    assert!(!f.state(Command::Redo).modified);
+    // A replacement undone is clean again too.
+    f.state(Command::InsertText { text: " ab".into() });
+    let revision = f.revision();
+    f.state(Command::MarkSaved { revision });
+    let done = f.replace_all("ab", "x");
+    assert!(done.1.modified);
+    assert!(!f.state(Command::Undo).modified);
+}
+
+#[test]
+fn a_text_save_does_not_take_the_properties() {
+    let mut f = Find::new();
+    f.open(OpenKind::Blank, Profile::Document, &[]);
+    assert!(f.apply(0, "Titre").state.modified);
+    f.save(SaveFormat::Txt);
+    assert!(
+        f.state(Command::MarkSaved { revision: 0 }).modified,
+        "the title is in no file yet"
+    );
+    f.save(SaveFormat::Docx);
+    assert!(!f.state(Command::MarkSaved { revision: 0 }).modified);
+}

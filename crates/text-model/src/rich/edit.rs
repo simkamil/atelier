@@ -39,6 +39,7 @@
 //!   unexpected failure.
 
 use super::NodeId;
+use super::attrs::CharAttrs;
 use super::document::RichDocument;
 use super::error::RichError;
 use super::flat::{EditOutcome, FlatEdit, FlatError, FlatIndex, LayoutScope};
@@ -87,6 +88,9 @@ impl Meta {
 
 /// Operations to apply, in order, to perform an item.
 struct Item {
+    /// Identifies the step in the history; undo and redo keep it, so that the
+    /// position of the history can be compared with an earlier one.
+    id: u64,
     ops: Vec<RichOp>,
     meta: Meta,
     /// Items undone or redone together with this one: the top item of a group
@@ -169,6 +173,10 @@ pub(crate) struct History {
     undo: Vec<Item>,
     redo: Vec<Item>,
     revision: u64,
+    /// Last step identifier given.
+    serial: u64,
+    /// Times the stacks were emptied: a position of an earlier life is never equal.
+    cleared: u64,
 }
 
 /// Makes room for `count` more items on a stack without dropping any of them
@@ -185,7 +193,20 @@ impl History {
             undo: Vec::new(),
             redo: Vec::new(),
             revision: self.revision,
+            serial: self.serial,
+            cleared: self.cleared + 1,
         }
+    }
+
+    pub(crate) fn next_id(&mut self) -> u64 {
+        self.serial += 1;
+        self.serial
+    }
+
+    /// Where the history stands: the step on top of the undo stack. Two equal
+    /// positions mean the same sequence of edits, whatever the revision.
+    pub(crate) fn position(&self) -> (u64, u64) {
+        (self.cleared, self.undo.last().map_or(0, |item| item.id))
     }
 
     pub(crate) fn revision(&self) -> u64 {
@@ -199,6 +220,7 @@ impl History {
 
     /// Forgets both stacks (the revision keeps counting).
     pub(crate) fn clear(&mut self) {
+        self.cleared += 1;
         self.undo.clear();
         self.redo.clear();
     }
@@ -286,16 +308,40 @@ struct Applied {
 
 /// `cur` with `text` inserted at the flat offset `at`: one paragraph, or
 /// several when `text` holds `\n`.
-fn insert_pieces(mut cur: Paragraph, at: usize, text: &str) -> Result<Vec<Paragraph>, FlatError> {
+///
+/// `lead` are the attributes of the first character that the edit replaced:
+/// the new text takes them instead of those of the character before it.
+fn insert_pieces(
+    mut cur: Paragraph,
+    at: usize,
+    text: &str,
+    lead: Option<CharAttrs>,
+) -> Result<Vec<Paragraph>, FlatError> {
+    // Gives the text just inserted at flat offset `from` the attributes of `lead`.
+    let restyle = |p: &mut Paragraph, from: usize, len: usize, inherited: &CharAttrs| {
+        let Some(lead) = lead.as_ref().filter(|l| *l != inherited && len > 0) else {
+            return;
+        };
+        if let Ok((offset, _)) = p.cut(from) {
+            // A cluster merged with its neighbour cannot be split: keep what was inherited.
+            let _ = p.set_char_attrs(offset, offset + len, lead, inherited);
+        }
+    };
     if !text.contains('\n') {
+        let inherited = cur.attrs_before_flat(at);
         cur.insert_flat(at, text)?;
+        restyle(&mut cur, at, text.len(), &inherited);
         return Ok(vec![cur]);
     }
     let segments: Vec<&str> = text.split('\n').collect();
-    let inherit = cur.attrs_before_flat(at);
+    let inherited = cur.attrs_before_flat(at);
+    let inherit = lead.clone().unwrap_or_else(|| inherited.clone());
     let tail = cur.split_flat(at)?;
     let mut head = cur;
-    head.insert_flat(flat_len(&head), segments.first().copied().unwrap_or(""))?;
+    let head_at = flat_len(&head);
+    let first = segments.first().copied().unwrap_or("");
+    head.insert_flat(head_at, first)?;
+    restyle(&mut head, head_at, first.len(), &inherited);
     let make = |text: &str| Paragraph {
         text: text.to_owned(),
         runs: if inherit.is_empty() || text.is_empty() {
@@ -361,6 +407,12 @@ impl RichDocument {
             Some(ap.paragraph(e1.id)?)
         };
         let mut rest: Vec<Entry> = Vec::new();
+        // The text that replaces a range looks like the start of that range.
+        let lead = if end > start {
+            cur.as_ref().and_then(|p| p.attrs_starting_flat(o1))
+        } else {
+            None
+        };
         if end > start {
             if p1 == p2 {
                 if let Some(p) = cur.as_mut() {
@@ -414,7 +466,7 @@ impl RichDocument {
                 let pos1 = ap.position(e1.parent, e1.id)?;
                 let splits = text.contains('\n');
                 let pre = (merge && splits).then(|| cur.clone());
-                let mut pieces = insert_pieces(cur, o1, text)?.into_iter();
+                let mut pieces = insert_pieces(cur, o1, text, lead)?.into_iter();
                 let first = pieces.next().ok_or(FlatError::Style)?;
                 let others: Vec<Paragraph> = pieces.collect();
                 let mut ids = Vec::with_capacity(others.len());
@@ -600,6 +652,7 @@ impl RichDocument {
             span = Some(span.map_or(here, |s| s.then(here)));
             doc_len = len;
             opposites.push(Item {
+                id: item.id,
                 ops: inverses,
                 meta: item.meta.swapped(),
                 group: 1,
@@ -705,7 +758,9 @@ impl FlatEdit for RichDocument {
         let mut ops = inverses;
         ops.reverse();
         let outcome_meta = meta.clone();
+        let id = self.history.next_id();
         self.history.push_undo(Item {
+            id,
             ops,
             meta: meta.swapped(),
             group: 1,
@@ -736,6 +791,13 @@ impl FlatEdit for RichDocument {
 }
 
 impl RichDocument {
+    /// Where the edit history stands (see `History::position`): equal to an
+    /// earlier value when undo and redo brought the document back to the state
+    /// it had then.
+    pub fn history_position(&self) -> (u64, u64) {
+        self.history.position()
+    }
+
     /// Most ranges one [`RichDocument::replace_ranges`] call takes (half of
     /// the history, so that the group is never cut by the oldest entries).
     pub const MAX_REPLACE_RANGES: usize = MAX_HISTORY / 2;
@@ -891,7 +953,9 @@ impl RichDocument {
         let mut ops = inverses;
         ops.reverse();
         let outcome_meta = meta.clone();
+        let id = self.history.next_id();
         self.history.push_undo(Item {
+            id,
             ops,
             meta: meta.swapped(),
             group: 1,

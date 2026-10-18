@@ -190,9 +190,12 @@ impl Props {
         self.version != self.clean
     }
 
-    /// `Save` serialised the document with the properties as they are now.
-    pub(super) fn note_save(&mut self) {
-        self.saved = self.version;
+    /// `Save` serialised the document; a text file does not hold the
+    /// properties, so only a save in a DOCX format takes them.
+    pub(super) fn note_save(&mut self, keeps_properties: bool) {
+        if keeps_properties {
+            self.saved = self.version;
+        }
     }
 
     /// `MarkSaved`: the file on disk holds what the last `Save` serialised.

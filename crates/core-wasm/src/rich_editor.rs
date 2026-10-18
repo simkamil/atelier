@@ -62,6 +62,9 @@ struct Session {
     base: u64,
     /// Revision (relative) of the last `MarkSaved`.
     saved: u64,
+    /// History position at the last `MarkSaved` (or at `Open`): the document is
+    /// clean when undo and redo bring the history back to it.
+    saved_point: (u64, u64),
     anchor: usize,
     focus: usize,
     upstream: bool,
@@ -259,12 +262,14 @@ impl Session {
     ) -> Result<Self, ErrorCode> {
         let cache = PageCache::new(&doc, txt).map_err(|_| ErrorCode::OpenFailed)?;
         let base = doc.revision();
+        let saved_point = doc.history_position();
         Ok(Self {
             id,
             doc,
             cache,
             base,
             saved: 0,
+            saved_point,
             anchor: 0,
             focus: 0,
             upstream: false,
@@ -460,6 +465,7 @@ impl Session {
                     return Err(ErrorCode::StaleRevision);
                 }
                 self.saved = revision;
+                self.saved_point = self.doc.history_position();
                 self.origin.props.mark_saved();
                 Ok(Response::State(self.state(PageDelta::default(), false)?))
             }
@@ -772,7 +778,7 @@ impl Session {
             focus: self.focus as u64,
             focus_upstream: self.upstream,
             doc_len: self.doc.len() as u64,
-            modified: revision != self.saved || self.origin.props.dirty(),
+            modified: self.doc.history_position() != self.saved_point || self.origin.props.dirty(),
             can_undo: self.doc.can_undo(),
             can_redo: self.doc.can_redo(),
             layout_complete: delta.layout_complete,

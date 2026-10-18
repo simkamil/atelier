@@ -800,6 +800,13 @@ impl Paragraph {
 
     /// The direct attributes of the character just before the flat offset
     /// `at` (none at the start of the text).
+    /// Attributes of the character that starts at the flat offset `at`, if a
+    /// text character does.
+    pub(crate) fn attrs_starting_flat(&self, at: usize) -> Option<CharAttrs> {
+        let (offset, _) = self.cut(at).ok()?;
+        (offset < self.text.len()).then(|| self.attrs_at(offset))
+    }
+
     pub(crate) fn attrs_before_flat(&self, at: usize) -> CharAttrs {
         match self.cut(at) {
             Ok((offset, _)) if offset > 0 => {

@@ -1005,7 +1005,8 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   async function readProperties() {
     checkQueryState();
     const { response } = await send({ type: "propertiesRead" }, "properties");
-    return { kind: "snapshot", ...response.snapshot };
+    // A document that is not a DOCX keeps its properties only in a DOCX file: the dialog says so.
+    return { kind: "snapshot", ...response.snapshot, docxOnly: !["docx", "docm", "dotx"].includes(origin.format) };
   }
 
   /** `changes` maps property names (PROPERTY_FIELDS) to their new text; an empty text removes the property. */

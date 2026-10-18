@@ -283,7 +283,7 @@ impl Session {
         format: SaveFormat,
         stamp: &Stamp,
     ) -> Result<Response, ErrorCode> {
-        self.origin.props.note_save();
+        self.origin.props.note_save(format != SaveFormat::Txt);
         let (bytes, notices) = if format == SaveFormat::Txt {
             self.save_text()?
         } else {
