@@ -20,13 +20,15 @@ export const RICH_LIMITS = Object.freeze({
   minPageDisplayBytes: 44,
   maxInvalidations: 1024,
   maxPages: 1 << 20,
+  maxLayoutBudget: 4096,
+  defaultLayoutBudget: 16,
 });
 export const NO_CARET = 0xffffffff;
 
 export const RichOpcode = Object.freeze({
   Open: 0x0101, Close: 0x0102, InsertText: 0x0103, ReplaceRange: 0x0104, Delete: 0x0105,
   Move: 0x0106, SetSelection: 0x0107, HitTest: 0x0108, Undo: 0x0109, Redo: 0x010a,
-  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d,
+  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
@@ -210,7 +212,14 @@ function parseCommand(opcode, body) {
       command = { type: "move", direction, extend };
       break;
     }
-    case RichOpcode.SetSelection: command = { type: "setSelection", anchor: r.u64(), focus: r.u64() }; break;
+    case RichOpcode.SetSelection: {
+      const anchor = r.u64();
+      const focus = r.u64();
+      const upstream = r.flag();
+      r.zero(3);
+      command = { type: "setSelection", anchor, focus, upstream };
+      break;
+    }
     case RichOpcode.HitTest: {
       const page = r.u32();
       const mode = HIT_MODES[r.u8()];
@@ -238,6 +247,12 @@ function parseCommand(opcode, body) {
       break;
     }
     case RichOpcode.MarkSaved: command = { type: "markSaved", revision: r.u64() }; break;
+    case RichOpcode.Layout: {
+      const budget = r.u32();
+      if (budget < 1 || budget > RICH_LIMITS.maxLayoutBudget) fail("RICH_INVALID_BODY");
+      command = { type: "layout", budget };
+      break;
+    }
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   r.finish();
@@ -292,11 +307,12 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "replaceRange": w.u64(u64(command.start)); w.u64(u64(command.end)); validateEditText(command.text); w.text(command.text); opcode = RichOpcode.ReplaceRange; break;
     case "delete": w.u8(command.forward ? 1 : 0, enumIndex(UNITS, command.unit), 0, 0); opcode = RichOpcode.Delete; break;
     case "move": w.u8(enumIndex(RICH_DIRECTIONS, command.direction), command.extend ? 1 : 0, 0, 0); opcode = RichOpcode.Move; break;
-    case "setSelection": w.u64(u64(command.anchor)); w.u64(u64(command.focus)); opcode = RichOpcode.SetSelection; break;
+    case "setSelection": w.u64(u64(command.anchor)); w.u64(u64(command.focus)); w.u8(command.upstream ? 1 : 0, 0, 0, 0); opcode = RichOpcode.SetSelection; break;
     case "hitTest": w.u32(u32(command.page)); w.u8(enumIndex(HIT_MODES, command.mode), 0, 0, 0); w.f64(command.x); w.f64(command.y); opcode = RichOpcode.HitTest; break;
     case "textWindow": w.u64(u64(command.start)); w.u32(u32(command.len)); opcode = RichOpcode.TextWindow; break;
     case "pages": w.u32(u32(command.first)); w.u32(u32(command.count)); opcode = RichOpcode.Pages; break;
     case "markSaved": w.u64(u64(command.revision)); opcode = RichOpcode.MarkSaved; break;
+    case "layout": w.u32(u32(command.budget)); opcode = RichOpcode.Layout; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
@@ -331,7 +347,7 @@ function writePages(w, pages) {
 function parseState(r) {
   const revision = r.u64(); const anchor = r.u64(); const focus = r.u64(); const docLen = r.u64();
   const flags = r.u32();
-  if ((flags & ~0x1f) !== 0 || anchor > docLen || focus > docLen) fail("RICH_INVALID_BODY");
+  if ((flags & ~0x3f) !== 0 || anchor > docLen || focus > docLen) fail("RICH_INVALID_BODY");
   const pageCount = r.u32();
   if (pageCount > RICH_LIMITS.maxPages) fail("RICH_TOO_MANY_PAGES");
   const caretPage = r.u32();
@@ -360,7 +376,7 @@ function parseState(r) {
     window = { start, text };
   }
   return {
-    revision, anchor, focus, docLen,
+    revision, anchor, focus, focusUpstream: (flags & 0x20) !== 0, docLen,
     modified: (flags & 1) !== 0, canUndo: (flags & 2) !== 0, canRedo: (flags & 4) !== 0, layoutComplete: (flags & 8) !== 0,
     pageCount, caret, invalidated, pages, window,
   };
@@ -368,7 +384,7 @@ function parseState(r) {
 
 function writeState(w, s) {
   for (const v of [s.revision, s.anchor, s.focus, s.docLen]) w.u64(u64(v));
-  w.u32((s.modified ? 1 : 0) | (s.canUndo ? 2 : 0) | (s.canRedo ? 4 : 0) | (s.layoutComplete ? 8 : 0) | (s.window ? 16 : 0));
+  w.u32((s.modified ? 1 : 0) | (s.canUndo ? 2 : 0) | (s.canRedo ? 4 : 0) | (s.layoutComplete ? 8 : 0) | (s.window ? 16 : 0) | (s.focusUpstream ? 32 : 0));
   w.u32(u32(s.pageCount));
   const c = s.caret ?? { page: NO_CARET, x: 0, y: 0, height: 0 };
   w.u32(c.page); w.f64(c.x); w.f64(c.y); w.f64(c.height);
@@ -407,7 +423,13 @@ export function decodeRichReply(bytes) {
         response = { type: "pages", revision, pageCount, pages: readPages(r, pageCount) };
         break;
       }
-      case RichReplyOpcode.HitResult: response = { type: "hitResult", revision: r.u64(), page: r.u32(), position: r.u64() }; break;
+      case RichReplyOpcode.HitResult: {
+        const revision = r.u64(); const page = r.u32(); const position = r.u64();
+        const upstream = r.flag();
+        r.zero(3);
+        response = { type: "hitResult", revision, page, position, upstream };
+        break;
+      }
       case RichReplyOpcode.Closed: response = { type: "closed" }; break;
       default: return fail("RICH_UNKNOWN_OPCODE");
     }
@@ -428,7 +450,7 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     case "state": writeState(w, response); opcode = RichReplyOpcode.State; break;
     case "textWindow": w.u64(u64(response.revision)); w.u64(u64(response.start)); w.u64(u64(response.docLen)); w.text(response.text); opcode = RichReplyOpcode.TextWindow; break;
     case "pages": w.u64(u64(response.revision)); w.u32(u32(response.pageCount)); writePages(w, response.pages); opcode = RichReplyOpcode.Pages; break;
-    case "hitResult": w.u64(u64(response.revision)); w.u32(u32(response.page)); w.u64(u64(response.position)); opcode = RichReplyOpcode.HitResult; break;
+    case "hitResult": w.u64(u64(response.revision)); w.u32(u32(response.page)); w.u64(u64(response.position)); w.u8(response.upstream ? 1 : 0, 0, 0, 0); opcode = RichReplyOpcode.HitResult; break;
     case "closed": opcode = RichReplyOpcode.Closed; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }

@@ -27,7 +27,8 @@ function describeRequest({ docId, requestId, command: c }) {
     replaceRange: () => `ReplaceRange start=${c.start} end=${c.end} text=${textHex(c.text)}`,
     delete: () => `Delete forward=${flag(c.forward)} unit=${UNITS[c.unit]}`,
     move: () => `Move direction=${RICH_DIRECTIONS.indexOf(c.direction)} extend=${flag(c.extend)}`,
-    setSelection: () => `SetSelection anchor=${c.anchor} focus=${c.focus}`,
+    setSelection: () => `SetSelection anchor=${c.anchor} focus=${c.focus} upstream=${flag(c.upstream)}`,
+    layout: () => `Layout budget=${c.budget}`,
     hitTest: () => `HitTest page=${c.page} mode=${MODES[c.mode]} x=${bits(c.x)} y=${bits(c.y)}`,
     undo: () => "Undo",
     redo: () => "Redo",
@@ -45,14 +46,14 @@ function describeReply({ docId, requestId, response: s }) {
   const tail = {
     error: () => `Error code=${s.code}`,
     closed: () => "Closed",
-    hitResult: () => `HitResult revision=${s.revision} page=${s.page} position=${s.position}`,
+    hitResult: () => `HitResult revision=${s.revision} page=${s.page} position=${s.position} upstream=${flag(s.upstream)}`,
     textWindow: () => `TextWindow revision=${s.revision} start=${s.start} doc_len=${s.docLen} text=${textHex(s.text)}`,
     pages: () => `Pages revision=${s.revision} page_count=${s.pageCount} pages=${describePages(s.pages)}`,
     state: () => {
       const caret = s.caret ? `${s.caret.page}:${bits(s.caret.x)}:${bits(s.caret.y)}:${bits(s.caret.height)}` : "none";
       const inval = s.invalidated.length ? s.invalidated.map(([a, b]) => `${a}-${b}`).join(",") : "none";
       const window = s.window ? `${s.window.start}:${textHex(s.window.text)}` : "none";
-      return `State revision=${s.revision} anchor=${s.anchor} focus=${s.focus} doc_len=${s.docLen} modified=${flag(s.modified)} can_undo=${flag(s.canUndo)} can_redo=${flag(s.canRedo)} layout_complete=${flag(s.layoutComplete)} page_count=${s.pageCount} caret=${caret} invalidated=${inval} pages=${describePages(s.pages)} window=${window}`;
+      return `State revision=${s.revision} anchor=${s.anchor} focus=${s.focus} focus_upstream=${flag(s.focusUpstream)} doc_len=${s.docLen} modified=${flag(s.modified)} can_undo=${flag(s.canUndo)} can_redo=${flag(s.canRedo)} layout_complete=${flag(s.layoutComplete)} page_count=${s.pageCount} caret=${caret} invalidated=${inval} pages=${describePages(s.pages)} window=${window}`;
     },
   }[s.type]();
   return `${head} ${tail}`;
@@ -88,7 +89,7 @@ for (const [kind, name, frameHex, expected] of rows) {
     expectCode(() => decode(bytes), code, note !== "nocontext");
   }
 }
-assert.deepEqual(counts, { request: 21, reply: 10, "bad-request": 33, "bad-reply": 13 });
+assert.deepEqual(counts, { request: 24, reply: 10, "bad-request": 38, "bad-reply": 14 });
 
 // Truncation: every strict prefix of a valid frame is rejected, never thrown as a foreign error.
 for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {
@@ -138,7 +139,7 @@ for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || ro
 const atdl = (fill) => { const p = new Uint8Array(RICH_LIMITS.minPageDisplayBytes); p.set([0x41, 0x54, 0x44, 0x4c, 1]); p[43] = fill; return p; };
 const limitState = () => ({
   type: "state", revision: 1n, anchor: 0n, focus: 0n, docLen: BigInt(RICH_LIMITS.maxWindowBytes),
-  modified: false, canUndo: false, canRedo: false, layoutComplete: true, pageCount: 40, caret: null,
+  focusUpstream: false, modified: false, canUndo: false, canRedo: false, layoutComplete: true, pageCount: 40, caret: null,
   invalidated: Array.from({ length: RICH_LIMITS.maxInvalidations }, (_, i) => [i * 2, i * 2 + 1]),
   pages: Array.from({ length: RICH_LIMITS.maxPagesPerResponse }, (_, i) => ({ index: i * 2, display: atdl(i) })),
   window: { start: 0n, text: "a".repeat(RICH_LIMITS.maxWindowBytes) },
