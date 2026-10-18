@@ -77,6 +77,14 @@ pub mod opcode {
     pub const SAVE: u16 = 0x0110;
     pub const INSERT_IMAGE: u16 = 0x0111;
     pub const MAKE_EDITABLE_COPY: u16 = 0x0112;
+    // Search, replace, statistics, properties (R7b-2).
+    pub const SEARCH: u16 = 0x0130;
+    pub const STATISTICS: u16 = 0x0131;
+    pub const SEARCH_RECTS: u16 = 0x0132;
+    pub const REPLACE: u16 = 0x0133;
+    pub const REPLACE_ALL: u16 = 0x0134;
+    pub const PROPERTIES_READ: u16 = 0x0135;
+    pub const PROPERTIES_APPLY: u16 = 0x0136;
     pub const R_ERROR: u16 = 0x8000;
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
@@ -85,6 +93,12 @@ pub mod opcode {
     pub const R_CLOSED: u16 = 0x8104;
     pub const R_ACCESSIBLE_WINDOW: u16 = 0x8105;
     pub const R_SAVE_DATA: u16 = 0x8106;
+    pub const R_SEARCH: u16 = 0x8120;
+    pub const R_STATISTICS: u16 = 0x8121;
+    pub const R_SEARCH_RECTS: u16 = 0x8122;
+    pub const R_REPLACED: u16 = 0x8123;
+    pub const R_PROPERTIES: u16 = 0x8125;
+    pub const R_PROPERTIES_APPLIED: u16 = 0x8126;
 }
 
 /// Stable error codes; the numeric values never change.
@@ -119,6 +133,17 @@ pub enum ErrorCode {
     ImageInvalid = 23,
     /// The revisions of the document cannot be accepted faithfully.
     RevisionsUnsupported = 24,
+    // Search, replace, properties (R7b-2): codes 40 to 49.
+    /// A replacement query is empty.
+    EmptyQuery = 40,
+    /// `Replace` names a range that is not an occurrence, or is not the selection.
+    StaleMatch = 41,
+    /// A query is longer than 1024 bytes.
+    QueryTooLarge = 42,
+    /// The properties of the document could not be read or written.
+    PropertiesFailed = 43,
+    /// `ReplaceAll` would replace more occurrences than one undo step holds.
+    TooManyMatches = 44,
 }
 
 impl ErrorCode {
@@ -148,6 +173,11 @@ impl ErrorCode {
             22 => Self::SaveFailed,
             23 => Self::ImageInvalid,
             24 => Self::RevisionsUnsupported,
+            40 => Self::EmptyQuery,
+            41 => Self::StaleMatch,
+            42 => Self::QueryTooLarge,
+            43 => Self::PropertiesFailed,
+            44 => Self::TooManyMatches,
             _ => return None,
         })
     }
@@ -178,6 +208,11 @@ impl ErrorCode {
             Self::SaveFailed => "RICH_SAVE_FAILED",
             Self::ImageInvalid => "RICH_IMAGE_INVALID",
             Self::RevisionsUnsupported => "RICH_REVISIONS_UNSUPPORTED",
+            Self::EmptyQuery => "RICH_EMPTY_QUERY",
+            Self::StaleMatch => "RICH_STALE_MATCH",
+            Self::QueryTooLarge => "RICH_QUERY_TOO_LARGE",
+            Self::PropertiesFailed => "RICH_PROPERTIES_FAILED",
+            Self::TooManyMatches => "RICH_TOO_MANY_MATCHES",
         }
     }
 }
@@ -347,6 +382,47 @@ pub enum Command {
     MakeEditableCopy {
         stamp: Stamp,
     },
+    /// Occurrences of `query` (R7b-2); answered by `SearchResult`. `revision`
+    /// must be the current one (`RICH_STALE_REVISION`).
+    Search {
+        revision: u64,
+        flags: SearchFlags,
+        query: String,
+    },
+    /// Counts of the document and of the selection; answered by `Statistics`.
+    Statistics,
+    /// Highlight rectangles of flat ranges on pages `first_page ..
+    /// first_page + page_count`; answered by `SearchRects`.
+    SearchRects {
+        revision: u64,
+        first_page: u32,
+        page_count: u32,
+        ranges: Vec<(u64, u64)>,
+    },
+    /// Replaces the occurrence `start..end` (which must be the selection)
+    /// by `replacement`; answered by `Replaced`.
+    Replace {
+        revision: u64,
+        flags: SearchFlags,
+        start: u64,
+        end: u64,
+        query: String,
+        replacement: String,
+    },
+    /// Replaces every occurrence in one undo step; answered by `Replaced`.
+    ReplaceAll {
+        revision: u64,
+        flags: SearchFlags,
+        query: String,
+        replacement: String,
+    },
+    /// The document properties; answered by `Properties`.
+    PropertiesRead,
+    /// Changes properties (`None` leaves a field alone, `Some("")` removes it);
+    /// answered by `PropertiesApplied`.
+    PropertiesApply {
+        changes: [Option<String>; PROPERTY_COUNT],
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -487,6 +563,38 @@ pub enum Response {
         bytes: Vec<u8>,
         notices: Vec<Notice>,
     },
+    SearchResult {
+        revision: u64,
+        /// Occurrences counted, at most `SEARCH_COUNT_CAP`.
+        total: u32,
+        /// More occurrences than `items` carries.
+        truncated: bool,
+        /// `total` stopped at the cap.
+        total_capped: bool,
+        items: Vec<SearchItem>,
+    },
+    Statistics {
+        revision: u64,
+        anchor: u64,
+        focus: u64,
+        /// The line and page counts are final.
+        layout_complete: bool,
+        document: StatCounts,
+        selection: StatCounts,
+    },
+    SearchRects {
+        revision: u64,
+        rects: Vec<HighlightRect>,
+    },
+    Replaced {
+        count: u32,
+        state: State,
+    },
+    Properties {
+        revision: u64,
+        snapshot: PropertiesSnapshot,
+    },
+    PropertiesApplied(PropertiesOutcome),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -801,6 +909,13 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
         opcode::SAVE | opcode::INSERT_IMAGE | opcode::MAKE_EDITABLE_COPY => {
             io::parse_command(opcode, &mut r)?
         }
+        opcode::SEARCH
+        | opcode::STATISTICS
+        | opcode::SEARCH_RECTS
+        | opcode::REPLACE
+        | opcode::REPLACE_ALL
+        | opcode::PROPERTIES_READ
+        | opcode::PROPERTIES_APPLY => find::parse_command(opcode, &mut r)?,
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -923,6 +1038,13 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
         Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy { .. } => {
             io::encode_command(&request.command, &mut b)?
         }
+        Command::Search { .. }
+        | Command::Statistics
+        | Command::SearchRects { .. }
+        | Command::Replace { .. }
+        | Command::ReplaceAll { .. }
+        | Command::PropertiesRead
+        | Command::PropertiesApply { .. } => find::encode_command(&request.command, &mut b)?,
     };
     let frame = header(op, request.doc_id, request.request_id, &b)?;
     decode_request(&frame).map_err(|e| e.code)?;
@@ -1339,6 +1461,12 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
             io::put_save_data(&mut b, *revision, bytes, notices)?;
             opcode::R_SAVE_DATA
         }
+        Response::SearchResult { .. }
+        | Response::Statistics { .. }
+        | Response::SearchRects { .. }
+        | Response::Replaced { .. }
+        | Response::Properties { .. }
+        | Response::PropertiesApplied(_) => find::encode_reply(&reply.response, &mut b)?,
     };
     let frame = header(op, reply.doc_id, reply.request_id, &b)?;
     #[cfg(test)]
@@ -1410,6 +1538,12 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
                 items: read_accessible(&mut r)?,
             },
             opcode::R_SAVE_DATA => io::read_save_data(&mut r)?,
+            opcode::R_SEARCH
+            | opcode::R_STATISTICS
+            | opcode::R_SEARCH_RECTS
+            | opcode::R_REPLACED
+            | opcode::R_PROPERTIES
+            | opcode::R_PROPERTIES_APPLIED => find::parse_reply(op, &mut r)?,
             _ => return Err(Fail::UnknownOpcode),
         };
         r.finish()?;
@@ -1498,12 +1632,22 @@ pub fn split_page_delta(delta: &crate::rich_layout::PageDelta) -> (Vec<u32>, Vec
     (changed, merged)
 }
 
+mod find;
+pub use find::{
+    HighlightRect, MAX_EXCERPT_BYTES, MAX_HIGHLIGHT_RANGES, MAX_HIGHLIGHT_RECTS,
+    MAX_PROPERTY_BYTES, MAX_QUERY_BYTES, MAX_REPLACE_MATCHES, MAX_SEARCH_ITEMS, PROPERTY_COUNT,
+    PropertiesOutcome, PropertiesSnapshot, PropertiesStatus, SEARCH_COUNT_CAP, SearchExcerpt,
+    SearchFlags, SearchItem, StatCounts,
+};
+
 mod io;
 pub use io::{
     MAX_ALT_BYTES, MAX_IMAGE_BYTES, MAX_NOTICE_BYTES, MAX_NOTICES, MAX_SAVE_BYTES, Notice,
     SaveFormat, Stamp, notice,
 };
 
+#[cfg(test)]
+mod find_tests;
 #[cfg(test)]
 mod io_tests;
 #[cfg(test)]

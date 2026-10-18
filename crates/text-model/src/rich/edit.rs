@@ -89,6 +89,78 @@ impl Meta {
 struct Item {
     ops: Vec<RichOp>,
     meta: Meta,
+    /// Items undone or redone together with this one: the top item of a group
+    /// (`replace_ranges`) carries the size of the group, the others one. A
+    /// group is one history step: one undo, one revision.
+    group: usize,
+}
+
+/// What an edit replaced, in bytes and in paragraphs: `removed` units at
+/// `start` became `inserted` units. Several of them in a row compose into the
+/// smallest span that covers all.
+#[derive(Clone, Copy)]
+struct Span {
+    start: usize,
+    removed: usize,
+    inserted: usize,
+    first: usize,
+    removed_paragraphs: usize,
+    inserted_paragraphs: usize,
+}
+
+impl Span {
+    fn of(meta: &Meta) -> Span {
+        Span {
+            start: meta.start,
+            removed: meta.removed_bytes,
+            inserted: meta.inserted_bytes,
+            first: meta.first,
+            removed_paragraphs: meta.removed_paragraphs,
+            inserted_paragraphs: meta.inserted_paragraphs,
+        }
+    }
+
+    /// `then` replaced a part of the document that `self` had already
+    /// replaced, or lies next to or apart from it (coordinates after `self`).
+    fn then(self, then: Span) -> Span {
+        fn hull(
+            (a_start, a_removed, a_inserted): (usize, usize, usize),
+            (b_start, b_removed, b_inserted): (usize, usize, usize),
+        ) -> (usize, usize, usize) {
+            let start = a_start.min(b_start);
+            let end = (a_start + a_inserted).max(b_start + b_removed);
+            let width = end - start;
+            (
+                start,
+                width - a_inserted + a_removed,
+                width - b_removed + b_inserted,
+            )
+        }
+        let (start, removed, inserted) = hull(
+            (self.start, self.removed, self.inserted),
+            (then.start, then.removed, then.inserted),
+        );
+        let (first, removed_paragraphs, inserted_paragraphs) = hull(
+            (
+                self.first,
+                self.removed_paragraphs,
+                self.inserted_paragraphs,
+            ),
+            (
+                then.first,
+                then.removed_paragraphs,
+                then.inserted_paragraphs,
+            ),
+        );
+        Span {
+            start,
+            removed,
+            inserted,
+            first,
+            removed_paragraphs,
+            inserted_paragraphs,
+        }
+    }
 }
 
 /// Undo and redo stacks and the revision counter of the flat edits.
@@ -97,6 +169,13 @@ pub(crate) struct History {
     undo: Vec<Item>,
     redo: Vec<Item>,
     revision: u64,
+}
+
+/// Makes room for `count` more items on a stack without dropping any of them
+/// while they are pushed.
+fn make_room(stack: &mut Vec<Item>, count: usize) {
+    let excess = (stack.len() + count).saturating_sub(MAX_HISTORY);
+    stack.drain(..excess.min(stack.len()));
 }
 
 impl History {
@@ -468,13 +547,10 @@ impl RichDocument {
         }
     }
 
-    /// Performs the top item of the undo (or redo) stack.
-    fn step(&mut self, undo: bool) -> Option<EditOutcome> {
-        let item = if undo {
-            self.history.undo.pop()?
-        } else {
-            self.history.redo.pop()?
-        };
+    /// Applies the operations of one history item; `None` (nothing applied)
+    /// when one of them fails. Returns the inverse operations and the flat
+    /// length after the item.
+    fn apply_item(&mut self, item: &Item) -> Option<(Vec<RichOp>, usize)> {
         let mut tree = self.take_flat();
         let mut inverses = Vec::with_capacity(item.ops.len());
         for op in &item.ops {
@@ -488,7 +564,6 @@ impl RichDocument {
                         let _ = inverse.apply_to(self);
                     }
                     self.put_flat(tree);
-                    self.history.clear();
                     return None;
                 }
             }
@@ -496,18 +571,76 @@ impl RichDocument {
         inverses.reverse();
         tree.splice(item.meta.first, item.meta.before.len(), &item.meta.after);
         let doc_len = tree.total();
-        self.history.revision += 1;
-        let opposite = Item {
-            ops: inverses,
-            meta: item.meta.swapped(),
-        };
-        if undo {
-            self.history.push_redo(opposite);
-        } else {
-            self.history.push_undo(opposite);
-        }
         self.put_flat(tree);
-        Some(self.outcome(&item.meta, doc_len))
+        Some((inverses, doc_len))
+    }
+
+    /// Performs the top item of the undo (or redo) stack, with the rest of its
+    /// group (`replace_ranges`): one step, one revision.
+    fn step(&mut self, undo: bool) -> Option<EditOutcome> {
+        let stack = |h: &mut History| if undo { h.undo.pop() } else { h.redo.pop() };
+        let leader = stack(&mut self.history)?;
+        let size = leader.group.max(1);
+        let mut items = vec![leader];
+        while items.len() < size {
+            match stack(&mut self.history) {
+                Some(item) => items.push(item),
+                None => break,
+            }
+        }
+        let mut span: Option<Span> = None;
+        let mut opposites = Vec::with_capacity(items.len());
+        let (mut last, mut doc_len, mut failed) = (None, 0, false);
+        for item in items {
+            let Some((inverses, len)) = self.apply_item(&item) else {
+                failed = true;
+                break;
+            };
+            let here = Span::of(&item.meta);
+            span = Some(span.map_or(here, |s| s.then(here)));
+            doc_len = len;
+            opposites.push(Item {
+                ops: inverses,
+                meta: item.meta.swapped(),
+                group: 1,
+            });
+            last = Some(item.meta);
+        }
+        if failed {
+            // Nothing can be trusted to come back: the history ends here.
+            self.history.clear();
+        }
+        let meta = last?;
+        self.history.revision += 1;
+        if !failed {
+            let count = opposites.len();
+            if let Some(top) = opposites.last_mut() {
+                top.group = count;
+            }
+            let target = if undo {
+                &mut self.history.redo
+            } else {
+                &mut self.history.undo
+            };
+            make_room(target, count);
+            for item in opposites {
+                if undo {
+                    self.history.push_redo(item);
+                } else {
+                    self.history.push_undo(item);
+                }
+            }
+        }
+        let mut outcome = self.outcome(&meta, doc_len);
+        if let Some(span) = span {
+            outcome.start = span.start;
+            outcome.removed_bytes = span.removed;
+            outcome.inserted_bytes = span.inserted;
+            outcome.first_paragraph = span.first;
+            outcome.removed_paragraphs = span.removed_paragraphs;
+            outcome.inserted_paragraphs = span.inserted_paragraphs;
+        }
+        Some(outcome)
     }
 }
 
@@ -575,6 +708,7 @@ impl FlatEdit for RichDocument {
         self.history.push_undo(Item {
             ops,
             meta: meta.swapped(),
+            group: 1,
         });
         self.put_flat(tree);
         Ok(self.outcome(&outcome_meta, doc_len))
@@ -598,6 +732,110 @@ impl FlatEdit for RichDocument {
 
     fn revision(&self) -> u64 {
         self.history.revision
+    }
+}
+
+impl RichDocument {
+    /// Most ranges one [`RichDocument::replace_ranges`] call takes (half of
+    /// the history, so that the group is never cut by the oldest entries).
+    pub const MAX_REPLACE_RANGES: usize = MAX_HISTORY / 2;
+
+    /// Replaces several ranges in one history step (find and replace all).
+    /// `edits` are `(start, end, text)` in position order, disjoint, each
+    /// valid for [`FlatEdit::replace_range`] on the document as it is now.
+    /// Each range is replaced on its own, so the formatting of what lies
+    /// between them is untouched; one undo (or redo) takes all back (or
+    /// forth) and the revision rises by one. All or nothing: a failure undoes
+    /// the ranges already applied. The outcome covers the smallest span of
+    /// bytes and paragraphs that holds every change; its selection is a caret
+    /// after the last replacement.
+    pub fn replace_ranges(
+        &mut self,
+        edits: &[(usize, usize, &str)],
+    ) -> Result<EditOutcome, FlatError> {
+        if edits.is_empty() {
+            return Ok(self.idle_outcome(0));
+        }
+        if edits.len() > Self::MAX_REPLACE_RANGES {
+            return Err(FlatError::Limit);
+        }
+        let total = self.len();
+        let mut floor = 0;
+        for &(start, end, text) in edits {
+            if start > end || start < floor {
+                return Err(FlatError::InvalidRange);
+            }
+            if end > total {
+                return Err(FlatError::OutOfRange);
+            }
+            check_text(text)?;
+            self.check_position(start)?;
+            self.check_position(end)?;
+            floor = end;
+        }
+        let revision = self.history.revision;
+        let saved_redo = std::mem::take(&mut self.history.redo);
+        make_room(&mut self.history.undo, edits.len());
+        let mut span: Option<Span> = None;
+        // (start, bytes removed, bytes inserted) of the ranges that changed
+        // something, last range first.
+        let mut applied: Vec<(usize, usize, usize)> = Vec::new();
+        for &(start, end, text) in edits.iter().rev() {
+            let before = self.history.revision;
+            match self.replace_range(start, end, text) {
+                Ok(outcome) if self.history.revision != before => {
+                    let here = Span {
+                        start: outcome.start,
+                        removed: outcome.removed_bytes,
+                        inserted: outcome.inserted_bytes,
+                        first: outcome.first_paragraph,
+                        removed_paragraphs: outcome.removed_paragraphs,
+                        inserted_paragraphs: outcome.inserted_paragraphs,
+                    };
+                    span = Some(span.map_or(here, |s| s.then(here)));
+                    applied.push((start, outcome.removed_bytes, outcome.inserted_bytes));
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    for _ in 0..applied.len() {
+                        let _ = self.step(true);
+                    }
+                    self.history.redo = saved_redo;
+                    self.history.revision = revision;
+                    return Err(error);
+                }
+            }
+        }
+        let Some(span) = span else {
+            self.history.redo = saved_redo;
+            return Ok(self.idle_outcome(edits[0].0));
+        };
+        if let Some(top) = self.history.undo.last_mut() {
+            top.group = applied.len();
+        }
+        self.history.revision = revision + 1;
+        // Caret after the last replacement (the first one applied), shifted
+        // by every change before it.
+        let (start, _, inserted) = applied[0];
+        let shift: isize = applied[1..]
+            .iter()
+            .map(|&(_, removed, inserted)| inserted as isize - removed as isize)
+            .sum();
+        let caret = (start + inserted).saturating_add_signed(shift);
+        Ok(EditOutcome {
+            revision: self.history.revision,
+            start: span.start,
+            removed_bytes: span.removed,
+            inserted_bytes: span.inserted,
+            doc_len: self.len(),
+            first_paragraph: span.first,
+            removed_paragraphs: span.removed_paragraphs,
+            inserted_paragraphs: span.inserted_paragraphs,
+            layout_scope: LayoutScope::Paragraphs,
+            selection: (caret, caret),
+            can_undo: !self.history.undo.is_empty(),
+            can_redo: false,
+        })
     }
 }
 
@@ -656,6 +894,7 @@ impl RichDocument {
         self.history.push_undo(Item {
             ops,
             meta: meta.swapped(),
+            group: 1,
         });
         self.put_flat(tree);
         Ok(self.outcome(&outcome_meta, doc_len))

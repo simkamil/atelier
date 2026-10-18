@@ -108,6 +108,14 @@ fn describe_request(r: &Request) -> String {
         Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy { .. } => {
             "see io_tests".into()
         }
+        // The vectors of these are in `find_tests` (tests/rich-editor-find-vectors.txt).
+        Command::Search { .. }
+        | Command::Statistics
+        | Command::SearchRects { .. }
+        | Command::Replace { .. }
+        | Command::ReplaceAll { .. }
+        | Command::PropertiesRead
+        | Command::PropertiesApply { .. } => "see find_tests".into(),
     };
     format!("{head} {tail}")
 }
@@ -224,6 +232,12 @@ fn describe_reply(r: &Reply) -> String {
             )
         }
         Response::SaveData { .. } => "see io_tests".into(),
+        Response::SearchResult { .. }
+        | Response::Statistics { .. }
+        | Response::SearchRects { .. }
+        | Response::Replaced { .. }
+        | Response::Properties { .. }
+        | Response::PropertiesApplied(_) => "see find_tests".into(),
     };
     format!("{head} {tail}")
 }

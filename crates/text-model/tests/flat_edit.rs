@@ -851,3 +851,85 @@ fn insert_object_is_one_undoable_edit_of_three_bytes() {
         FlatError::OutOfRange
     );
 }
+
+#[test]
+fn replace_ranges_is_one_history_step() {
+    let mut doc = body(&["foo bar foo", "x foo", "none"]);
+    let original = flat(&doc);
+    let revision = doc.revision();
+    let edits = [(0, 3, "a"), (8, 11, "b\nc"), (14, 17, "")];
+    let o = doc.replace_ranges(&edits).unwrap();
+    assert_eq!(flat(&doc), "a bar b\nc\nx \nnone");
+    assert_eq!(o.revision, revision + 1);
+    assert_eq!(doc.revision(), revision + 1);
+    assert_eq!(o.doc_len, doc.len());
+    assert_eq!(o.first_paragraph, 0);
+    assert_eq!(o.removed_paragraphs, 2);
+    assert_eq!(o.inserted_paragraphs, 3);
+    assert_eq!(o.start, 0);
+    assert_eq!(o.selection, (12, 12));
+    // The first edit stays visible to a later one: the group is one entry.
+    let undone = doc.undo().unwrap();
+    assert_eq!(flat(&doc), original);
+    assert_eq!(undone.revision, revision + 2);
+    assert!(!doc.can_undo());
+    assert!(doc.can_redo());
+    doc.redo().unwrap();
+    assert_eq!(flat(&doc), "a bar b\nc\nx \nnone");
+    assert_eq!(doc.revision(), revision + 3);
+    doc.undo().unwrap();
+    assert_eq!(flat(&doc), original);
+}
+
+#[test]
+fn replace_ranges_refuses_bad_input_without_changing_anything() {
+    let mut doc = body(&["abc abc"]);
+    let revision = doc.revision();
+    doc.replace_range(0, 0, "z").unwrap();
+    doc.undo().unwrap();
+    let revision = revision + 2;
+    assert!(doc.can_redo());
+    assert_eq!(
+        doc.replace_ranges(&[(4, 7, "x"), (0, 3, "y")]),
+        Err(FlatError::InvalidRange)
+    );
+    assert_eq!(
+        doc.replace_ranges(&[(0, 99, "x")]),
+        Err(FlatError::OutOfRange)
+    );
+    assert_eq!(
+        doc.replace_ranges(&[(0, 3, "\u{FFFC}")]),
+        Err(FlatError::InvalidText)
+    );
+    assert_eq!(flat(&doc), "abc abc");
+    assert_eq!(doc.revision(), revision);
+    assert!(doc.can_redo());
+    // An empty list, or one that changes nothing, leaves the history alone.
+    assert!(doc.replace_ranges(&[]).is_ok());
+    assert!(doc.replace_ranges(&[(0, 3, "abc")]).is_ok());
+    assert_eq!(doc.revision(), revision);
+}
+
+#[test]
+fn replace_ranges_keeps_formatting_between_the_ranges() {
+    let mut doc = body(&["aa bold aa"]);
+    let id = doc.paragraph_ids()[0];
+    apply(
+        &mut doc,
+        vec![RichOp::SetCharAttrs {
+            para: id,
+            start: 3,
+            end: 7,
+            set: bold(),
+            clear: CharAttrs::default(),
+        }],
+    );
+    doc.replace_ranges(&[(0, 2, "b"), (8, 10, "cc")]).unwrap();
+    let p = para_at(&doc, 0);
+    assert_eq!(p.text, "b bold cc");
+    assert!(
+        p.runs
+            .iter()
+            .any(|r| r.start == 2 && r.end == 6 && r.attrs.bold == Some(true))
+    );
+}

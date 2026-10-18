@@ -218,3 +218,7 @@ expectCode(() => encodeRichReply({ docId: 1, requestId: 1, response: { type: "st
 assert.equal(RichErrorCode.constructor, undefined);
 
 console.log(`rich editor protocol: ${rows.length} vectors verified`);
+
+// R7b-2: search, replace, statistics and properties messages (vectors in tests/rich-editor-find-vectors.txt).
+import { verifyFindVectors } from "./rich-editor-find-vectors.mjs";
+console.log(`rich editor find protocol: ${verifyFindVectors()} vectors verified`);

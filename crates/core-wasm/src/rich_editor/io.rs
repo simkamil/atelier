@@ -70,6 +70,8 @@ pub(super) struct Origin {
     pub images: (usize, usize),
     /// Some parts of the DOCX could not be read for tracked changes.
     pub unreadable: bool,
+    /// Document properties of a document without a DOCX package (R7b-2).
+    pub props: super::find::Props,
 }
 
 impl Origin {
@@ -80,6 +82,7 @@ impl Origin {
             has_revisions: false,
             images: (0, 0),
             unreadable: false,
+            props: Default::default(),
         }
     }
 }
@@ -280,6 +283,7 @@ impl Session {
         format: SaveFormat,
         stamp: &Stamp,
     ) -> Result<Response, ErrorCode> {
+        self.origin.props.note_save();
         let (bytes, notices) = if format == SaveFormat::Txt {
             self.save_text()?
         } else {
@@ -439,7 +443,13 @@ impl Session {
                 options.save = Some(
                     properties::context(&self.doc, &stamp).map_err(|_| ErrorCode::SaveFailed)?,
                 );
-                write_new_docx_with_pictures(&input, &options).map_err(failed)?
+                let mut written = write_new_docx_with_pictures(&input, &options).map_err(failed)?;
+                // The properties set by the user live outside the model.
+                written.bytes = self
+                    .origin
+                    .props
+                    .rewrite(std::mem::take(&mut written.bytes))?;
+                written
             }
         };
         let mut notices: Vec<Notice> = written

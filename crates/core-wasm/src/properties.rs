@@ -56,7 +56,7 @@ pub const FIELDS: [&str; 11] = [
     "content_status",
     "language",
 ];
-const LIMITS: [usize; 11] = [
+pub const LIMITS: [usize; 11] = [
     MAX_LINE_CHARS,
     MAX_LINE_CHARS,
     MAX_LINE_CHARS,

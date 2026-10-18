@@ -15,8 +15,13 @@ const REPLY_TYPE = {
   undo: "state", redo: "state", markSaved: "state", layout: "state", resync: "state", textWindow: "textWindow", pages: "pages", close: "closed",
   // US-217 / US-218: replies that carry no page data and never reach the page cache.
   accessibleWindow: "accessibleWindow", save: "saveData", makeEditableCopy: "saveData", insertImage: "state",
+  // R7b-2: search, replace, statistics, properties. `replaced` and `propertiesApplied` carry a State (applied to the cache).
+  search: "searchResult", statistics: "statistics", searchRects: "searchRects", replace: "replaced", replaceAll: "replaced",
+  propertiesRead: "properties", propertiesApply: "propertiesApplied",
 };
-const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData"]);
+const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData", "searchResult", "statistics", "searchRects", "properties"]);
+/** Replies whose result changes the document or the state the cache holds. */
+const STATEFUL = new Set(["state", "replaced", "propertiesApplied"]);
 
 function abortError() { return new DOMException("The operation was aborted.", "AbortError"); }
 const isAbort = (error) => error?.name === "AbortError";
@@ -118,7 +123,7 @@ export function createRichEditorClient({
     }
     if (NOT_CACHE_INPUT.has(response.type)) { settleLayoutWaiters(); return { response, change: null }; }
     let change;
-    try { change = cache.apply(response); } catch (error) {
+    try { change = cache.apply(response.type === "replaced" || response.type === "propertiesApplied" ? response.state : response); } catch (error) {
       // Glyph atlas entries were lost (an abandoned reply the engine counted as sent): the pages that
       // refer to them cannot be trusted, so a `Resync` (new atlas epoch) is requested.
       if (error?.cause?.atlas === true && !disposed) { cache.dropPages(); needsResync = true; }
@@ -150,8 +155,8 @@ export function createRichEditorClient({
       // RICH_FRAME_TOO_LARGE is not a refusal: the engine applied the command, then lost the reply (mark_resync).
       const refused = typeof error?.code === "string" && error.code.startsWith("RICH_") && error.code !== "RICH_FRAME_TOO_LARGE";
       const type = REPLY_TYPE[command.type];
-      if (!refused && (type === "state" || type === "pages") && !disposed && error?.code !== "CLIENT_CLOSED" && error?.code !== "CLIENT_ATLAS_FULL") {
-        if (type === "state") cache.dropPages();
+      if (!refused && (STATEFUL.has(type) || type === "pages") && !disposed && error?.code !== "CLIENT_CLOSED" && error?.code !== "CLIENT_ATLAS_FULL") {
+        if (STATEFUL.has(type)) cache.dropPages();
         needsResync = true;
       }
       throw error;

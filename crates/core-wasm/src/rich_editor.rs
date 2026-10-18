@@ -26,6 +26,9 @@ use crate::rich_protocol::{
 };
 
 mod accessible;
+mod find;
+#[cfg(test)]
+mod find_tests;
 mod io;
 #[cfg(test)]
 mod tests;
@@ -457,6 +460,7 @@ impl Session {
                     return Err(ErrorCode::StaleRevision);
                 }
                 self.saved = revision;
+                self.origin.props.mark_saved();
                 Ok(Response::State(self.state(PageDelta::default(), false)?))
             }
             Command::Layout { budget } => self.finish(PageDelta::default(), budget, false),
@@ -469,6 +473,34 @@ impl Session {
             Command::Save { format, stamp } => self.save(format, &stamp),
             Command::InsertImage { alt, bytes } => self.insert_image(&alt, &bytes),
             Command::MakeEditableCopy { stamp } => self.editable_copy(&stamp),
+            Command::Search {
+                revision,
+                flags,
+                query,
+            } => self.search(revision, flags, &query),
+            Command::Statistics => self.statistics(),
+            Command::SearchRects {
+                revision,
+                first_page,
+                page_count,
+                ranges,
+            } => self.search_rects(revision, first_page, page_count, &ranges),
+            Command::Replace {
+                revision,
+                flags,
+                start,
+                end,
+                query,
+                replacement,
+            } => self.replace_current(revision, flags, (start, end), &query, &replacement),
+            Command::ReplaceAll {
+                revision,
+                flags,
+                query,
+                replacement,
+            } => self.replace_all(revision, flags, &query, &replacement),
+            Command::PropertiesRead => self.properties_read(),
+            Command::PropertiesApply { changes } => self.properties_apply(changes),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(
@@ -740,7 +772,7 @@ impl Session {
             focus: self.focus as u64,
             focus_upstream: self.upstream,
             doc_len: self.doc.len() as u64,
-            modified: revision != self.saved,
+            modified: revision != self.saved || self.origin.props.dirty(),
             can_undo: self.doc.can_undo(),
             can_redo: self.doc.can_redo(),
             layout_complete: delta.layout_complete,

@@ -631,6 +631,116 @@ impl PageCache {
             .collect())
     }
 
+    /// Highlight rectangles of several flat ranges on one page (find and
+    /// replace): the caret window of the page is built once. Returns
+    /// `(index in ranges, rectangle)` in range order and stops after `limit`
+    /// rectangles. A range that is not laid out yet, or that does not touch
+    /// the page, gives nothing.
+    pub fn range_rects(
+        &self,
+        page: u32,
+        ranges: &[(usize, usize)],
+        limit: usize,
+    ) -> Result<Vec<(usize, SelectionRect)>, LayoutError> {
+        if page >= self.page_count() {
+            return Err(LayoutError::PageOutOfRange);
+        }
+        let placements = self.stream.page_placements(page as usize);
+        let (Some(first), Some(last)) = (placements.first(), placements.last()) else {
+            return Err(LayoutError::NotReady);
+        };
+        let (w0, w1) = (first.paragraph_index, last.paragraph_index);
+        let window_start = TextPosition {
+            paragraph_index: w0,
+            byte_offset: 0,
+        };
+        let window_end = TextPosition {
+            paragraph_index: w1,
+            byte_offset: self.infos.get(w1).ok_or(LayoutError::NotReady)?.text_len(),
+        };
+        let layout = self.caret_window(w0, w1)?;
+        let mut out = Vec::new();
+        for (index, &(start, end)) in ranges.iter().enumerate() {
+            let (start, end) = (start.min(end), start.max(end));
+            let (Ok(a), Ok(b)) = (self.text_position(start), self.text_position(end)) else {
+                continue;
+            };
+            let (a, b) = (a.max(window_start), b.min(window_end));
+            if a >= b {
+                continue;
+            }
+            let Ok(rects) = layout.selection_rects(a..b) else {
+                continue;
+            };
+            for r in rects.into_iter().filter(|r| r.page_index == page as usize) {
+                if out.len() >= limit {
+                    return Ok(out);
+                }
+                out.push((
+                    index,
+                    SelectionRect {
+                        page,
+                        x: r.x as f64 / 64.0,
+                        y: r.y as f64 / 64.0,
+                        width: r.width as f64 / 64.0,
+                        height: r.height as f64 / 64.0,
+                    },
+                ));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Lines laid out so far (all of them once the layout is complete).
+    pub fn line_count(&self) -> usize {
+        (0..self.stream.paginated_paragraphs())
+            .map(|p| self.stream.layout(p).map_or(0, |l| l.lines.len()))
+            .sum()
+    }
+
+    /// Lines and pages that the flat range `start..end` touches: a line
+    /// counts when the range holds one of its characters or the paragraph
+    /// break that ends it.
+    pub fn lines_in_range(&self, start: usize, end: usize) -> Result<(usize, usize), LayoutError> {
+        let (start, end) = (start.min(end), start.max(end));
+        let a = self.text_position(start)?;
+        let b = self.text_position(end)?;
+        let mut pages = std::collections::BTreeSet::new();
+        let mut lines = 0usize;
+        for paragraph in a.paragraph_index..=b.paragraph_index {
+            let layout = self.stream.layout(paragraph).ok_or(LayoutError::NotReady)?;
+            let placed = self.stream.placements_of(paragraph);
+            if placed.len() != layout.lines.len() {
+                return Err(LayoutError::NotReady);
+            }
+            let text_len = self
+                .infos
+                .get(paragraph)
+                .ok_or(LayoutError::NotReady)?
+                .text_len();
+            let from = if paragraph == a.paragraph_index {
+                a.byte_offset
+            } else {
+                0
+            };
+            let to = if paragraph == b.paragraph_index {
+                b.byte_offset
+            } else {
+                text_len
+            };
+            let separator = paragraph < b.paragraph_index;
+            for (line, placement) in layout.lines.iter().zip(placed) {
+                let content = line.source.start < to && line.source.end > from;
+                let ends = separator && line.final_line && line.source.end >= from;
+                if content || ends {
+                    lines += 1;
+                    pages.insert(placement.page_index);
+                }
+            }
+        }
+        Ok((lines, pages.len()))
+    }
+
     /// Keeps a copy of a painted page; the buffer of the page it evicts is
     /// reused, so that the copy is a plain memcpy into warm memory.
     fn memoise(&mut self, index: u32, signature: u64, bytes: &[u8]) {
