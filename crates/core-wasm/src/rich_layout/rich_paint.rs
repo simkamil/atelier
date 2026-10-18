@@ -435,3 +435,370 @@ fn color(r: u8, g: u8, b: u8) -> Result<Color, PreviewError> {
 pub(crate) fn render_error(e: impl fmt::Display) -> PreviewError {
     PreviewError::Render(e.to_string())
 }
+
+// ---------------------------------------------------------------------------
+// Direct page writer (editor page cache)
+//
+// `paint_line` builds a `Command` per glyph, which `DisplayList::encode`
+// validates twice before writing it: about 5 us per glyph, 25 ms for a page of
+// text. The editor repaints a page per keystroke, so it uses the functions
+// below instead. They do the same arithmetic as `paint_line` (the outline of a
+// glyph is converted once, at the origin, and translated when written; sums
+// are the same IEEE operations in the same order, so the bytes are identical,
+// which the tests of `rich_layout` check page by page) and write the `ATDL`
+// commands straight into a byte vector.
+// ---------------------------------------------------------------------------
+
+/// Colour, weight, slant and underline of the glyphs of one run.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GlyphStyle {
+    color: Color,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+}
+
+fn glyph_style(
+    defaults: &CharAttrs,
+    paragraph: &Paragraph,
+    offset: usize,
+) -> Result<GlyphStyle, PreviewError> {
+    let mut attrs = defaults.clone();
+    attrs.overlay(&paragraph.attrs_at(offset));
+    Ok(GlyphStyle {
+        color: attrs
+            .color
+            .map(|c| color(c.r, c.g, c.b))
+            .transpose()?
+            .unwrap_or(Color::new(0.0, 0.0, 0.0, 1.0).map_err(render_error)?),
+        bold: attrs.bold == Some(true),
+        italic: attrs.italic == Some(true),
+        underline: attrs.underline.is_some_and(|u| u != Underline::None),
+    })
+}
+
+/// Styles of the runs of one paragraph, resolved once.
+#[derive(Clone, Debug)]
+pub(crate) struct StyleTable {
+    default: GlyphStyle,
+    runs: Vec<(usize, usize, GlyphStyle)>,
+}
+
+impl StyleTable {
+    pub(crate) fn build(defaults: &CharAttrs, paragraph: &Paragraph) -> Result<Self, PreviewError> {
+        let bare = Paragraph::default();
+        let mut runs = Vec::with_capacity(paragraph.runs.len());
+        for run in &paragraph.runs {
+            runs.push((
+                run.start,
+                run.end,
+                glyph_style(defaults, paragraph, run.start)?,
+            ));
+        }
+        Ok(Self {
+            default: glyph_style(defaults, &bare, 0)?,
+            runs,
+        })
+    }
+
+    fn at(&self, offset: usize) -> GlyphStyle {
+        let index = self.runs.partition_point(|(_, end, _)| *end <= offset);
+        match self.runs.get(index) {
+            Some((start, _, style)) if *start <= offset => *style,
+            _ => self.default,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ProtoElement {
+    tag: u8,
+    count: u8,
+    points: [[f64; 2]; 3],
+}
+
+/// The outline of one glyph at one size, at the origin, as `ATDL` path
+/// elements.
+#[derive(Clone, Debug)]
+struct GlyphProto {
+    elements: Vec<ProtoElement>,
+    encoded_len: usize,
+}
+
+/// Glyph outlines converted once, keyed by face, glyph and size.
+#[derive(Default)]
+pub(crate) struct GlyphCache {
+    index: std::collections::HashMap<(u64, u16, i64), Option<usize>>,
+    protos: Vec<GlyphProto>,
+}
+
+const MAX_CACHED_GLYPHS: usize = 16_384;
+
+impl GlyphCache {
+    fn lookup(
+        &mut self,
+        fonts: &FontManager<'_>,
+        glyph: &atelier_text_layout::LayoutGlyph,
+        style: GlyphStyle,
+        source_char: char,
+    ) -> Result<Option<usize>, PreviewError> {
+        let key = (glyph.font_id.get(), glyph.glyph_id, glyph.size);
+        if let Some(found) = self.index.get(&key) {
+            return Ok(*found);
+        }
+        let face = fonts
+            .resolve_for_char(
+                &FontRequest::new(
+                    [glyph.family.as_str()],
+                    if style.bold { 700 } else { 400 },
+                    if style.italic {
+                        FontStyle::Italic
+                    } else {
+                        FontStyle::Normal
+                    },
+                ),
+                source_char,
+            )
+            .map_err(|e| PreviewError::Layout(e.to_string()))?;
+        if face.id != glyph.font_id {
+            return Err(PreviewError::Layout(
+                "resolved font differs from shaped glyph face".into(),
+            ));
+        }
+        let scale = glyph.size as f64 * ATDL_SCALE / f64::from(face.face.metrics().units_per_em);
+        let outline = face
+            .face
+            .outline(glyph.glyph_id)
+            .map_err(|e| PreviewError::Layout(e.to_string()))?;
+        let (count, _) = outline_size(&outline);
+        let found = if count == 0 {
+            None
+        } else {
+            let elements = convert_outline(&outline, scale, 0.0, 0.0)?;
+            if elements.len() != count {
+                return Err(PreviewError::Render("invalid outline coordinates".into()));
+            }
+            // The one validation of this outline.
+            DisplayPath::new(elements.clone()).map_err(render_error)?;
+            if self.protos.len() >= MAX_CACHED_GLYPHS {
+                self.index.clear();
+                self.protos.clear();
+            }
+            let mut encoded_len = 4usize;
+            let converted = elements
+                .iter()
+                .map(|element| {
+                    let (tag, points): (u8, Vec<Point>) = match *element {
+                        PathElement::MoveTo(p) => (0, vec![p]),
+                        PathElement::LineTo(p) => (1, vec![p]),
+                        PathElement::QuadraticTo { control, to } => (2, vec![control, to]),
+                        PathElement::CubicTo {
+                            control1,
+                            control2,
+                            to,
+                        } => (3, vec![control1, control2, to]),
+                        PathElement::Close => (4, Vec::new()),
+                    };
+                    encoded_len += 1 + 16 * points.len();
+                    let mut stored = [[0.0; 2]; 3];
+                    for (slot, p) in stored.iter_mut().zip(&points) {
+                        *slot = [p.x(), p.y()];
+                    }
+                    ProtoElement {
+                        tag,
+                        count: points.len() as u8,
+                        points: stored,
+                    }
+                })
+                .collect();
+            self.protos.push(GlyphProto {
+                elements: converted,
+                encoded_len,
+            });
+            Some(self.protos.len() - 1)
+        };
+        self.index.insert(key, found);
+        Ok(found)
+    }
+}
+
+/// Writes the commands of one page straight into `ATDL` bytes.
+pub(crate) struct PageWriter {
+    /// The 44-byte header (its command count patched by `finish`), then the commands.
+    bytes: Vec<u8>,
+    commands: usize,
+    path_elements: usize,
+    glyphs: usize,
+}
+
+fn put_color_bytes(out: &mut Vec<u8>, color: Color) {
+    for v in [color.red, color.green, color.blue, color.alpha] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+}
+
+impl PageWriter {
+    /// A writer for a page of `width` x `height` (1/64 pt).
+    pub(crate) fn new(width: i64, height: i64) -> Result<Self, PreviewError> {
+        let mut bytes = encode_page(Vec::new(), width, height)?;
+        bytes.reserve(4 * 1024 * 1024);
+        Ok(Self {
+            bytes,
+            commands: 0,
+            path_elements: 0,
+            glyphs: 0,
+        })
+    }
+
+    fn count_command(&mut self, path_elements: usize) -> Result<(), PreviewError> {
+        self.commands += 1;
+        self.path_elements = self
+            .path_elements
+            .checked_add(path_elements)
+            .ok_or(PreviewError::Limit("path elements"))?;
+        if self.commands > atelier_render::limits::MAX_COMMANDS {
+            return Err(PreviewError::Limit("commands"));
+        }
+        if self.path_elements > atelier_render::limits::MAX_PATH_ELEMENTS {
+            return Err(PreviewError::Limit("path elements"));
+        }
+        Ok(())
+    }
+
+    fn fill_glyph(
+        &mut self,
+        proto: &GlyphProto,
+        color: Color,
+        x: f64,
+        y: f64,
+    ) -> Result<(), PreviewError> {
+        self.count_command(proto.elements.len())?;
+        let out = &mut self.bytes;
+        out.reserve(18 + proto.encoded_len);
+        out.push(1);
+        out.push(0); // FillRule::NonZero
+        put_color_bytes(out, color);
+        out.extend_from_slice(&(proto.elements.len() as u32).to_le_bytes());
+        for element in &proto.elements {
+            let mut buffer = [0u8; 49];
+            buffer[0] = element.tag;
+            let mut at = 1;
+            for point in &element.points[..usize::from(element.count)] {
+                buffer[at..at + 8].copy_from_slice(&(x + point[0]).to_le_bytes());
+                buffer[at + 8..at + 16].copy_from_slice(&(y + point[1]).to_le_bytes());
+                at += 16;
+            }
+            out.extend_from_slice(&buffer[..at]);
+        }
+        Ok(())
+    }
+
+    fn underline(
+        &mut self,
+        color: Color,
+        width: f64,
+        from: [f64; 2],
+        to: [f64; 2],
+    ) -> Result<(), PreviewError> {
+        // Same validation as the display path of `paint_line`.
+        DisplayPath::new(vec![
+            PathElement::MoveTo(Point::try_new(from[0], from[1]).map_err(render_error)?),
+            PathElement::LineTo(Point::try_new(to[0], to[1]).map_err(render_error)?),
+        ])
+        .map_err(render_error)?;
+        let style =
+            StrokeStyle::new(width, LineCap::Butt, LineJoin::Miter, 4.0).map_err(render_error)?;
+        self.count_command(2)?;
+        let out = &mut self.bytes;
+        out.push(2);
+        put_color_bytes(out, color);
+        out.extend_from_slice(&style.width.to_le_bytes());
+        out.push(style.cap as u8);
+        out.push(style.join as u8);
+        out.extend_from_slice(&style.miter_limit.to_le_bytes());
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.push(0);
+        out.extend_from_slice(&from[0].to_le_bytes());
+        out.extend_from_slice(&from[1].to_le_bytes());
+        out.push(1);
+        out.extend_from_slice(&to[0].to_le_bytes());
+        out.extend_from_slice(&to[1].to_le_bytes());
+        Ok(())
+    }
+
+    /// The finished display list.
+    pub(crate) fn finish(mut self) -> Result<Vec<u8>, PreviewError> {
+        let count_at = 40;
+        let count = u32::try_from(self.commands).map_err(|_| PreviewError::Limit("commands"))?;
+        self.bytes[count_at..count_at + 4].copy_from_slice(&count.to_le_bytes());
+        if self.bytes.len() > atelier_render::limits::MAX_BYTES || self.bytes.len() > MAX_ATDL_BYTES
+        {
+            return Err(PreviewError::Limit("ATDL bytes"));
+        }
+        Ok(self.bytes)
+    }
+}
+
+/// A placed line of the editor: its paragraph, style table and layout line,
+/// the page-local baseline pagination gave it and the page offset of the
+/// text area (1/64 pt).
+pub(crate) struct FastLine<'a> {
+    pub styles: &'a StyleTable,
+    pub paragraph: &'a Paragraph,
+    pub line: &'a LayoutLine,
+    pub baseline: i64,
+    pub margin: (i64, i64),
+}
+
+/// [`paint_line`] for the editor: the same glyphs, positions, colours and
+/// underlines, written into `writer` with the outlines of `cache`.
+pub(crate) fn paint_line_fast(
+    fonts: &FontManager<'_>,
+    cache: &mut GlyphCache,
+    writer: &mut PageWriter,
+    placed: FastLine<'_>,
+) -> Result<(), PreviewError> {
+    let FastLine {
+        styles,
+        paragraph,
+        line,
+        baseline,
+        margin,
+    } = placed;
+    for glyph in line.fragments.iter().flat_map(|fragment| &fragment.glyphs) {
+        let glyph_text = paragraph
+            .text
+            .get(glyph.source.clone())
+            .ok_or_else(|| PreviewError::Layout("glyph source range is invalid".into()))?;
+        if glyph_text
+            .chars()
+            .all(|character| matches!(character, '\t' | '\r' | '\n'))
+        {
+            continue;
+        }
+        writer.glyphs += 1;
+        if writer.glyphs > MAX_GLYPHS {
+            return Err(PreviewError::Limit("glyphs"));
+        }
+        let style = styles.at(glyph.source.start);
+        let source_char = glyph_text.chars().next().ok_or(PreviewError::Layout(
+            "glyph has an empty source range".into(),
+        ))?;
+        let origin_x = (margin.0 + glyph.x) as f64 * ATDL_SCALE;
+        let origin_y = (margin.1 + glyph.y + baseline - line.baseline) as f64 * ATDL_SCALE;
+        if let Some(index) = cache.lookup(fonts, glyph, style, source_char)? {
+            writer.fill_glyph(&cache.protos[index], style.color, origin_x, origin_y)?;
+        }
+        if style.underline && glyph.x_advance > 0 {
+            let glyph_size_pt = glyph.size as f64 * ATDL_SCALE;
+            let y = origin_y + glyph_size_pt * 0.12;
+            writer.underline(
+                style.color,
+                (glyph_size_pt * 0.045).max(1.0 / 64.0),
+                [origin_x, y],
+                [origin_x + glyph.x_advance as f64 * ATDL_SCALE, y],
+            )?;
+        }
+    }
+    Ok(())
+}

@@ -20,6 +20,9 @@ use atelier_text_model::rich::flat::{EditOutcome, LayoutContext};
 /// file `rich_layout/rich_paint.rs` without touching `lib.rs`.
 pub mod rich_paint;
 
+mod cache;
+pub use cache::{PageCache, SelectionRect};
+
 /// Caret geometry in page coordinates (points, as in the display list).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CaretGeometry {

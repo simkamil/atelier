@@ -89,7 +89,8 @@ pub struct PageStream {
 /// When a pagination run gives up instead of reaching a stabilised page.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RunLimit {
-    /// Stop once this many pages were produced after the restart page.
+    /// Stop once this many pages were produced after the restart page (and
+    /// two paragraphs past the edit).
     Pages(usize),
     /// Stop at the first paragraph boundary at or after this paragraph.
     Paragraph(usize),
@@ -400,10 +401,13 @@ impl PageStream {
             first + inserted
         };
         let give_up = |candidate: &PaginationCheckpoint| -> bool {
+            // Two paragraphs past the edit at least, so that a page the edit
+            // leaves unchanged can still be recognised (the gap before a
+            // paragraph depends on the one before it).
             candidate.source_index > restart_at
-                && candidate.source_index >= changed_end
+                && candidate.source_index >= changed_end + 2
                 && match limit {
-                    RunLimit::Pages(pages) => candidate.page_count >= restart_page + pages,
+                    RunLimit::Pages(pages) => candidate.page_count > restart_page + pages,
                     RunLimit::Paragraph(index) => candidate.source_index >= index,
                 }
         };

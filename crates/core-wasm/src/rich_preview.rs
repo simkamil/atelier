@@ -141,7 +141,7 @@ pub struct RenderJob {
     phase: Phase,
 }
 
-fn build_fonts(embedded_fonts: &[Vec<u8>]) -> Result<FontManager<'_>, PreviewError> {
+pub(crate) fn build_fonts(embedded_fonts: &[Vec<u8>]) -> Result<FontManager<'_>, PreviewError> {
     let mut fonts = FontManager::with_limits(FontManagerLimits {
         max_faces: 4 + 16,
         max_total_bytes: MAX_EMBEDDED_FONT_BYTES
