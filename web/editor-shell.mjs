@@ -12,7 +12,6 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
   const future = (id, label, keyTip) => ({ id, label: t(label), keyTip, disabled: true });
   const status = byId("editor-status");
   const unavailable = new Set();
-  const back = byId("close-preview");
   const options = toolbar.querySelector(".editor-options");
   const zoomCommand = doc.createElement("button");
   zoomCommand.type = "button";
@@ -37,8 +36,7 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
     .every(key => typeof messages.get(key) === "string");
   const stateRow = doc.createElement("div");
   stateRow.className = "editor-command-status";
-  stateRow.append(back, status);
-  back.classList.add("ui-button");
+  stateRow.append(status);
   toolbar.after(stateRow);
 
   const preferenceContent = doc.createElement("div");
@@ -120,6 +118,6 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
     setSymbolsEnabled(enabled) { symbolsCommand.disabled = !enabled; ribbon.refresh(); },
     setImageEnabled(enabled) { imageCommand.disabled = !enabled; ribbon.refresh(); },
     refresh: () => ribbon.refresh(),
-    dispose() { imageCommand.removeEventListener("click",onImage); propertiesCommand.removeEventListener("click",onProperties); symbolsCommand.removeEventListener("click",onSymbols); aboutCommand.removeEventListener("click",onAbout); searchCommand.removeEventListener("click",onSearch); replaceCommand.removeEventListener("click",onReplace); statisticsCommand.removeEventListener("click",onStatistics); zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(back, status); stateRow.remove(); },
+    dispose() { imageCommand.removeEventListener("click",onImage); propertiesCommand.removeEventListener("click",onProperties); symbolsCommand.removeEventListener("click",onSymbols); aboutCommand.removeEventListener("click",onAbout); searchCommand.removeEventListener("click",onSearch); replaceCommand.removeEventListener("click",onReplace); statisticsCommand.removeEventListener("click",onStatistics); zoomCommand.removeEventListener("click", onZoom); help.dispose(); preferences.dispose(); choice.dispose(); ribbon.dispose(); theme.dispose(); toolbar.append(status); stateRow.remove(); },
   });
 }

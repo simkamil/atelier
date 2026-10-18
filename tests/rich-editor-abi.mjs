@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// US-217: the scenarios of tests/editor-abi.mjs replayed against the real WASM
+// US-217: the scenarios of the former tests/editor-abi.mjs (v1, deleted in R8) replayed against the real WASM
 // engine in ATED v2 frames. `node tests/rich-editor-abi.mjs [engine.wasm]`
 // (default: the wasm-release build of `python tools/package-engine.py`).
 //
-// SCENARIOS maps every scenario of tests/editor-abi.mjs to its v2 equivalent,
+// SCENARIOS maps every scenario of the former editor-abi.mjs (deleted in R8) to its v2 equivalent,
 // or says why it has none. A scenario without equivalent keeps the US-217
-// criterion "the scenarios of editor-abi.mjs pass in v2" unticked.
+// criterion "the scenarios of editor-abi.mjs pass in v2" unticked (the v1 file no longer exists).
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";

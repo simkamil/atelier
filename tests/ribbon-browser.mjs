@@ -39,11 +39,6 @@ export async function run({ assert, fixture }) {
   undoButton.type = "button";
   undoButton.textContent = "Annuler";
   originalGroup.append(newButton, openButton, undoButton);
-  const closePreview = document.createElement("button");
-  closePreview.id = "close-preview";
-  closePreview.type = "button";
-  closePreview.textContent = "Retour au texte";
-  closePreview.hidden = true;
   const options = document.createElement("details");
   options.className = "editor-options";
   const summary = document.createElement("summary");
@@ -53,7 +48,7 @@ export async function run({ assert, fixture }) {
   status.id = "editor-status";
   status.className = "editor-status";
   status.textContent = "Document prêt";
-  root.append(originalGroup, closePreview, options, status);
+  root.append(originalGroup, options, status);
   host.append(root);
   fixture.append(host);
 
@@ -107,7 +102,7 @@ export async function run({ assert, fixture }) {
   assert(document.getElementById("new-document") === newButton && document.querySelectorAll("#new-document").length === 1,
     "existing command element keeps its ID and identity without cloning");
   assert(root.querySelector(".editor-options") === options && options.closest(".ribbon-group")
-    && root.querySelector("#editor-status") === status && root.querySelector("#close-preview") === closePreview && closePreview.hidden,
+    && root.querySelector("#editor-status") === status,
     "supplied details command stays in its declared group while status and preview control remain available");
   assert(openButton.disabled, "supplied command applies an explicit disabled=true spec");
   tabs[0].groups[0].commands[1].disabled = false;
@@ -226,7 +221,7 @@ export async function run({ assert, fixture }) {
   modal.remove();
   controller.dispose();
   assert(root.firstElementChild === originalGroup && originalGroup.firstElementChild === newButton
-    && root.children[1] === closePreview && root.children[2] === options && root.children[3] === status,
+    && root.children[1] === options && root.children[2] === status,
     "dispose restores the caller's original DOM nodes and order");
   assert(openButton.classList.contains("caller-owned") && openButton.classList.contains("caller-update")
     && !openButton.classList.contains("ribbon-command") && openButton.dataset.ribbonCommandId === "before-ribbon" && !openButton.disabled,

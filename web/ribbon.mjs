@@ -180,7 +180,7 @@ export function createRibbon({ root, tabs, onCommand, labels, initialTab }) {
 
   const utility = document.createElement("div");
   utility.className = "ribbon-utility";
-  const retained = [...root.querySelectorAll("#close-preview, .editor-options, #editor-status")]
+  const retained = [...root.querySelectorAll(".editor-options, #editor-status")]
     .filter(element => !commandElements.has(element));
   for (const element of retained) utility.append(element);
 

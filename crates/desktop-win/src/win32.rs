@@ -2031,7 +2031,6 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/ribbon.css','text/css'],
             ['/theme.mjs','text/javascript'],
             ['/theme.css','text/css'],
-            ['/rich-preview.mjs','text/javascript'],
             ['/text-drag-drop.mjs','text/javascript'],
             ['/french-spacing.mjs','text/javascript'],
             ['/i18n.mjs','text/javascript'], ['/i18n/fr-FR.txt','text/plain'], ['/engine-worker.mjs','text/javascript'],

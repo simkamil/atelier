@@ -3,7 +3,6 @@ import { createEngineClient } from "/engine-client.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "/wasm-protocol.mjs";
 import { createRichEditor, EditorError } from "/rich-editor.mjs";
 import { createNativeHost } from "/native-host.mjs";
-import { createRichPreview } from "/rich-preview.mjs";
 import { createEditorShell } from "/editor-shell.mjs";
 import { createZoomControls } from "/zoom-controls.mjs";
 import { createNavigationTools } from "/navigation-tools.mjs";
@@ -26,8 +25,7 @@ const nodes = {
   scrollport: byId("document-scroll"), spacer: byId("page-spacer"),
   new: byId("new-document"), open: byId("open-document"), save: byId("save-document"), undo: byId("undo"), redo: byId("redo"),
   frenchSpacing: byId("french-spacing"),
-  openDocx: byId("open-docx"), closePreview: byId("close-preview"),
-  textWorkspace: byId("text-workspace"), richWorkspace: byId("rich-workspace"),
+  openDocx: byId("open-docx"),
   readonlyBanner: byId("readonly-banner"), readonlyText: byId("readonly-text"), readonlyCopy: byId("readonly-copy"), options: document.querySelector(".editor-options"),
 };
 // i18n-ignore-start: dernier recours quand web/i18n/fr-FR.txt est indisponible ; texte identique au catalogue (contrôlé par tests/i18n.mjs)
@@ -50,8 +48,7 @@ const FALLBACK = new Map(Object.entries({
   "workspace-label": "Éditeur de texte", "pages-label": "Pages du document", "canvas-label": "Pages du document texte brut",
   "state-clean": "Enregistré", "state-dirty": "Modifications non enregistrées",
   "options-label": "Options", "option-french-spacing": "Espaces françaises automatiques",
-  "action-open-docx": "Ouvrir DOCX…", "action-close-preview": "Retour au texte",
-  "preview-title": "Aperçu DOCX", "preview-eyebrow": "DOCUMENT WORD · LECTURE SEULE", "preview-state": "Lecture seule", "preview-footer": "Atelier · aperçu DOCX",
+  "action-open-docx": "Ouvrir DOCX…",
   "zoom-group": "Zoom du document", "zoom-range": "Facteur de zoom", "zoom-percent": "Régler le zoom",
   "zoom-title": "Zoom…", "zoom-value": "Pourcentage (10 à 500)", "zoom-custom": "Pourcentage personnalisé",
   "zoom-width": "Largeur de page", "zoom-page": "Page entière", "zoom-pages": "Deux pages",
@@ -226,7 +223,7 @@ async function start() {
       if (!initialized || busy || !editor?.capabilities?.properties) return;
       properties.open({ returnFocusTo: document.activeElement }).catch(() => showEditorMessage(messages.get("status-properties-loadError"), true));
     }, onSymbols: () => {
-      if (!symbols || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
+      if (!symbols || !editor?.canEdit || document.querySelector("dialog:modal")) return;
       symbolSnapshot = editor.getState(); symbols.open({ returnFocusTo: editor.element });
     },
     onAbout: () => about?.open({ returnFocusTo: document.activeElement }),
@@ -235,15 +232,10 @@ async function start() {
   let client;
   let host;
   let editor;
-  let preview;
-  let previewActive = false;
-  let previewReady = false;
-  let previewGeneration = 0;
-  let previewAbort;
   let disposed = false;
   const imagePicker = imageAvailable ? createImagePicker() : null;
   async function insertPickedImages() {
-    if (!imagePicker || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
+    if (!imagePicker || !editor?.canEdit || document.querySelector("dialog:modal")) return;
     try {
       const files = await imagePicker.open();
       if (files.length > 0) await editor.insertImages(files);
@@ -251,15 +243,6 @@ async function start() {
     editor.focus();
   }
   const listeners = new AbortController();
-  const identityNodes = [byId("page-title"), document.querySelector('[data-i18n="eyebrow"]'), document.querySelector('[data-i18n="footer"]')];
-  const textIdentity = identityNodes.map(node => node.textContent);
-  const textWindowTitle = document.title;
-  function setPreviewIdentity(active) {
-    ["preview-title", "preview-eyebrow", "preview-footer"].forEach((key,index) => { identityNodes[index].textContent = active ? messages.get(key) : textIdentity[index]; });
-    document.title = active ? `${messages.get("preview-title")} — Atelier` : textWindowTitle;
-    nodes.documentState.textContent = active ? messages.get("preview-state") : messages.get(editor?.state?.dirty ? "state-dirty" : "state-clean");
-    nodes.documentState.classList.toggle("dirty", !active && Boolean(editor?.state?.dirty));
-  }
   /** Banner of a read-only DOCX (revisions or comments, v2): accepted changes are shown, a copy can be made editable. */
   function showReadOnly(active) {
     // One status region, always in the DOM: only its text changes (a region inserted with its text is not announced everywhere).
@@ -270,15 +253,14 @@ async function start() {
   }
   function dispose() {
     if (disposed) return;
-    disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    disposed = true; listeners.abort();
+    imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
   function updateStatus() {
-    const view = previewActive ? preview : editor;
-    documentStatus?.setState({ ...view?.getViewportState(), language: null, mode: previewActive ? "preview" : "text",
-      dirty: previewActive ? null : editor?.state?.dirty ?? null, busy: !initialized || (previewActive ? !previewReady : busy) });
+    documentStatus?.setState({ ...editor?.getViewportState(), language: null, mode: "text",
+      dirty: editor?.state?.dirty ?? null, busy: !initialized || busy });
   }
   if (statusKeys.every(key => messages.has(key))) {
     const footer = document.querySelector("footer");
@@ -286,8 +268,8 @@ async function start() {
     footer.setAttribute("aria-label", messages.get("statusConfigure"));
     documentStatus = createDocumentStatus({ document, i18n, labels: Object.fromEntries(statusKeys.map(key => [key, messages.get(key)])), menuTarget: footer,
       onGoToPage: page => {
-        if (disposed || !initialized || (previewActive ? !previewReady : busy)) return;
-        try { (previewActive ? preview : editor).goToPage(page); } catch (error) { onError(error); }
+        if (disposed || !initialized || busy) return;
+        try { editor.goToPage(page); } catch (error) { onError(error); }
       },
       onVisibilityChange: ({ field, visible }) => {
         if (field === "words") byId("statistics-slot").hidden = !visible;
@@ -298,16 +280,14 @@ async function start() {
   const zoomLabels = Object.fromEntries(["group", "range", "percent", "title", "value", "custom", "width", "page", "pages", "apply", "cancel", "close", "invalid"]
     .map(key => [key, messages.get(`zoom-${key}`) ?? key]));
   zoomControls = createZoomControls({ document, labels: zoomLabels, i18n, onChange: ({ zoom, mode }) => {
-    if (disposed || !initialized || (previewActive ? !previewReady : busy)) return;
-    const view = previewActive ? preview : editor;
-    if (mode === "custom") view.setZoom(zoom);
-    else view.fitZoom(mode);
+    if (disposed || !initialized || busy) return;
+    if (mode === "custom") editor.setZoom(zoom);
+    else editor.fitZoom(mode);
   } });
   byId("document-zoom").append(zoomControls.element);
   const updateZoom = () => {
-    const view = previewActive ? preview : editor;
-    const disabled = !initialized || (previewActive ? !previewReady : busy);
-    zoomControls.setState({ zoom: view?.getZoom() ?? 1, mode: view?.getZoomMode() ?? "custom", disabled });
+    const disabled = !initialized || busy;
+    zoomControls.setState({ zoom: editor?.getZoom() ?? 1, mode: editor?.getZoomMode() ?? "custom", disabled });
     shell.setZoomEnabled(!disabled);
     shell.setPropertiesEnabled(propertiesAvailable && !disabled && Boolean(editor?.capabilities?.properties));
     updateStatus();
@@ -321,9 +301,9 @@ async function start() {
     nodes.frenchSpacing.disabled = blocked;
     nodes.openDocx.disabled = blocked;
     updateZoom();
-    const toolsEnabled = !blocked && !previewActive;
+    const toolsEnabled = !blocked;
     const writable = !state?.readOnly;
-    navigation?.setEnabled(toolsEnabled, { preview: previewActive });
+    navigation?.setEnabled(toolsEnabled);
     shell.setNavigationEnabled(toolsEnabled && toolsAvailable && Boolean(editor?.capabilities?.search));
     shell.setSymbolsEnabled(toolsEnabled && symbolsAvailable && writable);
     shell.setImageEnabled(toolsEnabled && imageAvailable && writable);
@@ -332,10 +312,8 @@ async function start() {
   };
   const onBusy = value => { busy = value; updateControls(editor?.state); };
   const onState = (state, metadata) => {
-    if (!previewActive) {
-      nodes.documentState.textContent = messages.get(state.dirty ? "state-dirty" : "state-clean");
-      nodes.documentState.classList.toggle("dirty", state.dirty);
-    }
+    nodes.documentState.textContent = messages.get(state.dirty ? "state-dirty" : "state-clean");
+    nodes.documentState.classList.toggle("dirty", state.dirty);
     updateControls(state);
     navigation?.update(state,metadata);
   };
@@ -371,8 +349,8 @@ async function start() {
       client, host, canvas: nodes.canvas, scrollport: nodes.scrollport, spacer: nodes.spacer,
       frenchSpacing: nodes.frenchSpacing.checked,
       confirmDiscard: messages.get("confirm-discard"), inputLabel: messages.get("input-label"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
-      onZoom: () => { if (!previewActive) updateZoom(); },
-      onViewport: () => { if (!previewActive) updateStatus(); },
+      onZoom: updateZoom,
+      onViewport: updateStatus,
       imageAlt: number => i18n.t("image-alt-default", { number }),
       onImages: ({ inserted, failed }) => { if (inserted > 0 && failed === 0) showEditorMessage(i18n.t("image-inserted", { count: inserted })); },
     };
@@ -391,20 +369,6 @@ async function start() {
       shell.setUnavailable?.(editor.capabilities.search ? null : messages.get("v2-unavailable-search"),
         editor.capabilities.properties ? null : messages.get("v2-unavailable-properties"));
     }
-    function closePreview() {
-      if (!previewActive || disposed) return;
-      previewGeneration += 1; previewAbort?.abort(); previewAbort = null;
-      previewActive = false;
-      previewReady = false; properties?.close();
-      nodes.richWorkspace.hidden = true; nodes.textWorkspace.hidden = false; nodes.closePreview.hidden = true;
-      editor.setSuspended(false); preview.close(); shell.ribbon.selectTab("file"); shell.ribbon.setCollapsed(false); nodes.openDocx.focus();
-      setPreviewIdentity(false);
-      showEditorMessage(messages.get("status-ready"));
-      updateZoom();
-    }
-    preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
-      spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
-      onZoom: () => { if (previewActive) updateZoom(); }, onViewport: () => { if (previewActive) updateStatus(); } });
     if (toolsAvailable && editor.capabilities.search) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
     async function openDocxInEditor(source) {
@@ -423,7 +387,7 @@ async function start() {
         labels: { ...Object.fromEntries(symbolKeys.map(key => [key, messages.get(`symbols-${key}`)])),
           specialNames: Object.fromEntries(specialKeys.map(key => [key, messages.get(`symbols-${key}`)])) },
         onInsert: async text => {
-          if (previewActive || !editor.canEdit) return false;
+          if (!editor.canEdit) return false;
           try { await editor.editSelection(text, symbolSnapshot); editor.focus(); return true; }
           catch (error) { onError(error); return false; }
         } });
@@ -448,11 +412,11 @@ async function start() {
         labels: Object.fromEntries(contextKeys.map(key => [key, messages.get(`context-${key}`)])),
         getState: () => { const current = editor.getState(); return { revision: current.revision, anchor: current.anchor, focus: current.focus,
           hasText: current.docLen > 0,
-          canUndo: current.canUndo, canRedo: current.canRedo, enabled: editor.canEdit && !previewActive, busy, preview: previewActive }; },
+          canUndo: current.canUndo, canRedo: current.canRedo, enabled: editor.canEdit, busy }; },
         clipboardCapabilities: { read: () => typeof navigator.clipboard?.readText === "function", write: () => typeof navigator.clipboard?.writeText === "function" },
         onError: () => showEditorMessage(messages.get("utilities-clipboardError"), true),
         onCommand: async (action, snapshot) => {
-          if (previewActive || !editor.canEdit) throw new EditorError("EDITOR_BUSY");
+          if (!editor.canEdit) throw new EditorError("EDITOR_BUSY");
           if (["copy", "cut"].includes(action)) {
             const selected = await editor.selectedText(snapshot);
             await navigator.clipboard.writeText(selected);
@@ -468,7 +432,6 @@ async function start() {
     onState(state);
     showEditorMessage(messages.get("status-ready"));
     nodes.openDocx.addEventListener("click", () => { void openDocx(); }, { signal: listeners.signal });
-    nodes.closePreview.addEventListener("click", closePreview, { signal: listeners.signal });
     nodes.readonlyCopy.addEventListener("click", async () => {
       if (nodes.readonlyCopy.disabled) return;
       nodes.readonlyCopy.disabled = true;
@@ -514,12 +477,11 @@ async function start() {
     document.addEventListener("keydown", event => {
       if (document.querySelector("dialog:modal")) return;
       if (symbolsAvailable && event.target === editor.element && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey
-          && (event.code === "Space" || event.key === " ") && !event.isComposing && editor.canEdit && !previewActive) {
+          && (event.code === "Space" || event.key === " ") && !event.isComposing && editor.canEdit) {
         event.preventDefault();
         void editor.editSelection("\u00a0", editor.getState()).catch(onError);
         return;
       }
-      if (previewActive && event.key === "Escape" && !event.isComposing) { event.preventDefault(); closePreview(); return; }
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
       const action = event.key.toLowerCase();
       const button = action === "n" ? nodes.new : action === "o" ? nodes.open : action === "s" ? nodes.save : null;
@@ -579,8 +541,7 @@ async function start() {
       navigation,
       documentStatus,
       symbols, about, properties, contextMenu,
-      openDocx, closePreview, dispose, claimLaunch,
-      get previewActive() { return previewActive; },
+      openDocx, dispose, claimLaunch,
     });
   } catch (error) {
     showPing(false, messages);

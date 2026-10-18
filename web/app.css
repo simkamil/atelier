@@ -9,7 +9,7 @@
 .shell{height:100dvh;min-height:0}.workspace{min-height:0}.document-scroll{min-height:0}
 .text-drop-marker{position:fixed;z-index:6;width:2px;background:#236c57;box-shadow:0 0 0 1px #fff;pointer-events:none}
 .editor-options{position:relative;font-size:13px;flex-shrink:0}.editor-options summary{cursor:pointer;padding:8px;border-radius:6px}.editor-options summary:focus-visible,.editor-options input:focus-visible{outline:2px solid var(--chrome-focus);outline-offset:2px}.editor-options label{position:absolute;top:100%;left:0;z-index:8;display:flex;align-items:center;gap:8px;width:250px;padding:12px;background:var(--chrome-control);border:1px solid var(--chrome-control-border);border-radius:7px;box-shadow:0 4px 14px #172a2a20}.editor-options input{accent-color:#236c57;width:18px;height:18px;flex-shrink:0}
-[hidden]{display:none!important}.rich-workspace{display:flex;flex-direction:column;gap:10px}.rich-workspace .document-scroll{flex:1;height:auto}.preview-caption{margin:0;color:var(--muted);font-size:13px}.toolbar{flex-wrap:wrap}.page-stack #rich-spacer{height:0;pointer-events:none}
+[hidden]{display:none!important}.toolbar{flex-wrap:wrap}
 /* Shell status stays visible across ribbon tabs and collapse states. */
 .editor-command-status{display:flex;align-items:center;gap:12px;min-height:34px;flex:0 0 auto;padding:4px clamp(12px,3vw,42px);border-bottom:1px solid var(--line);background:var(--chrome);min-width:0}
 .editor-command-status .editor-status{margin-left:0;max-width:100%;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

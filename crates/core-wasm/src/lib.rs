@@ -378,10 +378,7 @@ fn dispatch_editor(
         }
     };
     match registry.replace_in_flight(input_charge, payload) {
-        Ok(payload_ptr) => {
-            let descriptor = register_descriptor(registry, payload_ptr);
-            descriptor
-        }
+        Ok(payload_ptr) => register_descriptor(registry, payload_ptr),
         Err(_) => {
             // The client never saw the reply: it resynchronises.
             if was_rich {

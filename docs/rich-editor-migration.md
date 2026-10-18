@@ -10,7 +10,7 @@ Réutilisable :
 - Recherche, statistiques et TXT ont déjà leur version riche : `ParagraphSource for RichDocument` (`search/source.rs:92`), `statistics/rich.rs`, `rich_to_text` avec rapport de perte (`plain_io/rich.rs:107`).
 - Import et écrivain DOCX déjà liés au WASM (`core-wasm/src/staged.rs:26`, `docx_export.rs:7`) ; document par défaut `default_rich_document`.
 - Mise en page incrémentale (`text-layout/src/incremental.rs:106`) et géométrie du curseur (`caret.rs:161`) validées, mais absentes du WASM.
-- `CanvasRenderer` déjà partagé avec l'aperçu (`web/rich-preview.mjs:2`).
+- `CanvasRenderer` déjà partagé avec l'aperçu (`web/rich-preview.mjs:2`, supprimé en R8b).
 
 Manquant :
 
@@ -19,13 +19,13 @@ Manquant :
 - Tables annexes hors du modèle (`breaks`, `symbols`, `run_styles`, `crates/fmt-ooxml/src/docx.rs:234-236`).
 - Aucun miroir DOM accessible du document (SPEC §6.14) ; seul existe un `textContent` global (`web/editor.mjs:201`).
 
-L'éditeur TXT actuel n'atteint pas non plus les objectifs : plafond de 128 Kio (`core-wasm/src/editor.rs:11`), clone de la session à chaque commande (`editor.rs:58`), remise en page complète (`editor.rs:670-690`) et état complet renvoyé à chaque réponse (`editor.rs:720-770`).
+L'éditeur TXT actuel n'atteint pas non plus les objectifs : plafond de 128 Kio (`core-wasm/src/editor.rs:11` ; éditeur v1 supprimé en R8), clone de la session à chaque commande (`editor.rs:58`), remise en page complète (`editor.rs:670-690`) et état complet renvoyé à chaque réponse (`editor.rs:720-770`).
 
 ## Décision
 
 Un seul éditeur. Deux modes doubleraient les opcodes, les suites, l'accessibilité et chaque critère US-22x ; corriger les performances du TXT revient de toute façon à le réécrire ; supprimer l'ancien chemin libère du budget WASM. L'éditeur v1 reste derrière un drapeau jusqu'au contrôle de parité de la bascule (US-219), puis il est retiré.
 
-Profil TXT : Carlito 11 pt, interligne simple, aucun espacement (`editor-layout.rs:14-19`) ; enregistrement par `rich_to_text` avec le rapport de perte d'US-316.
+Profil TXT : Carlito 11 pt, interligne simple, aucun espacement (`editor-layout.rs:14-19`, supprimé en R8) ; enregistrement par `rich_to_text` avec le rapport de perte d'US-316.
 
 ## Découpage
 
