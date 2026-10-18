@@ -5,7 +5,9 @@
 mod flat_common;
 
 use atelier_text_model::rich::flat::{FlatEdit, FlatError, FlatIndex, LayoutContext};
-use atelier_text_model::rich::{CharAttrs, CharRun, Paragraph, RichDocument, RichOp};
+use atelier_text_model::rich::{
+    Bookmark, CharAttrs, CharRun, Inline, Link, LinkTarget, Paragraph, RichDocument, RichOp,
+};
 use flat_common::*;
 
 fn body(texts: &[&str]) -> RichDocument {
@@ -148,4 +150,36 @@ fn refusals_leave_the_document_untouched() {
     doc.move_range(1, 4, 4, false).unwrap();
     assert_eq!(doc.revision(), revision);
     assert!(!doc.can_undo());
+}
+
+#[test]
+fn ranges_with_links_or_bookmarks_are_refused_untouched() {
+    for bookmark in [false, true] {
+        let mut doc = body(&["abcdef ghi"]);
+        let para = doc.paragraph_ids()[0];
+        let id = doc.alloc_id().unwrap();
+        let item = if bookmark {
+            Inline::Bookmark(Bookmark {
+                id,
+                name: "b".into(),
+                start: 1,
+                end: 2,
+            })
+        } else {
+            Inline::Link(Link {
+                id,
+                start: 1,
+                end: 2,
+                target: LinkTarget::External("https://example.org".into()),
+                tooltip: None,
+            })
+        };
+        apply(&mut doc, vec![RichOp::InsertInline { para, item }]);
+        let before = doc.clone();
+        assert_eq!(doc.move_range(0, 3, 8, false), Err(FlatError::Unsupported));
+        assert_eq!(doc.move_range(0, 3, 8, true), Err(FlatError::Unsupported));
+        assert_eq!(doc, before);
+        // A range clear of the item still moves.
+        doc.move_range(3, 6, 9, false).unwrap();
+    }
 }

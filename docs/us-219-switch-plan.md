@@ -114,7 +114,7 @@ L'interface crée l'éditeur v2 avec `?engine=v2` (ou `localStorage["atelier.eng
 
 ### Glisser-déposer de texte (dernier écart fonctionnel)
 
-`MoveText` `0x0140` ([protocole](us-203-rich-editor-protocol.md), « R7c ») : déplacement ou copie d'une plage en une étape d'annulation, mise en forme des caractères conservée, erreur `RICH_MOVE_UNSUPPORTED` (50). `RICH_CAPABILITIES.textDragDrop` vaut `true` ; `web/rich-editor.mjs` branche `web/text-drag-drop.mjs` (instantané sans texte : le moteur contrôle les frontières). Limites connues : pas de repère de dépôt (le module n'en reçoit pas du moteur, un `HitTest` ne rend pas de caret) ; une plage qui contient une image, un symbole, un tableau ou un bloc opaque est refusée (`RICH_MOVE_UNSUPPORTED`) ; les paragraphes créés prennent les propriétés du paragraphe cible ; champs, liens et signets de la plage ne suivent pas.
+`MoveText` `0x0140` ([protocole](us-203-rich-editor-protocol.md), « R7c ») : déplacement ou copie d'une plage en une étape d'annulation, mise en forme des caractères conservée, erreur `RICH_MOVE_UNSUPPORTED` (50). `RICH_CAPABILITIES.textDragDrop` vaut `true` ; `web/rich-editor.mjs` branche `web/text-drag-drop.mjs` (instantané sans texte : le moteur contrôle les frontières). Limites connues : pas de repère de dépôt (le module n'en reçoit pas du moteur, un `HitTest` ne rend pas de caret) ; une plage qui contient une image, un symbole, un lien, un champ, un signet, un tableau ou un bloc opaque est refusée (`RICH_MOVE_UNSUPPORTED`, message `status-move-unsupported` dans la région de statut) ; les paragraphes créés prennent les propriétés du paragraphe cible.
 
 ### État de parité final des suites
 
@@ -142,7 +142,7 @@ Plus de code 75 : `V2_PENDING_REASONS` est vide ; un 75 reste un échec pour la 
 
 Par type de frappe (v1 / v2), moyenne, p95, max : caractères 738,2 / 765,5 / 802,4 contre 3,7 / 5,5 / 7,6 ; Entrée 741,8 / 765,7 / 768,4 contre 5,2 / 6,6 / 7,3 ; Retour arrière 748,2 / 775,9 / 784,6 contre 5,2 / 7,1 / 7,7. v2 : aller-retour moteur 3,4 ms en moyenne, décodage et dessin 0,6 ms. `untilNextFrameMs` (attente de l'image d'animation suivante, qui dépend de la cadence de l'écran) : v2 moyenne 10,6, p95 17,7, max 20,3.
 
-Lecture : v2 est meilleur que v1 sur la moyenne (4,0 contre 739,6) et sur le p95 (6,5 contre 767,1), sur un document trois fois plus grand que le plus grand accepté en v1. Le critère « moins de 16 ms de bout en bout sur 300 pages » est tenu **au p95 (6,5) et au max (7,7)**, au sens du banc (fin du dessin Canvas) ; il ne l'est pas si l'on compte l'attente de l'image suivante (p95 17,7, max 20,3), qui n'est pas du calcul. Réserves : événements synthétiques (pas de clavier physique ni d'IME), Edge headless en rendu logiciel, une seule machine.
+Lecture : v2 est meilleur que v1 sur la moyenne (4,0 contre 739,6) et sur le p95 (6,5 contre 767,1), sur un document trois fois plus grand que le plus grand accepté en v1. Le critère « moins de 16 ms de bout en bout sur 300 pages » est tenu **au p95 (6,5) et au max (7,7)**, au sens du banc (fin du dessin Canvas) ; il ne l'est pas si l'on compte l'attente de l'image suivante (p95 17,7, max 20,3), qui n'est pas du calcul : c'est le rafraîchissement de l'écran à 60 Hz (16,7 ms entre images). Réserves : événements synthétiques (pas de clavier physique ni d'IME), Edge headless en rendu logiciel, une seule machine.
 
 ### Commandes à changer dans la CI (intégrateur ; la CI n'est pas modifiée ici)
 

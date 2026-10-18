@@ -373,6 +373,7 @@ native.data.detail.probe_collisions=trop de collisions successives
 readonly-banner=Document en lecture seule — modifications acceptées affichées.
 readonly-copy=Créer une copie modifiable
 status-readonly-refused=Ce document est en lecture seule : créez une copie modifiable pour le modifier.
+status-move-unsupported=Ce texte contient un lien, un champ, un signet ou un objet : il ne peut pas être déplacé par glisser-déposer.
 status-readonly-opened=Document ouvert en lecture seule : modifications acceptées affichées.
 status-copy-created=Copie modifiable créée : modifications acceptées, commentaires retirés.
 status-copy-error=La copie modifiable n’a pas pu être créée.

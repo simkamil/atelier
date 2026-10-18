@@ -113,6 +113,7 @@ export function toEditorError(error, context = "") {
   else if (code === "RICH_QUERY_TOO_LARGE") mapped = "MESSAGE_TOO_LARGE";
   else if (error instanceof RichProtocolError) mapped = "EDITOR_UNSUPPORTED_INPUT";
   else if (code === "RICH_READ_ONLY") mapped = "EDITOR_READ_ONLY";
+  else if (code === "RICH_MOVE_UNSUPPORTED") mapped = "EDITOR_MOVE_UNSUPPORTED";
   else if (code === "RICH_STALE_REVISION") mapped = context === "save" ? "EDITOR_STALE_SAVE" : context === "query" ? "EDITOR_STALE_QUERY" : "EDITOR_STALE_EDIT";
   else if (code === "RICH_STALE_MATCH") mapped = "EDITOR_STALE_MATCH";
   else if (code === "RICH_TOO_MANY_MATCHES") mapped = "EDITOR_TOO_MANY_MATCHES";
@@ -834,6 +835,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   // through `insertImages` as before; text dropped from outside is inserted at the position; an internal drag is `MoveText`.
   const dragReady = () => Boolean(state && !busy && !compositionStart && !disposed && !state.readOnly);
   textDragDrop = attachTextDragDrop({
+    allowNoCaret: true,
     canvas, scrollport, getGeometry,
     getSelectionSnapshot: () => state ? { text: null, anchor: state.anchor, focus: state.focus, revision: state.revision } : null,
     isPointInSelection: (x, y) => {

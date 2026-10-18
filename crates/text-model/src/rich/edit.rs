@@ -1014,7 +1014,7 @@ struct Fragment {
 impl RichDocument {
     /// Reads the formatted text of `start..end` (valid positions, `start <
     /// end`). The range must lie in plain paragraphs of one container and
-    /// hold no object (`Unsupported` otherwise).
+    /// hold no object, link, field or bookmark (`Unsupported` otherwise).
     fn fragment(&self, start: usize, end: usize) -> Result<Fragment, FlatError> {
         let found = self.with_flat(|t| {
             let (p1, o1) = t.find(start)?;
@@ -1039,6 +1039,16 @@ impl RichDocument {
             let to = if i + 1 == count { o2 } else { entry.len };
             let (ts, ks) = p.cut(from)?;
             let (te, ke) = p.cut(to)?;
+            // Links, fields and bookmarks do not follow a move: refused, not lost.
+            if p.links.iter().any(|l| l.start < te && l.end > ts)
+                || p.fields.iter().any(|f| f.start < te && f.end > ts)
+                || p.bookmarks.iter().any(|b| {
+                    (b.start < te && b.end > ts)
+                        || (b.start == b.end && b.start >= ts && b.start <= te)
+                })
+            {
+                return Err(FlatError::Unsupported);
+            }
             if ks != ke {
                 return Err(FlatError::Unsupported);
             }

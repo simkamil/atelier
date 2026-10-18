@@ -24,8 +24,8 @@ function validBoundary(text, offset) {
   return offset <= bytes.length && (offset === bytes.length || (bytes[offset] & 0xc0) !== 0x80);
 }
 
-function validCaret(caret) {
-  if (caret === null) return true; // v2: a probe gives a position and no caret (no drop marker)
+function validCaret(caret, allowNoCaret = false) {
+  if (caret === null) return allowNoCaret; // v2 only: a probe gives a position and no caret (no drop marker)
   return caret && Number.isInteger(caret.page) && caret.page >= 0 &&
     [caret.x, caret.y, caret.height].every(finite) && caret.height >= 0;
 }
@@ -33,7 +33,7 @@ function validCaret(caret) {
 /** Attach drag/drop and selected-text click handling to the editor Canvas. */
 export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelectionSnapshot,
   isPointInSelection, probePoint, onDrop, onFilesDrop = null, onClick = () => {}, onDragState = () => {},
-  isEnabled = () => true, focus = () => {}, onError = () => {} } = {}) {
+  isEnabled = () => true, focus = () => {}, onError = () => {}, allowNoCaret = false } = {}) {
   if (!canvas?.addEventListener || !scrollport?.addEventListener ||
       ![getGeometry, getSelectionSnapshot, isPointInSelection, probePoint, onDrop,
         onClick, onDragState, isEnabled, focus, onError].every(fn => typeof fn === "function")) {
@@ -122,7 +122,7 @@ export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelecti
       if (!validSnapshot(snapshot) || snapshot.revision !== current.snapshot.revision ||
           snapshot.anchor !== current.snapshot.anchor || snapshot.focus !== current.snapshot.focus ||
           !result || result.revision !== current.snapshot.revision ||
-          !validBoundary(current.snapshot.text, result.offset) || !validCaret(result.caret)) {
+          !validBoundary(current.snapshot.text, result.offset) || !validCaret(result.caret, allowNoCaret)) {
         throw new Error("EDITOR_STALE_EDIT");
       }
       if (marker && result.caret) state(result.caret);
@@ -346,7 +346,7 @@ export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelecti
           if (!validSnapshot(snapshot) || snapshot.revision !== current.snapshot.revision ||
               snapshot.anchor !== current.snapshot.anchor || snapshot.focus !== current.snapshot.focus ||
               !result || result.revision !== current.snapshot.revision ||
-              !validBoundary(current.snapshot.text, result.offset) || !validCaret(result.caret)) {
+              !validBoundary(current.snapshot.text, result.offset) || !validCaret(result.caret, allowNoCaret)) {
             throw new Error("EDITOR_STALE_EDIT");
           }
           if (result.caret) state(result.caret);
@@ -395,7 +395,7 @@ export function attachTextDragDrop({ canvas, scrollport, getGeometry, getSelecti
       const now = getSelectionSnapshot();
       if (disposed || gesture || ticket !== serial || !enabled() || !validSnapshot(now) || now.revision !== snapshot.revision ||
           now.anchor !== snapshot.anchor || now.focus !== snapshot.focus || !result ||
-          result.revision !== snapshot.revision || !validBoundary(snapshot.text, result.offset) || !validCaret(result.caret)) return;
+          result.revision !== snapshot.revision || !validBoundary(snapshot.text, result.offset) || !validCaret(result.caret, allowNoCaret)) return;
       if (fileDrop) await onFilesDrop({ files, revision: snapshot.revision, target: result.offset });
       else await onDrop({ kind: "external", revision: snapshot.revision,
         sourceAnchor: snapshot.anchor, sourceFocus: snapshot.focus, target: result.offset, text });
