@@ -74,9 +74,10 @@ function zipStored(files) {
 const run = (text, props = "") => `<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ""}<w:t xml:space="preserve">${text}</w:t></w:r>`;
 const para = (...runs) => `<w:p>${runs.join("")}</w:p>`;
 const filler = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. ";
-function styledDocx() {
+function styledDocx(custom) {
   const body = [];
-  for (let i = 0; i < 6; i += 1) {
+  if (custom) body.push(...custom);
+  else for (let i = 0; i < 6; i += 1) {
     body.push(para(
       run(filler), run("Gras. ", "<w:b/>"), run("Italique. ", "<w:i/>"), run("Gras italique. ", "<w:b/><w:i/>"),
       run("Souligné coloré. ", '<w:u w:val="single"/><w:color w:val="4472C4"/>'), run("Grand. ", '<w:sz w:val="40"/>'),
@@ -116,15 +117,28 @@ function capture(name, open, edit) {
     for (let i = 0; i < 4000 && !edited.layoutComplete; i += 1) edited = send(docId, { type: "layout", budget: 256 }, frames);
     send(docId, { type: "pages", first: 0, count: 1 }, frames);
   }
-  return { name, frames, pages: Array.from({ length: Math.min(pageCount, 4) }, (_, i) => i), pageCount };
+  return { name, frames, pages: Array.from({ length: Math.min(pageCount, 8) }, (_, i) => i), pageCount };
 }
 
+// One family at several close sizes (the key of an atlas entry holds the size in 1/64 pt), and pages
+// that do not have the same number of glyphs (one glyph, a few, a full page, a short last line).
+const closeSizes = [20, 21, 22, 23, 24, 25, 26, 28, 32].flatMap((half) => [
+  para(run(`Taille ${half / 2} pt : Wagons, Ægir &amp; fjords 0123456789 ${filler}`, `<w:sz w:val="${half}"/>`)),
+  para(run(`Gras ${half / 2} pt : mmm www iii lll ${filler}`, `<w:b/><w:sz w:val="${half}"/>`)),
+]);
+const uneven = [
+  para(run("A")), para('<w:r><w:br w:type="page"/></w:r>'),
+  ...Array.from({ length: 40 }, () => para(run(filler + filler))),
+  para(run("Fin.")), para('<w:r><w:br w:type="page"/></w:r>'), para(run("é")),
+];
 const letters = "mwgQ@&%$B8GRSgsy";
 const dense = Array.from({ length: 60 }, (_, i) => Array.from({ length: 100 }, (_, k) => letters[(i * 7 + k * 5) % letters.length]).join("")).join("\n");
 const captures = [
   capture("txt dense", { kind: "txt", profile: "txt", data: new TextEncoder().encode(dense) }),
   capture("txt edited", { kind: "txt", profile: "txt", data: new TextEncoder().encode("Bonjour le monde, ceci est un essai.\nDeuxième ligne avec des accents éàù.") }, "Zéro Æ — "),
   capture("docx styles", { kind: "docx", profile: "document", data: styledDocx() }),
+  capture("docx close sizes", { kind: "docx", profile: "document", data: styledDocx(closeSizes) }),
+  capture("docx uneven pages", { kind: "docx", profile: "document", data: styledDocx(uneven) }),
 ];
 for (const c of captures) console.log(`captured ${c.name}: ${c.pageCount} pages, ${c.frames.length} replies`);
 

@@ -3,6 +3,10 @@
 // of EditorPageCache.glyphResolver) against the drawing the engine used before the atlas (one
 // FillPath per glyph, contour already moved to the glyph position). Both go through the same
 // CanvasRenderer, at several zoom factors; the pixels must be identical (tolerance 0).
+// Limit: the reference is rebuilt here from the atlas entries of the code under test (`expand`), so it
+// proves that the atlas is drawn like inline contours, not that the contours are the right ones; that
+// is checked by the independent Rust test `the_atlas_pages_expand_to_the_preview_painter_bytes`
+// (pages expanded against the bytes of the DOCX preview painter).
 import { CanvasRenderer } from "/canvas-renderer.mjs";
 import { decodeDisplayList } from "/display-list.mjs";
 import { EditorPageCache } from "/editor-page-cache.mjs";
@@ -82,7 +86,7 @@ try {
         const glyphs = decoded.commands.reduce((n, c) => n + (c.type === "drawGlyphRun" ? c.glyphs.length : 0), 0);
         report.pages.push({ name: capture.name, page: index, zoom, glyphs, cacheHits: stats.glyphCacheHits, ...diff });
         if (diff.different !== 0) report.status = "failed";
-        if (diff.inked < 100 && glyphs > 0) { report.status = "failed"; report.notes.push(`${capture.name} p${index}: blank render`); }
+        if (diff.inked < Math.min(100, glyphs * 8) && glyphs > 0) { report.status = "failed"; report.notes.push(`${capture.name} p${index}: blank render`); }
       }
     }
   }
