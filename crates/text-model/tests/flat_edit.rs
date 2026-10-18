@@ -812,3 +812,42 @@ fn properties_and_runs_follow_splits_and_merges_exactly() {
         }
     }
 }
+
+#[test]
+fn insert_object_is_one_undoable_edit_of_three_bytes() {
+    let mut doc = body(&["ab", "cd"]);
+    let before = doc.len();
+    let outcome = doc
+        .insert_object(1, "atelier:image", vec![1, 2, 3])
+        .unwrap();
+    assert_eq!(doc.len(), before + 3);
+    assert_eq!(
+        (outcome.start, outcome.removed_bytes, outcome.inserted_bytes),
+        (1, 0, 3)
+    );
+    assert_eq!(outcome.selection, (4, 4));
+    assert_eq!(outcome.revision, 1);
+    assert!(outcome.can_undo);
+    assert_eq!(doc.text(0, doc.len()).unwrap(), "a\u{fffc}b\ncd");
+    let id = doc.paragraph_ids()[0];
+    let p = doc.paragraph(id).unwrap();
+    assert_eq!((p.anchored.len(), p.anchored[0].offset), (1, 1));
+    // A second object at the same text offset goes after the first one.
+    let second = doc.insert_object(1, "atelier:image", vec![4]).unwrap();
+    assert_eq!(second.start, 4, "after the object already anchored there");
+    assert_eq!(doc.text(0, doc.len()).unwrap(), "a\u{fffc}\u{fffc}b\ncd");
+    doc.undo().unwrap();
+    doc.undo().unwrap();
+    assert_eq!(doc.text(0, doc.len()).unwrap(), "ab\ncd");
+    doc.redo().unwrap();
+    assert_eq!(doc.text(0, doc.len()).unwrap(), "a\u{fffc}b\ncd");
+    // Not inside a cluster, not past the end.
+    assert_eq!(
+        doc.insert_object(2, "k", vec![]).unwrap_err(),
+        FlatError::NotBoundary
+    );
+    assert_eq!(
+        doc.insert_object(999, "k", vec![]).unwrap_err(),
+        FlatError::OutOfRange
+    );
+}

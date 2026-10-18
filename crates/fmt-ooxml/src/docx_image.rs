@@ -96,15 +96,18 @@ struct Media {
     relationship: String,
 }
 
-/// Like [`crate::write_new_docx`], also writing every picture object of the
-/// document (kind [`IMAGE_OBJECT_KIND`]) as an inline `w:drawing`.
-pub fn write_new_docx_with_pictures(
-    input: &NewDocument<'_>,
-    options: &DocxWriteOptions,
-) -> Result<WrittenDocx, WriteError> {
+/// The picture objects of `document` as `w:drawing` replacements, with the
+/// media they need. `taken` says whether a part name or a relationship id is
+/// already used by the package. `None` when the document holds no picture.
+fn prepare_pictures(
+    document: &atelier_text_model::rich::RichDocument,
+    text_width_pt: f64,
+    text_height_pt: f64,
+    taken: &dyn Fn(&str) -> bool,
+) -> Result<Option<(Vec<RichOp>, Vec<Media>)>, WriteError> {
     let mut found: Vec<(NodeId, AnchoredObject)> = Vec::new();
-    for para in input.document.paragraph_ids() {
-        let Ok(paragraph) = input.document.paragraph(para) else {
+    for para in document.paragraph_ids() {
+        let Ok(paragraph) = document.paragraph(para) else {
             continue;
         };
         for object in paragraph
@@ -116,29 +119,14 @@ pub fn write_new_docx_with_pictures(
         }
     }
     if found.is_empty() {
-        return crate::write_new_docx(input, options);
+        return Ok(None);
     }
     if found.len() > MAX_PICTURES {
         return Err(WriteError::Limit("too many pictures"));
     }
-    let text_width_pt = f64::from(
-        input
-            .page
-            .width
-            .saturating_sub(input.page.margin_left)
-            .saturating_sub(input.page.margin_right)
-            .max(1000),
-    ) / 20.0;
-    let text_height_pt = f64::from(
-        input
-            .page
-            .height
-            .saturating_sub(input.page.margin_top)
-            .saturating_sub(input.page.margin_bottom)
-            .max(1000),
-    ) / 20.0;
     let mut media: Vec<Media> = Vec::new();
     let mut ops = Vec::new();
+    let mut counter = 0usize;
     for (index, (para, object)) in found.iter().enumerate() {
         let image = InlineImage::from_object_data(&object.data)
             .map_err(|_| invalid("picture object data is not a valid image"))?;
@@ -148,10 +136,18 @@ pub fn write_new_docx_with_pictures(
         {
             Some(slot) => slot,
             None => {
-                let n = media.len() + 1;
+                // The first number whose part name and relationship id are free.
+                let (uri, relationship) = loop {
+                    counter += 1;
+                    let uri = format!("word/media/image{counter}.{}", image.format.extension());
+                    let relationship = format!("rIdImg{counter}");
+                    if !taken(&uri) && !taken(&relationship) {
+                        break (uri, relationship);
+                    }
+                };
                 media.push(Media {
-                    uri: format!("word/media/image{n}.{}", image.format.extension()),
-                    relationship: format!("rIdImg{n}"),
+                    uri,
+                    relationship,
                     image: image.clone(),
                 });
                 media.len() - 1
@@ -181,6 +177,56 @@ pub fn write_new_docx_with_pictures(
             }),
         });
     }
+    Ok(Some((ops, media)))
+}
+
+/// Inserts the media into the written package and links them from the main part.
+fn attach_media(written: &mut WrittenDocx, media: &[Media]) -> Result<(), WriteError> {
+    let mut package = Package::read(&written.bytes)?;
+    let main = PartUri::parse("word/document.xml")?;
+    for entry in media {
+        let uri = PartUri::parse(&entry.uri)?;
+        package.insert_part(uri, entry.image.format.mime(), entry.image.bytes.to_vec())?;
+        package.add_relationship(
+            Some(main.clone()),
+            entry.relationship.clone(),
+            REL_IMAGE,
+            entry.uri.trim_start_matches("word/"),
+            TargetMode::Internal,
+        )?;
+        written.regenerated_parts.push(entry.uri.clone());
+    }
+    written.bytes = package.write().map_err(|e: OpcError| WriteError::Opc(e))?;
+    Ok(())
+}
+
+/// Width and height of the text area in points, from the page size and the
+/// margins `(top, right, bottom, left)` in twips.
+fn text_area_points(width: u32, height: u32, margins: (u32, u32, u32, u32)) -> (f64, f64) {
+    let (top, right, bottom, left) = margins;
+    (
+        f64::from(width.saturating_sub(left).saturating_sub(right).max(1000)) / 20.0,
+        f64::from(height.saturating_sub(top).saturating_sub(bottom).max(1000)) / 20.0,
+    )
+}
+
+/// Like [`crate::write_new_docx`], also writing every picture object of the
+/// document (kind [`IMAGE_OBJECT_KIND`]) as an inline `w:drawing`.
+pub fn write_new_docx_with_pictures(
+    input: &NewDocument<'_>,
+    options: &DocxWriteOptions,
+) -> Result<WrittenDocx, WriteError> {
+    let page = input.page;
+    let margins = (
+        page.margin_top,
+        page.margin_right,
+        page.margin_bottom,
+        page.margin_left,
+    );
+    let (w, h) = text_area_points(page.width, page.height, margins);
+    let Some((ops, media)) = prepare_pictures(input.document, w, h, &|_| false)? else {
+        return crate::write_new_docx(input, options);
+    };
     let mut document = input.document.clone();
     let transaction = atelier_model::Transaction::new(ops)
         .map_err(|_| invalid("picture replacement is not a valid transaction"))?;
@@ -197,21 +243,60 @@ pub fn write_new_docx_with_pictures(
         default_tab_stop: input.default_tab_stop,
     };
     let mut written = crate::write_new_docx(&rewritten, options)?;
-    let mut package = Package::read(&written.bytes)?;
+    attach_media(&mut written, &media)?;
+    Ok(written)
+}
+
+/// Like [`crate::write_docx`] for a document that gained pictures since the
+/// import: every picture object (kind [`IMAGE_OBJECT_KIND`]) of
+/// `imported.document` becomes an inline `w:drawing` with its media in the
+/// package, under names the package does not use yet. The picture objects of
+/// `imported.document` are replaced by their drawings: the caller assigns a
+/// working copy of its document before each call.
+pub fn write_docx_with_pictures(
+    imported: &mut ImportedDocx,
+    options: &DocxWriteOptions,
+) -> Result<WrittenDocx, WriteError> {
+    use atelier_text_model::rich::{Node, flat::PageSetup};
+    let page = imported
+        .document
+        .section_ids()
+        .first()
+        .and_then(|id| match imported.document.node(*id) {
+            Some(Node::Section(s)) => Some(PageSetup::from_section(s)),
+            _ => None,
+        })
+        .unwrap_or_else(PageSetup::standard);
+    let margins = (
+        page.margin_top,
+        page.margin_right,
+        page.margin_bottom,
+        page.margin_left,
+    );
+    let (w, h) = text_area_points(page.width, page.height, margins);
     let main = PartUri::parse("word/document.xml")?;
-    for entry in &media {
-        let uri = PartUri::parse(&entry.uri)?;
-        package.insert_part(uri, entry.image.format.mime(), entry.image.bytes.to_vec())?;
-        package.add_relationship(
-            Some(main.clone()),
-            entry.relationship.clone(),
-            REL_IMAGE,
-            entry.uri.trim_start_matches("word/"),
-            TargetMode::Internal,
-        )?;
-        written.regenerated_parts.push(entry.uri.clone());
-    }
-    written.bytes = package.write().map_err(|e: OpcError| WriteError::Opc(e))?;
+    let prepared = {
+        let package = &imported.package;
+        let taken = |name: &str| {
+            package.parts().keys().any(|u| u.as_str() == name)
+                || package
+                    .relationships(Some(&main))
+                    .iter()
+                    .any(|r| r.id == name)
+        };
+        prepare_pictures(&imported.document, w, h, &taken)?
+    };
+    let Some((ops, media)) = prepared else {
+        return crate::write_docx(imported, options);
+    };
+    let transaction = atelier_model::Transaction::new(ops)
+        .map_err(|_| invalid("picture replacement is not a valid transaction"))?;
+    imported
+        .document
+        .apply(&transaction)
+        .map_err(|_| invalid("picture replacement failed"))?;
+    let mut written = crate::write_docx(imported, options)?;
+    attach_media(&mut written, &media)?;
     Ok(written)
 }
 
