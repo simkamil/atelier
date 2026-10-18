@@ -430,12 +430,7 @@ pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
     let result = broker.read(ticket);
     broker.revoke_read(ticket);
     match result {
-        // Seule la validité UTF-8 est vérifiée : la taille est déjà bornée par le courtier.
-        Ok(bytes) if kind == "txt" => match text_length(&bytes) {
-            None => Err("files.error.invalid_text"),
-            Some(_) if bytes.len() > limit => Err("files.error.too_large"),
-            Some(_) => Ok((kind, bytes)),
-        },
+        // Aucun contrôle d'encodage : le moteur v2 détecte UTF-8, UTF-16 ou Windows-1252 comme pour le dialogue.
         Ok(bytes) if bytes.len() <= limit => Ok((kind, bytes)),
         Ok(_) => Err("files.error.too_large"),
         Err(error) => Err(error.message_key),
@@ -841,12 +836,10 @@ mod tests {
         let dir = launch_dir("errors");
         let image = dir.join("x.png");
         let missing = dir.join("absent.txt");
-        let bad = dir.join("bad.txt");
         let good = dir.join("good.docx");
         std::fs::write(&image, "x").unwrap();
-        std::fs::write(&bad, [0xff, 0xfe, 0xfd]).unwrap();
         std::fs::write(&good, "PK").unwrap();
-        let mut pending: VecDeque<PathBuf> = [image, missing, bad, good].into();
+        let mut pending: VecDeque<PathBuf> = [image, missing, good].into();
         assert_eq!(
             process_launch("1", &mut pending),
             "us120-file|1|1|error|files.error.unsupported_type"
@@ -854,11 +847,7 @@ mod tests {
         assert!(process_launch("2", &mut pending).starts_with("us120-file|1|2|error|files.error."));
         assert_eq!(
             process_launch("3", &mut pending),
-            "us120-file|1|3|error|files.error.invalid_text"
-        );
-        assert_eq!(
-            process_launch("4", &mut pending),
-            format!("us120-file|1|4|ok|docx;0;{}", encode_base64(b"PK"))
+            format!("us120-file|1|3|ok|docx;0;{}", encode_base64(b"PK"))
         );
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -870,13 +859,37 @@ mod tests {
                 .join("../core-wasm/src/rich_protocol.rs"),
         )
         .unwrap();
-        assert!(source.contains("pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;"));
-        assert!(source.contains("pub const HEADER_BYTES: usize = 20;"));
-        assert!(
-            source
-                .contains("pub const MAX_OPEN_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES - 8;")
-        );
-        assert_eq!(MAX_LAUNCH_BYTES, 32 * 1024 * 1024 - 20 - 8);
+        // Évalue `pub const NAME: usize = a * b - NAME2 - 8;` (produits, + et -, noms de constantes).
+        fn constant(source: &str, name: &str) -> usize {
+            let marker = format!("pub const {name}: usize = ");
+            let start = source.find(&marker).expect(name) + marker.len();
+            let end = start + source[start..].find(';').unwrap();
+            let mut total = 0i64;
+            let mut sign = 1i64;
+            let mut term = String::new();
+            let flush = |term: &mut String, sign: i64, total: &mut i64| {
+                let product: i64 = term
+                    .split('*')
+                    .map(|factor| match factor.trim().parse::<i64>() {
+                        Ok(number) => number,
+                        Err(_) => constant(source, factor.trim()) as i64,
+                    })
+                    .product();
+                *total += sign * product;
+                term.clear();
+            };
+            for c in source[start..end].chars() {
+                if c == '-' || c == '+' {
+                    flush(&mut term, sign, &mut total);
+                    sign = if c == '-' { -1 } else { 1 };
+                } else {
+                    term.push(c);
+                }
+            }
+            flush(&mut term, sign, &mut total);
+            usize::try_from(total).unwrap()
+        }
+        assert_eq!(MAX_LAUNCH_BYTES, constant(&source, "MAX_OPEN_BYTES"));
     }
 
     #[test]
@@ -914,6 +927,22 @@ mod tests {
             read_launch_file(&over_docx).unwrap_err(),
             "files.error.too_large"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn launch_delivers_utf16_and_windows_1252_text_unchanged() {
+        let dir = launch_dir("encodings");
+        let mut utf16 = vec![0xff, 0xfe];
+        for unit in "Été à Paris".encode_utf16() {
+            utf16.extend(unit.to_le_bytes());
+        }
+        let ansi = b"caf\xe9".to_vec();
+        for (name, bytes) in [("u16.txt", utf16), ("ansi.txt", ansi)] {
+            let path = dir.join(name);
+            std::fs::write(&path, &bytes).unwrap();
+            assert_eq!(read_launch_file(&path), Ok(("txt", bytes)));
+        }
         let _ = std::fs::remove_dir_all(dir);
     }
 }
