@@ -653,6 +653,28 @@ impl PageCache {
         self.memo.insert(index, (signature, buffer));
     }
 
+    /// Atlas entries no reply carried yet, with the index of the first;
+    /// marks them sent. Pages painted by `page_display` draw glyphs by atlas
+    /// index (`DrawGlyphRun`, font 0), so the entries of every page of a
+    /// reply must be taken after painting them.
+    pub fn take_atlas(&mut self) -> (u32, Vec<Vec<u8>>) {
+        self.glyphs.take_atlas()
+    }
+
+    /// Every atlas entry of the session, sent or not (host tests expand pages
+    /// with it).
+    pub fn atlas(&self) -> &[Vec<u8>] {
+        self.glyphs.atlas()
+    }
+
+    /// Starts a new atlas: entries and painted pages (which refer to the old
+    /// indices) are dropped, and the next entry is number 0.
+    pub fn reset_atlas(&mut self) {
+        self.glyphs.reset_atlas();
+        self.memo.clear();
+        self.memo_order.clear();
+    }
+
     fn paint_page(&mut self, index: usize) -> Result<Vec<u8>, LayoutError> {
         let Self {
             fonts,
@@ -711,7 +733,11 @@ impl RichPageCache for PageCache {
             doc_len: document.len(),
             pages_hint: 0,
             failed: false,
-            glyphs: GlyphCache::default(),
+            glyphs: {
+                let mut glyphs = GlyphCache::default();
+                glyphs.set_page(geometry.page_width, geometry.page_height);
+                glyphs
+            },
             memo: BTreeMap::new(),
             memo_order: Vec::new(),
             last_step_work: 0,
@@ -1135,8 +1161,77 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn the_editor_writer_is_byte_identical_to_the_preview_painter() {
+    /// What the editor drew before the atlas: every glyph of a
+    /// `DrawGlyphRun` becomes the `FillPath` of its atlas contour translated
+    /// to the glyph position (the sums are the ones the old writer did).
+    fn expand(page: &[u8], atlas: &[Vec<u8>], width: i64, height: i64) -> Vec<u8> {
+        use atelier_geom::Point;
+        use atelier_render::{DisplayList, DisplayPath, FillRule, PathElement};
+        let contour = |entry: &[u8]| match DisplayList::decode(entry).unwrap().commands.as_slice() {
+            [Command::FillPath { path, rule, color }] => {
+                assert_eq!(*rule, FillRule::NonZero);
+                assert_eq!(
+                    (color.red, color.green, color.blue, color.alpha),
+                    (0.0, 0.0, 0.0, 1.0)
+                );
+                path.elements.clone()
+            }
+            other => panic!("an atlas entry is one FillPath, got {other:?}"),
+        };
+        let at = |p: Point, o: Point| Point::try_new(o.x() + p.x(), o.y() + p.y()).unwrap();
+        let mut commands = Vec::new();
+        for command in DisplayList::decode(page).unwrap().commands {
+            match command {
+                Command::DrawGlyphRun {
+                    font_id,
+                    color,
+                    glyphs,
+                } => {
+                    assert_eq!(font_id, 0);
+                    for glyph in glyphs {
+                        let elements = contour(&atlas[glyph.glyph_id as usize])
+                            .into_iter()
+                            .map(|e| match e {
+                                PathElement::MoveTo(p) => {
+                                    PathElement::MoveTo(at(p, glyph.position))
+                                }
+                                PathElement::LineTo(p) => {
+                                    PathElement::LineTo(at(p, glyph.position))
+                                }
+                                PathElement::QuadraticTo { control, to } => {
+                                    PathElement::QuadraticTo {
+                                        control: at(control, glyph.position),
+                                        to: at(to, glyph.position),
+                                    }
+                                }
+                                PathElement::CubicTo {
+                                    control1,
+                                    control2,
+                                    to,
+                                } => PathElement::CubicTo {
+                                    control1: at(control1, glyph.position),
+                                    control2: at(control2, glyph.position),
+                                    to: at(to, glyph.position),
+                                },
+                                PathElement::Close => PathElement::Close,
+                            })
+                            .collect();
+                        commands.push(Command::FillPath {
+                            path: DisplayPath::new(elements).unwrap(),
+                            color,
+                            rule: FillRule::NonZero,
+                        });
+                    }
+                }
+                other => commands.push(other),
+            }
+        }
+        encode_page(commands, width, height).unwrap()
+    }
+
+    /// Fourteen styled paragraphs and seven underline styles, a fallback
+    /// family, a symbol and forced breaks, laid out completely.
+    fn sample() -> (VecParagraphs, PageCache) {
         let filler = "The quick brown fox jumps over the lazy dog. ".repeat(20);
         let bold = CharAttrs {
             bold: Some(true),
@@ -1208,13 +1303,77 @@ mod tests {
             cache.step(&document, 16);
         }
         assert!(cache.page_count() >= 3);
-        for page in 0..cache.page_count() as usize {
+        (document, cache)
+    }
+
+    #[test]
+    fn the_atlas_pages_expand_to_the_preview_painter_bytes() {
+        let (document, mut cache) = sample();
+        let (width, height) = (cache.geometry.page_width, cache.geometry.page_height);
+        let pages: Vec<Vec<u8>> = (0..cache.page_count() as usize)
+            .map(|page| cache.paint_page(page).unwrap())
+            .collect();
+        let (first, atlas) = cache.take_atlas();
+        assert_eq!(first, 0);
+        assert!(!atlas.is_empty() && atlas.len() < 400, "{}", atlas.len());
+        for (page, bytes) in pages.iter().enumerate() {
             assert_eq!(
-                cache.paint_page(page).unwrap(),
+                expand(bytes, &atlas, width, height),
                 slow_page(&cache, &document, page),
                 "page {page}"
             );
         }
+        // Nothing is new the second time; a reset starts again at 0 and
+        // renumbers the entries in paint order.
+        assert_eq!(cache.take_atlas().1.len(), 0);
+        assert_eq!(cache.take_atlas().0 as usize, atlas.len());
+        cache.reset_atlas();
+        assert!(cache.memo.is_empty());
+        let again = cache.paint_page(0).unwrap();
+        let (first, entries) = cache.take_atlas();
+        assert_eq!(first, 0);
+        assert_eq!(
+            expand(&again, &entries, width, height),
+            slow_page(&cache, &document, 0)
+        );
+    }
+
+    #[test]
+    fn entries_are_sent_once_and_in_order() {
+        let (_, mut cache) = sample();
+        cache.paint_page(0).unwrap();
+        let (first, a) = cache.take_atlas();
+        cache.paint_page(1).unwrap();
+        let (second, b) = cache.take_atlas();
+        assert_eq!(first, 0);
+        assert_eq!(second as usize, a.len());
+        assert!(a.iter().all(|e| !b.contains(e)), "an entry is sent once");
+    }
+
+    #[test]
+    fn a_full_atlas_falls_back_to_inline_contours() {
+        let (document, mut cache) = sample();
+        let (width, height) = (cache.geometry.page_width, cache.geometry.page_height);
+        cache.glyphs.set_atlas_limit(5);
+        let bytes = cache.paint_page(0).unwrap();
+        assert_eq!(cache.atlas().len(), 5);
+        let (_, atlas) = cache.take_atlas();
+        let list = atelier_render::DisplayList::decode(&bytes).unwrap();
+        assert!(
+            list.commands
+                .iter()
+                .any(|c| matches!(c, Command::FillPath { .. }))
+        );
+        assert!(
+            list.commands
+                .iter()
+                .any(|c| matches!(c, Command::DrawGlyphRun { .. }))
+        );
+        // Inline contours and atlas glyphs together still draw the preview page.
+        assert_eq!(
+            expand(&bytes, &atlas, width, height),
+            slow_page(&cache, &document, 0)
+        );
     }
 
     #[test]

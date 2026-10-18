@@ -36,6 +36,7 @@ function describeRequest({ docId, requestId, command: c }) {
     pages: () => `Pages first=${c.first} count=${c.count}`,
     markSaved: () => `MarkSaved revision=${c.revision}`,
     accessibleWindow: () => `AccessibleWindow start=${c.start} end=${c.end}`,
+    resync: () => "Resync",
   }[c.type]();
   return `${head} ${tail}`;
 }
@@ -49,6 +50,8 @@ const describeItems = (items) => (items.length
 
 const describePages = (pages) => (pages.length ? pages.map((p) => `${p.index}:${p.display.length}`).join(",") : "none");
 
+const describeAtlas = (a) => `${a.epoch}/${a.first}/${a.entries.length ? a.entries.map((e) => e.length).join(",") : "none"}`;
+
 function describeReply({ docId, requestId, response: s }) {
   const head = `doc=${docId} req=${requestId}`;
   const tail = {
@@ -57,12 +60,12 @@ function describeReply({ docId, requestId, response: s }) {
     accessibleWindow: () => `AccessibleWindow revision=${s.revision} items=${describeItems(s.items)}`,
     hitResult: () => `HitResult revision=${s.revision} page=${s.page} position=${s.position} upstream=${flag(s.upstream)}`,
     textWindow: () => `TextWindow revision=${s.revision} start=${s.start} doc_len=${s.docLen} text=${textHex(s.text)}`,
-    pages: () => `Pages revision=${s.revision} page_count=${s.pageCount} pages=${describePages(s.pages)}`,
+    pages: () => `Pages revision=${s.revision} page_count=${s.pageCount} atlas=${describeAtlas(s.atlas)} pages=${describePages(s.pages)}`,
     state: () => {
       const caret = s.caret ? `${s.caret.page}:${bits(s.caret.x)}:${bits(s.caret.y)}:${bits(s.caret.height)}` : "none";
       const inval = s.invalidated.length ? s.invalidated.map(([a, b]) => `${a}-${b}`).join(",") : "none";
       const window = s.window ? `${s.window.start}:${textHex(s.window.text)}` : "none";
-      return `State revision=${s.revision} anchor=${s.anchor} focus=${s.focus} focus_upstream=${flag(s.focusUpstream)} doc_len=${s.docLen} modified=${flag(s.modified)} can_undo=${flag(s.canUndo)} can_redo=${flag(s.canRedo)} layout_complete=${flag(s.layoutComplete)} page_count=${s.pageCount} caret=${caret} invalidated=${inval} pages=${describePages(s.pages)} window=${window}`;
+      return `State revision=${s.revision} anchor=${s.anchor} focus=${s.focus} focus_upstream=${flag(s.focusUpstream)} doc_len=${s.docLen} modified=${flag(s.modified)} can_undo=${flag(s.canUndo)} can_redo=${flag(s.canRedo)} layout_complete=${flag(s.layoutComplete)} page_count=${s.pageCount} caret=${caret} invalidated=${inval} atlas=${describeAtlas(s.atlas)} pages=${describePages(s.pages)} window=${window}`;
     },
   }[s.type]();
   return `${head} ${tail}`;
@@ -98,7 +101,7 @@ for (const [kind, name, frameHex, expected] of rows) {
     expectCode(() => decode(bytes), code, note !== "nocontext");
   }
 }
-assert.deepEqual(counts, { request: 27, reply: 12, "bad-request": 41, "bad-reply": 27 });
+assert.deepEqual(counts, { request: 28, reply: 12, "bad-request": 41, "bad-reply": 30 });
 
 // Truncation: every strict prefix of a valid frame is rejected, never thrown as a foreign error.
 for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {
@@ -150,6 +153,7 @@ const limitState = () => ({
   type: "state", revision: 1n, anchor: 0n, focus: 0n, docLen: BigInt(RICH_LIMITS.maxWindowBytes),
   focusUpstream: false, modified: false, canUndo: false, canRedo: false, layoutComplete: true, pageCount: 40, caret: null,
   invalidated: Array.from({ length: RICH_LIMITS.maxInvalidations }, (_, i) => [i * 2, i * 2 + 1]),
+  atlas: { epoch: 1, first: 0, entries: [] },
   pages: Array.from({ length: RICH_LIMITS.maxPagesPerResponse }, (_, i) => ({ index: i * 2, display: atdl(i) })),
   window: { start: 0n, text: "a".repeat(RICH_LIMITS.maxWindowBytes) },
 });
@@ -174,13 +178,35 @@ const limitState = () => ({
 {
   const mib = 1024 * 1024;
   const big = (index, len) => { const d = new Uint8Array(len); d.set([0x41, 0x54, 0x44, 0x4c]); return { index, display: d }; };
-  const pagesReply = (pages) => ({ docId: 1, requestId: 1, response: { type: "pages", revision: 1n, pageCount: 4, pages } });
+  const pagesReply = (pages) => ({ docId: 1, requestId: 1, response: { type: "pages", revision: 1n, pageCount: 4, atlas: { epoch: 1, first: 0, entries: [] }, pages } });
   assert.equal(RICH_LIMITS.maxPageDisplayBytes, 16 * mib);
   assert.equal(RICH_LIMITS.maxResponsePageBytes, 8 * mib);
   assert.equal(decodeRichReply(encodeRichReply(pagesReply([big(0, 16 * mib)]))).response.pages.length, 1);
   expectCode(() => encodeRichReply(pagesReply([big(0, 16 * mib + 1)])), "RICH_FRAME_TOO_LARGE", false);
   assert.equal(decodeRichReply(encodeRichReply(pagesReply([big(0, 4 * mib), big(1, 4 * mib)]))).response.pages.length, 2);
   expectCode(() => encodeRichReply(pagesReply([big(0, 4 * mib), big(1, 4 * mib + 1)])), "RICH_FRAME_TOO_LARGE", false);
+}
+
+// Glyph atlas section: entries up to 64 KiB, indices below 4096, 4 MiB per reply.
+{
+  const entry = (len = RICH_LIMITS.minPageDisplayBytes) => { const d = new Uint8Array(len); d.set([0x41, 0x54, 0x44, 0x4c]); return d; };
+  const reply = (atlas) => ({ docId: 1, requestId: 1, response: { type: "pages", revision: 1n, pageCount: 1, atlas, pages: [] } });
+  const full = { epoch: 9, first: 0, entries: Array.from({ length: RICH_LIMITS.maxAtlasEntries }, () => entry()) };
+  const back = decodeRichReply(encodeRichReply(reply(full))).response.atlas;
+  assert.equal(back.entries.length, 4096);
+  assert.equal(back.epoch, 9);
+  decodeRichReply(encodeRichReply(reply({ epoch: 9, first: 4096, entries: [] })));
+  decodeRichReply(encodeRichReply(reply({ epoch: 9, first: 0, entries: [entry(64 * 1024)] })));
+  for (const bad of [
+    { epoch: 1, first: 0, entries: [entry(64 * 1024 + 1)] },
+    { epoch: 1, first: 0, entries: [entry(RICH_LIMITS.minPageDisplayBytes - 1)] },
+    { epoch: 1, first: 4096, entries: [entry()] },
+    { epoch: 1, first: 1, entries: full.entries },
+    { epoch: 1, first: 0, entries: Array.from({ length: 65 }, () => entry(64 * 1024)) },
+  ]) expectCode(() => encodeRichReply(reply(bad)), "RICH_INVALID_BODY", false);
+  // Refused by the decoder check of the encoder (not an ATDL list): the reply is known.
+  expectCode(() => encodeRichReply(reply({ epoch: 1, first: 0, entries: [new Uint8Array(RICH_LIMITS.minPageDisplayBytes)] })), "RICH_INVALID_BODY", true);
+  expectCode(() => encodeRichReply({ docId: 1, requestId: 1, response: { type: "pages", revision: 1n, pageCount: 1, pages: [] } }), "RICH_INVALID_BODY", false);
 }
 
 // Typed errors for malformed caller input, no inherited keys as codes.

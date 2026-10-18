@@ -11,7 +11,8 @@
 //! never the whole document. Every edit, move and selection command also runs
 //! `DEFAULT_LAYOUT_BUDGET` paragraphs of pending layout.
 
-use atelier_text_model::plain_io::{OpenOptions, open_text};
+use atelier_fmt_ooxml::scan_revisions;
+use atelier_text_model::plain_io::{LineEndingStyle, OpenOptions, open_text};
 use atelier_text_model::rich::flat::{FlatEdit, FlatIndex, LayoutContext};
 use atelier_text_model::rich::{RichDocument, Theme, default_rich_document};
 
@@ -19,11 +20,13 @@ use crate::protocol::{Message, MessageType};
 use crate::rich_layout::{LayoutError, PageCache, PageDelta, RichPageCache};
 use crate::rich_preview::import_docx_for_editor;
 use crate::rich_protocol::{
-    self as proto, Caret, Command, DEFAULT_LAYOUT_BUDGET, DecodeError, DeleteUnit, Direction,
-    ErrorCode, HitMode, OpenKind, PageDisplay, Profile, Reply, Response, State, TextWindowData,
+    self as proto, AtlasDelta, Caret, Command, DEFAULT_LAYOUT_BUDGET, DecodeError, DeleteUnit,
+    Direction, ErrorCode, HitMode, OpenKind, PageDisplay, Profile, Reply, Response, State,
+    TextWindowData,
 };
 
 mod accessible;
+mod io;
 #[cfg(test)]
 mod tests;
 
@@ -44,6 +47,8 @@ pub fn is_rich(payload: &[u8]) -> bool {
 #[derive(Default)]
 pub struct RichEditor {
     active: Option<Session>,
+    /// Atlas epoch of the last closed document (a new `Open` never reuses it).
+    last_epoch: u32,
 }
 
 struct Session {
@@ -60,12 +65,17 @@ struct Session {
     /// X kept across vertical moves.
     preferred_x: Option<f64>,
     txt: bool,
+    /// Where the document comes from, read-only state, pictures (US-218).
+    origin: io::Origin,
     /// Page changes found by a layout step outside a `State` (while a move
     /// waits for the layout to reach its target); the next `State` reports them.
     pending: PageDelta,
     /// A reply was lost (encoding failure, ABI limit): the next `State`
     /// invalidates every page and carries the text window.
     resync: bool,
+    /// Epoch of the glyph atlas of `cache`: changes at `Open`, at a resync and
+    /// whenever the cache is rebuilt, i.e. whenever atlas indices restart at 0.
+    epoch: u32,
 }
 
 /// Paragraphs of layout a move or a hit test may run to reach its target.
@@ -129,7 +139,7 @@ impl RichEditor {
     /// when the ABI refuses a response, `STATUS_LIMIT`, `EDITOR_RESPONSE_LIMIT`).
     pub fn mark_resync(&mut self) {
         if let Some(session) = self.active.as_mut() {
-            session.resync = true;
+            session.mark_resync();
         }
     }
 
@@ -142,6 +152,11 @@ impl RichEditor {
         {
             // The previous document survives a refused `Open`.
             let mut session = Session::open(id, kind, profile, &data)?;
+            session.epoch = self
+                .active
+                .as_ref()
+                .map_or(self.last_epoch, |s| s.epoch)
+                .wrapping_add(1);
             let state = session.open_state()?;
             self.active = Some(session);
             return Ok(Response::State(state));
@@ -151,6 +166,7 @@ impl RichEditor {
             _ => return Err(ErrorCode::UnknownDocument),
         };
         if matches!(command, Command::Close) {
+            self.last_epoch = session.epoch;
             self.active = None;
             return Ok(Response::Closed);
         }
@@ -176,28 +192,68 @@ impl Session {
         fn failed<E>(_: E) -> ErrorCode {
             ErrorCode::OpenFailed
         }
-        let doc = match kind {
-            OpenKind::Blank if txt => RichDocument::new(),
+        let (doc, origin) = match kind {
+            OpenKind::Blank if txt => (RichDocument::new(), io::Origin::new(io::Source::New)),
             OpenKind::Blank => {
                 let default = default_rich_document();
                 let mut doc = default.document;
                 doc.set_styles(default.styles.catalog().clone(), Theme::default());
-                doc
+                (doc, io::Origin::new(io::Source::New))
             }
-            OpenKind::Txt => open_text(data, &OpenOptions::default())
-                .and_then(|opened| opened.to_rich_document(MAX_TXT_PARAGRAPHS))
-                .map_err(failed)?,
+            OpenKind::Txt => {
+                let opened = open_text(data, &OpenOptions::default()).map_err(failed)?;
+                let doc = opened
+                    .to_rich_document(MAX_TXT_PARAGRAPHS)
+                    .map_err(failed)?;
+                // Several kinds of break: each paragraph keeps its own.
+                let eols = if opened.line_endings.style() == LineEndingStyle::Mixed {
+                    let breaks = io::line_breaks(data, &opened);
+                    doc.paragraph_ids().into_iter().zip(breaks).collect()
+                } else {
+                    Default::default()
+                };
+                let origin = io::Origin::new(io::Source::Text(io::TextOrigin {
+                    format: opened.format(),
+                    eols,
+                    replaced_on_open: opened.invalid_sequences > 0,
+                }));
+                (doc, origin)
+            }
             OpenKind::Docx => {
-                let imported = import_docx_for_editor(data).map_err(failed)?;
-                let mut doc = imported.document;
-                doc.set_styles(imported.styles.catalog().clone(), imported.theme);
-                doc
+                let mut imported = import_docx_for_editor(data).map_err(failed)?;
+                let report = scan_revisions(&imported.package);
+                // The model moves into the session; the import keeps the
+                // package and the baseline the writer compares with.
+                let marked = report.has_revisions() || report.has_comments();
+                let mut doc = if marked {
+                    // The import keeps the whole model (the source of a save
+                    // of the read-only session); the session shows a copy
+                    // without the marks of deleted text, moves and comments.
+                    let mut shown = imported.document.clone();
+                    io::show_accepted(&mut shown).map_err(failed)?;
+                    shown
+                } else {
+                    std::mem::take(&mut imported.document)
+                };
+                doc.set_styles(imported.styles.catalog().clone(), imported.theme.clone());
+                let mut origin = io::Origin::new(io::Source::Docx(Box::new(imported)));
+                // Revisions and comments: everything accepted is shown, edits
+                // are refused until the copy made by `MakeEditableCopy` is opened.
+                origin.has_revisions = marked;
+                origin.unreadable = report.unreadable > 0;
+                origin.read_only = marked;
+                (doc, origin)
             }
         };
-        Self::with_document(id, doc, txt)
+        Self::with_document(id, doc, txt, origin)
     }
 
-    fn with_document(id: u32, doc: RichDocument, txt: bool) -> Result<Self, ErrorCode> {
+    fn with_document(
+        id: u32,
+        doc: RichDocument,
+        txt: bool,
+        origin: io::Origin,
+    ) -> Result<Self, ErrorCode> {
         let cache = PageCache::new(&doc, txt).map_err(|_| ErrorCode::OpenFailed)?;
         let base = doc.revision();
         Ok(Self {
@@ -211,9 +267,24 @@ impl Session {
             upstream: false,
             preferred_x: None,
             txt,
+            origin,
             pending: PageDelta::default(),
             resync: false,
+            epoch: 0,
         })
+    }
+
+    /// Restarts the glyph atlas: new epoch, no entry, no painted page.
+    /// The client may have missed a reply: the next `State` invalidates every
+    /// page, and a new atlas epoch starts (atlas and painted pages emptied).
+    fn mark_resync(&mut self) {
+        self.resync = true;
+        self.new_atlas_epoch();
+    }
+
+    fn new_atlas_epoch(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
+        self.cache.reset_atlas();
     }
 
     /// Adds the changes of a layout step done outside a `State`.
@@ -229,6 +300,8 @@ impl Session {
         let old = self.cache.page_count();
         if let Ok(cache) = PageCache::new(&self.doc, self.txt) {
             self.cache = cache;
+            // A fresh cache numbers its atlas from 0.
+            self.epoch = self.epoch.wrapping_add(1);
             let count = self.cache.page_count();
             self.carry(PageDelta {
                 page_count: count,
@@ -303,15 +376,20 @@ impl Session {
             // Handled by the caller.
             Command::Open { .. } | Command::Close => Err(ErrorCode::Internal),
             Command::InsertText { text } => {
+                self.deny_read_only()?;
                 let (start, end) = self.selection_range();
                 self.edit(start, end, &text)
             }
             Command::ReplaceRange { start, end, text } => {
+                self.deny_read_only()?;
                 proto::check_range(self.doc.len() as u64, start, end)?;
                 let (start, end) = (proto::to_position(start)?, proto::to_position(end)?);
                 self.edit(start, end, &text)
             }
-            Command::Delete { forward, unit } => self.delete(forward, unit),
+            Command::Delete { forward, unit } => {
+                self.deny_read_only()?;
+                self.delete(forward, unit)
+            }
             Command::Move { direction, extend } => self.move_selection(direction, extend),
             Command::SetSelection {
                 anchor,
@@ -326,10 +404,12 @@ impl Session {
             }
             Command::HitTest { page, mode, x, y } => self.hit_test(page, mode, x, y),
             Command::Undo => {
+                self.deny_read_only()?;
                 let outcome = self.doc.undo();
                 self.after_history(outcome)
             }
             Command::Redo => {
+                self.deny_read_only()?;
                 let outcome = self.doc.redo();
                 self.after_history(outcome)
             }
@@ -368,6 +448,7 @@ impl Session {
                 Ok(Response::Pages {
                     revision: self.revision(),
                     page_count,
+                    atlas: self.take_atlas(),
                     pages,
                 })
             }
@@ -379,6 +460,15 @@ impl Session {
                 Ok(Response::State(self.state(PageDelta::default(), false)?))
             }
             Command::Layout { budget } => self.finish(PageDelta::default(), budget, false),
+            // Idempotent: a lost reply is replayed, each answer starts a new
+            // epoch whose atlas begins at 0.
+            Command::Resync => {
+                self.mark_resync();
+                self.finish(PageDelta::default(), 1, true)
+            }
+            Command::Save { format, stamp } => self.save(format, &stamp),
+            Command::InsertImage { alt, bytes } => self.insert_image(&alt, &bytes),
+            Command::MakeEditableCopy { stamp } => self.editable_copy(&stamp),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(
@@ -643,6 +733,7 @@ impl Session {
                 height: c.height,
             });
         let revision = self.revision();
+        let atlas = self.take_atlas();
         Ok(State {
             revision,
             anchor: self.anchor as u64,
@@ -656,13 +747,27 @@ impl Session {
             page_count,
             caret,
             invalidated,
+            atlas,
             pages,
             window: if window {
                 self.window_around_focus()
             } else {
                 None
             },
+            read_only: self.origin.read_only,
+            has_revisions: self.origin.has_revisions,
         })
+    }
+
+    /// The glyph atlas entries the pages painted so far need and no reply
+    /// carried yet.
+    fn take_atlas(&mut self) -> AtlasDelta {
+        let (first, entries) = self.cache.take_atlas();
+        AtlasDelta {
+            epoch: self.epoch,
+            first,
+            entries,
+        }
     }
 
     fn window_around_focus(&self) -> Option<TextWindowData> {

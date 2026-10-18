@@ -780,6 +780,8 @@ Réf : §6.3, §6.4 · Taille : M · Dépend de : US-200, US-203
 
 Validation US-216 (2026-10-18) : tranche R2 développée sur la branche `us-216-incremental-layout` (lot 1 : cellules de tableau en pleine largeur, ni en-têtes ni pieds ; sauts de ligne, de page et symboles pris en charge par l'éditeur et l'aperçu ; [contrat, mesures et limites](docs/us-216-incremental-layout.md)). Banc release sur 304 pages : frappe au milieu 2,42 ms en moyenne, 2,87 ms au 95e centile, 4,39 ms au maximum ; relecture indépendante faite (corrections appliquées), vérification après fusion de R1 à refaire.
 
+Avancement US-216 / R2b (2026-10-18, branche `r2b-glyph-atlas`) : pages de l'éditeur riche peintes par atlas de glyphes par document (`DrawGlyphRun` police 0, atlas transmis une fois dans les réponses State et Pages, `Path2D` mis en cache côté client ; [format](docs/us-203-rich-editor-protocol.md)). Page dense de 100 colonnes sur le vrai WASM : 1 561 → 36 octets par glyphe en régime établi, première réponse 120 648 octets (< 1 Mio) ; rendu identique à l'ancien dessin au pixel près dans Edge (24 comparaisons, tolérance zéro). La case de latence reste décochée : elle se mesure de bout en bout dans US-219.
+
 Réf : §6.5, §6.16 · Taille : M · Dépend de : US-203, US-214
 
 #### US-217 — Édition riche dans le moteur
@@ -793,9 +795,11 @@ Réf : §6.4, §6.7 · Taille : M · Dépend de : US-204, US-216
 
 #### US-218 — Ouvrir et enregistrer dans l'éditeur riche
 *En tant que* développeur, *je veux* ouvrir, créer et enregistrer des documents TXT et DOCX dans l'éditeur riche *afin que* la bascule ne perde aucun format.
-- [ ] TXT ouvert, modifié puis enregistré : fins de ligne et BOM conservés, octet pour octet sur le corpus ; aller-retour DOCX sans nouvel avertissement d'écriture.
+- [x] TXT ouvert, modifié puis enregistré : fins de ligne et BOM conservés, octet pour octet sur le corpus ; aller-retour DOCX sans nouvel avertissement d'écriture.
 - [ ] Nouveau document riche ; images de l'éditeur TXT converties en objets ancrés.
 - [ ] DOCX contenant des révisions (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, changements de propriétés) ou des commentaires : bandeau explicite, affichage de l'état « toutes modifications acceptées » et ouverture en lecture seule ; l'édition n'est possible que sur une copie où les révisions sont acceptées, après confirmation ; aucune édition ne peut produire un document dont le sens diffère de l'original dans Word.
+
+Validation US-218 (2026-10-18, tranche R3b, moteur et protocole) : [contrat](docs/us-218-open-save.md). Case 1 cochée : corpus TXT (30 fichiers : UTF-8 avec et sans BOM, UTF-16 LE/BE, Windows-1252, LF/CRLF/CR) ouvert, modifié, enregistré octet pour octet et aller-retour DOCX sans avis sur le corpus de fmt-ooxml et de `tests/`, par le vrai WASM (`tests/rich-editor-save.mjs`), y compris les vrais fichiers de `crates/compress/tests/corpus`, les fins de ligne mêlées (conservées paragraphe par paragraphe) et les cas limites (vide, BOM seul, UTF-16 sans BOM, hors BMP). Réserve datée du 2026-10-18 : les séquences invalides remplacées à l'ouverture (avis 0x0213) et les caractères hors encodage (avis 0x0210) ne ressortent pas à l'identique ; ISO-8859-15 n'est pas géré par l'import. Case 2 décochée : nouveau document riche fait, mais l'éditeur TXT v1 garde ses images dans un magasin JS ; la conversion (R7 réinsère par `InsertImage`) n'est pas exercée. Case 3 décochée : lecture seule (`RICH_READ_ONLY`), état accepté, indicateurs `read_only`/`has_revisions` et copie éditable (`MakeEditableCopy`) sont faits et testés, mais le bandeau et la confirmation sont de l'interface (R7).
 
 Réf : §5 · Taille : M · Dépend de : US-217, écrivain DOCX livré par US-307 ([API](docs/us-307-docx-writer.md), sans attendre sa certification Word), US-316
 

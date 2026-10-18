@@ -198,7 +198,8 @@ fn object_document() -> RichDocument {
 
 fn harness_with(doc: RichDocument) -> Harness {
     let mut h = Harness::new();
-    h.editor.active = Some(Session::with_document(1, doc, true).unwrap());
+    h.editor.active =
+        Some(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     h
 }
 
@@ -1311,4 +1312,852 @@ fn a_dense_page_is_sent_within_the_response_bounds() {
             other => panic!("{other:?}"),
         }
     }
+}
+
+/// What a client keeps of the atlas: the epoch and the number of entries.
+#[derive(Default)]
+struct AtlasView {
+    epoch: Option<u32>,
+    len: u32,
+}
+
+impl AtlasView {
+    /// Applies a delta by the client rules; `true` when the epoch changed.
+    fn apply(&mut self, atlas: &proto::AtlasDelta) -> bool {
+        let fresh = self.epoch != Some(atlas.epoch);
+        if fresh {
+            self.epoch = Some(atlas.epoch);
+            self.len = 0;
+        }
+        assert_eq!(atlas.first, self.len, "atlas_first follows the known index");
+        self.len += atlas.entries.len() as u32;
+        fresh
+    }
+
+    /// Every glyph of the pages refers to a known entry.
+    fn covers(&self, pages: &[PageDisplay]) {
+        for page in pages {
+            let list = atelier_render::DisplayList::decode(&page.display).unwrap();
+            for command in list.commands {
+                if let atelier_render::Command::DrawGlyphRun {
+                    font_id, glyphs, ..
+                } = command
+                {
+                    assert_eq!(font_id, 0);
+                    assert!(glyphs.iter().all(|g| g.glyph_id < self.len));
+                }
+            }
+        }
+    }
+}
+
+// ---- US-218: open, create and save ---------------------------------------
+
+use crate::rich_protocol::{SaveFormat, Stamp, notice};
+
+fn stamp() -> Stamp {
+    Stamp {
+        now_ms: 1_700_000_000_000,
+        user: "Alice".into(),
+        version: "1.2".into(),
+    }
+}
+
+fn fixture(name: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/../../tests/docx-reference/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+impl Harness {
+    fn save(&mut self, format: SaveFormat) -> (Vec<u8>, Vec<proto::Notice>) {
+        match self.send(
+            1,
+            Command::Save {
+                format,
+                stamp: stamp(),
+            },
+        ) {
+            Response::SaveData { bytes, notices, .. } => (bytes, notices),
+            other => panic!("expected SaveData, got {other:?}"),
+        }
+    }
+
+    fn docx(&mut self, bytes: &[u8]) -> State {
+        self.open_state(OpenKind::Docx, Profile::Document, bytes)
+    }
+}
+
+/// `text` (LF breaks) as a file: line break, encoding, BOM.
+fn file_bytes(text: &str, eol: &str, encoding: &str, bom: bool) -> Vec<u8> {
+    let text = text.replace('\n', eol);
+    let mut out = Vec::new();
+    match encoding {
+        "utf8" => {
+            if bom {
+                out.extend_from_slice(&[0xef, 0xbb, 0xbf]);
+            }
+            out.extend_from_slice(text.as_bytes());
+        }
+        "utf16le" | "utf16be" => {
+            let le = encoding == "utf16le";
+            if bom {
+                out.extend_from_slice(if le { &[0xff, 0xfe] } else { &[0xfe, 0xff] });
+            }
+            for unit in text.encode_utf16() {
+                out.extend_from_slice(&if le {
+                    unit.to_le_bytes()
+                } else {
+                    unit.to_be_bytes()
+                });
+            }
+        }
+        _ => {
+            for c in text.chars() {
+                out.push(match c {
+                    '\u{e9}' => 0xe9,
+                    '\u{e8}' => 0xe8,
+                    '\u{e0}' => 0xe0,
+                    '\u{20ac}' => 0x80,
+                    c if c.is_ascii() => c as u8,
+                    other => panic!("not in the test table: {other}"),
+                });
+            }
+        }
+    }
+    out
+}
+
+const CORPUS_TEXT: &str =
+    "Premier \u{e9}t\u{e9}, \u{e0} 5\u{20ac}\n\nTroisi\u{e8}me ligne\tavec tabulation\nfin";
+
+type TextCase = (String, Vec<u8>, &'static str, bool, &'static str, bool);
+
+fn text_corpus() -> Vec<TextCase> {
+    let mut out = Vec::new();
+    for (eol_name, eol) in [("lf", "\n"), ("crlf", "\r\n"), ("cr", "\r")] {
+        for (encoding, bom) in [
+            ("utf8", false),
+            ("utf8", true),
+            ("utf16le", true),
+            ("utf16be", true),
+            ("cp1252", false),
+        ] {
+            for final_break in [false, true] {
+                let text = format!("{CORPUS_TEXT}{}", if final_break { "\n" } else { "" });
+                out.push((
+                    format!("{encoding}-bom{bom}-{eol_name}-final{final_break}"),
+                    file_bytes(&text, eol, encoding, bom),
+                    encoding,
+                    bom,
+                    eol,
+                    final_break,
+                ));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn text_files_save_back_byte_for_byte_and_after_an_edit() {
+    for (name, bytes, encoding, bom, eol, final_break) in text_corpus() {
+        let mut h = Harness::new();
+        h.open_state(OpenKind::Txt, Profile::Txt, &bytes);
+        let (saved, notices) = h.save(SaveFormat::Txt);
+        assert_eq!(saved, bytes, "{name}: unmodified file");
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        // Edit: insert after "Premier", then delete the last character.
+        h.select(7, 7);
+        h.insert("!");
+        let end = h.text().len() as u64;
+        h.select(end, end);
+        h.delete(false, DeleteUnit::Grapheme);
+        let mut expected = CORPUS_TEXT.to_owned();
+        expected.insert(7, '!');
+        if final_break {
+            expected.push('\n');
+        }
+        expected.pop();
+        let (saved, notices) = h.save(SaveFormat::Txt);
+        assert_eq!(
+            saved,
+            file_bytes(&expected, eol, encoding, bom),
+            "{name}: edited file"
+        );
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+    }
+}
+
+#[test]
+fn atlas_entries_arrive_once_in_order_and_cover_the_pages() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt("Hello world, hello atlas.");
+    assert!(view.apply(&opened.atlas), "the first reply starts an epoch");
+    assert!(!opened.atlas.entries.is_empty());
+    assert!(
+        opened
+            .atlas
+            .entries
+            .iter()
+            .all(|e| e.starts_with(b"ATDL") && e.len() < proto::MAX_ATLAS_ENTRY_BYTES)
+    );
+    view.covers(&opened.pages);
+    let known = view.len;
+    // A page already painted brings nothing new.
+    match h.send(1, Command::Pages { first: 0, count: 1 }) {
+        Response::Pages { atlas, pages, .. } => {
+            assert!(!view.apply(&atlas));
+            assert_eq!((atlas.first, atlas.entries.len()), (known, 0));
+            view.covers(&pages);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Only the glyphs of a new letter are added by an edit.
+    let state = h.insert("Q");
+    assert!(!view.apply(&state.atlas));
+    assert_eq!(state.atlas.first, known);
+    assert!(!state.atlas.entries.is_empty() && state.atlas.entries.len() <= 3);
+    view.covers(&state.pages);
+    let known = view.len;
+    let state = h.insert("Q");
+    assert!(!view.apply(&state.atlas));
+    assert_eq!(
+        state.atlas.entries.len(),
+        0,
+        "a known glyph is not sent again"
+    );
+    assert_eq!(view.len, known);
+    view.covers(&state.pages);
+}
+
+#[test]
+fn the_atlas_epoch_changes_at_open_and_at_resync() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let first = h.txt(&"mot ".repeat(2000));
+    assert!(view.apply(&first.atlas));
+    h.finish_layout();
+    // Open again: a new epoch and numbering from 0.
+    let second = h.txt("autre texte");
+    assert_ne!(second.atlas.epoch, first.atlas.epoch);
+    assert_eq!(second.atlas.first, 0);
+    assert!(view.apply(&second.atlas));
+    view.covers(&second.pages);
+    // A lost reply: the next State starts a new atlas, with every entry the
+    // pages it sends use, and the pages painted before are painted again.
+    h.editor.mark_resync();
+    let state = h.state(Command::Layout { budget: 1 });
+    assert_ne!(state.atlas.epoch, second.atlas.epoch);
+    assert_eq!(state.atlas.first, 0);
+    assert!(view.apply(&state.atlas));
+    assert_eq!(state.invalidated.len(), usize::from(state.page_count > 0));
+    match h.send(1, Command::Pages { first: 0, count: 1 }) {
+        Response::Pages { atlas, pages, .. } => {
+            assert_eq!(atlas.epoch, state.atlas.epoch);
+            assert!(!view.apply(&atlas));
+            view.covers(&pages);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Closed and opened again: never the epoch of the closed document.
+    let last = view.epoch;
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    let third = h.txt("encore");
+    assert_ne!(Some(third.atlas.epoch), last);
+}
+
+#[test]
+fn a_lost_pages_reply_is_recovered_by_the_epoch() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt(&"Zéro ".repeat(300));
+    view.apply(&opened.atlas);
+    // The reply to this edit never reaches the client: the host calls
+    // mark_resync, the client's atlas (already complete for the old pages)
+    // is dropped with the new epoch.
+    h.insert("W");
+    h.editor.mark_resync();
+    let state = h.state(Command::Layout { budget: 1 });
+    assert!(view.apply(&state.atlas), "the epoch changed");
+    assert_eq!(view.len, state.atlas.entries.len() as u32);
+    for index in 0..state.page_count.min(2) {
+        if let Response::Pages { atlas, pages, .. } = h.send(
+            1,
+            Command::Pages {
+                first: index,
+                count: 1,
+            },
+        ) {
+            assert!(!view.apply(&atlas));
+            view.covers(&pages);
+        }
+    }
+}
+
+#[test]
+fn mixed_line_breaks_stay_with_their_paragraph_and_unmappable_characters_are_reported() {
+    let mut h = Harness::new();
+    let original = b"a\r\nb\r\nc\nd\re";
+    h.open_state(OpenKind::Txt, Profile::Txt, original);
+    let (saved, notices) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, original, "each line keeps its own break");
+    assert!(notices.is_empty(), "{notices:?}");
+    // An edit inside a line changes nothing else; a new paragraph takes the dominant CRLF.
+    h.select(1, 1);
+    h.insert("!");
+    let (saved, _) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, b"a!\r\nb\r\nc\nd\re");
+    let end = h.text().len() as u64;
+    h.select(end, end);
+    h.insert("\nf");
+    let (saved, _) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, b"a!\r\nb\r\nc\nd\re\r\nf");
+    // UTF-16 with a BOM and mixed breaks: the BOM only once.
+    let mut utf16 = vec![0xff, 0xfe];
+    for unit in "x\r\ny\nz".encode_utf16() {
+        utf16.extend_from_slice(&unit.to_le_bytes());
+    }
+    h.open_state(OpenKind::Txt, Profile::Txt, &utf16);
+    assert_eq!(h.save(SaveFormat::Txt).0, utf16);
+    // A Windows-1252 file that gains a character the encoding cannot hold.
+    h.open_state(OpenKind::Txt, Profile::Txt, &[b'a', 0xe9, b'\n']);
+    h.select(0, 0);
+    h.insert("\u{4e2d}");
+    let (saved, notices) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, [b'?', b'a', 0xe9, b'\n']);
+    assert_eq!(
+        notices.iter().map(|n| n.code).collect::<Vec<_>>(),
+        [notice::REPLACED_CHARACTERS]
+    );
+}
+
+fn repo_text(name: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/../compress/tests/corpus/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+#[test]
+fn repository_and_edge_text_files_round_trip() {
+    let utf16 = |text: &str, bom: bool| {
+        let mut out = if bom { vec![0xff, 0xfe] } else { Vec::new() };
+        for unit in text.encode_utf16() {
+            out.extend_from_slice(&unit.to_le_bytes());
+        }
+        out
+    };
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("mixed-utf8.txt", repo_text("mixed-utf8.txt")),
+        ("repetitive.txt", repo_text("repetitive.txt")),
+        ("empty", Vec::new()),
+        ("bom only", vec![0xef, 0xbb, 0xbf]),
+        ("utf16 bom only", vec![0xff, 0xfe]),
+        (
+            "utf16 without bom",
+            utf16("Bonjour le monde, ligne un\nligne deux\n", false),
+        ),
+        (
+            "outside the BMP, utf8",
+            "pile \u{1f600} face \u{1d11e}\n".as_bytes().to_vec(),
+        ),
+        (
+            "outside the BMP, utf16",
+            utf16("pile \u{1f600} face \u{1d11e}\n", true),
+        ),
+        ("only breaks", b"\n\n\r\n\r".to_vec()),
+    ];
+    for (name, bytes) in cases {
+        let mut h = Harness::new();
+        h.open_state(OpenKind::Txt, Profile::Txt, &bytes);
+        let (saved, notices) = h.save(SaveFormat::Txt);
+        assert_eq!(saved, bytes, "{name}");
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+    }
+    // Edited: a character typed first, everything else stays byte for byte.
+    for name in ["mixed-utf8.txt", "repetitive.txt"] {
+        let bytes = repo_text(name);
+        let mut h = Harness::new();
+        h.open_state(OpenKind::Txt, Profile::Txt, &bytes);
+        h.select(0, 0);
+        h.insert("!");
+        let expected = [b"!".to_vec(), bytes].concat();
+        assert_eq!(h.save(SaveFormat::Txt).0, expected, "{name}");
+    }
+}
+
+#[test]
+fn resync_recovers_replies_the_client_abandoned() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt(&format!("{}b", "a\n".repeat(400)));
+    view.apply(&opened.atlas);
+    let last = h.finish_layout().page_count - 1;
+    assert!(last >= 1);
+    // A Pages reply the engine produced and the client dropped (cancelled
+    // request, stopPump): its entries are never applied to the view.
+    match h.send(
+        1,
+        Command::Pages {
+            first: last,
+            count: 1,
+        },
+    ) {
+        Response::Pages { .. } => {}
+        other => panic!("{other:?}"),
+    }
+    // The next reply no longer follows what the client holds.
+    let gap = h.state(Command::Layout { budget: 1 });
+    assert_ne!(gap.atlas.first, view.len, "the gap exists");
+    // Resync: new epoch, atlas from 0, everything invalidated, text window.
+    let resynced = h.state(Command::Resync);
+    assert_ne!(Some(resynced.atlas.epoch), view.epoch);
+    assert_eq!(resynced.atlas.first, 0);
+    assert_eq!(resynced.invalidated, vec![(0, resynced.page_count)]);
+    assert!(resynced.window.is_some());
+    assert!(view.apply(&resynced.atlas));
+    view.covers(&resynced.pages);
+    // Pages and later States follow the new epoch.
+    for index in 0..resynced.page_count.min(3) {
+        match h.send(
+            1,
+            Command::Pages {
+                first: index,
+                count: 1,
+            },
+        ) {
+            Response::Pages { atlas, pages, .. } => {
+                assert_eq!(atlas.epoch, resynced.atlas.epoch);
+                assert!(!view.apply(&atlas));
+                view.covers(&pages);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    let after = h.state(Command::Layout { budget: 1 });
+    assert!(!view.apply(&after.atlas));
+    view.covers(&after.pages);
+    // A Resync whose reply is lost is replayed: idempotent.
+    let _lost = h.state(Command::Resync);
+    let replay = h.state(Command::Resync);
+    assert_ne!(replay.atlas.epoch, resynced.atlas.epoch);
+    assert_eq!(replay.atlas.first, 0);
+    assert_eq!(replay.invalidated, vec![(0, replay.page_count)]);
+    assert!(view.apply(&replay.atlas));
+    view.covers(&replay.pages);
+    assert_eq!(replay.doc_len, resynced.doc_len);
+    assert_eq!(replay.revision, resynced.revision);
+}
+
+#[test]
+fn resync_needs_a_document() {
+    let mut h = Harness::new();
+    assert_eq!(h.error(Command::Resync), ErrorCode::UnknownDocument);
+    h.txt("abc");
+    assert!(matches!(
+        h.send(2, Command::Resync),
+        Response::Error(ErrorCode::UnknownDocument)
+    ));
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    assert_eq!(h.error(Command::Resync), ErrorCode::UnknownDocument);
+}
+
+#[test]
+fn a_new_document_saves_as_utf8_crlf_text_and_as_docx() {
+    let mut h = Harness::new();
+    h.blank();
+    h.insert("Bonjour\n\u{e9}t\u{e9}");
+    let (text, _) = h.save(SaveFormat::Txt);
+    assert_eq!(text, "Bonjour\r\n\u{e9}t\u{e9}".as_bytes());
+    for format in [SaveFormat::Docx, SaveFormat::Docm, SaveFormat::Dotx] {
+        let (bytes, notices) = h.save(format);
+        assert!(notices.is_empty(), "{format:?}: {notices:?}");
+        let mut again = Harness::new();
+        let state = again.docx(&bytes);
+        assert!(!state.read_only && !state.has_revisions);
+        assert_eq!(again.text(), "Bonjour\n\u{e9}t\u{e9}");
+    }
+}
+
+#[test]
+fn docx_files_round_trip_without_a_notice() {
+    for name in ["basic.docx", "libreoffice/properties.docx"] {
+        let bytes = fixture(name);
+        let mut h = Harness::new();
+        h.docx(&bytes);
+        let text = h.text();
+        let (saved, notices) = h.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        let mut again = Harness::new();
+        again.docx(&saved);
+        assert_eq!(again.text(), text, "{name}");
+        // Modified: still no notice for a plain insertion in a text paragraph.
+        h.select(0, 0);
+        h.insert("Ajout ");
+        let (edited, notices) = h.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name} edited: {notices:?}");
+        let mut again = Harness::new();
+        again.docx(&edited);
+        assert_eq!(again.text(), format!("Ajout {text}"), "{name}");
+    }
+}
+
+fn edit_commands() -> Vec<Command> {
+    vec![
+        Command::InsertText { text: "x".into() },
+        Command::ReplaceRange {
+            start: 0,
+            end: 0,
+            text: "x".into(),
+        },
+        Command::Delete {
+            forward: true,
+            unit: DeleteUnit::Grapheme,
+        },
+        Command::Undo,
+        Command::Redo,
+        Command::InsertImage {
+            alt: String::new(),
+            bytes: vec![1, 2, 3],
+        },
+    ]
+}
+
+#[test]
+fn revisions_and_comments_open_read_only_in_the_accepted_state() {
+    for (name, text) in [
+        (
+            "revisions.docx",
+            "D\u{e9}but ins\u{e9}r\u{e9} fin.\n\nd\u{e9}plac\u{e9}\ngras\ncentr\u{e9}\nsuite",
+        ),
+        ("comments.docx", "Avant comment\u{e9} apr\u{e8}s.\nFin."),
+    ] {
+        let bytes = fixture(name);
+        let mut h = Harness::new();
+        let state = h.docx(&bytes);
+        assert!(state.read_only && state.has_revisions, "{name}");
+        assert_eq!(h.text(), text, "{name}");
+        for command in edit_commands() {
+            assert_eq!(h.error(command), ErrorCode::ReadOnly, "{name}");
+        }
+        assert_eq!(h.text(), text, "{name}: nothing changed");
+        // Moving and selecting are not edits.
+        let moved = h.step(Direction::Right, false);
+        assert!(moved.read_only && moved.has_revisions && !moved.modified);
+        // Saving the read-only document gives back what was opened.
+        let (saved, notices) = h.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        let mut again = Harness::new();
+        assert!(again.docx(&saved).read_only, "{name}");
+        assert_eq!(again.text(), text);
+        // The editable copy: a DOCX without revisions or comments, with notices.
+        let (copy, notices) = match h.send(1, Command::MakeEditableCopy { stamp: stamp() }) {
+            Response::SaveData { bytes, notices, .. } => (bytes, notices),
+            other => panic!("{other:?}"),
+        };
+        assert!(!notices.is_empty(), "{name}");
+        let mut editable = Harness::new();
+        let state = editable.docx(&copy);
+        assert!(!state.read_only && !state.has_revisions, "{name}");
+        assert_eq!(editable.text(), text, "{name}: same accepted text");
+        editable.select(0, 0);
+        editable.insert("Z");
+        assert_eq!(editable.text(), format!("Z{text}"));
+        let (out, notices) = editable.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        assert!(!out.is_empty());
+    }
+    // The flags are those of the session just opened, not of the previous one.
+    let mut h = Harness::new();
+    let state = h.docx(&fixture("revisions.docx"));
+    assert!(state.read_only);
+    let state = h.docx(&fixture("basic.docx"));
+    assert!(!state.read_only && !state.has_revisions);
+    h.insert("ok");
+}
+
+#[test]
+fn make_editable_copy_of_an_editable_document_is_its_save() {
+    let mut h = Harness::new();
+    h.blank();
+    h.insert("abc");
+    let Response::SaveData { bytes, .. } = h.send(1, Command::MakeEditableCopy { stamp: stamp() })
+    else {
+        panic!("expected SaveData");
+    };
+    let mut again = Harness::new();
+    again.docx(&bytes);
+    assert_eq!(again.text(), "abc");
+}
+
+fn png() -> Vec<u8> {
+    std::fs::read(format!(
+        "{}/../image/tests/fixtures/png/browser-200x100-red.png",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+}
+
+fn media_parts(docx: &[u8]) -> Vec<String> {
+    atelier_fmt_ooxml::Package::read(docx)
+        .unwrap()
+        .parts()
+        .keys()
+        .filter(|u| u.as_str().starts_with("word/media/"))
+        .map(ToString::to_string)
+        .collect()
+}
+
+#[test]
+fn an_inserted_picture_is_an_object_saved_in_word_media() {
+    let mut h = Harness::new();
+    h.blank();
+    h.insert("ab");
+    h.select(1, 1);
+    let state = h.state(Command::InsertImage {
+        alt: "Un carr\u{e9} rouge".into(),
+        bytes: png(),
+    });
+    assert_eq!(state.doc_len, 5);
+    assert_eq!((state.anchor, state.focus), (4, 4));
+    assert!(state.modified && state.can_undo);
+    assert_eq!(h.text(), format!("a{OBJ}b"));
+    let (bytes, notices) = h.save(SaveFormat::Docx);
+    assert!(notices.is_empty(), "{notices:?}");
+    assert_eq!(media_parts(&bytes), ["word/media/image1.png"]);
+    let package = atelier_fmt_ooxml::Package::read(&bytes).unwrap();
+    let uri = atelier_fmt_ooxml::PartUri::parse("word/document.xml").unwrap();
+    let xml = String::from_utf8(package.part(&uri).unwrap().bytes.clone()).unwrap();
+    assert!(xml.contains("Un carr\u{e9} rouge"), "alt text kept");
+    // The text save drops the picture and says so.
+    let (text, notices) = h.save(SaveFormat::Txt);
+    assert_eq!(text, b"ab");
+    assert!(
+        notices.iter().any(|n| n.code == notice::LOSS_BASE + 4),
+        "{notices:?}"
+    );
+    // Undo and redo are one step.
+    assert_eq!(h.undo().doc_len, 2);
+    assert_eq!(h.redo().doc_len, 5);
+    // A selection is replaced by the picture.
+    h.select(0, 1);
+    h.state(Command::InsertImage {
+        alt: String::new(),
+        bytes: png(),
+    });
+    assert_eq!(h.text(), format!("{OBJ}{OBJ}b"));
+}
+
+#[test]
+fn a_picture_added_to_an_imported_docx_gets_a_free_media_name() {
+    // rich.docx already holds word/media/image1.png.
+    let source = fixture("libreoffice/rich.docx");
+    let before = media_parts(&source);
+    assert_eq!(before, ["word/media/image1.png"]);
+    let mut h = Harness::new();
+    let state = h.docx(&source);
+    // rich.docx has revisions and comments: the picture goes in the copy.
+    assert!(state.read_only);
+    let Response::SaveData { bytes: copy, .. } =
+        h.send(1, Command::MakeEditableCopy { stamp: stamp() })
+    else {
+        panic!("copy");
+    };
+    h.docx(&copy);
+    h.select(0, 0);
+    h.state(Command::InsertImage {
+        alt: "neuf".into(),
+        bytes: png(),
+    });
+    let (saved, notices) = h.save(SaveFormat::Docx);
+    // The paragraph that received the picture is written from the model.
+    assert_eq!(
+        notices.iter().map(|n| n.code).collect::<Vec<_>>(),
+        [notice::WRITE_BASE + 1],
+        "{notices:?}"
+    );
+    let after = media_parts(&saved);
+    assert_eq!(after.len(), 2, "{after:?}");
+    assert!(after.contains(&"word/media/image1.png".to_owned()));
+    // The first picture is unchanged byte for byte.
+    let kept = atelier_fmt_ooxml::Package::read(&saved).unwrap();
+    let original = atelier_fmt_ooxml::Package::read(&source).unwrap();
+    let uri = atelier_fmt_ooxml::PartUri::parse("word/media/image1.png").unwrap();
+    assert_eq!(
+        kept.part(&uri).unwrap().bytes,
+        original.part(&uri).unwrap().bytes
+    );
+}
+
+#[test]
+fn pictures_are_validated_and_bounded() {
+    let mut h = Harness::new();
+    h.blank();
+    let image = |bytes: Vec<u8>| Command::InsertImage {
+        alt: String::new(),
+        bytes,
+    };
+    assert_eq!(h.error(image(vec![1, 2, 3])), ErrorCode::ImageInvalid);
+    let mut truncated = png();
+    truncated.truncate(40);
+    assert_eq!(h.error(image(truncated)), ErrorCode::ImageInvalid);
+    let mut huge = png();
+    huge.resize(proto::MAX_IMAGE_BYTES + 1, 0);
+    let frame = proto::encode_request(&Request {
+        doc_id: 1,
+        request_id: 9,
+        command: image(huge),
+    });
+    assert!(frame.is_err(), "the codec refuses a picture over 8 MiB");
+    assert_eq!(h.text(), "");
+    assert_eq!(h.state(Command::Layout { budget: 1 }).doc_len, 0);
+    // The store of one document holds 512 pictures at most.
+    for _ in 0..512 {
+        h.state(image(png()));
+    }
+    assert_eq!(h.error(image(png())), ErrorCode::Limit);
+}
+
+#[test]
+fn save_with_nothing_open_is_refused() {
+    let mut h = Harness::new();
+    assert_eq!(
+        h.error(Command::Save {
+            format: SaveFormat::Txt,
+            stamp: stamp(),
+        }),
+        ErrorCode::UnknownDocument
+    );
+}
+
+#[test]
+fn the_client_time_and_user_land_in_the_document_properties() {
+    let package = |bytes: &[u8]| atelier_fmt_ooxml::Package::read(bytes).unwrap();
+    // An imported DOCX.
+    let mut h = Harness::new();
+    h.docx(&fixture("basic.docx"));
+    let (saved, _) = h.save(SaveFormat::Docx);
+    let p = package(&saved);
+    assert_eq!(
+        p.core_properties().last_modified_by.as_deref(),
+        Some("Alice")
+    );
+    assert_eq!(
+        p.core_properties().modified.as_deref(),
+        Some("2023-11-14T22:13:20Z")
+    );
+    assert_eq!(p.app_properties().application.as_deref(), Some("Atelier"));
+    assert_eq!(p.app_properties().app_version.as_deref(), Some("1.2"));
+    assert!(p.app_properties().words.is_some());
+    // A new document.
+    h.blank();
+    h.insert("un deux trois");
+    let (saved, _) = h.save(SaveFormat::Docx);
+    let p = package(&saved);
+    assert_eq!(
+        p.core_properties().last_modified_by.as_deref(),
+        Some("Alice")
+    );
+    assert_eq!(p.app_properties().words.as_deref(), Some("3"));
+    // The editable copy: statistics of the accepted text.
+    h.docx(&fixture("revisions.docx"));
+    let Response::SaveData { bytes, .. } = h.send(1, Command::MakeEditableCopy { stamp: stamp() })
+    else {
+        panic!("copy");
+    };
+    let p = package(&bytes);
+    assert_eq!(p.app_properties().application.as_deref(), Some("Atelier"));
+    assert!(p.app_properties().words.is_some());
+    // An empty user leaves the author alone; a time out of range is refused.
+    let bad = Stamp {
+        now_ms: u64::MAX,
+        ..stamp()
+    };
+    h.docx(&fixture("basic.docx"));
+    assert_eq!(
+        h.error(Command::Save {
+            format: SaveFormat::Docx,
+            stamp: bad
+        }),
+        ErrorCode::InvalidBody
+    );
+}
+
+#[test]
+fn alternative_text_refuses_what_xml_forbids() {
+    for alt in ["a\u{fffe}", "\u{ffff}", "a\u{1}", "a\u{7f}"] {
+        let r = proto::encode_request(&Request {
+            doc_id: 1,
+            request_id: 1,
+            command: Command::InsertImage {
+                alt: alt.into(),
+                bytes: png(),
+            },
+        });
+        assert!(r.is_err(), "{alt:?}");
+    }
+}
+
+// ---- R2b x R3b: atlas and resync in a read-only or saving session ----------
+
+#[test]
+fn a_read_only_document_accepts_resync_with_a_fresh_atlas() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.docx(&fixture("revisions.docx"));
+    assert!(opened.read_only && opened.has_revisions);
+    assert!(view.apply(&opened.atlas));
+    view.covers(&opened.pages);
+    let text = h.text();
+    for command in edit_commands() {
+        assert_eq!(h.error(command), ErrorCode::ReadOnly);
+    }
+    // The reply is lost: the read-only guard does not stand in the way.
+    let resynced = h.state(Command::Resync);
+    assert!(resynced.read_only && resynced.has_revisions && !resynced.modified);
+    assert_ne!(Some(resynced.atlas.epoch), view.epoch);
+    assert_eq!(resynced.atlas.first, 0);
+    assert_eq!(resynced.invalidated, vec![(0, resynced.page_count)]);
+    assert!(view.apply(&resynced.atlas));
+    view.covers(&resynced.pages);
+    assert_eq!(h.text(), text, "nothing changed");
+    // Idempotent, and the edits are still refused afterwards.
+    let again = h.state(Command::Resync);
+    assert_ne!(again.atlas.epoch, resynced.atlas.epoch);
+    assert_eq!(
+        h.error(Command::InsertText { text: "x".into() }),
+        ErrorCode::ReadOnly
+    );
+}
+
+#[test]
+fn an_abandoned_save_reply_is_recovered_by_the_atlas_resync() {
+    // A SaveData larger than the frame cannot be encoded (`io_tests` checks
+    // MAX_SAVE_BYTES + 1) and a document that large cannot be built here; the
+    // path is the same as for a reply the ABI refuses: `transact` and the host
+    // both end in `mark_resync`.
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.docx(&fixture("revisions.docx"));
+    assert!(view.apply(&opened.atlas));
+    let (bytes, _) = h.save(SaveFormat::Docx);
+    assert!(!bytes.is_empty());
+    h.editor.mark_resync();
+    let next = h.state(Command::Layout { budget: 1 });
+    assert!(next.read_only && !next.modified);
+    assert_ne!(Some(next.atlas.epoch), view.epoch, "a fresh epoch");
+    assert_eq!(next.atlas.first, 0);
+    assert_eq!(next.invalidated, vec![(0, next.page_count)]);
+    assert!(view.apply(&next.atlas));
+    view.covers(&next.pages);
+    // An explicit Resync after it is accepted all the same.
+    let resynced = h.state(Command::Resync);
+    assert_ne!(resynced.atlas.epoch, next.atlas.epoch);
+    assert!(view.apply(&resynced.atlas));
+    view.covers(&resynced.pages);
 }

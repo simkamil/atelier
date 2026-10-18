@@ -10,15 +10,16 @@ pub mod docx;
 pub mod docx_image;
 mod properties;
 pub use docx::{
-    Border, Borders, CellMargins, CellProps, CellVerticalAlign, ConditionalFormat, ConditionalKind,
-    DocxError, DocxLimits, DocxSettings, DocxVariant, DocxWriteOptions, EmbeddedFontRef,
-    FontRecord, HeightRule, ImportNotice, ImportedBreak, ImportedCell, ImportedDocx, ImportedRow,
-    ImportedRunStyle, ImportedSymbol, ImportedTable, ImportedTables, LatentStyleInfo, MC_NS,
-    NewDocument, PageSetup, Preserved, PreservedAttr, PreservedChild, PreservedElement,
-    PreservedPart, ResolvedCell, RowHeight, RowProps, Shading, StyleDecl, TableAlign, TableColor,
-    TableLayout, TableLook, TableProps, TableStyleDef, TableWidth, VMerge, WriteError, WriteNotice,
-    WrittenDocx, import_docx, import_docx_with_limits, interpreted_elements, para_mark_rpr_rank,
-    ppr_rank, rpr_rank, sect_pr_rank, source_text, write_docx, write_new_docx,
+    AcceptError, AcceptedRevisions, Border, Borders, CellMargins, CellProps, CellVerticalAlign,
+    ConditionalFormat, ConditionalKind, DocxError, DocxLimits, DocxSettings, DocxVariant,
+    DocxWriteOptions, EmbeddedFontRef, FontRecord, HeightRule, ImportNotice, ImportedBreak,
+    ImportedCell, ImportedDocx, ImportedRow, ImportedRunStyle, ImportedSymbol, ImportedTable,
+    ImportedTables, LatentStyleInfo, MC_NS, NewDocument, PageSetup, Preserved, PreservedAttr,
+    PreservedChild, PreservedElement, PreservedPart, ResolvedCell, RevisionReport, RowHeight,
+    RowProps, Shading, StyleDecl, TableAlign, TableColor, TableLayout, TableLook, TableProps,
+    TableStyleDef, TableWidth, VMerge, WriteError, WriteNotice, WrittenDocx, accept_all_revisions,
+    import_docx, import_docx_with_limits, interpreted_elements, para_mark_rpr_rank, ppr_rank,
+    rpr_rank, scan_revisions, sect_pr_rank, source_text, write_docx, write_new_docx,
 };
 
 pub use properties::{
@@ -430,6 +431,21 @@ impl Package {
             }
             None => false,
         }
+    }
+
+    /// Removes a part, the relationships it is the source of and those that
+    /// target it (US-218: comments of an editable copy). `false` when there is
+    /// no such part. The properties parts are not re-read.
+    pub fn remove_part(&mut self, uri: &PartUri) -> bool {
+        if self.parts.remove(uri).is_none() {
+            return false;
+        }
+        self.relationships.remove(&Some(uri.clone()));
+        for list in self.relationships.values_mut() {
+            list.retain(|r| r.resolved_target.as_ref() != Some(uri));
+        }
+        self.relationships.retain(|_, list| !list.is_empty());
+        true
     }
 
     /// Puts the package in the form the writer emits whatever order it was

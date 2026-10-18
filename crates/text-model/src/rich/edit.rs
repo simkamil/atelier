@@ -600,3 +600,104 @@ impl FlatEdit for RichDocument {
         self.history.revision
     }
 }
+
+impl RichDocument {
+    /// Inserts an anchored object (a picture...) at the flat position `at`, as
+    /// one undoable edit that adds [`super::flat::OBJECT_LEN`] bytes. `at`
+    /// must be a valid position inside a paragraph; an object anchored there
+    /// goes after the items already anchored at the same text offset (items at
+    /// one offset appear in id order), so the reported `start` can be later
+    /// than `at`, never earlier. The selection after the edit is the caret
+    /// after the object.
+    pub fn insert_object(
+        &mut self,
+        at: usize,
+        kind: &str,
+        data: Vec<u8>,
+    ) -> Result<EditOutcome, FlatError> {
+        self.check_position(at)?;
+        let total = self.len();
+        let mut tree = self.take_flat();
+        let mut applier = Applier {
+            doc: self,
+            inverses: Vec::new(),
+        };
+        let result = Self::apply_object(&mut applier, &tree, at, kind, data);
+        let inverses = std::mem::take(&mut applier.inverses);
+        let (done, start) = match result {
+            Ok(done) => done,
+            Err(error) => {
+                for inverse in inverses.iter().rev() {
+                    let _ = inverse.apply_to(self);
+                }
+                self.put_flat(tree);
+                return Err(error);
+            }
+        };
+        tree.splice(done.first, done.before.len(), &done.after);
+        let doc_len = tree.total();
+        let meta = Meta {
+            start,
+            removed_bytes: 0,
+            inserted_bytes: doc_len.saturating_sub(total),
+            first: done.first,
+            removed_paragraphs: done.before.len(),
+            inserted_paragraphs: done.after.len(),
+            before: done.before,
+            after: done.after,
+            here: (done.caret, done.caret),
+            back: (start, start),
+        };
+        self.history.redo.clear();
+        self.history.revision += 1;
+        let mut ops = inverses;
+        ops.reverse();
+        let outcome_meta = meta.clone();
+        self.history.push_undo(Item {
+            ops,
+            meta: meta.swapped(),
+        });
+        self.put_flat(tree);
+        Ok(self.outcome(&outcome_meta, doc_len))
+    }
+
+    fn apply_object(
+        ap: &mut Applier<'_>,
+        tree: &FlatTree,
+        at: usize,
+        kind: &str,
+        data: Vec<u8>,
+    ) -> Result<(Applied, usize), FlatError> {
+        use super::flat::{flat_to_text_offset, text_to_flat_offset};
+        use super::paragraph::{AnchoredObject, Inline};
+        let (index, offset) = tree.find(at).ok_or(FlatError::OutOfRange)?;
+        let entry = *tree.entry(index).ok_or(FlatError::OutOfRange)?;
+        if entry.opaque {
+            return Err(FlatError::InvalidRange);
+        }
+        let mut paragraph = ap.paragraph(entry.id)?;
+        let text_offset = flat_to_text_offset(&paragraph, offset)?;
+        let flat_offset = text_to_flat_offset(&paragraph, text_offset, true)?;
+        let start = at - offset + flat_offset;
+        let id = ap.new_id()?;
+        paragraph
+            .insert_inline(Inline::Anchored(AnchoredObject {
+                id,
+                offset: text_offset,
+                kind: kind.to_owned(),
+                data,
+            }))
+            .map_err(model_error)?;
+        let after = Self::entry_for(&entry, entry.id, &paragraph);
+        ap.exec(restore(entry.id, paragraph))?;
+        Ok((
+            Applied {
+                first: index,
+                before: tree.range(index, 1),
+                after: vec![after],
+                caret: start + super::flat::OBJECT_LEN,
+            },
+            start,
+        ))
+    }
+}
