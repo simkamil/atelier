@@ -1,25 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// R7a : fonctions pures de l'éditeur v2 de l'interface et choix du moteur. `node --test tests/rich-editor-unit.mjs`.
+// R7a : fonctions pures de l'éditeur de l'interface. `node --test tests/rich-editor-unit.mjs`.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chooseEngine, ENGINE_STORAGE_KEY } from "../web/engine-choice.mjs";
 import { countDocxPictures, EditorError, mirrorWindow, RICH_CAPABILITIES, sanitizeEditText, toEditorError } from "../web/rich-editor.mjs";
 import { RichClientError } from "../web/rich-editor-client.mjs";
 import { RichProtocolError } from "../web/rich-editor-protocol.mjs";
-
-test("engine choice: v2 by default, the URL wins, then the persisted option", () => {
-  const storage = value => ({ getItem: key => (key === ENGINE_STORAGE_KEY ? value : null) });
-  assert.equal(chooseEngine({ search: "", storage: null }), "v2", "v2 is the default");
-  assert.equal(chooseEngine({ search: "?engine=v1", storage: null }), "v1");
-  assert.equal(chooseEngine({ search: "?a=1&engine=v1", storage: storage(null) }), "v1");
-  assert.equal(chooseEngine({ search: "", storage: storage("v1") }), "v1", "the persisted option brings back v1");
-  assert.equal(chooseEngine({ search: "?engine=v2", storage: storage("v1") }), "v2", "the URL forces v2 even when v1 is persisted");
-  assert.equal(chooseEngine({ search: "?engine=v1", storage: storage("v2") }), "v1", "the URL forces v1 even when v2 is persisted");
-  assert.equal(chooseEngine({ search: "?engine=v3", storage: storage("v2") }), "v2", "an unknown value falls back to v2");
-  assert.equal(chooseEngine({ search: "?engine=v3", storage: storage("v1") }), "v1", "an unknown URL value defers to the persisted option");
-  assert.equal(chooseEngine({ search: "", storage: storage("v3") }), "v2");
-  assert.equal(chooseEngine({ search: "", storage: { getItem() { throw new Error("blocked"); } } }), "v2", "blocked storage keeps the default");
-});
 
 test("edit text is normalised to what the engine accepts", () => {
   assert.equal(sanitizeEditText("a\r\nb\rc\nd"), "a\nb\nc\nd");
