@@ -210,7 +210,7 @@ fn sanitize(text: &str, fonts: &FontManager<'_>, boxes: &[InlineBox]) -> String 
     text.char_indices()
         .map(|(at, c)| {
             if c.is_ascii()
-                || boxes.iter().any(|b| b.offset == at)
+                || boxes.binary_search_by_key(&at, |b| b.offset).is_ok()
                 || fonts.resolve_for_char(&request, c).is_ok()
             {
                 c.to_string()
@@ -304,8 +304,18 @@ impl PageCache {
             Some(p) => {
                 let items = p.anchored.len() + p.breaks.len() + p.symbols.len();
                 // Both profiles: a new document of the interface is a TXT-profile one and takes pictures.
+                // The paragraph's indents narrow the line: left, right and (the widest case, a picture
+                // leading the paragraph) a positive first-line indent.
+                let mut props = defaults.paragraph.clone();
+                if !self.txt {
+                    props.overlay(&p.props);
+                }
+                let indent = |v: Option<i32>| twips(i64::from(v.unwrap_or(0)));
+                let taken = indent(props.indent_left)
+                    + indent(props.indent_right)
+                    + indent(props.indent_first_line).max(0);
                 let fit = Some(PictureFit {
-                    max_width: self.geometry.content_width as f64 / 64.0,
+                    max_width: ((self.geometry.content_width - taken).max(64)) as f64 / 64.0,
                     // The line keeps the descent of the text below the picture (US-270).
                     max_height: self.geometry.content_height as f64 / 64.0 - PICTURE_DESCENT,
                 });
