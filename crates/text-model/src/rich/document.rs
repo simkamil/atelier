@@ -3,16 +3,20 @@
 //! block sequences, mutated only through [`RichOp`](super::RichOp)s.
 
 use super::NodeId;
+use super::edit::History;
 use super::error::RichError;
+use super::flat_tree::FlatTree;
 use super::node::{
     BlockList, Cell, HeaderFooter, Node, OpaqueBlock, Row, Section, Subtree, Table, map_tree_error,
 };
 use super::ops::RichOp;
 use super::paragraph::Paragraph;
+use super::styles::{StyleCatalog, StyleEngine, Theme};
 use super::validate::{Walk, validate_subtree};
 use atelier_model::{IndexedTree, Transaction, TransactionError, TransactionalState};
 use core::fmt;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
 
 /// Ids and names released by branches that are about to be removed.
 #[derive(Default)]
@@ -25,8 +29,14 @@ pub(crate) struct Ids {
 /// A word-processing document.
 ///
 /// Equality compares the content (nodes and their order). The identifier
-/// minter and the lookup indexes are bookkeeping and are not compared.
-#[derive(Clone)]
+/// minter, the lookup indexes, the style catalog and theme, the flat index and
+/// the edit history are bookkeeping and are not compared. A clone has the same
+/// content, styles and ids but an empty edit history (and rebuilds its flat
+/// index on first use).
+///
+/// This is the type that implements [`FlatIndex`](super::flat::FlatIndex),
+/// [`LayoutContext`](super::flat::LayoutContext) and
+/// [`FlatEdit`](super::flat::FlatEdit) (US-204).
 pub struct RichDocument {
     pub(crate) nodes: BTreeMap<NodeId, Node>,
     pub(crate) sections: BlockList,
@@ -37,6 +47,32 @@ pub struct RichDocument {
     /// Source of fresh ids: ids come from the indexed tree of `atelier-model`
     /// and are never reused.
     minter: IndexedTree<()>,
+    /// Style definitions and theme, for [`LayoutContext`](super::flat::LayoutContext).
+    pub(crate) styles: StyleEngine,
+    pub(crate) theme: Theme,
+    /// Prefix-sum index of the flat text, built on first use and kept in step
+    /// by the flat edits; dropped by any other mutation.
+    pub(crate) flat: Mutex<Option<FlatTree>>,
+    /// Undo and redo stacks of the flat edits.
+    pub(crate) history: History,
+}
+
+impl Clone for RichDocument {
+    fn clone(&self) -> Self {
+        Self {
+            nodes: self.nodes.clone(),
+            sections: self.sections.clone(),
+            inline_index: self.inline_index.clone(),
+            bookmark_names: self.bookmark_names.clone(),
+            minter: self.minter.clone(),
+            styles: self.styles.clone(),
+            theme: self.theme.clone(),
+            flat: Mutex::new(None),
+            // The edit history stays behind, the revision does not: a
+            // revision number is never given twice by clones of a document.
+            history: self.history.fresh(),
+        }
+    }
 }
 
 impl PartialEq for RichDocument {
@@ -64,8 +100,11 @@ impl TransactionalState for RichDocument {
         // The minter is kept so that an id handed out before the failed
         // transaction can never be handed out again.
         let minter = std::mem::take(&mut self.minter);
+        let revision = self.history.revision();
         *self = checkpoint;
         self.minter = minter;
+        self.history.raise_revision(revision);
+        self.invalidate_flat();
     }
 }
 
@@ -84,6 +123,10 @@ impl RichDocument {
             inline_index: BTreeMap::new(),
             bookmark_names: BTreeMap::new(),
             minter: IndexedTree::new(),
+            styles: StyleEngine::new(StyleCatalog::default(), Theme::default(), 0),
+            theme: Theme::default(),
+            flat: Mutex::new(None),
+            history: History::default(),
         };
         // A fresh minter cannot be exhausted.
         let section = doc.new_section().expect("fresh minter");
@@ -100,7 +143,64 @@ impl RichDocument {
         Ok(id)
     }
 
+    /// Sets the style definitions and theme that
+    /// [`LayoutContext`](super::flat::LayoutContext) serves. Not compared by
+    /// equality and not recorded in the edit history.
+    pub fn set_styles(&mut self, catalog: StyleCatalog, theme: Theme) {
+        self.styles = StyleEngine::new(catalog, theme.clone(), 0);
+        self.theme = theme;
+    }
+
+    /// Sets the uninterpreted attributes of a section, among them the page
+    /// geometry that [`PageSetup::from_section`](super::flat::PageSetup::from_section)
+    /// reads. Meant for loading a document: it is not an undoable operation
+    /// and ends the flat edit history. `attrs` are sorted by key; a repeated
+    /// key keeps its last value.
+    pub fn set_section_attrs(
+        &mut self,
+        section: NodeId,
+        mut attrs: Vec<super::OpaqueAttr>,
+    ) -> Result<(), RichError> {
+        match self.nodes.get_mut(&section) {
+            Some(Node::Section(s)) => {
+                let mut sorted: Vec<super::OpaqueAttr> = Vec::with_capacity(attrs.len());
+                attrs.sort_by(|a, b| {
+                    (a.namespace.as_str(), a.name.as_str())
+                        .cmp(&(b.namespace.as_str(), b.name.as_str()))
+                });
+                for attr in attrs {
+                    match sorted.last_mut() {
+                        Some(last)
+                            if last.namespace == attr.namespace && last.name == attr.name =>
+                        {
+                            *last = attr;
+                        }
+                        _ => sorted.push(attr),
+                    }
+                }
+                s.opaque = sorted;
+            }
+            Some(_) => {
+                return Err(RichError::WrongNodeKind {
+                    id: section,
+                    expected: "section",
+                });
+            }
+            None => return Err(RichError::NodeNotFound(section)),
+        }
+        self.invalidate_flat();
+        self.history.clear();
+        Ok(())
+    }
+
+    /// Drops the flat index (the next flat query rebuilds it).
+    pub(crate) fn invalidate_flat(&mut self) {
+        *self.flat.get_mut().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
     /// Applies a transaction atomically and returns the one that undoes it.
+    /// The edit history of the flat edits ends here: it assumes that only the
+    /// flat edits change the document.
     pub fn apply(
         &mut self,
         transaction: &Transaction<RichOp>,
@@ -304,6 +404,7 @@ impl RichDocument {
         &mut self,
         parent: Option<NodeId>,
     ) -> Result<&mut BlockList, RichError> {
+        self.invalidate_flat();
         let Some(id) = parent else {
             return Ok(&mut self.sections);
         };
@@ -388,6 +489,7 @@ impl RichDocument {
 
     /// Installs a branch already accepted by `check_install`. Cannot fail.
     pub(crate) fn commit_install(&mut self, branch: Subtree) {
+        self.invalidate_flat();
         for (id, node) in branch.nodes {
             if let Node::Paragraph(p) = &node {
                 self.index_paragraph(id, p);
@@ -399,6 +501,7 @@ impl RichDocument {
     /// Removes a branch from the arena (the parent sequence is the caller's
     /// business) and returns it. Cannot fail for an existing branch.
     pub(crate) fn remove_branch(&mut self, root: NodeId) -> Result<Subtree, RichError> {
+        self.invalidate_flat();
         let branch = self.extract(root)?;
         for (id, node) in &branch.nodes {
             if let Node::Paragraph(p) = node {
@@ -466,6 +569,7 @@ impl RichDocument {
         new: Paragraph,
     ) -> Result<(), RichError> {
         new.validate_local()?;
+        self.invalidate_flat();
         let old = self.paragraph(id)?;
         let owned_by_old = |item: &NodeId| self.inline_index.get(item) == Some(&id);
         for item in new.inline_ids() {

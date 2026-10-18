@@ -50,7 +50,8 @@ pub struct IncrementalStats {
     pub pages_reused: usize,
     pub restart_paragraph: Option<usize>,
     pub fallback_reason: Option<FallbackReason>,
-    /// Whole-document pagination preflight; reported separately from its stream.
+    /// Always zero since US-216: pagination validates paragraphs lazily, as it
+    /// reaches them (counted in `pagination_stream_work`).
     pub pagination_preflight_work: usize,
     /// Pagination stream work actually executed after the optional checkpoint.
     pub pagination_stream_work: usize,

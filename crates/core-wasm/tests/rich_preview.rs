@@ -233,6 +233,81 @@ fn glyph_budget_accepts_more_than_65k_glyphs_and_decodes_every_page() {
     );
 }
 
+/// Vertical extent of the glyph outlines of a page.
+fn vertical_spread(page: &[u8]) -> f64 {
+    let list = DisplayList::decode(page).unwrap();
+    let (mut low, mut high) = (f64::MAX, f64::MIN);
+    for command in &list.commands {
+        if let Command::FillPath { path, .. } = command {
+            for element in &path.elements {
+                if let PathElement::MoveTo(p) | PathElement::LineTo(p) = element {
+                    low = low.min(p.y());
+                    high = high.max(p.y());
+                }
+            }
+        }
+    }
+    high - low
+}
+
+#[test]
+fn line_and_page_breaks_break_the_line_and_start_a_new_page() {
+    let wrap = |body: &str| {
+        format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r>{body}</w:r></w:p></w:body></w:document>"#
+        )
+    };
+    let flat = preview_docx(&minimal_docx(&wrap("<w:t>one</w:t><w:t>two</w:t>"))).unwrap();
+    let line = preview_docx(&minimal_docx(&wrap("<w:t>one</w:t><w:br/><w:t>two</w:t>"))).unwrap();
+    assert_eq!(line.pages.len(), 1);
+    assert!(
+        vertical_spread(&line.pages[0]) > vertical_spread(&flat.pages[0]) + 8.0,
+        "the second word is on a second line"
+    );
+    let page = preview_docx(&minimal_docx(&wrap(
+        r#"<w:t>one</w:t><w:br/><w:t>two</w:t><w:br w:type="page"/><w:t>three</w:t>"#,
+    )))
+    .unwrap();
+    assert_eq!(
+        page.pages.len(),
+        2,
+        "the text after a page break starts a page"
+    );
+    let second = DisplayList::decode(&page.pages[1]).unwrap();
+    assert!(
+        second
+            .commands
+            .iter()
+            .any(|c| matches!(c, Command::FillPath { .. }))
+    );
+}
+
+#[test]
+fn a_symbol_is_drawn() {
+    let wrap = |body: &str| {
+        format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r>{body}</w:r></w:p></w:body></w:document>"#
+        )
+    };
+    let fills = |body: &str| {
+        let preview = preview_docx(&minimal_docx(&wrap(body))).unwrap();
+        DisplayList::decode(&preview.pages[0])
+            .unwrap()
+            .commands
+            .iter()
+            .filter(|c| matches!(c, Command::FillPath { .. }))
+            .count()
+    };
+    let plain = fills("<w:t>a</w:t>");
+    let bullet = fills(r#"<w:t>a</w:t><w:sym w:font="Symbol" w:char="F0B7"/>"#);
+    let wingdings = fills(r#"<w:t>a</w:t><w:sym w:font="Wingdings" w:char="F0FC"/>"#);
+    assert!(
+        bullet > plain,
+        "the Symbol bullet is drawn: {bullet} > {plain}"
+    );
+    assert!(wingdings > plain, "the Wingdings symbol is drawn");
+}
+
 fn minimal_docx(xml: &str) -> Vec<u8> {
     let mut package = Package::new();
     package

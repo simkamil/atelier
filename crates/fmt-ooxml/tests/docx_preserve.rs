@@ -414,7 +414,8 @@ fn rebuild(imp: &ImportedDocx, part: &PreservedPart) -> C {
         let mut kids = Vec::new();
         if local(&e.name) == "t" && e.namespace == W {
             let (a, b) = e.range.unwrap();
-            let text = &imp.document.paragraph(para.unwrap()).unwrap().text[a..b];
+            let paragraph = imp.document.paragraph(para.unwrap()).unwrap();
+            let text = &atelier_fmt_ooxml::source_text(paragraph)[a..b];
             if !text.trim().is_empty() {
                 kids.push(C::T(text.to_owned()));
             }
@@ -915,7 +916,14 @@ fn every_interpreted_element_has_an_effect_and_the_code_matches_the_declaration(
         "<w:t>a</w:t><w:tab/><w:br/><w:cr/><w:noBreakHyphen/><w:softHyphen/><w:sym w:font=\"F\" w:char=\"F0A7\"/>",
     );
     let p = imp.document.paragraph(imp.paragraph_ids()[0]).unwrap();
-    assert_eq!(p.text, "a\t\n\n\u{2011}\u{ad}\u{f0a7}");
+    // The two breaks and the symbol are inline items, not text.
+    assert_eq!(p.text, "a\t\u{2011}\u{ad}");
+    assert_eq!((p.breaks.len(), p.symbols.len()), (2, 1));
+    assert_eq!(p.symbols[0].code, 0xf0a7);
+    assert_eq!(
+        atelier_fmt_ooxml::source_text(p),
+        "a\t\n\n\u{2011}\u{ad}\u{f0a7}"
+    );
     for xml in [
         r#"<w:pStyle w:val="S"/>"#,
         r#"<w:jc w:val="center"/>"#,

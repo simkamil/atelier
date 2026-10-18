@@ -760,18 +760,23 @@ Validation US-203 second critère (2026-10-18) : `web/editor-page-cache.mjs` et 
 
 #### US-204 — Modèle riche éditable à positions plates
 *En tant que* développeur, *je veux* éditer le modèle riche en place par positions plates *afin que* la saisie reste rapide sur un long document.
-- [ ] Index de sommes préfixes par paragraphe (O(log n)) ; conversions position plate ↔ (paragraphe, décalage) cohérentes.
-- [ ] Édition multi-paragraphes (Entrée scinde avec le style suivant, suppression qui fusionne) appliquée en place avec son inverse, sans clone ; 10 000 séquences aléatoires reviennent à l'état initial après inversion.
-- [ ] Une édition au milieu d'un document de 300 pages coûte moins de 1 ms côté modèle (banc).
-- [ ] Sauts manuels, symboles et styles de run (aujourd'hui tables annexes `breaks`, `symbols`, `run_styles` de `fmt-ooxml/src/docx.rs`) deviennent des éléments en ligne du modèle, modifiés par `RichOp` ; l'import DOCX les produit directement et aucune table n'est plus remappée par `position_map`.
+- [x] Index de sommes préfixes par paragraphe (O(log n)) ; conversions position plate ↔ (paragraphe, décalage) ↔ (identifiant de nœud, décalage) cohérentes.
+- [x] Édition multi-paragraphes (Entrée scinde avec le style suivant, suppression qui fusionne) appliquée en place avec son inverse, sans clone ; 10 000 séquences aléatoires reviennent à l'état initial après inversion. (Le modèle n'a pas de champ « style suivant » : le nouveau paragraphe prend le style du paragraphe scindé.)
+- [x] Une édition au milieu d'un document de 300 pages coûte moins de 1 ms côté modèle (banc).
+- [ ] Sauts manuels, symboles et styles de run (aujourd'hui tables annexes `breaks`, `symbols`, `run_styles` de `fmt-ooxml/src/docx.rs`) deviennent des éléments en ligne du modèle, modifiés par `RichOp` ; l'import DOCX les produit directement et aucune table n'est plus remappée par `position_map`. (Fait côté modèle, import et écriture DOCX, et `Section.opaque` reçoit `pgSz` et `pgMar` ; reste à retirer les tables annexes `ImportedDocx::breaks`, `symbols` et `run_styles`, gardées en vue dérivée tant que `RichSession` de `core-wasm` les lit.)
+
+Validation US-204 (2026-10-18) : tranche R1 développée sur la branche `us-204-flat-model`, ni relue par un agent indépendant ni intégrée ; critères 1 à 3 vérifiés (10 000 séquences à graine fixe ; banc sur 300 pages : médianes de 11 à 28 µs, 99e centile au plus 84 µs, maximum 0,4 ms), critère 4 partiel ; [contrat, règles et preuves](docs/us-204-flat-model.md).
 
 Réf : §6.3, §6.4 · Taille : M · Dépend de : US-200, US-203
 
 #### US-216 — Mise en page et rendu incrémentaux de l'éditeur
 *En tant que* développeur, *je veux* brancher la mise en page incrémentale et la géométrie du curseur dans le moteur *afin de* ne recalculer et n'émettre que les pages modifiées.
-- [ ] `rich_layout.rs` et `rich_paint.rs` : incrémental identique au calcul complet, cache par page, profils TXT et document.
-- [ ] Curseur, test de position et rectangles de sélection testés ; l'aperçu DOCX utilise le même dessin.
-- [ ] Plus aucune prévalidation globale : la pagination incrémentale ne parcourt que les pages touchées et s'arrête à la première page stabilisée ; mise à jour mise en page + liste d'affichage < 4 ms pour une frappe au milieu d'un document de 300 pages (banc release, compteurs de pages parcourues joints).
+- [x] `rich_layout.rs` et `rich_paint.rs` : incrémental identique au calcul complet, cache par page, profils TXT et document.
+- [x] Curseur, test de position et rectangles de sélection testés ; l'aperçu DOCX utilise le même dessin.
+- [x] Plus aucune prévalidation globale : la pagination incrémentale ne parcourt que les pages touchées et s'arrête à la première page stabilisée (compteurs de pages parcourues joints : 2,02 en moyenne sur 304 pages).
+- [ ] Frappe au milieu de 300 pages, mise en page + liste d'affichage : moyenne 2,4 ms, p95 2,87 ms, max 4,39 ms (2 frappes sur 400 au-dessus de 4 ms, ajout de ligne) ; objectif < 4 ms au p95, mesuré de bout en bout dans US-219 et US-362.
+
+Validation US-216 (2026-10-18) : tranche R2 développée sur la branche `us-216-incremental-layout` (lot 1 : cellules de tableau en pleine largeur, ni en-têtes ni pieds ; sauts de ligne, de page et symboles pris en charge par l'éditeur et l'aperçu ; [contrat, mesures et limites](docs/us-216-incremental-layout.md)). Banc release sur 304 pages : frappe au milieu 2,42 ms en moyenne, 2,87 ms au 95e centile, 4,39 ms au maximum ; relecture indépendante faite (corrections appliquées), vérification après fusion de R1 à refaire.
 
 Réf : §6.5, §6.16 · Taille : M · Dépend de : US-203, US-214
 

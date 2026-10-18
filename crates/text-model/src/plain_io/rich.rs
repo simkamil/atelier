@@ -24,7 +24,7 @@
 //!   written.
 
 use super::{TextIoError, push_with_breaks};
-use crate::rich::{Node, NodeId, Paragraph, RichDocument};
+use crate::rich::{InlineSymbol, Node, NodeId, Paragraph, RichDocument};
 
 /// Most columns of a table taken into account when flattening.
 const MAX_COLUMNS: usize = 1 << 12;
@@ -87,6 +87,37 @@ pub(crate) fn text_to_rich(text: &str, max_paragraphs: usize) -> Result<RichDocu
     Ok(doc)
 }
 
+/// The text of a paragraph: breaks (line, page and column, which the model
+/// keeps as inline items) become `eol`, symbols their character.
+fn push_paragraph(out: &mut String, p: &Paragraph, eol: &str) {
+    if p.breaks.is_empty() && p.symbols.is_empty() {
+        push_with_breaks(out, &p.text, eol);
+        return;
+    }
+    enum Piece<'a> {
+        Break,
+        Symbol(&'a InlineSymbol),
+    }
+    let mut pieces: Vec<(usize, NodeId, Piece<'_>)> = p
+        .breaks
+        .iter()
+        .map(|b| (b.offset, b.id, Piece::Break))
+        .chain(p.symbols.iter().map(|s| (s.offset, s.id, Piece::Symbol(s))))
+        .collect();
+    pieces.sort_by_key(|(offset, id, _)| (*offset, *id));
+    let mut at = 0;
+    for (offset, _, piece) in pieces {
+        let offset = offset.clamp(at, p.text.len());
+        push_with_breaks(out, p.text.get(at..offset).unwrap_or(""), eol);
+        at = offset;
+        match piece {
+            Piece::Break => out.push_str(eol),
+            Piece::Symbol(s) => out.extend(char::from_u32(s.code)),
+        }
+    }
+    push_with_breaks(out, p.text.get(at..).unwrap_or(""), eol);
+}
+
 fn cell_text(doc: &RichDocument, cell: NodeId) -> String {
     let mut out = String::new();
     let mut first = true;
@@ -96,7 +127,7 @@ fn cell_text(doc: &RichDocument, cell: NodeId) -> String {
                 out.push(' ');
             }
             first = false;
-            push_with_breaks(&mut out, &p.text, " ");
+            push_paragraph(&mut out, p, " ");
         }
     });
     out

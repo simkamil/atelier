@@ -2,33 +2,28 @@
 //! Bounded DOCX import and paginated A4 display-list generation.
 
 use atelier_fmt_ooxml::{DocxLimits, ImportedDocx, import_docx_with_limits};
-use atelier_font::manager::{FontManager, FontManagerLimits, FontRequest, FontSource, FontStyle};
-use atelier_geom::{PathCommand, Point, Rect};
-use atelier_render::{
-    Color, Command, DisplayList, DisplayPath, FillRule, LineCap, LineJoin, PageInfo, PathElement,
-    StrokeStyle,
-};
+use atelier_font::manager::{FontManager, FontManagerLimits, FontSource};
+use atelier_render::Command;
 use atelier_text_layout::{
     LayoutOptions, ParagraphLayout, layout_paragraph,
     pagination::{self, PaginationOptions, ParagraphRules},
 };
-use atelier_text_model::rich::{CharAttrs, NodeId, Paragraph, Underline};
+use atelier_text_model::rich::{CharAttrs, NodeId, Paragraph};
 use core::fmt;
-use std::collections::BTreeMap;
+
+use crate::rich_layout::prepare::{page_break_lines, prepare};
+use crate::rich_layout::rich_paint::{
+    MAX_ATDL_BYTES, MAX_GLYPHS, PaintSink, PlacedLineToPaint, encode_page, paint_line,
+};
 
 const MAX_DOCX_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_TEXT_BYTES: usize = 128 * 1024;
 const MAX_PARAGRAPHS: usize = 1024;
 const MAX_PAGES: usize = 256;
-const MAX_GLYPHS: usize = 128 * 1024;
-const MAX_ATDL_BYTES: usize = 26 * 1024 * 1024;
-const MAX_ATLAS_ENTRIES: usize = 4_096;
-const MAX_ATLAS_ELEMENTS: usize = 1_000_000;
 const ATLAS_TEXT_THRESHOLD: usize = 65_536;
 const MAX_EMBEDDED_FONT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_WORK: usize = 8_000_000;
 const MIN_PARAGRAPH_WORK: usize = 1_024;
-const ATDL_SCALE: f64 = 1.0 / 64.0;
 const PAGE_WIDTH: i64 = 38_098; // 210 mm, rounded to 1/64 pt
 const PAGE_HEIGHT: i64 = 53_881; // 297 mm, rounded to 1/64 pt
 const MARGIN: i64 = 4_535; // 25 mm, rounded to 1/64 pt
@@ -108,13 +103,8 @@ impl StepBudget {
 struct PaintState {
     pagination: pagination::Pagination,
     commands: Vec<Vec<Command>>,
-    use_glyph_atlas: bool,
-    atlas_indices: BTreeMap<(u64, u32, i64), Option<u32>>,
-    atlas_commands: Vec<Command>,
-    atlas_elements: usize,
-    glyph_count: usize,
+    sink: PaintSink,
     path_elements: Vec<usize>,
-    estimated_atdl_bytes: usize,
     next_placement: usize,
 }
 
@@ -152,7 +142,7 @@ pub struct RenderJob {
     phase: Phase,
 }
 
-fn build_fonts(embedded_fonts: &[Vec<u8>]) -> Result<FontManager<'_>, PreviewError> {
+pub(crate) fn build_fonts(embedded_fonts: &[Vec<u8>]) -> Result<FontManager<'_>, PreviewError> {
     let mut fonts = FontManager::with_limits(FontManagerLimits {
         max_faces: 4 + 16,
         max_total_bytes: MAX_EMBEDDED_FONT_BYTES
@@ -304,8 +294,9 @@ impl RenderJob {
             self.remaining_work -= extra_work;
             self.remaining_weight -= weight;
             let glyph_budget = MAX_GLYPHS.saturating_sub(self.total_glyphs).max(1);
+            let prepared = prepare(&paragraph, &fonts, true);
             let layout = layout_paragraph(
-                &paragraph,
+                &prepared.paragraph,
                 &defaults,
                 &fonts,
                 LayoutOptions {
@@ -339,9 +330,10 @@ impl RenderJob {
                     .unwrap_or(0),
                 space_before: twips(i64::from(paragraph.props.space_before.unwrap_or(0)))?,
                 space_after: twips(i64::from(paragraph.props.space_after.unwrap_or(0)))?,
+                line_breaks_before: page_break_lines(&layout, &prepared.page_breaks),
                 ..ParagraphRules::default()
             });
-            self.paragraphs.push(paragraph);
+            self.paragraphs.push(prepared.paragraph);
             self.layouts.push(layout);
             self.next_paragraph += 1;
         }
@@ -366,15 +358,13 @@ impl RenderJob {
         let page_count = pagination.pages.len();
         self.phase = Phase::Paint(PaintState {
             commands: (0..page_count).map(|_| Vec::new()).collect(),
-            use_glyph_atlas,
-            atlas_indices: BTreeMap::new(),
-            atlas_commands: Vec::new(),
-            atlas_elements: 0,
-            glyph_count: 0,
+            sink: PaintSink::new(
+                use_glyph_atlas,
+                page_count
+                    .saturating_mul(48)
+                    .saturating_add(usize::from(use_glyph_atlas) * 48),
+            ),
             path_elements: vec![0usize; page_count],
-            estimated_atdl_bytes: page_count
-                .saturating_mul(48)
-                .saturating_add(usize::from(use_glyph_atlas) * 48),
             next_placement: 0,
             pagination,
         });
@@ -390,13 +380,8 @@ impl RenderJob {
         let PaintState {
             pagination,
             mut commands,
-            use_glyph_atlas,
-            mut atlas_indices,
-            mut atlas_commands,
-            mut atlas_elements,
-            mut glyph_count,
+            mut sink,
             mut path_elements,
-            mut estimated_atdl_bytes,
             mut next_placement,
         } = state;
         let fonts = build_fonts(&imported.font_bytes)?;
@@ -407,222 +392,34 @@ impl RenderJob {
             let placed = &pagination.placements[next_placement];
             let paragraph = &self.paragraphs[placed.paragraph_index];
             let line = &self.layouts[placed.paragraph_index].lines[placed.line_index];
-            for glyph in line.fragments.iter().flat_map(|fragment| &fragment.glyphs) {
-                let glyph_text = paragraph
-                    .text
-                    .get(glyph.source.clone())
-                    .ok_or_else(|| PreviewError::Layout("glyph source range is invalid".into()))?;
-                // Tabs and mandatory line breaks keep their layout advance, but
-                // glyph id zero is a shaping control and must not draw .notdef.
-                if glyph_text
-                    .chars()
-                    .all(|character| matches!(character, '\t' | '\r' | '\n'))
-                {
-                    continue;
-                }
-                glyph_count = glyph_count
-                    .checked_add(1)
-                    .ok_or(PreviewError::Limit("glyphs"))?;
-                if glyph_count > MAX_GLYPHS {
-                    return Err(PreviewError::Limit("glyphs"));
-                }
-                let mut attrs = self.character_defaults[placed.paragraph_index].clone();
-                attrs.overlay(&paragraph.attrs_at(glyph.source.start));
-                let color = attrs
-                    .color
-                    .map(|c| color(c.r, c.g, c.b))
-                    .transpose()?
-                    .unwrap_or(Color::new(0.0, 0.0, 0.0, 1.0).map_err(render_error)?);
-                let source_char = paragraph.text[glyph.source.clone()].chars().next().ok_or(
-                    PreviewError::Layout("glyph has an empty source range".into()),
-                )?;
-                let face = fonts
-                    .resolve_for_char(
-                        &FontRequest::new(
-                            [glyph.family.as_str()],
-                            if attrs.bold == Some(true) { 700 } else { 400 },
-                            if attrs.italic == Some(true) {
-                                FontStyle::Italic
-                            } else {
-                                FontStyle::Normal
-                            },
-                        ),
-                        source_char,
-                    )
-                    .map_err(|e| PreviewError::Layout(e.to_string()))?;
-                if face.id != glyph.font_id {
-                    return Err(PreviewError::Layout(
-                        "resolved font differs from shaped glyph face".into(),
-                    ));
-                }
-                let scale =
-                    glyph.size as f64 * ATDL_SCALE / f64::from(face.face.metrics().units_per_em);
-                let origin_x = (MARGIN + glyph.x) as f64 * ATDL_SCALE;
-                let origin_y =
-                    (MARGIN + glyph.y + placed.baseline - line.baseline) as f64 * ATDL_SCALE;
-                if use_glyph_atlas {
-                    let key = (face.id.get(), u32::from(glyph.glyph_id), glyph.size);
-                    let atlas_index = if let Some(index) = atlas_indices.get(&key) {
-                        *index
-                    } else {
-                        if atlas_indices.len() >= MAX_ATLAS_ENTRIES {
-                            return Err(PreviewError::Limit("glyph atlas entries"));
-                        }
-                        let outline = face
-                            .face
-                            .outline(glyph.glyph_id)
-                            .map_err(|e| PreviewError::Layout(e.to_string()))?;
-                        let (count, bytes) = outline_size(&outline);
-                        if count == 0 {
-                            atlas_indices.insert(key, None);
-                            None
-                        } else {
-                            let next = atlas_elements
-                                .checked_add(count)
-                                .ok_or(PreviewError::Limit("glyph atlas elements"))?;
-                            if next > MAX_ATLAS_ELEMENTS {
-                                return Err(PreviewError::Limit("glyph atlas elements"));
-                            }
-                            charge_estimate(&mut estimated_atdl_bytes, bytes, 22)?;
-                            if atlas_commands.len() >= atelier_render::limits::MAX_COMMANDS {
-                                return Err(PreviewError::Limit("commands"));
-                            }
-                            let elements = convert_outline(&outline, scale, 0.0, 0.0)?;
-                            if elements.len() != count {
-                                return Err(PreviewError::Render(
-                                    "invalid outline coordinates".into(),
-                                ));
-                            }
-                            let index = atlas_commands.len() as u32;
-                            atlas_commands.push(Command::FillPath {
-                                path: DisplayPath::new(elements).map_err(render_error)?,
-                                color: Color::new(0.0, 0.0, 0.0, 1.0).map_err(render_error)?,
-                                rule: FillRule::NonZero,
-                            });
-                            atlas_indices.insert(key, Some(index));
-                            atlas_elements = next;
-                            Some(index)
-                        }
-                    };
-                    if let Some(index) = atlas_index {
-                        if commands[placed.page_index].len() >= atelier_render::limits::MAX_COMMANDS
-                        {
-                            return Err(PreviewError::Limit("commands"));
-                        }
-                        charge_estimate(&mut estimated_atdl_bytes, 0, 65)?;
-                        commands[placed.page_index].push(Command::DrawGlyphRun {
-                            font_id: 0,
-                            color,
-                            glyphs: vec![atelier_render::PositionedGlyph {
-                                glyph_id: index,
-                                position: Point::try_new(origin_x, origin_y)
-                                    .map_err(render_error)?,
-                                advance: Point::try_new(0.0, 0.0).map_err(render_error)?,
-                            }],
-                        });
-                    }
-                } else {
-                    let outline = face
-                        .face
-                        .outline(glyph.glyph_id)
-                        .map_err(|e| PreviewError::Layout(e.to_string()))?;
-                    // Count and charge the exact curve commands before allocating the
-                    // display path. Commands are immutable snapshots from geom's visitor.
-                    let (glyph_path_elements, glyph_path_bytes) = outline_size(&outline);
-                    path_elements[placed.page_index] = path_elements[placed.page_index]
-                        .checked_add(glyph_path_elements)
-                        .ok_or(PreviewError::Limit("path elements"))?;
-                    if path_elements[placed.page_index] > atelier_render::limits::MAX_PATH_ELEMENTS
-                    {
-                        return Err(PreviewError::Limit("path elements"));
-                    }
-                    if glyph_path_elements > 0 {
-                        charge_estimate(&mut estimated_atdl_bytes, glyph_path_bytes, 22)?;
-                        if commands[placed.page_index].len() >= atelier_render::limits::MAX_COMMANDS
-                        {
-                            return Err(PreviewError::Limit("commands"));
-                        }
-                    }
-                    let elements = convert_outline(&outline, scale, origin_x, origin_y)?;
-                    if elements.len() != glyph_path_elements {
-                        return Err(PreviewError::Render("invalid outline coordinates".into()));
-                    }
-                    if !elements.is_empty() {
-                        commands[placed.page_index].push(Command::FillPath {
-                            path: DisplayPath::new(elements).map_err(render_error)?,
-                            color,
-                            rule: FillRule::NonZero,
-                        });
-                    }
-                }
-                if attrs.underline.is_some_and(|u| u != Underline::None) && glyph.x_advance > 0 {
-                    let glyph_size_pt = glyph.size as f64 * ATDL_SCALE;
-                    let y = origin_y + glyph_size_pt * 0.12;
-                    let path = DisplayPath::new(vec![
-                        PathElement::MoveTo(Point::try_new(origin_x, y).map_err(render_error)?),
-                        PathElement::LineTo(
-                            Point::try_new(origin_x + glyph.x_advance as f64 * ATDL_SCALE, y)
-                                .map_err(render_error)?,
-                        ),
-                    ])
-                    .map_err(render_error)?;
-                    path_elements[placed.page_index] = path_elements[placed.page_index]
-                        .checked_add(2)
-                        .ok_or(PreviewError::Limit("path elements"))?;
-                    if path_elements[placed.page_index] > atelier_render::limits::MAX_PATH_ELEMENTS
-                    {
-                        return Err(PreviewError::Limit("path elements"));
-                    }
-                    if commands[placed.page_index].len() >= atelier_render::limits::MAX_COMMANDS {
-                        return Err(PreviewError::Limit("commands"));
-                    }
-                    charge_estimate(&mut estimated_atdl_bytes, 34, 39)?;
-                    commands[placed.page_index].push(Command::StrokePath {
-                        path,
-                        color,
-                        style: StrokeStyle::new(
-                            (glyph_size_pt * 0.045).max(1.0 / 64.0),
-                            LineCap::Butt,
-                            LineJoin::Miter,
-                            4.0,
-                        )
-                        .map_err(render_error)?,
-                    });
-                }
-            }
+            paint_line(
+                &fonts,
+                &mut sink,
+                &mut commands[placed.page_index],
+                &mut path_elements[placed.page_index],
+                PlacedLineToPaint {
+                    paragraph,
+                    defaults: &self.character_defaults[placed.paragraph_index],
+                    line,
+                    baseline: placed.baseline,
+                    origin_x: MARGIN,
+                    origin_y: MARGIN,
+                },
+            )?;
             next_placement += 1;
         }
         if next_placement < pagination.placements.len() {
             self.phase = Phase::Paint(PaintState {
                 pagination,
                 commands,
-                use_glyph_atlas,
-                atlas_indices,
-                atlas_commands,
-                atlas_elements,
-                glyph_count,
+                sink,
                 path_elements,
-                estimated_atdl_bytes,
                 next_placement,
             });
             return Ok(());
         }
-        let glyph_atlas = if use_glyph_atlas {
-            let page = PageInfo::new(
-                Rect::from_xywh(
-                    0.0,
-                    0.0,
-                    PAGE_WIDTH as f64 * ATDL_SCALE,
-                    PAGE_HEIGHT as f64 * ATDL_SCALE,
-                )
-                .map_err(render_error)?,
-            )
-            .map_err(render_error)?;
-            let bytes = DisplayList::new(page, atlas_commands)
-                .map_err(render_error)?
-                .encode()
-                .map_err(render_error)?;
-            Some(bytes)
+        let glyph_atlas = if sink.use_glyph_atlas {
+            Some(encode_page(sink.atlas_commands, PAGE_WIDTH, PAGE_HEIGHT)?)
         } else {
             None
         };
@@ -653,20 +450,7 @@ impl RenderJob {
             .min(state.commands.len());
         while state.next_page < end {
             let commands = std::mem::take(&mut state.commands[state.next_page]);
-            let page = PageInfo::new(
-                Rect::from_xywh(
-                    0.0,
-                    0.0,
-                    PAGE_WIDTH as f64 * ATDL_SCALE,
-                    PAGE_HEIGHT as f64 * ATDL_SCALE,
-                )
-                .map_err(render_error)?,
-            )
-            .map_err(render_error)?;
-            let bytes = DisplayList::new(page, commands)
-                .map_err(render_error)?
-                .encode()
-                .map_err(render_error)?;
+            let bytes = encode_page(commands, PAGE_WIDTH, PAGE_HEIGHT)?;
             state.total = state
                 .total
                 .checked_add(bytes.len())
@@ -746,158 +530,8 @@ fn bounded_package_limits(mut limits: atelier_fmt_ooxml::Limits) -> atelier_fmt_
     limits.zip.max_entry_size = 16 * 1024 * 1024;
     limits
 }
-fn charge_estimate(
-    total: &mut usize,
-    path_bytes: usize,
-    command_bytes: usize,
-) -> Result<(), PreviewError> {
-    // path_bytes accounts for exact point/curve/close encodings. Command
-    // overhead differs between FillPath and StrokePath.
-    let amount = path_bytes
-        .checked_add(command_bytes)
-        .ok_or(PreviewError::Limit("ATDL bytes"))?;
-    *total = total
-        .checked_add(amount)
-        .ok_or(PreviewError::Limit("ATDL bytes"))?;
-    if *total > MAX_ATDL_BYTES {
-        return Err(PreviewError::Limit("ATDL bytes"));
-    }
-    Ok(())
-}
-fn outline_size(outline: &atelier_geom::Path) -> (usize, usize) {
-    let (mut elements, mut bytes) = (0usize, 0usize);
-    let (mut contour_elements, mut contour_bytes, mut has_segment) = (0usize, 0usize, false);
-    let mut finish = |count: usize, size: usize, has_segment: bool| {
-        if has_segment {
-            elements = elements.saturating_add(count);
-            bytes = bytes.saturating_add(size);
-        }
-    };
-    outline.visit_commands(|command| {
-        if matches!(command, PathCommand::MoveTo(_)) {
-            finish(contour_elements, contour_bytes, has_segment);
-            contour_elements = 1;
-            contour_bytes = 17;
-            has_segment = false;
-            return;
-        }
-        let size = match command {
-            PathCommand::LineTo(_) => {
-                has_segment = true;
-                17
-            }
-            PathCommand::QuadraticTo { .. } => {
-                has_segment = true;
-                33
-            }
-            PathCommand::CubicTo { .. } => {
-                has_segment = true;
-                49
-            }
-            PathCommand::Close => 1,
-            PathCommand::MoveTo(_) => unreachable!(),
-        };
-        contour_elements = contour_elements.saturating_add(1);
-        contour_bytes = contour_bytes.saturating_add(size);
-    });
-    finish(contour_elements, contour_bytes, has_segment);
-    (elements, bytes)
-}
-
-fn convert_outline(
-    outline: &atelier_geom::Path,
-    scale: f64,
-    origin_x: f64,
-    origin_y: f64,
-) -> Result<Vec<PathElement>, PreviewError> {
-    let (count, _) = outline_size(outline);
-    let mut elements = Vec::with_capacity(count);
-    let mut pending_move = None;
-    let mut contour_started = false;
-    let mut error = None;
-    let convert = |p: Point| {
-        Point::try_new(origin_x + p.x() * scale, origin_y - p.y() * scale)
-            .map_err(|e| PreviewError::Render(e.to_string()))
-    };
-    outline.visit_commands(|command| {
-        let ensure_start = |elements: &mut Vec<PathElement>,
-                            pending: &mut Option<Point>,
-                            error: &mut Option<PreviewError>| {
-            if let Some(start) = pending.take() {
-                match convert(start) {
-                    Ok(start) => elements.push(PathElement::MoveTo(start)),
-                    Err(e) => *error = Some(e),
-                }
-            }
-        };
-        match command {
-            PathCommand::MoveTo(p) => {
-                pending_move = Some(p);
-                contour_started = false;
-            }
-            PathCommand::LineTo(p) => {
-                if !contour_started {
-                    ensure_start(&mut elements, &mut pending_move, &mut error);
-                    contour_started = true;
-                }
-                match convert(p) {
-                    Ok(p) => elements.push(PathElement::LineTo(p)),
-                    Err(e) => error = Some(e),
-                }
-            }
-            PathCommand::QuadraticTo { control, to } => {
-                if !contour_started {
-                    ensure_start(&mut elements, &mut pending_move, &mut error);
-                    contour_started = true;
-                }
-                match (convert(control), convert(to)) {
-                    (Ok(control), Ok(to)) => {
-                        elements.push(PathElement::QuadraticTo { control, to })
-                    }
-                    (Err(e), _) | (_, Err(e)) => error = Some(e),
-                }
-            }
-            PathCommand::CubicTo {
-                control1,
-                control2,
-                to,
-            } => {
-                if !contour_started {
-                    ensure_start(&mut elements, &mut pending_move, &mut error);
-                    contour_started = true;
-                }
-                match (convert(control1), convert(control2), convert(to)) {
-                    (Ok(control1), Ok(control2), Ok(to)) => elements.push(PathElement::CubicTo {
-                        control1,
-                        control2,
-                        to,
-                    }),
-                    (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => error = Some(e),
-                }
-            }
-            PathCommand::Close if contour_started => elements.push(PathElement::Close),
-            PathCommand::Close => {}
-        }
-    });
-    if let Some(error) = error {
-        return Err(error);
-    }
-    Ok(elements)
-}
 fn twips(v: i64) -> Result<i64, PreviewError> {
     v.checked_mul(16)
         .map(|n| n / 5)
         .ok_or(PreviewError::Limit("geometry"))
-}
-fn color(r: u8, g: u8, b: u8) -> Result<Color, PreviewError> {
-    Color::new(
-        f32::from(r) / 255.0,
-        f32::from(g) / 255.0,
-        f32::from(b) / 255.0,
-        1.0,
-    )
-    .map_err(render_error)
-}
-fn render_error(e: impl fmt::Display) -> PreviewError {
-    PreviewError::Render(e.to_string())
 }

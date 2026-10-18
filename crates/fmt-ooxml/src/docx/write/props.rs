@@ -97,6 +97,7 @@ pub(super) fn insert_ranked<'a>(
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum CharFam {
+    Style,
     Bold,
     Italic,
     Strike,
@@ -109,7 +110,8 @@ pub(super) enum CharFam {
     Highlight,
 }
 
-pub(super) const CHAR_FAMILIES: [CharFam; 10] = [
+pub(super) const CHAR_FAMILIES: [CharFam; 11] = [
+    CharFam::Style,
     CharFam::Font,
     CharFam::Bold,
     CharFam::Italic,
@@ -125,6 +127,7 @@ pub(super) const CHAR_FAMILIES: [CharFam; 10] = [
 impl CharFam {
     fn owns(self) -> &'static [&'static str] {
         match self {
+            Self::Style => &["rStyle"],
             Self::Bold => &["b"],
             Self::Italic => &["i"],
             Self::Strike => &["strike", "dstrike"],
@@ -149,6 +152,7 @@ fn opaque_value<'a>(a: &'a CharAttrs, name: &str) -> Option<&'a [u8]> {
 /// Whether the two attribute sets agree on a family.
 pub(super) fn char_fam_eq(fam: CharFam, a: &CharAttrs, b: &CharAttrs) -> bool {
     match fam {
+        CharFam::Style => a.char_style == b.char_style,
         CharFam::Bold => a.bold == b.bold,
         CharFam::Italic => a.italic == b.italic,
         CharFam::Strike => a.strike == b.strike,
@@ -267,6 +271,11 @@ pub(super) fn char_fam_elems(
 ) -> Vec<GenEl> {
     let mut out = Vec::new();
     match fam {
+        CharFam::Style => out.extend(
+            a.char_style
+                .as_ref()
+                .map(|id| p.el("rStyle", &[("val", id.clone())])),
+        ),
         CharFam::Bold => out.extend(a.bold.map(|v| on_off(p, "b", v))),
         CharFam::Italic => out.extend(a.italic.map(|v| on_off(p, "i", v))),
         CharFam::Strike => out.extend(a.strike.map(|v| on_off(p, "strike", v))),

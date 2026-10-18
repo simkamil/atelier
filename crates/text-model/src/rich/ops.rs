@@ -340,7 +340,7 @@ impl RichOp {
         })
     }
 
-    fn apply_to(&self, doc: &mut RichDocument) -> Result<(), RichError> {
+    pub(crate) fn apply_to(&self, doc: &mut RichDocument) -> Result<(), RichError> {
         match self {
             RichOp::InsertText { para, offset, text } => {
                 edit_paragraph(doc, *para, |p| p.insert_text(*offset, text))
@@ -554,7 +554,7 @@ impl RichOp {
         }
     }
 
-    fn inverse_of(&self, doc: &RichDocument) -> Result<RichOp, RichError> {
+    pub(crate) fn inverse_of(&self, doc: &RichDocument) -> Result<RichOp, RichError> {
         Ok(match self {
             RichOp::InsertText { para, offset, text } => {
                 doc.paragraph(*para)?;
@@ -711,6 +711,9 @@ impl Operation<RichDocument> for RichOp {
     type Error = RichError;
 
     fn apply(&self, state: &mut RichDocument) -> Result<(), RichError> {
+        // The flat index and the flat edit history only follow the flat edits.
+        state.invalidate_flat();
+        state.history.clear();
         self.apply_to(state)
     }
 

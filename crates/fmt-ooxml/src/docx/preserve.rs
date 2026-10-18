@@ -61,7 +61,10 @@ pub struct PreservedElement {
     /// The model node built from this element (paragraph, table, row, cell).
     pub node: Option<NodeId>,
     /// Text byte range: the text a `w:t`, `w:tab`, `w:br`, `w:sym`...
-    /// produced, or the text of a whole run.
+    /// produced, or the text of a whole run. Offsets are those of the source
+    /// text of the paragraph, where each break counts one `\n` and each
+    /// symbol its character; [`crate::source_text`] gives that text from the
+    /// paragraph of the model, which keeps them as inline items.
     pub range: Option<(usize, usize)>,
     /// The content of this element is an interpreted copy of the chosen
     /// `mc:AlternateContent` branch; it is not to be written out, the
