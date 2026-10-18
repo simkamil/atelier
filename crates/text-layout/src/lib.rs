@@ -13,6 +13,7 @@ pub mod flow;
 pub mod incremental;
 pub mod inline_object;
 pub mod pagination;
+pub mod stream;
 
 use atelier_font::FontFace;
 use atelier_font::manager::{
@@ -282,6 +283,48 @@ fn layout_paragraph_impl(
         }
     }
 
+    // Advance of the whole-paragraph shaping up to each glyph end: a cheap
+    // estimate of a prefix width, used only to guess where a line ends (the
+    // exact shaping of the guess and of its neighbour decides). Not used with
+    // tabs, whose advances depend on the position.
+    let estimate: Option<Vec<(usize, i64)>> = if whole_shape.iter().any(|glyph| glyph.control) {
+        None
+    } else {
+        let mut total = 0i64;
+        let mut ends = Vec::with_capacity(whole_shape.len());
+        for glyph in &whole_shape {
+            total = total
+                .checked_add(glyph.advance)
+                .ok_or(LayoutError::ArithmeticOverflow)?;
+            ends.push((glyph.source.end, total));
+        }
+        Some(ends)
+    };
+    // The bisection relies on prefix widths that never shrink as the prefix
+    // grows: no negative advance (a kerning pair that outweighs the glyph it
+    // follows) and only left tab stops, whose position does not depend on the
+    // text that follows. Otherwise lines are chosen by the linear scan. The
+    // guided search shapes fewer prefixes, so the `work` counter of a layout
+    // is lower than before and a `max_work` that was just enough still is.
+    #[cfg(test)]
+    let force_linear = tests::FORCE_LINEAR.load(std::sync::atomic::Ordering::Relaxed);
+    #[cfg(not(test))]
+    let force_linear = false;
+    let monotone = !force_linear
+        && whole_shape.iter().all(|glyph| glyph.advance >= 0)
+        && tab_settings.stops.iter().all(|stop| {
+            matches!(
+                stop.alignment,
+                tabs::TabAlignment::Left | tabs::TabAlignment::Bar
+            )
+        });
+    let estimate_at = |offset: usize| -> i64 {
+        estimate.as_ref().map_or(0, |ends| {
+            let index = ends.partition_point(|(end, _)| *end <= offset);
+            index.checked_sub(1).map_or(0, |i| ends[i].1)
+        })
+    };
+
     let mut opportunities = vec![None; paragraph.text.len() + 1];
     for item in line_breaks(&paragraph.text) {
         opportunities[item.offset] = Some(item.kind);
@@ -329,6 +372,72 @@ fn layout_paragraph_impl(
                 break;
             }
         }
+        // A candidate fits when its prefix, shaped in its line context, is not
+        // wider than the line. Prefix widths do not decrease with the prefix
+        // (advances are non-negative after pair adjustment in the supported
+        // Latin layout), so the candidates that fit form a prefix of the list.
+        // The length of that prefix is guessed from the estimate, checked on
+        // the guess and its neighbour, and bisected when the guess was wrong:
+        // two shapings per line in the usual case instead of one per candidate.
+        let fits = |slot: usize, work: &mut usize| -> Result<bool, LayoutError> {
+            let candidate_end = trim_trailing_space(&paragraph.text, &boundaries, start_slot, slot);
+            let (mut candidate_glyphs, _) =
+                shape_range(&shape_context, start..candidate_end, work)?;
+            resolve_tab_advances(
+                &mut candidate_glyphs,
+                left,
+                tab_settings,
+                &paragraph.text,
+                work,
+                options,
+                None,
+            )?;
+            *work = add_work(*work, 1, options.max_work)?;
+            Ok(glyph_advance(&candidate_glyphs)? <= available)
+        };
+        let guess = |slots: &[usize]| -> Option<usize> {
+            estimate.as_ref()?;
+            let base = estimate_at(start);
+            Some(slots.partition_point(|&slot| {
+                let end = trim_trailing_space(&paragraph.text, &boundaries, start_slot, slot);
+                estimate_at(end) - base <= available
+            }))
+        };
+        // Number of leading candidates that fit.
+        let leading_fit = |slots: &[usize], work: &mut usize| -> Result<usize, LayoutError> {
+            if !monotone {
+                // Prefix widths may shrink: the original scan, one shaping per
+                // candidate, stopping at the first one that overflows.
+                let mut count = 0;
+                for &slot in slots {
+                    if !fits(slot, work)? {
+                        break;
+                    }
+                    count += 1;
+                }
+                return Ok(count);
+            }
+            let (mut low, mut high) = (0usize, slots.len());
+            if let Some(hint) = guess(slots) {
+                if hint == 0 || fits(slots[hint - 1], work)? {
+                    if hint == slots.len() || !fits(slots[hint], work)? {
+                        return Ok(hint);
+                    }
+                    low = hint + 1;
+                } else {
+                    high = hint - 1;
+                }
+            }
+            while low < high {
+                let middle = low + (high - low) / 2;
+                if fits(slots[middle], work)? {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+            Ok(low)
+        };
         let mut chosen_legal: Option<(usize, BreakKind)> = None;
         let legal_slots = (start_slot + 1..=mandatory_slot)
             .filter(|&slot| {
@@ -336,66 +445,24 @@ fn layout_paragraph_impl(
                     && (opportunities[boundaries[slot]].is_some() || slot == boundaries.len() - 1)
             })
             .collect::<Vec<_>>();
-        for slot in legal_slots {
-            let candidate_end = trim_trailing_space(&paragraph.text, &boundaries, start_slot, slot);
-            let (mut candidate_glyphs, _) =
-                shape_range(&shape_context, start..candidate_end, &mut work)?;
-            resolve_tab_advances(
-                &mut candidate_glyphs,
-                left,
-                tab_settings,
-                &paragraph.text,
-                &mut work,
-                options,
-                None,
-            )?;
-            work = add_work(work, 1, options.max_work)?;
-            if glyph_advance(&candidate_glyphs)? <= available {
-                chosen_legal = Some((
-                    slot,
-                    opportunities[boundaries[slot]].unwrap_or(BreakKind::Mandatory),
-                ));
-            } else {
-                // Advances are non-negative after OpenType pair adjustment in the
-                // supported Latin layout. Once a legal prefix overflows, later
-                // prefixes cannot become a useful greedy break.
-                break;
-            }
+        let low = leading_fit(&legal_slots, &mut work)?;
+        if low > 0 {
+            let slot = legal_slots[low - 1];
+            chosen_legal = Some((
+                slot,
+                opportunities[boundaries[slot]].unwrap_or(BreakKind::Mandatory),
+            ));
         }
         let mut chosen_grapheme = None;
         let mut first_grapheme = None;
         if chosen_legal.is_none() {
-            for (slot, &is_forbidden) in forbidden
-                .iter()
-                .enumerate()
-                .take(mandatory_slot + 1)
-                .skip(start_slot + 1)
-            {
-                if is_forbidden {
-                    continue;
-                }
-                if first_grapheme.is_none() {
-                    first_grapheme = Some(slot);
-                }
-                let candidate_end =
-                    trim_trailing_space(&paragraph.text, &boundaries, start_slot, slot);
-                let (mut candidate_glyphs, _) =
-                    shape_range(&shape_context, start..candidate_end, &mut work)?;
-                resolve_tab_advances(
-                    &mut candidate_glyphs,
-                    left,
-                    tab_settings,
-                    &paragraph.text,
-                    &mut work,
-                    options,
-                    None,
-                )?;
-                work = add_work(work, 1, options.max_work)?;
-                if glyph_advance(&candidate_glyphs)? <= available {
-                    chosen_grapheme = Some(slot);
-                } else {
-                    break;
-                }
+            let grapheme_slots = (start_slot + 1..=mandatory_slot)
+                .filter(|&slot| !forbidden[slot])
+                .collect::<Vec<_>>();
+            first_grapheme = grapheme_slots.first().copied();
+            let low = leading_fit(&grapheme_slots, &mut work)?;
+            if low > 0 {
+                chosen_grapheme = Some(grapheme_slots[low - 1]);
             }
         }
         let (end_slot, break_kind) = if start_slot == boundaries.len() - 1 {
@@ -1236,4 +1303,84 @@ fn ceil_grapheme(boundaries: &[usize], byte: usize) -> Result<usize, LayoutError
         .ok_or(LayoutError::InvalidParagraph(
             "shaped cluster end is outside the paragraph",
         ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use atelier_font::manager::FontSource;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Makes `layout_paragraph` choose line ends by the original linear scan.
+    pub(super) static FORCE_LINEAR: AtomicBool = AtomicBool::new(false);
+
+    struct Rng(u64);
+    impl Rng {
+        fn below(&mut self, n: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % n as u64) as usize
+        }
+    }
+
+    /// The guided search picks the lines the linear scan picks, on kerning
+    /// pairs (AV, To, Ty, LT), zero-width marks and joiners, ZWSP, NBSP, tabs,
+    /// ligatures, long words and several widths.
+    #[test]
+    fn guided_line_search_matches_the_linear_scan() {
+        let mut fonts = FontManager::new();
+        for data in [
+            &include_bytes!("../../../data/fonts/carlito/Carlito-Regular.ttf")[..],
+            &include_bytes!("../../../data/fonts/carlito/Carlito-Bold.ttf")[..],
+        ] {
+            fonts.register(data, 0, FontSource::System).expect("font");
+        }
+        let words = [
+            "AV",
+            "To",
+            "Ty",
+            "LT",
+            "WAVE",
+            "Yes.",
+            "r.",
+            "y,",
+            "fi",
+            "ffl",
+            "office",
+            "x",
+            "alpha",
+            "caf\u{e9}",
+            "e\u{301}",
+            "a\u{200b}b",
+            "a\u{a0}b",
+            "\u{200d}",
+            "a\tb",
+            "-",
+            "\u{2014}",
+            "supercalifragilisticexpialidocious",
+            "\u{200b}",
+        ];
+        let mut rng = Rng(0x9e3779b97f4a7c15);
+        for i in 0..60 {
+            let n = 1 + rng.below(40);
+            let text: Vec<&str> = (0..n).map(|_| words[rng.below(words.len())]).collect();
+            let paragraph = Paragraph::with_text(&text.join(if i % 3 == 0 { "  " } else { " " }));
+            for width in [8 * 64, 60 * 64, 300 * 64] {
+                let run = |linear: bool| {
+                    FORCE_LINEAR.store(linear, Ordering::Relaxed);
+                    let result = layout_paragraph(
+                        &paragraph,
+                        &ResolvedProperties::default(),
+                        &fonts,
+                        LayoutOptions::new(width),
+                    );
+                    FORCE_LINEAR.store(false, Ordering::Relaxed);
+                    format!("{result:?}")
+                };
+                let (guided, linear) = (run(false), run(true));
+                assert!(guided == linear, "width {width}, text {:?}", paragraph.text);
+            }
+        }
+    }
 }

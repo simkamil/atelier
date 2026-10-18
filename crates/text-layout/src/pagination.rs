@@ -189,9 +189,184 @@ impl ParagraphLayoutRef for &ParagraphLayout {
     }
 }
 
+/// Read access to the paragraphs of one pagination run. The run asks for a
+/// paragraph only when it visits it (or looks ahead from it), so a source
+/// does not have to be a pair of slices.
+pub(crate) trait ParagraphSource {
+    fn len(&self) -> usize;
+    fn layout(&self, index: usize) -> &ParagraphLayout;
+    fn rules(&self, index: usize) -> &ParagraphRules;
+}
+
+pub(crate) struct SliceSource<'a, L> {
+    layouts: &'a [L],
+    rules: &'a [ParagraphRules],
+}
+
+impl<L: ParagraphLayoutRef> ParagraphSource for SliceSource<'_, L> {
+    fn len(&self) -> usize {
+        self.layouts.len()
+    }
+    fn layout(&self, index: usize) -> &ParagraphLayout {
+        self.layouts[index].paragraph_layout()
+    }
+    fn rules(&self, index: usize) -> &ParagraphRules {
+        &self.rules[index]
+    }
+}
+
 pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
     layouts: &[L],
     rules: &[ParagraphRules],
+    options: PaginationOptions,
+    record_checkpoints: bool,
+    seed: Option<(&PaginationCheckpoint, &Pagination)>,
+    stop_at: Option<&PaginationStopPredicate<'_>>,
+) -> Result<PaginationRun, PaginationError> {
+    if layouts.len() != rules.len() {
+        return Err(PaginationError::InvalidInput(
+            "rules must match paragraph count",
+        ));
+    }
+    paginate_source(
+        &SliceSource { layouts, rules },
+        options,
+        record_checkpoints,
+        seed,
+        stop_at,
+    )
+}
+
+fn explicit_boundary_after(src: &dyn ParagraphSource, index: usize) -> bool {
+    let rule = src.rules(index);
+    rule.break_after
+        || !rule.line_breaks_before.is_empty()
+        || (index + 1 < src.len() && {
+            let next = src.rules(index + 1);
+            next.break_before || !next.line_breaks_before.is_empty()
+        })
+}
+
+fn lines_height(src: &dyn ParagraphSource, index: usize) -> Result<i64, PaginationError> {
+    src.layout(index)
+        .lines
+        .iter()
+        .try_fold(0i64, |sum, line| sum.checked_add(line.height))
+        .ok_or(PaginationError::ArithmeticOverflow)
+}
+
+/// Index of the last paragraph that has lines, found by one backward scan
+/// the first time a run needs it (a long run of empty paragraphs at the end
+/// is scanned once, not once per paragraph).
+fn last_nonempty(src: &dyn ParagraphSource, cache: &mut Option<Option<usize>>) -> Option<usize> {
+    *cache.get_or_insert_with(|| {
+        (0..src.len())
+            .rev()
+            .find(|&i| !src.layout(i).lines.is_empty())
+    })
+}
+
+/// Height of the keep-with-next chain that starts at `index`, memoised in
+/// `memo` over the paragraphs the run actually looked at.
+fn keep_chain_height(
+    src: &dyn ParagraphSource,
+    index: usize,
+    memo: &mut std::collections::BTreeMap<usize, i64>,
+) -> Result<i64, PaginationError> {
+    let mut pending = Vec::new();
+    let mut at = index;
+    let mut tail = loop {
+        if let Some(height) = memo.get(&at) {
+            break *height;
+        }
+        if src.rules(at).keep_with_next && !explicit_boundary_after(src, at) && at + 1 < src.len() {
+            pending.push(at);
+            at += 1;
+        } else {
+            let height = lines_height(src, at)?;
+            memo.insert(at, height);
+            break height;
+        }
+    };
+    while let Some(at) = pending.pop() {
+        tail = lines_height(src, at)?
+            .checked_add(paragraph_gap(src.rules(at), src.rules(at + 1)))
+            .and_then(|height| height.checked_add(tail))
+            .ok_or(PaginationError::ArithmeticOverflow)?;
+        memo.insert(at, tail);
+    }
+    Ok(tail)
+}
+
+/// Checks one paragraph, once, when the run reaches it. There is no global
+/// pre-validation pass: a paragraph that is never reached is not checked.
+fn validate_paragraph(
+    src: &dyn ParagraphSource,
+    paragraph_index: usize,
+    work: &mut usize,
+    max_work: usize,
+) -> Result<Vec<i64>, PaginationError> {
+    let layout = src.layout(paragraph_index);
+    let rule = src.rules(paragraph_index);
+    *work = add_work(*work, 3, max_work)?;
+    if rule.space_before < 0 || rule.space_after < 0 {
+        return Err(PaginationError::InvalidInput(
+            "paragraph spacing cannot be negative",
+        ));
+    }
+    if rule.widow_min == 0 || rule.orphan_min == 0 {
+        return Err(PaginationError::InvalidInput(
+            "widow/orphan limits must be positive",
+        ));
+    }
+    let mut sum = rule
+        .space_before
+        .checked_add(rule.space_after)
+        .ok_or(PaginationError::ArithmeticOverflow)?;
+    let mut prefix = Vec::with_capacity(layout.lines.len() + 1);
+    prefix.push(0i64);
+    for line in &layout.lines {
+        if line.height <= 0 {
+            return Err(PaginationError::InvalidInput(
+                "line height must be positive",
+            ));
+        }
+        sum = sum
+            .checked_add(line.height)
+            .ok_or(PaginationError::ArithmeticOverflow)?;
+        let prefix_sum = prefix
+            .last()
+            .copied()
+            .unwrap_or(0i64)
+            .checked_add(line.height)
+            .ok_or(PaginationError::ArithmeticOverflow)?;
+        prefix.push(prefix_sum);
+        *work = add_work(*work, 1, max_work)?;
+    }
+    if layout.height != sum {
+        return Err(PaginationError::InvalidInput(
+            "paragraph height does not equal before + lines + after",
+        ));
+    }
+    let mut last = None;
+    for &line_index in &rule.line_breaks_before {
+        *work = add_work(*work, 1, max_work)?;
+        if line_index == 0
+            || line_index >= layout.lines.len()
+            || last.is_some_and(|v| line_index <= v)
+        {
+            return Err(PaginationError::InvalidLineBreak {
+                paragraph_index,
+                line_index,
+            });
+        }
+        last = Some(line_index);
+    }
+    Ok(prefix)
+}
+
+pub(crate) fn paginate_source(
+    src: &dyn ParagraphSource,
     options: PaginationOptions,
     record_checkpoints: bool,
     seed: Option<(&PaginationCheckpoint, &Pagination)>,
@@ -207,102 +382,10 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
             "page and work budgets must be positive",
         ));
     }
-    if layouts.len() != rules.len() {
-        return Err(PaginationError::InvalidInput(
-            "rules must match paragraph count",
-        ));
-    }
+    let paragraph_total = src.len();
     let mut work = 0usize;
-    let mut counts = Vec::with_capacity(layouts.len());
-    let mut prefixes: Vec<Vec<i64>> = Vec::with_capacity(layouts.len());
-    for (paragraph_index, (layout, rule)) in layouts.iter().zip(rules).enumerate() {
-        let layout = layout.paragraph_layout();
-        work = add_work(work, 1, options.max_work)?;
-        if rule.space_before < 0 || rule.space_after < 0 {
-            return Err(PaginationError::InvalidInput(
-                "paragraph spacing cannot be negative",
-            ));
-        }
-        if rule.widow_min == 0 || rule.orphan_min == 0 {
-            return Err(PaginationError::InvalidInput(
-                "widow/orphan limits must be positive",
-            ));
-        }
-        let mut sum = rule
-            .space_before
-            .checked_add(rule.space_after)
-            .ok_or(PaginationError::ArithmeticOverflow)?;
-        let mut prefix = Vec::with_capacity(layout.lines.len() + 1);
-        prefix.push(0i64);
-        for line in &layout.lines {
-            if line.height <= 0 {
-                return Err(PaginationError::InvalidInput(
-                    "line height must be positive",
-                ));
-            }
-            sum = sum
-                .checked_add(line.height)
-                .ok_or(PaginationError::ArithmeticOverflow)?;
-            let prefix_sum = prefix
-                .last()
-                .copied()
-                .unwrap_or(0i64)
-                .checked_add(line.height)
-                .ok_or(PaginationError::ArithmeticOverflow)?;
-            prefix.push(prefix_sum);
-            work = add_work(work, 1, options.max_work)?;
-        }
-        if layout.height != sum {
-            return Err(PaginationError::InvalidInput(
-                "paragraph height does not equal before + lines + after",
-            ));
-        }
-        let mut last = None;
-        for &line_index in &rule.line_breaks_before {
-            work = add_work(work, 1, options.max_work)?;
-            if line_index == 0
-                || line_index >= layout.lines.len()
-                || last.is_some_and(|v| line_index <= v)
-            {
-                return Err(PaginationError::InvalidLineBreak {
-                    paragraph_index,
-                    line_index,
-                });
-            }
-            last = Some(line_index);
-        }
-        counts.push(layout.lines.len());
-        prefixes.push(prefix);
-    }
-
-    let mut has_following_nonempty = vec![false; layouts.len()];
-    let mut seen_nonempty = false;
-    for index in (0..layouts.len()).rev() {
-        work = add_work(work, 1, options.max_work)?;
-        has_following_nonempty[index] = seen_nonempty;
-        seen_nonempty |= counts[index] > 0;
-    }
-
-    let mut keep_chain_heights = vec![0i64; layouts.len()];
-    for index in (0..layouts.len()).rev() {
-        work = add_work(work, 1, options.max_work)?;
-        let own_height = *prefixes[index].last().unwrap_or(&0);
-        let explicit_boundary_after = rules[index].break_after
-            || !rules[index].line_breaks_before.is_empty()
-            || rules
-                .get(index + 1)
-                .is_some_and(|next| next.break_before || !next.line_breaks_before.is_empty());
-        keep_chain_heights[index] =
-            if rules[index].keep_with_next && !explicit_boundary_after && index + 1 < layouts.len()
-            {
-                own_height
-                    .checked_add(paragraph_gap(&rules[index], &rules[index + 1]))
-                    .and_then(|height| height.checked_add(keep_chain_heights[index + 1]))
-                    .ok_or(PaginationError::ArithmeticOverflow)?
-            } else {
-                own_height
-            };
-    }
+    let mut chain_memo = std::collections::BTreeMap::new();
+    let mut last_nonempty_cache: Option<Option<usize>> = None;
 
     let preflight_work = work;
     let (
@@ -314,7 +397,7 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
         mut break_after_pending,
         source_start,
     ) = if let Some((checkpoint, previous)) = seed {
-        if checkpoint.source_index > layouts.len()
+        if checkpoint.source_index > paragraph_total
             || checkpoint.page_count > previous.pages.len()
             || checkpoint.placement_count > previous.placements.len()
             || checkpoint.diagnostic_count > previous.diagnostics.len()
@@ -371,15 +454,12 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
         Ok(())
     };
 
-    for (paragraph_index, ((layout, rule), &line_count)) in layouts
-        .iter()
-        .zip(rules)
-        .zip(&counts)
-        .enumerate()
-        .skip(source_start)
-    {
-        let layout = layout.paragraph_layout();
+    for paragraph_index in source_start..paragraph_total {
+        let layout = src.layout(paragraph_index);
+        let rule = src.rules(paragraph_index);
+        let line_count = layout.lines.len();
         work = add_work(work, 1, options.max_work)?;
+        let line_prefix = validate_paragraph(src, paragraph_index, &mut work, options.max_work)?;
         if record_checkpoints || stop_at.is_some() {
             let checkpoint = PaginationCheckpoint {
                 source_index: paragraph_index,
@@ -391,8 +471,9 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
                 previous_paragraph,
                 break_after_pending,
                 open_page_placements: result.placements.len().saturating_sub(page_start),
-                keep_chain_height: keep_chain_heights[paragraph_index],
-                has_following_nonempty: has_following_nonempty[paragraph_index],
+                keep_chain_height: keep_chain_height(src, paragraph_index, &mut chain_memo)?,
+                has_following_nonempty: last_nonempty(src, &mut last_nonempty_cache)
+                    .is_some_and(|last| last > paragraph_index),
             };
             if record_checkpoints {
                 checkpoints.push(checkpoint.clone());
@@ -406,7 +487,7 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
             break_after_pending |= rule.break_after;
             continue;
         }
-        let gap = previous_paragraph.map_or(0, |prev| paragraph_gap(&rules[prev], rule));
+        let gap = previous_paragraph.map_or(0, |prev| paragraph_gap(src.rules(prev), rule));
         let mut explicit_before = rule.break_before || break_after_pending;
         if explicit_before || break_after_pending {
             new_page(
@@ -419,13 +500,8 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
             break_after_pending = false;
         }
         if rule.keep_with_next {
-            let chain = keep_chain_heights[paragraph_index];
-            let explicit_boundary_after = rule.break_after
-                || !rule.line_breaks_before.is_empty()
-                || rules
-                    .get(paragraph_index + 1)
-                    .is_some_and(|next| next.break_before || !next.line_breaks_before.is_empty());
-            if explicit_boundary_after {
+            let chain = keep_chain_height(src, paragraph_index, &mut chain_memo)?;
+            if explicit_boundary_after(src, paragraph_index) {
                 result
                     .diagnostics
                     .push(PaginationDiagnostic::KeepWithNextRelaxed { paragraph_index });
@@ -450,7 +526,7 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
                 )?;
             }
         }
-        let paragraph_height = *prefixes[paragraph_index].last().unwrap_or(&0);
+        let paragraph_height = *line_prefix.last().unwrap_or(&0);
         if rule.keep_together && paragraph_height > options.page_height {
             result
                 .diagnostics
@@ -485,7 +561,7 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
             let end = manual;
             // A paragraph break after is handled only after all its lines, while
             // explicit line breaks still divide its lines at their exact indices.
-            let group_height = range_height(&prefixes[paragraph_index], start, end)?;
+            let group_height = range_height(&line_prefix, start, end)?;
             let mut spacing = if start == 0 {
                 if result.placements.len() == page_start {
                     if explicit_before {
@@ -656,13 +732,13 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
                     moved.baseline = layout.lines[moved.line_index]
                         .baseline
                         .checked_sub(rule.space_before)
-                        .and_then(|v| v.checked_sub(prefixes[paragraph_index][moved.line_index]))
+                        .and_then(|v| v.checked_sub(line_prefix[moved.line_index]))
                         .ok_or(PaginationError::ArithmeticOverflow)?;
                     page_y = layout.lines[moved.line_index].height;
                     result.placements.push(moved);
                 }
             }
-            let prefix = range_height(&prefixes[paragraph_index], start, take)?;
+            let prefix = range_height(&line_prefix, start, take)?;
             let mut line_top = page_y;
             for (line_index, line) in layout.lines.iter().enumerate().take(take).skip(start) {
                 if line.height > options.page_height {
@@ -673,7 +749,7 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
                             line_index,
                         });
                 }
-                let prefix_line = prefixes[paragraph_index][line_index];
+                let prefix_line = line_prefix[line_index];
                 let local_baseline = line
                     .baseline
                     .checked_sub(rule.space_before)
@@ -710,7 +786,9 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
                 explicit_before = false;
             }
         }
-        break_after_pending |= rule.break_after && has_following_nonempty[paragraph_index];
+        break_after_pending |= rule.break_after
+            && last_nonempty(src, &mut last_nonempty_cache)
+                .is_some_and(|last| last > paragraph_index);
         previous_paragraph = Some(paragraph_index);
     }
     if stopped_at.is_none() && result.placements.len() > page_start {
