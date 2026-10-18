@@ -281,6 +281,32 @@ scenario("PreviewDocx on the real WASM leaves the TXT state unchanged; a malform
   docId = 1;
 });
 
+let measured = null;
+scenario("(v2 only) dense pages: lines of 100 columns open, page bounds hold", "Open TXT of 100-column lines, then every page by Pages", () => {
+  const letters = "mwgQ@&%$B8GRSgsy";
+  const line = (i) => Array.from({ length: 100 }, (_, k) => letters[(i * 7 + k * 5) % letters.length]).join("");
+  const text = Array.from({ length: 120 }, (_, i) => line(i)).join("\n");
+  const opened = openTxt(text);
+  assert.ok(opened.pages.length >= 1, "Open carries the first page");
+  const sent = opened.pages.reduce((n, p) => n + p.display.length, 0);
+  assert.ok(opened.pages.length === 1 || sent <= 8 * 1024 * 1024);
+  assert.ok(opened.pages.every((p) => p.display.length <= 16 * 1024 * 1024));
+  assert.ok(opened.pages[0].display.length > 4 * 1024 * 1024, "the page is above the former 4 MiB limit");
+  // Characters of page 0, from the position at its bottom right.
+  const hitReply = command({ type: "hitTest", page: 0, mode: "probe", x: 10000, y: 10000 });
+  assert.equal(hitReply.type, "hitResult");
+  const shown = textOf().slice(0, Number(hitReply.position)).replace(/\n/g, "").length;
+  measured = { page0Bytes: opened.pages[0].display.length, characters: shown, perGlyph: Math.round(opened.pages[0].display.length / shown) };
+  let state = opened;
+  for (let i = 0; i < 4000 && !state.layoutComplete; i += 1) state = expectState({ type: "layout", budget: 256 });
+  assert.ok(state.layoutComplete);
+  for (let first = 0; first < state.pageCount; first += 1) {
+    const r = command({ type: "pages", first, count: 1 });
+    assert.equal(r.type, "pages", JSON.stringify(r.code));
+    assert.equal(r.pages.length, 1);
+  }
+});
+
 let passed = 0;
 for (const s of SCENARIOS) {
   if (!s.run) continue;
@@ -296,3 +322,4 @@ console.log("v1 scenario -> v2 equivalent");
 for (const s of SCENARIOS) console.log(`  ${s.run ? "ok   " : "NONE "} ${s.v1} -> ${s.v2 ?? `no equivalent: ${s.reason}`}`);
 console.log(`Rich editor real WASM ABI (v2): ${passed} scenarios passed, ${none.length} v1 scenarios without v2 equivalent.`);
 if (none.length) console.log("US-217 criterion 'the scenarios of editor-abi.mjs pass in v2' stays unticked.");
+if (measured) console.log(`Dense page measure: ${measured.page0Bytes} bytes for ${measured.characters} characters on page 0 (${measured.perGlyph} bytes per glyph).`);

@@ -29,7 +29,7 @@ Batch 1 and R2 do not lay out tables, headers or footers. Paragraphs of table ce
 
 ## Positions
 
-Flat positions are an **interchange representation of this protocol only**. The model and the recovery journal keep node id + offset (SPEC §6.3) and never store flat positions; the model converts flat position <-> (node id, offset) on demand (`FlatIndex`), and side tables are remapped through `position_map`.
+Flat positions are an **interchange representation of this protocol only**. The model and the recovery journal keep node id + offset (SPEC §6.3) and never store flat positions; the model converts flat position <-> (node id, offset) on demand (`FlatIndex`), and the model keeps no side table: breaks, symbols and objects are inline items of the paragraph (3 flat bytes each) and run styles a run attribute, so `position_map` remaps nothing outside the model (`ImportedDocx::breaks`, `symbols` and `run_styles` survive only as a derived view for the legacy `RichSession`, removed with R8).
 
 The flat text of a document covers **every paragraph in document order**, table cell paragraphs included (table by table, row by row, cell by cell), joined by one `\n` byte, with no trailing `\n`; headers and footers are not part of it. An opaque block counts as one paragraph made of a single U+FFFC. Inside a paragraph, every inline item that is not text counts as U+FFFC, **3 bytes** (`EF BF BC`) each: anchored objects (images...), line, page and column breaks and symbols. `run_styles` is a run attribute (`CharAttrs::char_style`), not an inline item: it counts **0 bytes**. Items at one text offset appear in `id` order across anchored objects, breaks and symbols. All positions, ranges and lengths are **byte offsets into that text**, `u64` on the wire (BigInt in JS), valid in `0..=doc_len`; the engine converts them with `usize::try_from` (`rich_protocol::to_position`), a value that does not fit is out of range.
 
@@ -88,10 +88,14 @@ Reply opcodes: `0x8000` Error, `0x8100` State, `0x8101` TextWindow, `0x8102` Pag
 | page_count | u32 | pages so far (grows while `layout_complete` is 0) |
 | caret | u32 page (`0xFFFFFFFF` none), `x f64`, `y f64`, `height f64` | geometry of the focus; zeros when none |
 | invalidated | `n u32` (at most 1024), `n` x (`first u32`, `end u32`) | half-open page ranges the client must drop; sorted and disjoint; ranges that overlap or **touch** (`end == next first`) are merged by the sender (`split_page_delta`) and refused by the decoder (`PAGE_RANGE`) |
-| pages | `n u32` (at most 16), `n` x (`index u32`, `len u32`, ATDL) | pages that changed, indices strictly increasing and `< page_count`; each is a complete ATDL display list (`docs/us-080-display-list.md`, 44 bytes to 4 MiB) |
+| pages | `n u32` (at most 16), `n` x (`index u32`, `len u32`, ATDL) | pages that changed, indices strictly increasing and `< page_count`; each is a complete ATDL display list (`docs/us-080-display-list.md`, 44 bytes to 16 MiB); the sum of the lists of one reply is at most 8 MiB unless the reply carries a single page (`rich_protocol::page_fits`, checked by encoders and decoders, `RICH_FRAME_TOO_LARGE`); the engine drops the pages that do not fit from `pages` and reports them in `invalidated`, the client asks for them with `Pages` |
 | window | `start u64`, `len u32`, UTF-8 (at most 256 KiB, within `doc_len`) | only if flag 4: the text around the focus that the engine chooses to send so the DOM mirror stays current |
 
-When more than 16 pages change, the first 16 are sent and the others appear in `invalidated`: the client re-requests them with `Pages`. A page absent from both lists is unchanged and its cached list stays valid.
+When more than 16 pages change, or their display lists exceed the reply bound, the first ones are sent and the others appear in `invalidated`: the client re-requests them with `Pages` (which also stops at the bound and answers fewer pages, the first one always). A display list is about 500 to 1600 bytes per glyph today (see `us-217-rich-editor.md`), so a dense page can pass 4 MiB.
+
+**Resynchronisation.** When the engine knows that a reply never reached the client (encoding failure, ABI `STATUS_LIMIT`, `EDITOR_RESPONSE_LIMIT`), the next `State` carries `invalidated = [(0, page_count)]` and a text window, once; the client then rebuilds its cache from `Pages` requests.
+
+**Moves and the layout.** A move or a hit test whose target is not laid out yet lays the tail out itself (blocks of 256 then 1024 paragraphs, at most 4096 paragraphs per command) and answers a `State` with the pages it changed; when the budget is spent the selection stays and the `State` has no caret and `layout_complete = 0`: the client sends `Layout` and repeats. `RICH_NOT_READY` is answered to `Pages` (and to a `HitTest` probe that cannot be placed). After a layout failure the engine rebuilds its layout instead of staying blocked. A page absent from both lists is unchanged and its cached list stays valid.
 
 **TextWindow** (`0x8101`): `revision u64`, `start u64`, `doc_len u64`, `len u32`, UTF-8, with `start + len <= doc_len`.
 **Pages** (`0x8102`): `revision u64`, `page_count u32`, then the page list as above.
@@ -163,7 +167,8 @@ Engine error mapping (`impl From` in `rich_protocol`): `FlatError::OutOfRange` t
 | `InsertText` / `ReplaceRange` text | 1 MiB |
 | Text window (request and reply) | 256 KiB |
 | Pages per reply | 16 |
-| One page display list | 4 MiB |
+| One page display list | 16 MiB |
+| Display lists in one reply | 8 MiB (a single page may exceed it, up to 16 MiB) |
 | Invalidation ranges per State | 1024 |
 | Pages per document (`MAX_PAGES`) | 2^20 |
 
