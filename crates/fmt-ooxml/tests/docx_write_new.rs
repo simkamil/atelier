@@ -123,3 +123,53 @@ fn systematic_new_documents_write_and_read_back_equal() {
         &problems[..problems.len().min(20)]
     );
 }
+
+fn regenerate_all() -> DocxWriteOptions {
+    DocxWriteOptions {
+        regenerate_all: true,
+        ..DocxWriteOptions::default()
+    }
+}
+
+/// US-307 criterion 1: documents built from scratch, each twice and independently,
+/// give the same bytes; once opened and saved again (`regenerate_all`) the output
+/// reaches a fixed point after one more cycle.
+#[test]
+fn new_documents_are_deterministic_and_reach_a_fixed_point() {
+    use atelier_fmt_ooxml::write_docx;
+    let mut problems = Vec::new();
+    for i in 0..120 {
+        let (one, two) = (scratch_document(i), scratch_document(i));
+        let a = write_new_docx(
+            &NewDocument::from_default(&one.doc),
+            &DocxWriteOptions::default(),
+        )
+        .unwrap();
+        let b = write_new_docx(
+            &NewDocument::from_default(&two.doc),
+            &DocxWriteOptions::default(),
+        )
+        .unwrap();
+        if a.bytes != b.bytes {
+            problems.push(format!("{}: two builds differ", one.name));
+        }
+        let cycle = |bytes: &[u8]| {
+            let imp = import_docx(bytes).ok()?;
+            let w = write_docx(&imp, &regenerate_all()).ok()?;
+            let again = write_docx(&imp, &regenerate_all()).ok()?;
+            (w.bytes == again.bytes && w.reused_parts.is_empty()).then_some(w.bytes)
+        };
+        match cycle(&a.bytes).and_then(|c| cycle(&c).map(|d| (c, d))) {
+            Some((c, d)) => match cycle(&d) {
+                Some(e) if e == d && c == d => {}
+                _ => problems.push(format!("{}: no fixed point", one.name)),
+            },
+            None => problems.push(format!("{}: cycle fails", one.name)),
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "{:#?}",
+        &problems[..problems.len().min(20)]
+    );
+}

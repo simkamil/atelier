@@ -196,7 +196,145 @@ fn check(name: &str, bytes: &[u8]) -> Report {
             rep.losses.push(format!("[{tag}] number of parts differs"));
         }
     }
+    rep.losses.extend(determinism_problems(bytes));
     rep
+}
+
+// ---- Determinism (US-307 criterion 1) ---------------------------------------------
+
+fn regenerate_all() -> DocxWriteOptions {
+    DocxWriteOptions {
+        regenerate_all: true,
+        ..DocxWriteOptions::default()
+    }
+}
+
+/// The package with its ZIP members in reverse order, its relationships in
+/// reverse order and a useless `Default` entry: the same content built another way.
+fn shuffled(bytes: &[u8]) -> Vec<u8> {
+    use atelier_zip::{Archive, Limits, Method, WriteOptions, Writer};
+    let archive = Archive::open(bytes, Limits::default()).expect("zip");
+    let mut members: Vec<(String, Vec<u8>)> = archive
+        .entries()
+        .iter()
+        .filter(|e| !e.name().ends_with('/'))
+        .map(|e| (e.name().to_owned(), e.read_all().expect("member")))
+        .collect();
+    members.reverse();
+    let mut zip = Writer::new(WriteOptions::default());
+    for (name, mut data) in members {
+        if name.ends_with(".rels") {
+            data = reverse_relationships(&data);
+        } else if name == "[Content_Types].xml" {
+            let text = String::from_utf8_lossy(&data).into_owned();
+            if let Some(at) = text.find("<Default ").or_else(|| text.find("<Override ")) {
+                let extra = r#"<Default Extension="zzz" ContentType="application/x-zzz"/>"#;
+                data = format!("{}{extra}{}", &text[..at], &text[at..]).into_bytes();
+            }
+        }
+        zip.add(&name, &data, Method::Deflate).expect("add");
+    }
+    zip.finish().expect("finish")
+}
+
+fn reverse_relationships(xml: &[u8]) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(xml) else {
+        return xml.to_vec();
+    };
+    let (Some(start), Some(end)) = (text.find("<Relationship "), text.rfind("</Relationships>"))
+    else {
+        return xml.to_vec();
+    };
+    let body = &text[start..end];
+    let items: Vec<&str> = body.split_inclusive("/>").collect();
+    if items.iter().any(|i| !i.starts_with("<Relationship ")) || items.concat() != body {
+        return xml.to_vec();
+    }
+    let reversed: String = items.iter().rev().copied().collect();
+    format!("{}{reversed}{}", &text[..start], &text[end..]).into_bytes()
+}
+
+/// Same model, same bytes: twice, independent of how the source was built and of its
+/// raw bytes; fixed point after a save/open cycle; nothing copied from the source.
+fn determinism_problems(bytes: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(imp) = import_docx(bytes) else {
+        return out;
+    };
+    let Ok(first) = write_docx(&imp, &regenerate_all()) else {
+        return out;
+    };
+    if !first.reused_parts.is_empty() {
+        out.push(format!(
+            "[determinism] parts reused: {:?}",
+            first.reused_parts
+        ));
+    }
+    let mut seen: Vec<String> = first
+        .regenerated_parts
+        .iter()
+        .chain(&first.opaque_parts)
+        .cloned()
+        .collect();
+    seen.sort();
+    let mut want: Vec<String> = imp
+        .package
+        .parts()
+        .keys()
+        .map(ToString::to_string)
+        .collect();
+    want.sort();
+    if seen != want {
+        out.push(format!(
+            "[determinism] parts not partitioned: {seen:?} vs {want:?}"
+        ));
+    }
+    match write_docx(&imp, &regenerate_all()) {
+        Ok(second) if second.bytes == first.bytes => {}
+        _ => out.push("[determinism] two writes differ".into()),
+    }
+    // Raw bytes of the parts the model generates are altered after the import.
+    let mut tampered = import_docx(bytes).expect("import");
+    let generated: Vec<String> = [
+        &tampered.preserved.document,
+        &tampered.preserved.styles,
+        &tampered.preserved.settings,
+    ]
+    .into_iter()
+    .flatten()
+    .map(|p| p.uri.clone())
+    .collect();
+    for uri in &generated {
+        let uri = atelier_fmt_ooxml::PartUri::parse(uri).expect("uri");
+        assert!(
+            tampered
+                .package
+                .replace_part_bytes(&uri, b"<not-even-xml".to_vec())
+        );
+    }
+    match write_docx(&tampered, &regenerate_all()) {
+        Ok(t) if t.bytes == first.bytes => {}
+        _ => out.push("[determinism] output depends on the raw bytes of a generated part".into()),
+    }
+    // The same package built in another order.
+    match import_docx(&shuffled(bytes)).map(|i| write_docx(&i, &regenerate_all())) {
+        Ok(Ok(s)) if s.bytes == first.bytes => {}
+        Ok(Ok(_)) => out.push("[determinism] output depends on the order of the source".into()),
+        _ => out.push("[determinism] shuffled source fails".into()),
+    }
+    // Fixed point: open the output, save, open, save.
+    let again = import_docx(&first.bytes).and_then(|i| {
+        write_docx(&i, &regenerate_all())
+            .map_err(|_| atelier_fmt_ooxml::DocxError::MissingPart("write"))
+    });
+    match again {
+        Ok(c) => match import_docx(&c.bytes).map(|i| write_docx(&i, &regenerate_all())) {
+            Ok(Ok(d)) if d.bytes == c.bytes => {}
+            _ => out.push("[determinism] no fixed point after a second cycle".into()),
+        },
+        Err(e) => out.push(format!("[determinism] output does not reopen: {e:?}")),
+    }
+    out
 }
 
 // ---- Synthetic documents -------------------------------------------------------
@@ -657,4 +795,27 @@ fn ignorable_check_flags_an_undeclared_prefix() {
     assert_eq!(undeclared_ignorable(bad.as_bytes()), ["p (at a)"]);
     let sibling = format!(r#"<a xmlns:mc="{MC}"><c xmlns:p="u"/><b mc:Ignorable="p"/></a>"#);
     assert_eq!(undeclared_ignorable(sibling.as_bytes()).len(), 1);
+}
+
+/// The determinism check has teeth: without `regenerate_all` the package layout
+/// of the source (member order, relationship order, `Default` entries) shows in the
+/// output, so the equality proved with it is not an accident of the fixtures.
+#[test]
+fn determinism_check_sees_the_layout_of_the_source_when_nothing_is_regenerated() {
+    let (docs, _) = repository_documents();
+    let mut differing = 0;
+    for (name, bytes) in &docs {
+        let shuffled = shuffled(bytes);
+        assert_ne!(&shuffled, bytes, "{name}: the variant is the same file");
+        let plain = |b: &[u8]| {
+            import_docx(b)
+                .ok()
+                .and_then(|i| write_docx(&i, &DocxWriteOptions::default()).ok())
+                .map(|w| w.bytes)
+        };
+        if plain(bytes) != plain(&shuffled) {
+            differing += 1;
+        }
+    }
+    assert!(differing > 0, "no document shows the layout of its source");
 }
