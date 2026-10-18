@@ -73,3 +73,5 @@ Estimations à remesurer à chaque tranche : R1 +5 à +15 Ko, R2 +25 à +45 Ko, 
 Décision (US-006) : deux budgets. Les polices forment une liste figée contrôlée par empreinte ; le code a sa propre référence avec la même tolérance de 10 %.
 
 Mise à jour du 2026-10-18 : US-006 est livrée. US-205 retirera ensuite les polices du WASM pour les charger via `Host.fonts` ; le budget polices portera alors sur les ressources de l'hôte.
+
+Décision du 2026-10-18 (propriétaire du produit) : au branchement de R3a, la référence de code est réétalonnée sur la taille mesurée, comme croissance voulue avec sa raison écrite dans `tools/bench/references/wasm-size.json`, en gardant la tolérance de 10 %. Objectif : revenir sous l'ancienne limite de code (2 111 059 octets) après le retrait de l'éditeur v1 (R8).
