@@ -4,7 +4,7 @@ Contract of the single rich editor of the [migration plan](rich-editor-migration
 
 ## Compatibility
 
-ATED v1 (`docs/us-120-editor-engine.md`, opcodes 0-30) is unchanged and frozen until the parity switch (US-219). v1 and v2 share the outer US-091 `Editor` / `EditorResult` messages and the 4-byte magic `ATED`; the version field at offset 4 selects the codec (`1` routes to `editor.rs` as before, `2` to the rich editor). v2 opcodes (`0x0101..`) never collide with v1 (`0..30`). A v1 frame is never valid v2 and the reverse: a v2 decoder answers `RICH_UNSUPPORTED_VERSION` to version 1. Routing belongs to the integrator; this story adds no route.
+ATED v1 (`docs/us-120-editor-engine.md`, opcodes 0-30) is unchanged and frozen until the parity switch (US-219). v1 and v2 share the outer US-091 `Editor` / `EditorResult` messages and the 4-byte magic `ATED`; the version field at offset 4 selects the codec (`1` routes to `editor.rs` as before, `2` to the rich editor). v2 opcodes (`0x0101..`) never collide with v1 (`0..30`). A v1 frame is never valid v2 and the reverse: a v2 decoder answers `RICH_UNSUPPORTED_VERSION` to version 1. Routing belongs to the integrator; this story adds no route. Routing rule for the integrator: a payload goes to v2 when it has at least 8 bytes (the v1 minimum), starts with `ATED` and has version 2 at offset 4; anything shorter, including a 6 or 7 byte frame that claims version 2, stays with v1, which answers `EDITOR_INVALID_COMMAND`. Between 8 and 19 bytes a version 2 frame is a v2 `RICH_INVALID_ENVELOPE` (outer `Failed`, no header to echo).
 
 ## Envelope
 
@@ -27,14 +27,14 @@ Every request gets exactly one reply: the success reply of its command or an `Er
 
 Flat positions are an **interchange representation of this protocol only**. The model and the recovery journal keep node id + offset (SPEC §6.3) and never store flat positions; the model converts flat position <-> (node id, offset) on demand (`FlatIndex`), and side tables are remapped through `position_map`.
 
-The flat text of a document is the body paragraphs in order, joined by one `\n` byte, with no trailing `\n`. Inline objects count as U+FFFC, **3 bytes** (`EF BF BC`) each: images and anchored objects, and, once R1 integrates the side tables of `crates/fmt-ooxml/src/docx.rs:234-236` as inline items, every `breaks` entry (line, page, column break) and every `symbols` entry. `run_styles` are attributes of text runs, not inline items: they count **0 bytes** (to be confirmed by the integrator if R1 models them as items, in which case they would also count 3). Everything else is its UTF-8. All positions, ranges and lengths are **byte offsets into that text**, `u64` on the wire (BigInt in JS), valid in `0..=doc_len`.
+The flat text of a document is the body paragraphs in order, joined by one `\n` byte, with no trailing `\n`. Every inline item that is not text counts as U+FFFC, **3 bytes** (`EF BF BC`) each: images and anchored objects, line, page and column breaks (`breaks`) and symbols (`symbols`), the last two being inline items of the model from R1 on. `run_styles` is a run attribute (a character style in `CharAttrs`), not an inline item: it counts **0 bytes**. All positions, ranges and lengths are **byte offsets into that text**, `u64` on the wire (BigInt in JS), valid in `0..=doc_len`; the engine converts them with `usize::try_from` (`rich_protocol::to_position`), a value that does not fit is out of range.
 
 Rules, checked by the engine (`RICH_*` code in parentheses):
 
 - A position greater than `doc_len` is refused (`POSITION_OUT_OF_RANGE`). A range with `start > end` is refused (`INVALID_RANGE`), checked in the codec.
-- A position must be on a UTF-8 scalar boundary and never inside U+FFFC (`POSITION_NOT_BOUNDARY`).
-- `ReplaceRange` accepts any scalar boundary, even inside a grapheme cluster. `SetSelection` snaps both ends backwards to the previous grapheme boundary. A selection reported by the engine always lies on grapheme boundaries (an object is one cluster).
-- Deletions by unit (`Delete`) are computed by the engine on grapheme or word boundaries (UAX #29), never by the caller. A non-collapsed selection is deleted whole whatever the unit.
+- **Clusters.** Boundaries follow UAX #29 with two overrides, whatever the UAX rules say: there is always a boundary before and after U+FFFC, and before and after every `\n`. A combining mark inserted right after an object therefore forms its own cluster. A **valid position** is such a boundary (hence a scalar boundary, never inside U+FFFC); any other position is refused with `POSITION_NOT_BOUNDARY`.
+- `ReplaceRange` needs both ends to be valid positions (`POSITION_NOT_BOUNDARY` otherwise). `SetSelection` snaps both ends backwards to the previous valid position instead of failing. A selection reported by the engine always lies on valid positions.
+- Deletions by unit (`Delete`) are computed by the engine on cluster or word boundaries (R1 provides `prev/next_grapheme`, `prev/next_word`, `word_at`, `snap_back` on `FlatIndex`), never by the caller. A non-collapsed selection is deleted whole whatever the unit. Deleting at a `\n` removes the whole separator and merges the two paragraphs.
 - Text sent by the caller (`InsertText`, `ReplaceRange`): valid UTF-8 (`INVALID_UTF8`); no U+FFFC, no `\r`, no control character except `\n` and `\t` (`INVALID_TEXT`). `\n` splits paragraphs. An object enters the document only through its own command (US-218).
 - A selection is `(anchor, focus)`, not ordered; the caret is `anchor == focus`.
 - `revision` counts applied edits (undo and redo included) from 0 at `Open`. Selection changes do not change it.
@@ -61,7 +61,7 @@ Body layouts; reserved bytes must be zero, flags are `0` or `1`, floats must be 
 
 `Open` consistency: a blank document carries no data; TXT requires profile TXT; DOCX requires profile document. A source the engine rejects is `OPEN_FAILED`. `data` is at most `MAX_OPEN_BYTES` (frame limit minus header and fields). Direction numbers: 0 left, 1 right, 2 up, 3 down, 4 home, 5 end, 6 document start, 7 document end, 8 page up, 9 page down, 10 word left, 11 word right, 12 paragraph up, 13 paragraph down.
 
-`TextWindow`: `start` must be a scalar boundary; the engine returns at most `len` bytes, shortened backwards to a scalar boundary, and fewer at the end of the document. `Pages`: pages `first .. first+count` clamped to the page count; a `first` at or beyond it is `PAGE_RANGE`.
+`TextWindow`: `start` must be a valid position; the engine returns at most `len` bytes, shortened backwards to a valid position, and fewer at the end of the document. `Pages`: pages `first .. first+count` clamped to the page count; a `first` at or beyond it is `PAGE_RANGE`.
 
 ## Replies
 
@@ -79,7 +79,7 @@ Reply opcodes: `0x8000` Error, `0x8100` State, `0x8101` TextWindow, `0x8102` Pag
 | flags | u32 | bit 0 modified, 1 can undo, 2 can redo, 3 layout complete, 4 text window present; other bits 0 |
 | page_count | u32 | pages so far (grows while `layout_complete` is 0) |
 | caret | u32 page (`0xFFFFFFFF` none), `x f64`, `y f64`, `height f64` | geometry of the focus; zeros when none |
-| invalidated | `n u32` (at most 1024), `n` x (`first u32`, `end u32`) | half-open page ranges the client must drop; sorted, disjoint |
+| invalidated | `n u32` (at most 1024), `n` x (`first u32`, `end u32`) | half-open page ranges the client must drop; sorted and disjoint; ranges that overlap or **touch** (`end == next first`) are merged by the sender (`split_page_delta`) and refused by the decoder (`PAGE_RANGE`) |
 | pages | `n u32` (at most 16), `n` x (`index u32`, `len u32`, ATDL) | pages that changed, indices strictly increasing and `< page_count`; each is a complete ATDL display list (`docs/us-080-display-list.md`, 44 bytes to 4 MiB) |
 | window | `start u64`, `len u32`, UTF-8 (at most 256 KiB, within `doc_len`) | only if flag 4: the text around the focus that the engine chooses to send so the DOM mirror stays current |
 
@@ -103,7 +103,7 @@ Stable numeric codes and names, never renumbered:
 | 5 | `RICH_INVALID_DOCUMENT_ID` | document id `0` |
 | 6 | `RICH_UNKNOWN_DOCUMENT` | id is not the active document (engine) |
 | 7 | `RICH_POSITION_OUT_OF_RANGE` | position or range end beyond `doc_len` (engine) |
-| 8 | `RICH_POSITION_NOT_BOUNDARY` | not on a scalar boundary or inside an object (engine) |
+| 8 | `RICH_POSITION_NOT_BOUNDARY` | not a valid position (cluster boundary, never inside an object) (engine) |
 | 9 | `RICH_INVALID_RANGE` | `start > end` |
 | 10 | `RICH_INVALID_UTF8` | text not valid UTF-8 |
 | 11 | `RICH_INVALID_TEXT` | U+FFFC, `\r` or a forbidden control character |
@@ -114,8 +114,12 @@ Stable numeric codes and names, never renumbered:
 | 16 | `RICH_STALE_REVISION` | `MarkSaved` with a revision that is not current (engine) |
 | 17 | `RICH_OPEN_FAILED` | `Open` source rejected (engine) |
 | 18 | `RICH_INTERNAL` | engine invariant failure; state unchanged |
+| 19 | `RICH_LIMIT` | an edit would exceed a model limit (engine, `FlatError::Limit`) |
+| 20 | `RICH_NOT_READY` | layout of the requested area is unfinished (engine, `LayoutError::NotReady`) |
 
 Checks run in this order: envelope, document id, opcode, body (in field order), then engine rules.
+
+Engine error mapping (`impl From` in `rich_protocol`): `FlatError::OutOfRange` to 7, `NotBoundary` to 8, `InvalidRange` to 9, `InvalidText` to 11, `Limit` to 19; `LayoutError::PageOutOfRange` to 14, `PositionOutOfRange` to 7, `NotReady` to 20.
 
 ## Limits
 
@@ -129,12 +133,12 @@ Checks run in this order: envelope, document id, opcode, body (in field order), 
 | Invalidation ranges per State | 1024 |
 | Pages per document (`MAX_PAGES`) | 2^20 |
 
-Encoders re-decode their own output, so a frame the decoder would refuse is never produced.
+Encoders check the size limits themselves; in tests every encoded reply is also re-decoded (the product does not pay for it). Edit text accepts DEL (U+007F) and the C1 controls (U+0080 to U+009F); only C0 controls other than `\n` and `\t` are refused. JS decoders return views into the received frame (no copy).
 
 ## Interfaces left to the other slices
 
-- R1 (US-204): `atelier_text_model::rich::flat::{FlatIndex, FlatEdit, EditOutcome, FlatError, ParagraphPosition}` in `crates/text-model/src/rich/flat.rs`, declarations only.
-- R2 (US-216): target under 4 ms per keystroke on 300 pages, with no global pagination pre-validation; `crate::rich_layout::{RichPageCache, PageDelta, CaretGeometry, LayoutError}` in `crates/core-wasm/src/rich_layout.rs`, declarations only.
+- R1 (US-204): `atelier_text_model::rich::flat::{FlatIndex, ParagraphAccess, FlatEdit, EditOutcome, FlatError, ParagraphPosition}` in `crates/text-model/src/rich/flat.rs`, declarations only except `EditOutcome::map_position`. `FlatIndex` carries conversions and the cluster and word boundary functions (implemented with `crates/unicode`); `EditOutcome` reports `start`, `removed_bytes`, `inserted_bytes`, `doc_len`, paragraph span (before/after indices, same meaning for undo and redo) and `can_undo`/`can_redo`.
+- R2 (US-216): `crate::rich_layout::{RichPageCache, PageDelta, CaretGeometry, LayoutError}` in `crates/core-wasm/src/rich_layout.rs`, declarations only. The cache owns no document: `new`, `apply_edit`, `step` and `page_display` receive a `&dyn ParagraphAccess`. `step` takes a budget in paragraphs, never a clock (`Instant::now()` panics on wasm32-unknown-unknown). Target under 4 ms per keystroke on 300 pages, no global pagination pre-validation. `rich_protocol::split_page_delta` turns a `PageDelta` into the pages to send (at most 16) and the merged invalidation ranges (at most 1024).
 - R3a (US-217): maps `Command` to `FlatEdit` and `RichPageCache` and builds `State` (`rich_protocol::State`).
 - R4: page cache and integration on top of `web/rich-editor-protocol.mjs`.
 - Integrator: routing by version byte in `editor.rs`, and `node tests/rich-editor-protocol.mjs` in CI next to `tests/editor-protocol.mjs`.
