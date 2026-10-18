@@ -14,7 +14,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 #[path = "webview-resources.rs"]
 mod embedded_resources;
+mod shared_buffer;
 use crate::resources;
+pub(crate) use shared_buffer::SharedBufferError;
 
 pub(crate) const WEBVIEW_MESSAGE: u32 = 0x8000 + 0x111;
 pub(crate) const WEBVIEW_RUNTIME_URL: &str =

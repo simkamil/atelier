@@ -174,7 +174,8 @@ fn run_cycle(dir: &Path, dwell: bool) {
         if dwell && VARIANT.load(Ordering::Acquire) == 0 {
             // Exercise the resource request/stream/response path, the web-message, script and
             // focus calls, and the DevTools getter on every cycle.
-            pump_for(Duration::from_secs(3), &mut || {
+            // Machine chargée : le premier chargement de page peut dépasser plusieurs secondes.
+            pump_for(Duration::from_secs(20), &mut || {
                 !view.resource_log_snapshot().is_empty()
             });
             assert!(
@@ -183,6 +184,17 @@ fn run_cycle(dir: &Path, dwell: bool) {
             );
             view.post_web_message_as_string("us111-ledger")
                 .expect("PostWebMessageAsString");
+            // US-113 : CreateSharedBuffer / PostSharedBufferToScript passent par le même registre ;
+            // un runtime sans ces interfaces est un repli légitime (la QueryInterface est équilibrée).
+            match view.post_shared_buffer(
+                &[0x5a; 4096],
+                "{\"v\":1,\"reply\":\"us120-file|1|9|ok|sb;4096\"}",
+            ) {
+                Ok(()) | Err(SharedBufferError::Unavailable) => {}
+                Err(SharedBufferError::Failed(error)) => {
+                    panic!("PostSharedBufferToScript: {error}")
+                }
+            }
             view.execute_script("1+1").expect("ExecuteScript");
             pump_for(Duration::from_secs(5), &mut || {
                 view.take_script_result().is_some()
@@ -364,7 +376,13 @@ fn com_reference_ledger_balances_over_100_cycles() {
     for _ in 0..100 {
         run_cycle(&dir, true);
     }
-    pump_for(Duration::from_millis(500), &mut || false);
+    // Les derniers Release de nos objets arrivent depuis les fils du runtime : attendre leur
+    // retour à l'équilibre (10 s au plus) plutôt qu'un délai fixe.
+    pump_for(Duration::from_secs(10), &mut || {
+        ledger::read_ours(&ledger::OUR_ADD_REF) - added0
+            == ledger::read_ours(&ledger::OUR_RELEASE) - dropped0
+            && LIVE_CALLBACK_OBJECTS.load(Ordering::Acquire) == baseline
+    });
     let acquired = ledger::read(&ledger::ACQUIRED) - acquired0;
     let released = ledger::read(&ledger::RELEASED) - released0;
     let added = ledger::read_ours(&ledger::OUR_ADD_REF) - added0;

@@ -4,6 +4,8 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use crate::bridge_ops::{self, DialogSpec, Outcome};
+
 pub(crate) const MAX_FILE_BYTES: usize = 131_075;
 pub(crate) const MAX_TEXT_BYTES: usize = 131_072;
 pub(crate) const MAX_DOCX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
@@ -34,6 +36,46 @@ pub(crate) enum Request {
         id: String,
         dirty: bool,
     },
+    /// US-113 : dialogue d'ouverture par formats ; remet un ticket de lecture opaque.
+    PickOpen {
+        id: String,
+        spec: DialogSpec,
+    },
+    /// US-113 : dialogue d'enregistrement par formats ; remet un ticket d'écriture opaque.
+    PickSave {
+        id: String,
+        spec: DialogSpec,
+    },
+    /// US-113 : lecture unique d'un ticket `r<n>` remis par `PickOpen`.
+    ReadTicket {
+        id: String,
+        ticket: u64,
+    },
+    /// US-113 : abandon d'un ticket `r<n>` ou `w<n>`.
+    ReleaseTicket {
+        id: String,
+        ticket: u64,
+        write: bool,
+    },
+    /// US-113 : morceau d'écriture atomique sur un ticket `w<n>` ; le dernier publie le fichier.
+    WriteTicket {
+        id: String,
+        ticket: u64,
+        seq: u32,
+        last: bool,
+        bytes: Vec<u8>,
+    },
+    ListFonts {
+        id: String,
+    },
+    ReadFont {
+        id: String,
+        font: String,
+    },
+    OpenUrl {
+        id: String,
+        url: String,
+    },
 }
 
 impl Request {
@@ -43,6 +85,14 @@ impl Request {
             | Self::OpenDocx { id }
             | Self::Save { id, .. }
             | Self::Launch { id }
+            | Self::PickOpen { id, .. }
+            | Self::PickSave { id, .. }
+            | Self::ReadTicket { id, .. }
+            | Self::ReleaseTicket { id, .. }
+            | Self::WriteTicket { id, .. }
+            | Self::ListFonts { id }
+            | Self::ReadFont { id, .. }
+            | Self::OpenUrl { id, .. }
             | Self::Dirty { id, .. } => id,
         }
     }
@@ -101,30 +151,43 @@ impl Queue {
         if parts.next().is_some() {
             return Err(Reject::Malformed);
         }
-        let request = match operation {
-            "open" if tail.is_empty() => Request::Open { id: id.to_owned() },
-            "openDocx" if tail.is_empty() => Request::OpenDocx { id: id.to_owned() },
-            "launch" if tail.is_empty() => Request::Launch { id: id.to_owned() },
-            "dirty" if tail == "0" || tail == "1" => Request::Dirty {
-                id: id.to_owned(),
-                dirty: tail == "1",
-            },
-            "save" => {
-                let bytes = decode_base64(tail)?;
-                if bytes.len() > MAX_FILE_BYTES {
-                    return Err(Reject::TooLarge);
+        let request = match parse_extended(operation, tail, id) {
+            Some(Ok(request)) => request,
+            Some(Err(key)) => {
+                // Argument invalide d'une opération US-113 : l'identifiant est consommé et le
+                // script reçoit une erreur traduisible plutôt qu'un silence.
+                self.last_id = numeric_id;
+                if self.rejects.len() < MAX_REPLIES {
+                    self.rejects
+                        .push_back(format!("us120-file|1|{id}|error|{key}"));
                 }
-                match text_error(&bytes) {
-                    Some("files.error.invalid_text") => return Err(Reject::Malformed),
-                    Some(_) => return Err(Reject::TooLarge),
-                    None => {}
-                }
-                Request::Save {
-                    id: id.to_owned(),
-                    bytes,
-                }
+                return Err(Reject::Malformed);
             }
-            _ => return Err(Reject::Malformed),
+            None => match operation {
+                "open" if tail.is_empty() => Request::Open { id: id.to_owned() },
+                "openDocx" if tail.is_empty() => Request::OpenDocx { id: id.to_owned() },
+                "launch" if tail.is_empty() => Request::Launch { id: id.to_owned() },
+                "dirty" if tail == "0" || tail == "1" => Request::Dirty {
+                    id: id.to_owned(),
+                    dirty: tail == "1",
+                },
+                "save" => {
+                    let bytes = decode_base64(tail)?;
+                    if bytes.len() > MAX_FILE_BYTES {
+                        return Err(Reject::TooLarge);
+                    }
+                    match text_error(&bytes) {
+                        Some("files.error.invalid_text") => return Err(Reject::Malformed),
+                        Some(_) => return Err(Reject::TooLarge),
+                        None => {}
+                    }
+                    Request::Save {
+                        id: id.to_owned(),
+                        bytes,
+                    }
+                }
+                _ => return Err(Reject::Malformed),
+            },
         };
         self.last_id = numeric_id;
         if matches!(&request, Request::Dirty { .. }) {
@@ -132,7 +195,7 @@ impl Queue {
             return Ok(());
         }
         let size = match &request {
-            Request::Save { bytes, .. } => bytes.len(),
+            Request::Save { bytes, .. } | Request::WriteTicket { bytes, .. } => bytes.len(),
             _ => 0,
         };
         if self.pending.len() == MAX_QUEUE
@@ -161,7 +224,7 @@ impl Queue {
         } else {
             self.pending.pop_front()?.1
         };
-        if let Request::Save { bytes, .. } = &request {
+        if let Request::Save { bytes, .. } | Request::WriteTicket { bytes, .. } = &request {
             self.queued_bytes -= bytes.len();
         }
         if let Request::Dirty { dirty, .. } = &request {
@@ -324,8 +387,8 @@ pub(crate) fn process_selection(
                 }
             }
         }
-        Request::Dirty { .. } | Request::Launch { .. } => {
-            unreachable!("dirty and launch messages do not select a file")
+        _ => {
+            unreachable!("only open, openDocx and save select a file here")
         }
     };
     let reply = match result {
@@ -371,24 +434,18 @@ pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
     }
 }
 
-/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<ignorés>;<base64>` ; en cas de
-/// succès les chemins restants sont écartés et comptés, en cas d'erreur ils restent en attente.
-pub(crate) fn launch_reply(id: &str, read: LaunchRead, pending: &mut VecDeque<PathBuf>) -> String {
+/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<ignorés>;<base64>` en ligne, ou
+/// `ok|<txt|docx>;<ignorés>;@sb` quand les octets partent par SharedBuffer (repli : la forme en ligne).
+/// En cas de succès les chemins restants sont écartés et comptés, en cas d'erreur ils restent en attente.
+pub(crate) fn launch_reply(id: &str, read: LaunchRead, pending: &mut VecDeque<PathBuf>) -> Outcome {
     match read {
         Ok((kind, bytes)) => {
             let skipped = pending.len();
             pending.clear();
-            let reply = format!(
-                "us120-file|1|{id}|ok|{kind};{skipped};{}",
-                encode_base64(&bytes)
-            );
-            if reply.len() <= MAX_DOCX_REPLY_BYTES {
-                reply
-            } else {
-                format!("us120-file|1|{id}|error|files.error.too_large")
-            }
+            let prefix = format!("{kind};{skipped};");
+            bridge_ops::bytes_outcome(id, &prefix, &format!("{prefix}@sb"), &prefix, bytes)
         }
-        Err(key) => format!("us120-file|1|{id}|error|{key}"),
+        Err(key) => Outcome::Text(format!("us120-file|1|{id}|error|{key}")),
     }
 }
 
@@ -399,6 +456,83 @@ pub(crate) fn process_launch(id: &str, pending: &mut VecDeque<PathBuf>) -> Strin
         return format!("us120-file|1|{id}|ok|");
     };
     launch_reply(id, read_launch_file(&path), pending)
+        .text()
+        .to_owned()
+}
+
+/// US-113 : analyse des opérations étendues ; `None` si l'opération n'en fait pas partie.
+fn parse_extended(operation: &str, tail: &str, id: &str) -> Option<Result<Request, &'static str>> {
+    const BAD: &str = "files.error.invalid_request";
+    let id = id.to_owned();
+    Some(match operation {
+        "pickOpen" => {
+            bridge_ops::parse_dialog_spec(tail, false).map(|spec| Request::PickOpen { id, spec })
+        }
+        "pickSave" => {
+            bridge_ops::parse_dialog_spec(tail, true).map(|spec| Request::PickSave { id, spec })
+        }
+        "readTicket" => match bridge_ops::parse_ticket(tail) {
+            Some((false, ticket)) => Ok(Request::ReadTicket { id, ticket }),
+            _ => Err(BAD),
+        },
+        "releaseTicket" => match bridge_ops::parse_ticket(tail) {
+            Some((write, ticket)) => Ok(Request::ReleaseTicket { id, ticket, write }),
+            None => Err(BAD),
+        },
+        "writeTicket" => parse_write(tail, id),
+        "listFonts" if tail.is_empty() => Ok(Request::ListFonts { id }),
+        "listFonts" => Err(BAD),
+        "readFont" if bridge_ops::valid_font_id(tail) => Ok(Request::ReadFont {
+            id,
+            font: tail.to_owned(),
+        }),
+        "readFont" => Err(BAD),
+        "openUrl" => match decode_base64(tail) {
+            Ok(bytes) if bytes.len() > crate::url_open::MAX_URL_BYTES => Err("url.error.too_long"),
+            Ok(bytes) => String::from_utf8(bytes)
+                .map(|url| Request::OpenUrl { id, url })
+                .map_err(|_| "url.error.invalid"),
+            Err(_) => Err("url.error.invalid"),
+        },
+        _ => return None,
+    })
+}
+
+/// `w<n>;<seq>;<0|1>;<base64>` : un morceau d'écriture.
+fn parse_write(tail: &str, id: String) -> Result<Request, &'static str> {
+    const BAD: &str = "files.error.invalid_request";
+    let mut fields = tail.split(';');
+    let (Some(ticket), Some(seq), Some(last), Some(data), None) = (
+        fields.next(),
+        fields.next(),
+        fields.next(),
+        fields.next(),
+        fields.next(),
+    ) else {
+        return Err(BAD);
+    };
+    let Some((true, ticket)) = bridge_ops::parse_ticket(ticket) else {
+        return Err(BAD);
+    };
+    if seq.is_empty() || seq.len() > 9 || !seq.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(BAD);
+    }
+    let last = match last {
+        "0" => false,
+        "1" => true,
+        _ => return Err(BAD),
+    };
+    let bytes = decode_base64(data).map_err(|_| BAD)?;
+    if bytes.len() > bridge_ops::MAX_CHUNK_BYTES {
+        return Err("files.error.too_large");
+    }
+    Ok(Request::WriteTicket {
+        id,
+        ticket,
+        seq: seq.parse().map_err(|_| BAD)?,
+        last,
+        bytes,
+    })
 }
 
 fn text_length(bytes: &[u8]) -> Option<usize> {

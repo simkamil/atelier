@@ -796,6 +796,7 @@ mod tests {
 
     #[test]
     fn failed_navigation_and_new_window_uri_getters_still_refuse_by_default() {
+        let _serial = crate::webview::lock(&crate::webview::tests::CALLBACK_TEST_LOCK);
         let shared = Shared::default();
         let (mut navigation, _navigation_vtable) = args_with_failed_getter(8);
         let hr = navigation_starting(&shared, (&mut navigation as *mut FakeArgs).cast());
@@ -818,6 +819,7 @@ mod tests {
 
     #[test]
     fn failed_resource_request_getter_installs_a_forbidden_response() {
+        let _serial = crate::webview::lock(&crate::webview::tests::CALLBACK_TEST_LOCK);
         let mut response_slots = [null(); 3];
         response_slots[2] = fake_release as *const () as *const c_void;
         let mut response = FakeResponse {

@@ -106,6 +106,12 @@ impl ReadTicket {
     pub fn id(self) -> u64 {
         self.0
     }
+
+    /// Rebuild a ticket from its numeric form (US-113 bridge). This grants nothing: the broker
+    /// still looks the number up and rejects unknown, revoked or wrong-capability tickets.
+    pub fn from_id(id: u64) -> Self {
+        Self(id)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -115,6 +121,12 @@ impl WriteTicket {
     /// Numeric transport representation; it contains no path or file metadata.
     pub fn id(self) -> u64 {
         self.0
+    }
+
+    /// Rebuild a ticket from its numeric form (US-113 bridge). This grants nothing: the broker
+    /// still looks the number up and rejects unknown, revoked or wrong-capability tickets.
+    pub fn from_id(id: u64) -> Self {
+        Self(id)
     }
 }
 
@@ -660,7 +672,7 @@ fn identity_for_file(file: &File, metadata: &fs::Metadata) -> Result<FileIdentit
 }
 
 #[cfg(windows)]
-fn open_read_without_reparse(path: &Path) -> io::Result<File> {
+pub(crate) fn open_read_without_reparse(path: &Path) -> io::Result<File> {
     use std::os::windows::fs::OpenOptionsExt;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
     OpenOptions::new()
@@ -701,7 +713,7 @@ fn read_bounded(
 }
 
 #[cfg(not(windows))]
-fn open_read_without_reparse(path: &Path) -> io::Result<File> {
+pub(crate) fn open_read_without_reparse(path: &Path) -> io::Result<File> {
     OpenOptions::new().read(true).open(path)
 }
 

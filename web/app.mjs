@@ -514,7 +514,7 @@ async function start() {
       status: "ready",
       getState: () => editor.getState(),
       exportDocument: () => editor.exportDocument(),
-      editor,
+      editor, host,
       theme: shell.theme, ribbon: shell.ribbon,
       zoomControls,
       navigation,

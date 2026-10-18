@@ -248,8 +248,8 @@ mod win32;
 
 #[cfg(windows)]
 pub use win32::{
-    initialize_dpi, resources_self_check, run, run_with_launch, self_check, show_error,
-    webview_self_check,
+    bridge_self_check, initialize_dpi, resources_self_check, run, run_with_launch, self_check,
+    show_error, webview_self_check,
 };
 
 #[cfg(not(windows))]
@@ -275,6 +275,13 @@ pub fn webview_self_check(
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "WebView2 self-check is only available on Windows",
+    ))
+}
+#[cfg(not(windows))]
+pub fn bridge_self_check(_state_file: &Path, _cache: &Path) -> io::Result<String> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "WebView2 bridge self-check is only available on Windows",
     ))
 }
 #[cfg(not(windows))]

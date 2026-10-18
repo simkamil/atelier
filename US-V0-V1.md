@@ -573,13 +573,15 @@ Avancement US-112 (2026-10-11) : [origine embarquée, table HTTP et six catégor
 
 #### US-113 — Pont natif ↔ JS
 *En tant que* développeur, *je veux* un pont entre le natif et le JS *afin d'accéder* aux fichiers et au système.
-- [ ] Messages `postMessage` pour les commandes, `SharedBuffer` pour les données volumineuses (fichier de 100 Mo transféré < 300 ms).
+- [x] Messages `postMessage` pour les commandes, `SharedBuffer` pour les données volumineuses (fichier de 100 Mo transféré < 300 ms).
 - [ ] API : dialogue d'ouverture, dialogue d'enregistrement (`IFileOpenDialog`/`IFileSaveDialog`, filtres par format), lecture de fichier, écriture atomique, liste et lecture des polices système, ouverture d'une URL dans le navigateur par défaut.
-- [ ] Toute erreur système remontée avec un message traduisible.
+- [x] Toute erreur système remontée avec un message traduisible.
 
 Réf : §6.8 · Taille : M · Dépend de : US-111
 
 Avancement US-113 (2026-10-11) : [pont fichiers JS/natif](docs/us-113-file-bridge.md) raccordé au broker et aux dialogues TXT, avec erreurs traduisibles, bornes, anti-rejeu et protection contre la réentrance. SharedBuffer, polices système, URL et validation manuelle des dialogues restent ouverts.
+
+Avancement US-113 (2026-10-18) : [pont natif étendu](docs/us-113-native-bridge.md). Premier critère coché : SharedBuffer (COM manuel, lecture seule, repli explicite) ; fichier de 100 Mio lu et reçu par le JS en 70 ms (médiane, 56 à 77 ms par essai). Troisième critère coché : toute erreur du pont est une clé `files.error.*`/`fonts.error.*`/`url.error.*` du catalogue. Deuxième critère non coché : dialogues par formats (ouverts et annulés automatiquement avec les six filtres), tickets, écriture atomique, polices et validation d'URL sont testés, mais le choix interactif d'un fichier et l'ouverture réelle d'une URL dans le navigateur par défaut restent à vérifier à la main.
 
 #### US-114 — Runtime WebView2 absent
 *En tant qu'*utilisateur, *je veux* un message clair si le runtime WebView2 manque *afin de* savoir comment y remédier.
