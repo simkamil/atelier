@@ -151,6 +151,14 @@ try {
     return dark;
   };
   const pageRect = () => ({ left: 0, top: 0 });
+  // R7b-1: colour of one Canvas pixel (page points at zoom 1, scrolled to the top).
+  const pixelAt = (x, y) => {
+    const view = document.createElement("canvas");
+    view.width = canvas.width; view.height = canvas.height;
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    return [...ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data];
+  };
+  const near = (rgb, expected, tolerance = 40) => expected.every((v, i) => Math.abs(rgb[i] - v) <= tolerance);
   assert(darkPixels(60, 20, 300, 80) === 0, "blank page area (beside the caret) is white");
 
   // --- typing, selection, undo/redo through the hidden input -------------------------------------------------
@@ -350,7 +358,7 @@ try {
     "search, statistics and replace reject with a typed error, never silently");
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
   assert(document.querySelector("#search-slot").hidden && !document.querySelector(".search-pane"), "Ctrl+F opens no search pane in v2");
-  assert(JSON.stringify(editor.capabilities) === JSON.stringify({ search: false, replace: false, statistics: false, textDragDrop: false, preview: false, properties: false, wordSelect: false }), "capabilities list what v2 does not offer");
+  assert(JSON.stringify(editor.capabilities) === JSON.stringify({ search: false, replace: false, statistics: false, textDragDrop: false, preview: false, properties: false }), "capabilities list what v2 does not offer (word and paragraph selection are offered since R7b-1)");
   const dropLength = state().docLen;
   const textDrop = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: (() => { const t = new DataTransfer(); t.setData("text/plain", "déposé"); return t; })(), clientX: 100, clientY: 100 });
   canvas.dispatchEvent(textDrop);
@@ -378,6 +386,16 @@ try {
   const before = state().docLen;
   imageCommand.click();
   await waitFor(() => state().docLen === before + 3, "InsertImage adds one three-byte object at the caret");
+  // R7b-1: the page draws the picture (its bitmap comes from the engine) at its size, on the line of the text.
+  scrollport.scrollTop = 0;
+  await waitFor(() => editor.pictureBoxes().length === 1, "the page draws the inserted picture");
+  {
+    const box = editor.pictureBoxes()[0].bounds;
+    assert(Math.abs(box.width - 30) < 0.05 && Math.abs(box.height - 15) < 0.05, "a 40 x 20 px picture is drawn 30 x 15 pt (96 dpi)");
+    await waitFor(() => near(pixelAt(box.min.x + box.width / 2, box.min.y + box.height / 2), [255, 0, 0]), "the picture pixels are painted on the Canvas");
+    assert(editor.pictureBitmaps >= 1, "the bitmap of the picture is held by the client");
+    assert(near(pixelAt(box.min.x + box.width + 40, box.min.y + 2), [255, 255, 255], 8), "the page beside the picture stays white");
+  }
   assert(message().includes("image insérée") && !status.classList.contains("error"), "success is announced");
   assert(state().dirty && state().canUndo && state().focus === 4, "image insertion is undoable and moves the caret after the object");
   assert(document.activeElement === editor.element, "focus returns to the document after the picker");
@@ -446,12 +464,36 @@ try {
   pointer("pointermove", end.x - 1, end.y, 1);
   pointer("pointerup", end.x - 1, end.y, 1);
   await waitFor(() => state().anchor === 0 && state().focus >= 22, "drag selects the line (HitTest extend)");
+  // R7b-1: the selection is highlighted (rectangles from the engine, drawn by the overlay).
+  await waitFor(() => editor.selectionRects.length >= 1, "the engine sends the rectangles of the selection");
+  {
+    const [rect] = editor.selectionRects;
+    assert(rect.page === 0 && rect.width > 100 && rect.height > 5, "the highlight covers the selected line");
+    await waitFor(() => near(pixelAt(rect.x + 2, rect.y + rect.height - 1), [202, 220, 215], 14), "the highlight is visible at the pixel (selection colour over white)");
+    assert(near(pixelAt(rect.x + rect.width + 30, rect.y + rect.height - 1), [255, 255, 255], 6), "the page beyond the selection stays white");
+  }
   assert(await editor.selectedText(state()) === (await text()).slice(0, state().focus), "the dragged selection reads back through the window");
+  // R7b-1: double click selects the word, triple click the paragraph, dragging after a double click grows by words.
+  pointer("pointerdown", start.x + 20, start.y, 1);
+  pointer("pointerup", start.x + 20, start.y, 1);
+  await waitFor(() => state().anchor === state().focus && state().focus > 0, "a click inside the first word");
   pointer("pointerdown", start.x + 20, start.y, 2);
   pointer("pointerup", start.x + 20, start.y, 2);
-  await sleep(100);
-  assert(state().anchor === state().focus, "double-click is a plain click in v2 (no word selection: documented limit)");
-  skipped.push("double-click word and triple-click paragraph selection: absent in v2 (docs/r7-ui-parity.md §7)");
+  await waitFor(() => state().anchor === 0 && state().focus === 7, "double click selects the word under the pointer");
+  assert(await editor.selectedText(state()) === "premier", "the selected word reads back");
+  await waitFor(() => editor.selectionRects.length === 1, "the word is highlighted");
+  pointer("pointerdown", start.x + 20, start.y, 3);
+  pointer("pointerup", start.x + 20, start.y, 3);
+  await waitFor(() => state().anchor === 0 && state().focus === 25, "triple click selects the paragraph with its break");
+  assert(await editor.selectedText(state()) === "premier mot deuxieme mot\n", "the selected paragraph reads back");
+  pointer("pointerdown", start.x + 20, start.y, 2);
+  pointer("pointermove", end.x - 12, end.y, 2);
+  pointer("pointerup", end.x - 12, end.y, 2);
+  await waitFor(() => state().anchor === 0 && state().focus === 24, "dragging after a double click grows the selection by words");
+  pointer("pointerdown", start.x + 20, start.y, 1);
+  pointer("pointerup", start.x + 20, start.y, 1);
+  await waitFor(() => state().anchor === state().focus, "a single click collapses the selection again");
+  await waitFor(() => editor.selectionRects.length === 0, "the highlight goes with the selection");
 
   // --- clipboard ----------------------------------------------------------------------------------------------------------------
   const clipboard = (type, { fail = false } = {}) => {

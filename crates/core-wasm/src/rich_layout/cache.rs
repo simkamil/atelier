@@ -303,7 +303,8 @@ impl PageCache {
         let (mut prepared, flat_len) = match &resolved_source {
             Some(p) => {
                 let items = p.anchored.len() + p.breaks.len() + p.symbols.len();
-                let fit = (!self.txt).then(|| PictureFit {
+                // Both profiles: a new document of the interface is a TXT-profile one and takes pictures.
+                let fit = Some(PictureFit {
                     max_width: self.geometry.content_width as f64 / 64.0,
                     // The line keeps the descent of the text below the picture (US-270).
                     max_height: self.geometry.content_height as f64 / 64.0 - PICTURE_DESCENT,

@@ -821,6 +821,8 @@ Avancement 2026-10-18 (préparation R7, aucune case cochée) : suites navigateur
 
 Avancement 2026-10-18 (R7a, interface branchée sur v2 derrière `?engine=v2`, aucune case cochée) : `web/rich-editor.mjs` expose l'API de `createEditor` au-dessus du client v2, du cache de pages à atlas et du miroir DOM ; ouverture et enregistrement par le pont US-113 (tickets), bandeau de lecture seule avec copie modifiable, mode lecteur d'écran persistant, fonctions sans équivalent grisées ([parité et écarts](docs/r7-ui-parity.md)). `run-ui-browser`, `run-image-insert-browser` (sans géométrie ni pixels d'images) et `run-editor-browser` (scénario v2 de 63 vérifications, sections v1 listées) passent en v2, avec la suite dédiée `run-rich-editor-ui-browser` ; les suites v1 sont inchangées. Restent pour R7b : surbrillance de la sélection (absente du protocole), images dessinées, mot et paragraphe à la souris, v2 par défaut, latence de frappe mesurée dans Edge.
 
+Avancement 2026-10-18 (R7b-1, branche `r7b-selection-images`, aucune case cochée) : trois écarts de l'éditeur v2 de l'interface sont fermés ([spec](docs/us-203-r7b1-selection-images.md)) — surbrillance de la sélection (`SelectionRects` `0x0120`, vérifiée au pixel), images dessinées dans les pages (boîtes en ligne de la mise en page, `DrawImage`, `ImageBitmap` `0x0121`, cache client borné ; `run-image-insert-browser --engine v2` ne saute plus rien) et double et triple clic (`SelectUnit` `0x0122`). Restent : recherche, remplacement, statistiques, propriétés (R7b-2), glisser-déposer de texte, v2 par défaut, latence de frappe mesurée dans Edge.
+
 Réf : [plan de bascule](docs/rich-editor-migration.md) · Taille : M · Dépend de : US-217, US-218, US-209, US-006
 
 ## E1.3 — Édition

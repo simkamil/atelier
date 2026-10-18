@@ -80,6 +80,6 @@ test("the mirror takes role and inline kind numbers, the codec names them", () =
 
 test("capabilities are frozen and list every disabled function", () => {
   assert.ok(Object.isFrozen(RICH_CAPABILITIES));
-  assert.deepEqual(Object.keys(RICH_CAPABILITIES).sort(), ["preview", "properties", "replace", "search", "statistics", "textDragDrop", "wordSelect"]);
+  assert.deepEqual(Object.keys(RICH_CAPABILITIES).sort(), ["preview", "properties", "replace", "search", "statistics", "textDragDrop"]);
   assert.ok(Object.values(RICH_CAPABILITIES).every(value => value === false));
 });

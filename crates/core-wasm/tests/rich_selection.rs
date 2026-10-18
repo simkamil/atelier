@@ -64,6 +64,15 @@ impl Harness {
         })
     }
 
+    /// The blank document the interface creates (TXT profile, 54 pt margins).
+    fn blank_txt(&mut self) -> State {
+        self.state(Command::Open {
+            kind: OpenKind::Blank,
+            profile: Profile::Txt,
+            data: Vec::new(),
+        })
+    }
+
     fn insert(&mut self, text: &str) -> State {
         self.state(Command::InsertText { text: text.into() })
     }
@@ -361,6 +370,22 @@ fn a_wide_picture_shrinks_to_the_text_area_and_never_grows() {
     assert!((hh / w - 0.5).abs() < 1e-3, "ratio {}", hh / w);
     let (_, _, _, small_w, small_h) = found[1];
     assert!((small_w - 6.0).abs() < 0.02 && (small_h - 6.0).abs() < 0.02);
+}
+
+#[test]
+fn pictures_are_drawn_in_the_txt_profile_with_its_text_area() {
+    let mut h = Harness::new();
+    h.blank_txt();
+    h.insert("ab");
+    h.select(1, 1);
+    h.image(png(40, 20, 1));
+    h.image(png(800, 400, 2));
+    let found = pictures(&h.page(0));
+    assert_eq!(found.len(), 2);
+    assert!((found[0].3 - 30.0).abs() < 0.02 && (found[0].4 - 15.0).abs() < 0.02);
+    // The text area of the TXT profile is 595.276 - 2 x 54 pt wide.
+    assert!((found[1].3 - 487.27).abs() < 0.1, "width {}", found[1].3);
+    assert!(found[1].1 >= 54.0 - 0.1 || found[1].2 >= 54.0, "{found:?}");
 }
 
 #[test]
