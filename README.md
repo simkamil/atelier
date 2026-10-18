@@ -1,5 +1,28 @@
 # Atelier
 
+> **Projet expérimental, entièrement « vibe codé ».** Aucune ligne de code de ce dépôt n'a été écrite à la main : le code, les tests et la documentation sont produits par des agents d'IA (Claude Code, Codex), à partir d'une spécification et de user stories rédigées et validées par un humain. Ce n'est pas un produit fini : ne l'utilisez pas sur des documents importants.
+
+## L'idée
+
+Atelier pose une question : jusqu'où peut-on aller en confiant à des agents d'IA la construction d'un logiciel réputé hors de portée d'un développeur seul, une suite bureautique comparable à Word, Excel et PowerPoint ?
+
+Pour rendre l'exercice exigeant, le projet s'impose des règles strictes ([SPEC.md](SPEC.md)) :
+
+- **Tout écrit en Rust, sans aucune bibliothèque tierce.** Décompression ZIP, analyseur XML, lecture des polices, mise en forme du texte, décodeurs PNG/JPEG, rasterisation, génération PDF : tout est réimplémenté dans ce dépôt.
+- **Un seul moteur** compilé en WebAssembly, affiché dans une fenêtre Windows native (WebView2) et, plus tard, dans un navigateur.
+- **Hors ligne et respectueux** : aucune télémétrie, aucun appel réseau, accessibilité visée au niveau RGAA/WCAG AA.
+- **Fidélité aux fichiers Word** : ouvrir puis enregistrer un `.docx` ne doit rien détruire.
+
+Le rôle humain se limite à décider quoi construire, à découper le travail en [user stories](US-V0-V1.md) avec des critères vérifiables, et à accepter ou refuser ce que les agents livrent. Les agents développent, se relisent entre eux et documentent leurs preuves.
+
+## Où en est le projet
+
+Développement commencé le 2026-10-09. Aujourd'hui, l'application Windows ouvre, modifie et enregistre des fichiers texte, et affiche un `.docx` en lecture seule ; l'éditeur riche (gras, styles, tableaux…) est en cours de construction. L'avancement détaillé et ce qui reste à prouver sont suivis dans le [backlog](US-V0-V1.md) et le [suivi du démonstrateur](docs/PROTOTYPE-PROGRESS.md).
+
+Attendez-vous à des bogues, des limites et des changements brutaux. Le code n'a fait l'objet d'aucun audit de sécurité. Les retours et la curiosité sont bienvenus ; le projet n'accepte pas encore de contributions externes.
+
+## Contenu du dépôt
+
 Socle de développement de la suite bureautique Atelier, sous AGPL-3.0-or-later. Le workspace comprend 28 crates produit et six outils internes (garde du lock, vérification de licence, bancs de performance, générateur Unicode, fuzzer et [comparateur d’images de référence](docs/us-003-image-reference-tests.md)). Les API produit disponibles couvrent les [encodages de texte](docs/us-014-encodings.md), la [compression DEFLATE/zlib](docs/us-020-021-compression.md), la [géométrie 2D](docs/us-060-geometry.md), l'[arbre de nœuds indexé](docs/us-070-indexed-tree.md), les [transactions atomiques](docs/us-071-transactions.md), l'[historique annuler/rétablir](docs/us-072-undo-history.md), les [sélections](docs/us-073-selection.md), le [journal de récupération](docs/us-074-recovery-journal.md), les [tables OpenType](docs/us-050-opentype-tables.md), la [liste d'affichage](docs/us-080-display-list.md), son [backend SVG](docs/us-081-svg-backend.md), les [archives ZIP](docs/us-022-023-zip.md), le [XML en flux](docs/us-030-031-xml.md) et les [sous-arbres XML opaques](docs/us-032-opaque-xml.md). Les [décodeurs PNG](docs/us-040-png.md), [GIF/BMP](docs/us-043-gif-bmp.md) et les [polices embarquées](docs/us-056-embedded-fonts.md) sont également disponibles. Les [tables Unicode](docs/us-010-ucd-tables.md), [contours TrueType](docs/us-051-truetype-outlines.md) et [ABI WASM](docs/us-090-wasm-abi.md) ainsi que la [segmentation](docs/us-011-segmentation.md), le [crénage/ligatures](docs/us-053-kerning-ligatures.md) et le [protocole Rust/JS](docs/us-091-binary-protocol.md) ainsi que les [coupures de ligne](docs/us-012-line-breaks.md), le [façonnage latin](docs/us-054-latin-shaping.md) et le [gestionnaire de polices](docs/us-055-font-manager.md) préparent le [démonstrateur](docs/PROTOTYPE-PROGRESS.md). Les suivis [ZIP/XML](docs/FORMATS-PROGRESS.md), [XML opaque, historique et SVG](docs/EDITING-PROGRESS.md), [modèle/polices](docs/MODEL-FONT-PROGRESS.md) et [images/fontes embarquées](docs/IMAGES-FONTS-PROGRESS.md) rassemblent les preuves des lots. Les autres crates sont des squelettes ; les éditeurs et formats décrits dans `SPEC.md` restent à développer.
 
 ## Prérequis
