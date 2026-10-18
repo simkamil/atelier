@@ -14,6 +14,7 @@ mod attrs;
 mod defaults;
 mod document;
 mod error;
+pub mod flat;
 mod node;
 mod ops;
 mod paragraph;
