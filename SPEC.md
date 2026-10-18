@@ -39,7 +39,7 @@ Une suite bureautique complète (traitement de texte, tableur, présentations, P
 | D8 | Moteur unique Rust compilé en **WASM**, exécuté dans une WebView (desktop) ou un navigateur (web). |
 | D9 | Shell desktop : **couche maison Win32 + WebView2** (pas de Tauri). |
 | D10 | Serveur web : binaire Rust statique exécuté en **CGI** par Apache, sans état. |
-| D11 | **Zéro dépendance** : ni crate Rust, ni bibliothèque/framework JS, ni outil de dev tiers hors chaîne Rust. Autorisés : chaîne Rust + `std`/`core`, API système (Win32, COM, WebView2, appels système Linux), API navigateur (DOM, Canvas, Clipboard…), fichiers de données (polices, tables Unicode, poids de modèle). |
+| D11 | **Zéro dépendance** : ni crate Rust, ni bibliothèque/framework JS, ni outil de dev tiers hors chaîne Rust. Autorisés : chaîne Rust + `std`/`core`, API système (Win32, COM, WebView2, appels système Linux), API navigateur (DOM, Canvas, Clipboard…), fichiers de données (polices, tables Unicode, poids de modèle). Amendement du 2026-10-18 : la règle porte sur le produit livré ; l'outillage de test et de développement jamais livré (Node, Python, navigateurs, Word pour la campagne de référence) est toléré. |
 | D12 | Interface en français en MVP, toutes les chaînes externalisées dès le départ. |
 | D13 | Accessibilité requise (cible RGAA 4.1 / WCAG 2.1 AA). |
 | D14 | Développeur unique, pas d'échéance imposée : la qualité et la solidité priment sur la vitesse. |
@@ -55,15 +55,16 @@ Le front-end est en **JavaScript vanilla (modules ES) annoté en JSDoc**, sans �
 | Version | Contenu | Plateforme |
 |---|---|---|
 | **V0 — Fondations** (interne) | zip, XML, polices, mise en forme du texte, liste d'affichage, rendu canvas, shell Win32/WebView2, pont WASM | Windows |
-| **V1 — MVP** | Traitement de texte : docx lecture/écriture, odt et doc en lecture, mise en forme, styles, listes, tableaux, images, en-têtes/pieds, annuler/rétablir, impression, export PDF | Windows portable |
+| **V1.0 — MVP** | Traitement de texte : docx lecture/écriture, mise en forme, styles, listes, tableaux, images en ligne, en-têtes/pieds, annuler/rétablir, impression, export PDF | Windows portable |
+| **V1.1** | odt et doc en lecture, habillage des images, règle, collage HTML, plusieurs documents, fichier verrou, options | Windows portable |
 | **V2 — Web** | Serveur CGI, comptes, gestionnaire de fichiers, traitement de texte V1 dans le navigateur | Navigateurs récents + o2switch |
-| **V3 — Traitement de texte complet** | Commentaires, suivi des modifications, comparaison, publipostage, signature numérique, protection, historique des versions, notes, table des matières, formes, colonnes, EMF/WMF | Desktop + web |
+| **V3 — Traitement de texte complet** | Correcteur orthographique français, commentaires, suivi des modifications, comparaison, publipostage, signature numérique, protection, historique des versions, notes, table des matières, formes, colonnes, EMF/WMF | Desktop + web |
 | **V4 — Lua** | Interpréteur Lua, macros, plugins, gestionnaire de plugins | Desktop + web |
 | **V5a — Tableur** | ~120 fonctions courantes (Annexe A), formats, graphiques de base, tri/filtre ; xlsx R/W, xls/ods lecture | Desktop + web |
 | **V5b — Tableur complet** | Toutes les fonctions Excel, TCD, mise en forme conditionnelle avancée, solveur, valeur cible | Desktop + web |
 | **V6 — Présentations** | pptx R/W, ppt/odp lecture, mode présentation | Desktop + web |
 | **V7 — PDF** | Lecture, annotation, formulaires, édition, réorganisation des pages | Desktop + web |
-| **Ultérieur** | Édition Markdown, installeur + MAJ auto, signature de code, macOS/Linux, correcteur orthographique, césure, autres langues, RTL/CJK, IA, chiffrement, co-édition (hébergement dédié), conversion headless/API, mobile | — |
+| **Ultérieur** | Édition Markdown, installeur + MAJ auto, signature de code, macOS/Linux, césure, autres langues, RTL/CJK, IA, chiffrement, co-édition (hébergement dédié), conversion headless/API, mobile | — |
 
 ---
 
@@ -98,7 +99,7 @@ Convention : chaque exigence a un identifiant (`F-xxx-nnn`) et une version cible
 | F-COM-021 | Navigation complète au clavier, compatibilité lecteurs d'écran (NVDA, Narrateur) | V1 |
 | F-COM-022 | Préférences utilisateur stockées à côté de l'exe en mode portable ; repli en mode local uniquement sur choix explicite si le dossier n'est pas inscriptible (§7.2) | V1 |
 | F-COM-023 | Onglets ou fenêtres multiples (plusieurs documents ouverts) | V1 |
-| F-COM-024 | Correcteur orthographique (dictionnaires embarqués, moteur maison) | Ultérieur |
+| F-COM-024 | Correcteur orthographique français (dictionnaires libres embarqués, moteur maison) | V3 |
 | F-COM-025 | Aide intégrée hors ligne | V3 |
 
 ### 4.2 Traitement de texte (F-TXT)
@@ -288,8 +289,8 @@ Conséquence acceptée : la version portable avec modèle pèsera 1 à 4 Go de p
 | Format | Lecture | Écriture | Version |
 |---|---|---|---|
 | docx / dotx / docm | ✔ | ✔ | V1 |
-| odt | ✔ | — | V1 |
-| doc (Word 97–2003) | ✔ | — | V1 |
+| odt | ✔ | — | V1.1 |
+| doc (Word 97–2003) | ✔ | — | V1.1 |
 | txt (UTF-8, UTF-16, Windows-1252) | ✔ | ✔ | V1 |
 | pdf | — | ✔ (export) | V1 |
 | rtf | ✔ | ✔ | V3 (à confirmer, cf. §11) |
@@ -307,8 +308,9 @@ Conséquence acceptée : la version portable avec modèle pèsera 1 à 4 Go de p
 2. **Image de repli** : pour tout objet non rendu (SmartArt, graphique, OLE, équation en V1), afficher l'image de repli présente dans le fichier.
 3. **Compatibilité des métriques** : polices libres de métriques identiques embarquées (Carlito ↔ Calibri, Caladea ↔ Cambria, Liberation Sans/Serif/Mono ↔ Arial/Times New Roman/Courier New). Sur le desktop, la police système réelle est utilisée si elle est présente ; la mise en page reste identique dans les deux cas.
 4. **Mise en page à la Word** : coupure de ligne gloutonne (comme Word, pas Knuth-Plass), règles de pagination et de largeur de tableaux alignées sur le comportement observé de Word, documenté dans un corpus de tests de référence.
-5. **Formats anciens et ODF** : import vers le modèle interne ; à l'enregistrement, l'utilisateur est invité à choisir docx (aucune écriture dans ces formats).
-6. Spécifications de référence : ECMA-376 5ᵉ éd. (OOXML), ISO/IEC 26300 / OASIS ODF 1.3, Microsoft Open Specifications ([MS-DOC], [MS-XLS], [MS-PPT], [MS-CFB], [MS-OFFCRYPTO], [MS-OI29500]), ISO 32000-2 (PDF).
+5. **Révisions et commentaires avant V3** : un docx contenant des modifications suivies ou des commentaires est signalé, affiché avec les modifications acceptées et ouvert en lecture seule ; l'édition se fait sur une copie après confirmation. Aucune édition ne doit changer silencieusement le sens du document.
+6. **Formats anciens et ODF** : import vers le modèle interne ; à l'enregistrement, l'utilisateur est invité à choisir docx (aucune écriture dans ces formats).
+7. Spécifications de référence : ECMA-376 5ᵉ éd. (OOXML), ISO/IEC 26300 / OASIS ODF 1.3, Microsoft Open Specifications ([MS-DOC], [MS-XLS], [MS-PPT], [MS-CFB], [MS-OFFCRYPTO], [MS-OI29500]), ISO 32000-2 (PDF).
 
 ---
 
@@ -397,6 +399,7 @@ Règles : `#![forbid(unsafe_code)]` dans tous les crates sauf `core-wasm`, `desk
 - **Toute modification passe par une opération** (`InsertText`, `DeleteRange`, `SetAttrs`, `SplitBlock`, `MergeBlocks`, `InsertNode`, `RemoveNode`, `SetStyle`…). Chaque opération est **inversible**. Une commande utilisateur = une **transaction** (liste d'opérations atomique).
 - Le **journal de transactions** alimente : annuler/rétablir, sauvegarde de récupération incrémentale, suivi des modifications, historique, enregistreur de macros, et plus tard la co-édition (positions exprimées par identifiants de nœud + décalage, transformables ; choix d'un algorithme CRDT de séquence le moment venu).
 - **Styles** : cascade `docDefaults → chaîne de styles → mise en forme directe`, propriétés calculées mises en cache et invalidées par opération.
+- **Positions plates** (octets depuis le début du document) : réservées au protocole d'édition et à la vue ; jamais stockées dans le modèle, le journal ni un ancrage persistant.
 - **Sélection** : ancre + tête (identifiant de nœud + décalage), plusieurs plages possibles (sélection de colonnes de tableau, Ctrl+clic).
 
 ### 6.4 Texte et polices

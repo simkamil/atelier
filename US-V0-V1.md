@@ -25,6 +25,26 @@
 6. Chaînes visibles dans le catalogue i18n ; éléments d'interface accessibles au clavier et étiquetés (ARIA).
 7. Pas de régression sur les bancs de performance ni sur les images de référence.
 
+### Livrée et certifiée (2026-10-18)
+
+Une story est **livrée** quand tous ses critères vérifiables sur le poste de développement sont cochés et que la fonction est raccordée au produit quand elle est visible. Les critères qui exigent une preuve externe sont marqués **(campagne)** et ne bloquent ni la livraison ni les stories dépendantes ; ils sont vérifiés en bloc par trois campagnes :
+
+| Campagne | Story | Preuves |
+|---|---|---|
+| Fidélité Word | US-308 | Word 365 bureau : PDF de référence et nombre de pages du corpus, coupures de ligne, numérotation, ouverture sans réparation des fichiers produits |
+| Accessibilité et clavier physique | US-354 | NVDA, Narrateur, clavier AZERTY, IME, contraste élevé |
+| Performances | US-362 | Mesures sur le PC de référence du §6.16 |
+
+Le suivi compte séparément les stories livrées et certifiées.
+
+### Preuves d'un lot
+
+Un lot fournit : `cargo test`, Clippy et rustfmt verts, suites navigateur concernées vertes, une ligne de validation datée dans la story. Pas de reçu JSON, de script de vérification ad hoc ni de matrice par lot ; un contrôle répété devient un test du dépôt.
+
+### Travail en cours limité
+
+Jusqu'à la bascule (US-219), seules les stories de E1.3a et les correctifs sont développés. Les stories gelées (US-004, US-310 à US-317, US-331 à US-333) reprennent ensuite.
+
 ---
 
 # V0 — Fondations
@@ -51,6 +71,8 @@ Validation US-001 (2026-10-09) : [preuves et limites](docs/DEVELOPMENT.md#preuve
 Réf : §8 · Taille : S · Dépend de : US-001
 
 Validation locale US-002 (2026-10-10) : [preuves et limites](docs/DEVELOPMENT.md#preuve-us-002--2026-10-10). Workflow fourni et commandes vérifiées ; exécution GitHub et tests sous Linux à confirmer sur ces hôtes.
+
+Bloquée depuis le 2026-10-13 : les jobs GitHub ne démarrent plus (plafond de facturation Actions). À rétablir par l'une de ces voies : dépôt public (minutes gratuites, cohérent avec l'AGPL), relèvement du plafond, ou runner auto-hébergé Windows + WSL pour musl.
 
 #### US-003 — Tests par images de référence
 *En tant que* développeur, *je veux* comparer des rendus à des images de référence *afin de* détecter toute régression visuelle.
@@ -460,7 +482,7 @@ Réf : §6.1 · Taille : S · Dépend de : US-092
 - [ ] Glyphes convertis en `Path2D` et mis en cache par (police, glyphe).
 - [ ] Prise en compte de `devicePixelRatio` (net sur écran 4K à 150 %, 200 %).
 - [ ] Seules les pages visibles sont dessinées ; redessin limité aux zones modifiées.
-- [ ] Défilement à 60 images/s sur un document de 300 pages.
+- [ ] Défilement à 60 images/s sur un document de 300 pages. (campagne US-362)
 
 Réf : §6.6 · Taille : L · Dépend de : US-051, US-080, US-092
 
@@ -480,7 +502,7 @@ Réf : D12, §6.15 · Taille : S · Dépend de : US-001
 *En tant que* développeur, *je veux* capter le clavier via une zone de texte cachée *afin de* gérer touches mortes, AltGr et IME.
 - [ ] Zone de texte invisible positionnée au curseur, focus conservé.
 - [ ] Gestion de `keydown`, `beforeinput`, `compositionstart/update/end` → commandes moteur.
-- [ ] Touches mortes du clavier AZERTY (^ ¨ `) et AltGr (€, @, #, {, [) produisent les bons caractères ; Alt+code numérique fonctionne.
+- [ ] Touches mortes du clavier AZERTY (^ ¨ `) et AltGr (€, @, #, {, [) produisent les bons caractères ; Alt+code numérique fonctionne. (campagne US-354)
 - [ ] Texte en cours de composition affiché souligné dans le document.
 
 Réf : §6.7 · Taille : M · Dépend de : US-092
@@ -526,7 +548,7 @@ Validation (2026-10-13) : [contrat, essais et limites](docs/us-104-105-106-inter
 
 Réf : §6.8 · Taille : S · Dépend de : US-001
 
-Validation US-110 (2027-10-11) : [contrat et limites](docs/us-110-win32-window.md), [preuve du lot](_bmad-output/implementation-artifacts/worker-shell-validation.json).
+Validation US-110 (2026-10-11) : [contrat et limites](docs/us-110-win32-window.md), [preuve du lot](_bmad-output/implementation-artifacts/worker-shell-validation.json).
 
 #### US-111 — Liaisons WebView2
 *En tant que* développeur, *je veux* des liaisons COM WebView2 écrites à la main *afin d'afficher* le front-end sans Tauri.
@@ -585,7 +607,7 @@ Réf : D6, §7.2 · Taille : S · Dépend de : US-110
 
 ## E0.13 — Tranche verticale
 
-Validation US-116 (2027-10-11) : [contrat et limites](docs/us-116-portable-data.md), [preuve du lot](_bmad-output/implementation-artifacts/worker-shell-validation.json).
+Validation US-116 (2026-10-11) : [contrat et limites](docs/us-116-portable-data.md), [preuve du lot](_bmad-output/implementation-artifacts/worker-shell-validation.json).
 
 #### US-120 — Démonstrateur de bout en bout
 *En tant que* développeur, *je veux* une tranche verticale fonctionnelle *afin de* valider l'architecture avant de construire le traitement de texte.
@@ -595,6 +617,8 @@ Validation US-116 (2027-10-11) : [contrat et limites](docs/us-116-portable-data.
 - [ ] Latence de frappe mesurée < 16 ms sur un texte de 300 pages ; démarrage à froid < 1,5 s.
 
 Réf : §6 · Taille : M · Dépend de : US-012, US-054, US-055, US-072, US-101, US-103, US-113
+
+**Remplacée par E1.3a (2026-10-18).** L'éditeur texte brut visé par ces critères est retiré par US-219 ; l'ouverture/enregistrement TXT passe dans US-218, la latence dans US-219 et sa certification dans US-362. Story close sans cocher ses critères et exclue du décompte.
 
 Avancement US-120 (2026-10-11) : premier [éditeur intégré](docs/us-120-editor-ui.md), avec session WASM, pages A4/Carlito, saisie/sélection, annuler/rétablir et pont fichiers TXT. Les dialogues manuels, AZERTY/IME physique et performances restent à valider ; les critères complets ne sont pas encore cochés.
 
@@ -636,6 +660,13 @@ Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 
 
 Réf : F-TXT-021 · Taille : S · Dépend de : US-201
 
+#### US-205 — Polices fournies par l'hôte
+*En tant qu'*utilisateur, *je veux* que mes documents utilisent les bonnes polices *afin que* leur mise en page corresponde à Word, sans alourdir le démarrage.
+- [ ] Le WASM n'incorpore plus de police (`include_bytes!` retirés de `rich_preview.rs` et `editor-layout.rs`) ; les polices sont chargées à la demande via `Host.fonts` : ressources de l'exe et `C:\Windows\Fonts` sur le desktop, fichiers statiques mis en cache sur le web.
+- [ ] Caladea et Liberation Sans/Serif/Mono embarquées avec Carlito (§5.2) ; le budget polices d'US-006 porte sur les ressources de l'hôte, le WASM ne contient plus que du code.
+
+Réf : §5.2 (3), §6.1, §6.4 · Taille : M · Dépend de : US-055, US-100, US-006
+
 ## E1.2 — Mise en page
 
 #### US-210 — Mise en page des lignes
@@ -645,7 +676,7 @@ Réf : F-TXT-021 · Taille : S · Dépend de : US-201
 - [x] Retraits gauche, droit, première ligne, suspendu.
 - [x] Interlignes simple, 1,5, double, multiple, au moins, exactement.
 - [x] Mélange de tailles et polices dans une ligne : hauteur de ligne et ligne de base correctes.
-- [ ] Sur le corpus de référence, ≥ 95 % des lignes coupées au même endroit que dans Word.
+- [ ] Sur le corpus de référence, ≥ 95 % des lignes coupées au même endroit que dans Word. (campagne US-308)
 
 Validation API : [US-210](docs/us-210-rich-line-layout.md), 540 tests workspace et 15 contrôles dans le [reçu](_bmad-output/implementation-artifacts/docx-rich-layout-validation.json). **US partielle** : Microsoft Word absent de cet hôte, aucun taux de comparaison établi. Le collecteur est préparatoire. Un [aperçu DOCX A4 en lecture seule](docs/rich-docx-preview.md) raccorde désormais le layout au produit ; l’édition riche et la fidélité Word restent ouvertes.
 
@@ -654,7 +685,7 @@ Réf : §6.5 · Taille : L · Dépend de : US-054, US-201
 #### US-211 — Tabulations
 *En tant qu'*utilisateur, *je veux* utiliser des tabulations *afin d'aligner* du texte.
 - [x] Taquets gauche, centré, droit, décimal (virgule en fr-FR), barre ; points de suite (points, tirets, traits).
-- [ ] Taquets par défaut tous les 1,25 cm ; comportement de Word en dépassement de marge.
+- [ ] Taquets par défaut tous les 1,25 cm ; comportement de Word en dépassement de marge. (campagne US-308 pour le dépassement de marge)
 
 API et géométrie validées : [tabulations](docs/us-211-tabs.md), intervalle par défaut et retraits testés. **US partielle** : comportement de dépassement de marge non comparé à Word; le critère composé reste ouvert. Décorations retournées à l’appelant, sans raccordement UI riche.
 
@@ -666,7 +697,7 @@ Réf : F-TXT-011 · Taille : M · Dépend de : US-210
 *En tant qu'*utilisateur, *je veux* que le texte soit réparti en pages comme dans Word *afin d'obtenir* le même nombre de pages.
 - [x] Espacements avant/après, y compris l'espacement contextuel et la suppression de l'espacement avant en haut de page selon les règles de Word.
 - [x] Veuves et orphelines, paragraphes solidaires, lignes solidaires, saut de page avant, sauts de page manuels.
-- [ ] Sur le corpus de référence, ≥ 95 % des documents ont le même nombre de pages que dans Word.
+- [ ] Sur le corpus de référence, ≥ 95 % des documents ont le même nombre de pages que dans Word. (campagne US-308)
 
 Règles fonctionnelles validées : [pagination](docs/us-212-pagination.md), tests numériques et chaîne layout → pages → curseur. **US partielle** : le seuil de 95 % de documents ayant le même nombre de pages que Word n’est pas mesuré; aucune référence Word authentique disponible.
 
@@ -677,7 +708,7 @@ Réf : F-TXT-012, §6.5 · Taille : L · Dépend de : US-210
 #### US-213 — Mise en page incrémentale
 *En tant qu'*utilisateur, *je veux* que la frappe reste instantanée même dans un long document *afin de* travailler sans gêne.
 - [x] Seuls les paragraphes modifiés sont remis en page ; la pagination reprend à la première page touchée et s'arrête dès qu'elle se stabilise.
-- [ ] Latence de frappe < 16 ms au milieu d'un document de 300 pages.
+- [ ] Latence de frappe < 16 ms au milieu d'un document de 300 pages. (campagne US-362 ; la contrainte de développement est portée par US-216 et US-219)
 - [x] Le résultat incrémental est identique à une mise en page complète (vérifié par test).
 
 
@@ -704,7 +735,7 @@ Réf : §6.5 · Taille : M · Dépend de : US-210
 #### US-215 — Bordures et trame de paragraphe (rendu)
 *En tant qu'*utilisateur, *je veux* voir les bordures et trames de paragraphe *afin de* conserver la présentation de mes documents.
 - [ ] Bordures haut, bas, gauche, droite et entre paragraphes ; styles, épaisseurs, couleurs, espacement.
-- [ ] Paragraphes consécutifs de même bordure regroupés dans un seul cadre, comme dans Word.
+- [ ] Paragraphes consécutifs de même bordure regroupés dans un seul cadre, comme dans Word. (campagne US-308 pour la comparaison Word)
 
 
 Géométrie et commandes validées : [bordures et trames](docs/us-215-paragraph-borders.md), cadres partagés/multipages, entre paragraphes, styles et sortie DisplayList/SVG. **US partielle** : politiques fournies par l’appelant, persistance/import OOXML/UI riche et comparaison Word encore ouverts; critères utilisateur conservés ouverts.
@@ -722,27 +753,30 @@ Stories techniques du [plan de bascule](docs/rich-editor-migration.md) validé l
 - [ ] Enveloppe ATED v2 : identifiant de document u32, positions plates en octets UTF-8 avec `
 ` entre paragraphes, réponse limitée aux pages modifiées, à une fenêtre de texte et à la révision ; v1 inchangée.
 - [ ] Codec de référence Rust et JS figé, tests de troncature et de limites ; `web/rich-editor-protocol.mjs` et cache de pages `web/editor-page-cache.mjs`.
+- [ ] Les positions plates n'existent que dans le protocole et la vue : le modèle, le journal de récupération (US-074, US-325) et tout ancrage persistant utilisent identifiant de nœud + décalage (§6.3) ; un test vérifie qu'un journal rejoué après insertion de paragraphes en amont retrouve ses positions.
 
-Réf : §6.7 · Taille : M · Dépend de : US-091
+Réf : §6.3, §6.7 · Taille : M · Dépend de : US-091
 
 #### US-204 — Modèle riche éditable à positions plates
 *En tant que* développeur, *je veux* éditer le modèle riche en place par positions plates *afin que* la saisie reste rapide sur un long document.
 - [ ] Index de sommes préfixes par paragraphe (O(log n)) ; conversions position plate ↔ (paragraphe, décalage) cohérentes.
 - [ ] Édition multi-paragraphes (Entrée scinde avec le style suivant, suppression qui fusionne) appliquée en place avec son inverse, sans clone ; 10 000 séquences aléatoires reviennent à l'état initial après inversion.
 - [ ] Une édition au milieu d'un document de 300 pages coûte moins de 1 ms côté modèle (banc).
+- [ ] Sauts manuels, symboles et styles de run (aujourd'hui tables annexes `breaks`, `symbols`, `run_styles` de `fmt-ooxml/src/docx.rs`) deviennent des éléments en ligne du modèle, modifiés par `RichOp` ; l'import DOCX les produit directement et aucune table n'est plus remappée par `position_map`.
 
-Réf : §6.4 · Taille : M · Dépend de : US-200, US-203
+Réf : §6.3, §6.4 · Taille : M · Dépend de : US-200, US-203
 
 #### US-216 — Mise en page et rendu incrémentaux de l'éditeur
 *En tant que* développeur, *je veux* brancher la mise en page incrémentale et la géométrie du curseur dans le moteur *afin de* ne recalculer et n'émettre que les pages modifiées.
 - [ ] `rich_layout.rs` et `rich_paint.rs` : incrémental identique au calcul complet, cache par page, profils TXT et document.
 - [ ] Curseur, test de position et rectangles de sélection testés ; l'aperçu DOCX utilise le même dessin.
+- [ ] Plus aucune prévalidation globale : la pagination incrémentale ne parcourt que les pages touchées et s'arrête à la première page stabilisée ; mise à jour mise en page + liste d'affichage < 4 ms pour une frappe au milieu d'un document de 300 pages (banc release, compteurs de pages parcourues joints).
 
-Réf : §6.5 · Taille : M · Dépend de : US-203, US-214
+Réf : §6.5, §6.16 · Taille : M · Dépend de : US-203, US-214
 
 #### US-217 — Édition riche dans le moteur
 *En tant que* développeur, *je veux* un éditeur riche complet dans le moteur *afin de* remplacer l'éditeur texte brut.
-- [ ] Saisie, suppression par graphème et par mot, sélection, déplacement, test de position, annuler/rétablir ; tables annexes remappées par `position_map`.
+- [ ] Saisie, suppression par graphème et par mot, sélection, déplacement, test de position, annuler/rétablir, y compris sur les éléments en ligne d'US-204.
 - [ ] Les scénarios de `tests/editor-abi.mjs` passent en v2.
 
 Réf : §6.4, §6.7 · Taille : M · Dépend de : US-204, US-216
@@ -751,13 +785,14 @@ Réf : §6.4, §6.7 · Taille : M · Dépend de : US-204, US-216
 *En tant que* développeur, *je veux* ouvrir, créer et enregistrer des documents TXT et DOCX dans l'éditeur riche *afin que* la bascule ne perde aucun format.
 - [ ] TXT ouvert, modifié puis enregistré : fins de ligne et BOM conservés, octet pour octet sur le corpus ; aller-retour DOCX sans nouvel avertissement d'écriture.
 - [ ] Nouveau document riche ; images de l'éditeur TXT converties en objets ancrés.
+- [ ] DOCX contenant des révisions (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`, changements de propriétés) ou des commentaires : bandeau explicite, affichage de l'état « toutes modifications acceptées » et ouverture en lecture seule ; l'édition n'est possible que sur une copie où les révisions sont acceptées, après confirmation ; aucune édition ne peut produire un document dont le sens diffère de l'original dans Word.
 
-Réf : §5 · Taille : M · Dépend de : US-217, US-307, US-316
+Réf : §5 · Taille : M · Dépend de : US-217, écrivain DOCX livré par US-307 ([API](docs/us-307-docx-writer.md), sans attendre sa certification Word), US-316
 
 #### US-209 — Miroir DOM accessible du document
 *En tant qu'*utilisateur de lecteur d'écran, *je veux* que le document affiché sur le Canvas soit exposé dans le DOM *afin de* le lire et de suivre la sélection.
 - [ ] `web/document-mirror.mjs` : portion visible (paragraphes, titres, listes, texte alternatif) synchronisée avec le curseur et la sélection.
-- [ ] Essai consigné avec NVDA et Narrateur : lecture de la ligne et de la sélection.
+- [ ] Essai consigné avec NVDA et Narrateur : lecture de la ligne et de la sélection. (campagne US-354)
 
 Réf : D13, §6.14 · Taille : M · Dépend de : US-203, US-217
 
@@ -1194,7 +1229,7 @@ Réf : F-COM-002, §5 · Taille : L · Dépend de : US-300, US-201
 
 #### US-302 — Lecture docx : numérotation
 *En tant qu'*utilisateur, *je veux* que mes listes s'ouvrent correctement *afin de* garder la numérotation.
-- [ ] `numbering.xml` : `abstractNum`, `num`, surcharges de niveaux, redémarrages, liaison aux styles ; numéros calculés identiques à Word sur le corpus.
+- [ ] `numbering.xml` : `abstractNum`, `num`, surcharges de niveaux, redémarrages, liaison aux styles ; numéros calculés identiques à Word sur le corpus. (campagne US-308 pour la comparaison Word)
 
 Réf : F-TXT-023 · Taille : M · Dépend de : US-301, US-253
 
@@ -1236,8 +1271,8 @@ Réf : §5.2 (1) · Taille : L · Dépend de : US-301, US-032
 #### US-307 — Enregistrer en docx
 *En tant qu'*utilisateur, *je veux* enregistrer en docx *afin de* partager mes documents avec des utilisateurs de Word.
 - [ ] Toutes les parties générées depuis le modèle, sortie déterministe.
-- [ ] Les fichiers produits s'ouvrent sans erreur ni réparation dans Word 365 et LibreOffice (corpus de 100 documents).
-- [ ] Documents créés de zéro dans Atelier : rendu identique dans Word (comparaison visuelle sur un jeu de documents types).
+- [ ] Les fichiers produits s'ouvrent sans erreur ni réparation dans Word 365 et LibreOffice (corpus de 100 documents). (campagne US-308)
+- [ ] Documents créés de zéro dans Atelier : rendu identique dans Word (comparaison visuelle sur un jeu de documents types). (campagne US-308)
 
 Réf : F-COM-003, §5 · Taille : L · Dépend de : US-301 à US-306, US-031
 
@@ -1246,8 +1281,9 @@ Réf : F-COM-003, §5 · Taille : L · Dépend de : US-301 à US-306, US-031
 - [ ] Au moins 200 documents (créés avec Word et LibreOffice, documents publics de licence compatible), couvrant les fonctions V1.
 - [ ] Par document : PDF de référence généré par Word, nombre de pages attendu.
 - [ ] Rapport automatique : nombre de pages identique, lignes coupées identiques, écart visuel par page, aller-retour sans perte.
+- [ ] Campagne de fidélité Word : une séance sur un poste équipé de Word 365 bureau produit, par automatisation COM, les PDF de référence, nombres de pages et positions de coupure du corpus, puis ouvre les fichiers produits par Atelier ; les résultats sont versionnés et tous les critères marqués « campagne US-308 » sont ensuite vérifiés automatiquement, sans Word.
 
-Réf : §8 · Taille : M · Dépend de : US-003, US-307
+Réf : §8 · Taille : M · Dépend de : US-003, écrivain DOCX d'US-307
 
 #### US-309 — Modèles et documents à macros
 *En tant qu'*utilisateur, *je veux* ouvrir des modèles et des documents contenant des macros *afin de* les utiliser sans risque.
@@ -1261,7 +1297,7 @@ Réf : §5.1 · Taille : S · Dépend de : US-306
 *En tant qu'*utilisateur, *je veux* ouvrir des documents LibreOffice *afin de* les lire et les modifier.
 - [x] `content.xml`, `styles.xml`, `meta.xml` : texte, styles (héritage ODF, styles automatiques), listes, tableaux, images, en-têtes et pieds, mise en page, liens, signets, champs page/date.
 - [ ] À l'enregistrement : proposition d'enregistrer en docx (ODF non pris en charge en écriture).
-- [ ] Rendu conforme à LibreOffice sur un corpus de 50 documents (nombre de pages identique pour ≥ 90 %).
+- [ ] Rendu conforme à LibreOffice sur un corpus de 50 documents (nombre de pages identique pour ≥ 90 %). (campagne US-308)
 
 Avancement US-310 (2026-10-13) : import livré dans `atelier-fmt-odf`, relu par un agent indépendant et corrigé ; [contrat](docs/us-310-odt-import.md), [corpus LibreOffice](tests/odt-reference/README.md). Le critère de pagination n'est pas vérifiable avant la mise en page complète ; la proposition d'enregistrer en docx relève de US-322.
 
@@ -1482,7 +1518,7 @@ Réf : F-COM-012 · Taille : S · Dépend de : US-101
 #### US-343 — Statistiques
 *En tant qu'*utilisateur, *je veux* connaître le nombre de mots *afin de* respecter une longueur imposée.
 - [ ] Barre d'état : mots (de la sélection et du document) ; dialogue : pages, mots, caractères avec et sans espaces, paragraphes, lignes ; option notes et zones de texte.
-- [ ] Comptage identique à Word sur le corpus (tolérance ≤ 0,5 %).
+- [ ] Comptage identique à Word sur le corpus (tolérance ≤ 0,5 %). (campagne US-308)
 
 Avancement (2026-10-13) : Compteur document/sélection et dialogue à six mesures raccordés au TXT, avec pages/lignes issues de la mise en page Rust. Notes/zones de texte désactivées et expliquées ; ces fonctions et la preuve de parité Word restent ouvertes ; [livraison et validation](docs/us-340-343-navigation-ui.md).
 
@@ -1502,8 +1538,8 @@ Réf : F-COM-018 · Taille : S · Dépend de : US-342, US-343
 #### US-350 — Lire et parcourir le document avec un lecteur d'écran
 *En tant qu'*utilisateur de lecteur d'écran, *je veux* lire et parcourir le document *afin de* l'éditer de façon autonome.
 - [ ] Miroir accessible caché (rôle document, titres avec niveau, paragraphes, listes, tableaux avec en-têtes, images avec texte alternatif, liens) couvrant au minimum les pages visibles et le voisinage du curseur.
-- [ ] NVDA et le Narrateur lisent caractère, mot, ligne et paragraphe lors des déplacements, et annoncent la sélection.
-- [ ] Navigation rapide par titres, tableaux et liens avec NVDA.
+- [ ] NVDA et le Narrateur lisent caractère, mot, ligne et paragraphe lors des déplacements, et annoncent la sélection. (campagne US-354)
+- [ ] Navigation rapide par titres, tableaux et liens avec NVDA. (campagne US-354)
 
 Réf : F-COM-021, §6.14 · Taille : L · Dépend de : US-214, US-101
 
@@ -1533,6 +1569,7 @@ Réf : F-COM-019, §6.14 · Taille : S · Dépend de : US-105
 *En tant qu'*éditeur du logiciel, *je veux* un audit RGAA *afin de* garantir et déclarer le niveau d'accessibilité.
 - [ ] Grille RGAA 4.1 complétée pour l'interface ; tests manuels NVDA et Narrateur sur des scénarios types (créer, mettre en forme, insérer un tableau, enregistrer, exporter).
 - [ ] Défauts bloquants corrigés ; déclaration d'accessibilité publiée avec la version.
+- [ ] Campagne d'accessibilité et de clavier physique : vérifie tous les critères marqués « campagne US-354 » (NVDA, Narrateur, AZERTY, IME, contraste élevé).
 
 Réf : D13, §6.14, §8 · Taille : M · Dépend de : US-350 à US-353
 
@@ -1559,8 +1596,9 @@ Avancement US-361 (2026-10-14) : US-361 est validée. La consultation fonctionne
 *En tant qu'*utilisateur, *je veux* une application rapide *afin de* travailler sans attendre.
 - [ ] Mesures sur la machine de référence pour chaque cible du §6.16 applicable à V1 (démarrage, ouverture de 100 pages, latence de frappe sur 300 pages, défilement, mémoire, taille de l'exe).
 - [ ] Rapport joint à la version ; tout objectif manqué fait l'objet d'une story corrective.
+- [ ] Campagne de performances : vérifie tous les critères marqués « campagne US-362 » (latence de frappe, défilement, démarrage).
 
-Réf : §6.16 · Taille : M · Dépend de : US-005, US-213, US-307
+Réf : §6.16 · Taille : M · Dépend de : US-005, US-216, US-219, US-307
 
 #### US-363 — Gestion des plantages
 *En tant qu'*utilisateur, *je veux* retrouver le dernier point de récupération valide après un plantage *afin de* limiter la perte de travail.
@@ -1589,17 +1627,21 @@ Chaque étape commence après ses prérequis des étapes précédentes. Au sein 
 | 1 | US-001, US-002, US-004, US-005, US-010 → 014, US-020 → 023, US-030 → 032 | Ouvrir un docx et en lister le XML (outil en ligne de commande) |
 | 2 | US-040 → 043, US-050 → 056, US-060, US-061 | Rendre un texte et une image en PNG en ligne de commande |
 | 3 | US-070 → 074, US-080 → 082, US-003 | Modèle générique annulable, rendu SVG/PNG |
-| 4 | US-090 → 092, US-100 → 106, US-110 → 116 | Application Windows vide avec ruban |
-| 5 | US-120 | **Fin de V0** : éditeur de texte brut paginé |
-| 6 | US-200 → 202, US-210 → 215, US-220 → 224, US-226 → 231 | Éditeur riche minimal ; le presse-papiers riche complet arrive à l'étape 9 |
-| 7 | US-300, US-301, US-328 | Import DOCX : texte, styles et propriétés ; l'enregistrement complet arrive à l'étape 10 |
-| 8 | US-240 → 248, US-250 → 254, US-302 | Mise en forme, styles, listes |
-| 9 | US-260 → 266, US-303, US-270 → 273, US-305, US-225 | Tableaux, images et presse-papiers riche |
-| 10 | US-280 → 285, US-290, US-291, US-304, US-306, US-274, US-307, US-323, US-322 | Mise en page complète ; ouvrir et enregistrer un DOCX V1 avec préservation de l'inconnu |
+| 4 | US-006, US-090 → 092, US-100 → 106, US-110 → 116 | Application Windows vide avec ruban |
+| 5 | US-120 (remplacée par E1.3a) | **Fin de V0** : éditeur de texte brut paginé |
+| 6 | US-200 → 202, US-210 → 215 | Modèle riche, styles et mise en page en API |
+| 6a | US-203 → US-204, US-216 → US-219, US-209 | **Bascule** : un seul éditeur riche pour TXT et DOCX |
+| 7 | US-220 → 224, US-226 → 231, US-205, US-300, US-301, US-328 | Édition riche complète ; polices de l'hôte ; import DOCX |
+| 8 | US-240 → 244, US-246 → 248, US-250 → 254, US-302 | Mise en forme, styles, listes |
+| 9 | US-260 → 266, US-303, US-270, US-271, US-273, US-305, US-225 (sauf collage HTML) | Tableaux, images en ligne et presse-papiers riche |
+| 10 | US-280 → 285, US-290, US-291, US-304, US-306, US-274, US-307, US-323, US-322 | Mise en page complète ; ouvrir et enregistrer un DOCX avec préservation de l'inconnu |
 | 11 | US-330 → 333 | Export PDF et impression |
-| 12 | US-308, US-309, US-310 → 317 | Corpus, ODT, DOC, robustesse |
-| 13 | US-320, US-321, US-324 → 327, US-329, US-340 → 344 | Application complète |
-| 14 | US-350 → 354, US-360 → 364 | **Fin de V1** : version publiable |
+| 12 | US-308, US-309, US-316 | Corpus et campagne de fidélité Word |
+| 13 | US-320, US-321, US-325, US-326, US-340 → 344 | Application complète |
+| 14 | US-350 → 354, US-360 → 364 | **V1.0** : version publiable, campagnes US-308, US-354 et US-362 passées |
+| 15 | US-310 → 315, US-317, US-245, US-272, US-225 (collage HTML), US-324, US-327, US-329 | **V1.1** : ODT, DOC, habillage, règle, plusieurs documents, fichier verrou, options |
+
+Jusqu'à la fin de l'étape 6a, le travail en cours est limité à E1.3a et aux correctifs (voir « Travail en cours limité »). V1.0 est livrée à des utilisateurs réels avant V1.1 ; leurs documents complètent le corpus d'US-308.
 
 ## Traçabilité exigences → stories (V1)
 
