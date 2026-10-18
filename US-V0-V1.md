@@ -767,9 +767,11 @@ Réf : §6.3, §6.4 · Taille : M · Dépend de : US-200, US-203
 
 #### US-216 — Mise en page et rendu incrémentaux de l'éditeur
 *En tant que* développeur, *je veux* brancher la mise en page incrémentale et la géométrie du curseur dans le moteur *afin de* ne recalculer et n'émettre que les pages modifiées.
-- [ ] `rich_layout.rs` et `rich_paint.rs` : incrémental identique au calcul complet, cache par page, profils TXT et document.
-- [ ] Curseur, test de position et rectangles de sélection testés ; l'aperçu DOCX utilise le même dessin.
-- [ ] Plus aucune prévalidation globale : la pagination incrémentale ne parcourt que les pages touchées et s'arrête à la première page stabilisée ; mise à jour mise en page + liste d'affichage < 4 ms pour une frappe au milieu d'un document de 300 pages (banc release, compteurs de pages parcourues joints).
+- [x] `rich_layout.rs` et `rich_paint.rs` : incrémental identique au calcul complet, cache par page, profils TXT et document.
+- [x] Curseur, test de position et rectangles de sélection testés ; l'aperçu DOCX utilise le même dessin.
+- [x] Plus aucune prévalidation globale : la pagination incrémentale ne parcourt que les pages touchées et s'arrête à la première page stabilisée ; mise à jour mise en page + liste d'affichage < 4 ms pour une frappe au milieu d'un document de 300 pages (banc release, compteurs de pages parcourues joints).
+
+Validation US-216 (2026-10-18) : tranche R2 développée sur la branche `us-216-incremental-layout` (lot 1 : cellules de tableau en pleine largeur, ni en-têtes ni pieds ; [contrat, mesures et limites](docs/us-216-incremental-layout.md)). Banc release sur 304 pages : frappe au milieu 2,48 ms en moyenne, 3,05 ms au 95e centile, 4,97 ms au maximum (les frappes qui ajoutent une ligne, 2 sur 400, dépassent 4 ms) ; 2,02 pages parcourues par frappe en moyenne. Relecture indépendante et critère de latence de bout en bout (US-219, US-362) encore à faire.
 
 Réf : §6.5, §6.16 · Taille : M · Dépend de : US-203, US-214
 
