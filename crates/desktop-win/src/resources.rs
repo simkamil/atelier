@@ -286,6 +286,41 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/french-spacing.mjs"),
     },
     Resource {
+        path: "/engine-choice.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/engine-choice.mjs"),
+    },
+    Resource {
+        path: "/rich-editor.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/rich-editor.mjs"),
+    },
+    Resource {
+        path: "/rich-editor-client.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/rich-editor-client.mjs"),
+    },
+    Resource {
+        path: "/rich-editor-protocol.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/rich-editor-protocol.mjs"),
+    },
+    Resource {
+        path: "/editor-page-cache.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/editor-page-cache.mjs"),
+    },
+    Resource {
+        path: "/document-mirror.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/document-mirror.mjs"),
+    },
+    Resource {
+        path: "/document-mirror.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/document-mirror.css"),
+    },
+    Resource {
         path: "/fonts/Carlito-Regular.ttf",
         mime: "font/ttf",
         bytes: include_bytes!("../../../data/fonts/carlito/Carlito-Regular.ttf"),
