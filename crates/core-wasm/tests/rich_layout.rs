@@ -594,6 +594,61 @@ fn selection_rectangles_follow_lines_and_pages() {
 }
 
 #[test]
+fn a_selection_reaching_past_the_laid_out_paragraphs_ends_at_the_page() {
+    // Only the first pages are laid out: the selection runs far beyond them.
+    let doc = document(9, 400);
+    let cache = PageCache::new(&doc, false).expect("cache");
+    assert!(!cache.layout_complete());
+    let rects = cache.selection_rects(0, 0, doc.len()).unwrap();
+    assert!(rects.len() > 5, "{rects:?}");
+    assert!(rects.iter().all(|r| r.page == 0 && r.height > 0.0));
+    // A selection that starts past them selects nothing here.
+    assert!(
+        cache
+            .selection_rects(0, doc.len() - 5, doc.len())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_picture_fits_the_line_the_paragraph_indents_leave() {
+    use atelier_text_model::inline_image::{IMAGE_OBJECT_KIND, ImageFormat, InlineImage};
+    let image = InlineImage::new(ImageFormat::Png, vec![0u8; 8].into(), 2000, 1000, 1).unwrap();
+    let mut owner = RichDocument::new();
+    let mut widths = Vec::new();
+    // Left 1 inch, right 0.5 inch, first line +0.25 inch (twips), then no indent.
+    for indents in [(0, 0, 0), (1440, 720, 360)] {
+        let mut p = Paragraph::with_text("ab");
+        p.props.indent_left = Some(indents.0);
+        p.props.indent_right = Some(indents.1);
+        p.props.indent_first_line = Some(indents.2);
+        p.anchored.push(AnchoredObject {
+            id: owner.alloc_id().unwrap(),
+            offset: 1,
+            kind: IMAGE_OBJECT_KIND.into(),
+            data: image.to_object_data(),
+        });
+        let mut doc = VecParagraphs::new(vec![p]);
+        doc.section = example_section();
+        let mut cache = PageCache::new(&doc, false).expect("cache");
+        let bytes = cache.page_display(&doc, 0).unwrap();
+        let width = DisplayList::decode(&bytes)
+            .unwrap()
+            .commands
+            .iter()
+            .find_map(|c| match c {
+                Command::DrawImage { bounds, .. } => Some(bounds.width()),
+                _ => None,
+            })
+            .expect("a picture");
+        widths.push(width);
+    }
+    // 72 + 36 + 18 pt less than the full text width.
+    assert!((widths[0] - widths[1] - 126.0).abs() < 0.1, "{widths:?}");
+}
+
+#[test]
 fn positions_are_checked() {
     let doc = wrapped_document();
     let cache = complete_state(&doc, true);

@@ -58,6 +58,23 @@ impl LayoutOptions {
     }
 }
 
+/// Glyph id of the glyph an [`InlineBox`] produces: no font has it, painters
+/// draw the box themselves (R7b).
+pub const INLINE_BOX_GLYPH: u16 = u16::MAX;
+/// The character that stands for an [`InlineBox`] in the paragraph text.
+pub const INLINE_BOX_CHAR: char = '\u{FFFC}';
+
+/// A box of fixed size on the baseline (a picture, R7b). The paragraph text
+/// holds [`INLINE_BOX_CHAR`] at `offset`; the line gets one glyph of
+/// [`INLINE_BOX_GLYPH`] there, `width` wide, which raises the line ascent to
+/// `height` and keeps the descent of the text. Units are 1/64 pt.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InlineBox {
+    pub offset: usize,
+    pub width: i64,
+    pub height: i64,
+}
+
 /// Typed layout failures. No partial paragraph layout is returned.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LayoutError {
@@ -194,6 +211,7 @@ struct ShapeContext<'ctx, 'face, 'font> {
     spans: &'ctx [Span],
     shapers: &'ctx [CachedShaper<'face, 'font>],
     boundaries: &'ctx [usize],
+    boxes: &'ctx [InlineBox],
     fallback: FaceExtents,
     options: LayoutOptions,
     control_font_id: FontId,
@@ -220,14 +238,45 @@ pub fn layout_paragraph(
     fonts: &FontManager<'_>,
     options: LayoutOptions,
 ) -> Result<ParagraphLayout, LayoutError> {
+    layout_paragraph_boxes(paragraph, defaults, fonts, options, &[])
+}
+
+/// [`layout_paragraph`] for a text that holds [`INLINE_BOX_CHAR`] at the
+/// offset of each of `boxes` (sorted by offset, no duplicates, widths and
+/// heights positive).
+pub fn layout_paragraph_boxes(
+    paragraph: &Paragraph,
+    defaults: &ResolvedProperties,
+    fonts: &FontManager<'_>,
+    options: LayoutOptions,
+    boxes: &[InlineBox],
+) -> Result<ParagraphLayout, LayoutError> {
+    validate_boxes(paragraph, boxes)?;
     Ok(layout_paragraph_impl(
         paragraph,
         defaults,
         fonts,
         options,
         &tabs::TabSettings::default(),
+        boxes,
     )?
     .layout)
+}
+
+fn validate_boxes(paragraph: &Paragraph, boxes: &[InlineBox]) -> Result<(), LayoutError> {
+    let mut floor = 0usize;
+    for item in boxes {
+        let end = item.offset.saturating_add(INLINE_BOX_CHAR.len_utf8());
+        if item.offset < floor
+            || item.width <= 0
+            || item.height <= 0
+            || paragraph.text.get(item.offset..end) != Some("\u{FFFC}")
+        {
+            return Err(LayoutError::InvalidParagraph("inline box is invalid"));
+        }
+        floor = end;
+    }
+    Ok(())
 }
 
 fn layout_paragraph_impl(
@@ -236,6 +285,7 @@ fn layout_paragraph_impl(
     fonts: &FontManager<'_>,
     options: LayoutOptions,
     tab_settings: &tabs::TabSettings,
+    boxes: &[InlineBox],
 ) -> Result<tabs::TabLayout, LayoutError> {
     validate_input(paragraph, options)?;
     validate_tab_settings(tab_settings, options.max_work)?;
@@ -254,6 +304,7 @@ fn layout_paragraph_impl(
         fonts,
         &boundaries,
         options,
+        boxes,
         &mut work,
     )?;
     let fallback_extents = default_extents(&defaults.character, fonts)?;
@@ -267,6 +318,7 @@ fn layout_paragraph_impl(
         spans: &spans,
         shapers: &shapers,
         boundaries: &boundaries,
+        boxes,
         fallback: fallback_extents,
         options,
         control_font_id: control_face.id,
@@ -687,12 +739,16 @@ fn build_spans(
     fonts: &FontManager<'_>,
     boundaries: &[usize],
     options: LayoutOptions,
+    boxes: &[InlineBox],
     work: &mut usize,
 ) -> Result<Vec<Span>, LayoutError> {
     let mut spans: Vec<Span> = Vec::new();
     for pair in boundaries.windows(2) {
         let source = pair[0]..pair[1];
         let text = &paragraph.text[source.clone()];
+        if box_at(boxes, source.start).is_some() {
+            continue;
+        }
         if text.chars().all(|c| {
             matches!(
                 c,
@@ -893,7 +949,27 @@ fn shape_range(
     *work = add_work(*work, scanned, context.options.max_work)?;
     for pair in context.boundaries[first_boundary..=end_boundary].windows(2) {
         let source = pair[0]..pair[1];
-        if &context.paragraph.text[source.clone()] == "\t" {
+        if let Some(item) = box_at(context.boxes, source.start) {
+            output.push(ShapedGlyph {
+                glyph_id: INLINE_BOX_GLYPH,
+                source,
+                advance: item.width,
+                y_advance: 0,
+                x_offset: 0,
+                y_offset: 0,
+                font_id: context.control_font_id,
+                family: context.control_family.clone(),
+                size: context.control_size,
+                ascent: item.height,
+                descent: context.fallback.descent,
+                gap: context.fallback.gap,
+                control: false,
+            });
+            *work = add_work(*work, 1, context.options.max_work)?;
+            if output.len() > context.options.max_glyphs {
+                return Err(LayoutError::LimitExceeded("glyphs"));
+            }
+        } else if &context.paragraph.text[source.clone()] == "\t" {
             output.push(ShapedGlyph {
                 glyph_id: 0,
                 source,
@@ -917,6 +993,13 @@ fn shape_range(
     }
     output.sort_by_key(|glyph| glyph.source.start);
     Ok((output, extents))
+}
+
+fn box_at(boxes: &[InlineBox], offset: usize) -> Option<&InlineBox> {
+    boxes
+        .binary_search_by_key(&offset, |b| b.offset)
+        .ok()
+        .map(|i| &boxes[i])
 }
 
 fn scalar_offsets(text: &str) -> Vec<usize> {

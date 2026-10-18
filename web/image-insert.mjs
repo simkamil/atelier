@@ -137,7 +137,7 @@ export function createImagePicker({ doc = globalThis.document, accept = IMAGE_AC
   });
 }
 
-async function drawable({ width, height, rgba }) {
+export async function drawable({ width, height, rgba }) {
   const data = new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.byteLength), width, height);
   if (typeof createImageBitmap === "function") return createImageBitmap(data);
   const canvas = globalThis.document.createElement("canvas");

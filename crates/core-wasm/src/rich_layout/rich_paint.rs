@@ -889,6 +889,28 @@ impl PageWriter {
         Ok(())
     }
 
+    /// A `DrawImage` of the picture `id` in the rectangle `x, y, width, height`.
+    fn image(
+        &mut self,
+        id: u64,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Result<(), PreviewError> {
+        self.flush_run()?;
+        // Same validation as a `DrawImage` of `Command`.
+        Rect::from_xywh(x, y, width, height).map_err(render_error)?;
+        self.count_command(0)?;
+        let out = &mut self.bytes;
+        out.push(4);
+        out.extend_from_slice(&id.to_le_bytes());
+        for v in [x, y, x + width, y + height] {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        Ok(())
+    }
+
     fn underline(
         &mut self,
         color: Color,
@@ -942,6 +964,7 @@ impl PageWriter {
 /// text area (1/64 pt).
 pub(crate) struct FastLine<'a> {
     pub styles: &'a StyleTable,
+    pub pictures: &'a [super::prepare::Picture],
     pub paragraph: &'a Paragraph,
     pub line: &'a LayoutLine,
     pub baseline: i64,
@@ -958,12 +981,28 @@ pub(crate) fn paint_line_fast(
 ) -> Result<(), PreviewError> {
     let FastLine {
         styles,
+        pictures,
         paragraph,
         line,
         baseline,
         margin,
     } = placed;
     for glyph in line.fragments.iter().flat_map(|fragment| &fragment.glyphs) {
+        if glyph.glyph_id == atelier_text_layout::INLINE_BOX_GLYPH {
+            let picture = pictures
+                .iter()
+                .find(|p| p.layout == glyph.source.start)
+                .ok_or_else(|| PreviewError::Layout("inline box without picture".into()))?;
+            // The box sits on the baseline of its line.
+            let x = (margin.0 + glyph.x) as f64 * ATDL_SCALE;
+            let bottom = (margin.1 + glyph.y + baseline - line.baseline) as f64 * ATDL_SCALE;
+            let (width, height) = (
+                picture.width as f64 * ATDL_SCALE,
+                picture.height as f64 * ATDL_SCALE,
+            );
+            writer.image(picture.id, x, bottom - height, width, height)?;
+            continue;
+        }
         let glyph_text = paragraph
             .text
             .get(glyph.source.clone())

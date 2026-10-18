@@ -24,7 +24,7 @@ Convention : `v2 = couvert` (même nom, même forme de résultat) ; `v2 = adapt�
 
 ## 3. Membres de l'objet renvoyé
 
-Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{kind:"state", text, textBytes, anchor, focus, revision (BigInt), dirty, canUndo, canRedo, caret, selectionRects, pages, imageIds...}`. v2 : `{kind:"state", revision (BigInt), anchor, focus (Number, octets plats), docLen, dirty, canUndo, canRedo, readOnly, hasRevisions, pageCount, layoutComplete, caret, upstream}`. **Absents en v2 : `text`, `textBytes`, `selectionRects`, `pages`, `imageIds`** (pas de texte entier côté interface). **La surbrillance de la sélection n'est pas dessinée en v2** : le protocole ne renvoie que le caret du foyer (`selection_rects` existe dans le moteur, `PageCache::selection_rects`, mais aucune commande ni champ d'`State` ne l'expose) ; la sélection reste perceptible pour les lecteurs d'écran (miroir DOM) et par le texte copié, pas à l'écran. À livrer côté protocole avant la bascule par défaut (R7b). L'objet d'état reste le même tant que rien de ce qu'il porte ne change (identité conservée par un rafraîchissement de pages, un zoom). Lecteurs touchés : voir §5.
+Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{kind:"state", text, textBytes, anchor, focus, revision (BigInt), dirty, canUndo, canRedo, caret, selectionRects, pages, imageIds...}`. v2 : `{kind:"state", revision (BigInt), anchor, focus (Number, octets plats), docLen, dirty, canUndo, canRedo, readOnly, hasRevisions, pageCount, layoutComplete, caret, upstream}`. **Absents en v2 : `text`, `textBytes`, `selectionRects`, `pages`, `imageIds`** (pas de texte entier côté interface). **Surbrillance de la sélection (R7b-1)** : le moteur renvoie les rectangles de la sélection par `SelectionRects` (`0x0120`, [spec](us-203-r7b1-selection-images.md)) ; le client les demande pour les pages visibles après chaque `State` dont la sélection n'est pas vide, et `rich-editor.mjs` les passe au `CanvasRenderer` comme `selectionRects` (même forme que v1, jamais dans l'objet d'état : `editor.selectionRects`). L'objet d'état reste le même tant que rien de ce qu'il porte ne change (identité conservée par un rafraîchissement de pages, un zoom). Lecteurs touchés : voir §5.
 
 | Membre v1 | Équivalent v2 | Statut |
 |---|---|---|
@@ -47,7 +47,7 @@ Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{k
 | `replaceCurrent(values)`, `replaceAll(values)` | **absent du protocole v2** | désactivé |
 | `setSearchHighlights(result, index)` | `null` : sans effet, renvoie `true` ; autre valeur : renvoie `false` | désactivé |
 | `selectSearchResult(result, index)` | rejette `EDITOR_UNSUPPORTED_V2` | désactivé |
-| `insertImages(files, {revision, target})` | `InsertImage` par fichier (octets + texte alternatif, `target` = `SetSelection` avant) ; `onImages({inserted, failed})` idem. Limite : le moteur v2 compte l'image (3 octets plats, enregistrée dans le DOCX) mais **la page ne la dessine pas encore** (aucune commande `drawImage` dans les pages v2) | adapté |
+| `insertImages(files, {revision, target})` | `InsertImage` par fichier (octets + texte alternatif, `target` = `SetSelection` avant) ; `onImages({inserted, failed})` idem. Le moteur v2 compte l'image (3 octets plats), l'enregistre dans le DOCX et, depuis R7b-1, la **dessine** (`drawImage` dans les pages, bitmap demandé par `ImageBitmap` `0x0121`, cache borné à 128 Mio côté client) | adapté |
 | `exportDocx()` | `Save` DOCX -> `{bytes, noticeCount, pictureCount}` (nombre de `word/media/*` du paquet) | couvert |
 | `exportDocument()` | `Save` TXT -> `{revision, bytes, notices}` | couvert |
 | `newDocument()` | confirmation, `Open` blank | couvert |
@@ -57,7 +57,7 @@ Forme de l'état publié (`state`, `getState()`, argument de `onState`) : v1 `{k
 | `confirmReplace()` | idem | couvert |
 | `dispose()` | idem + client v2 + miroir ; une opération en cours est rejetée `CLIENT_CLOSED`, les tickets d'écriture ouverts sont libérés | couvert |
 | (nouveau) `engine` | `"v2"` (`"v1"` n'existe pas sur l'objet v1 : `app.mjs` lit sa propre constante) | v2 seulement |
-| (nouveau) `capabilities` | `{search:false, replace:false, statistics:false, textDragDrop:false, preview:false, properties:false, wordSelect:false}` : `app.mjs` grise et explique | v2 seulement |
+| (nouveau) `capabilities` | `{search:false, replace:false, statistics:false, textDragDrop:false, preview:false, properties:false}` (la clé `wordSelect` a disparu avec R7b-1 : la sélection par mot et paragraphe est offerte) : `app.mjs` grise et explique | v2 seulement |
 | (nouveau) `readText(start, end)` | `TextWindow` (tests, presse-papiers, remplace `state.text`) | v2 seulement |
 | (nouveau) `selectedText(snapshot)` | texte de la sélection du cliché (fenêtre de l'État, sinon `TextWindow`) pour le menu contextuel | v2 seulement |
 | (nouveau) `readOnlyInfo` / `onReadOnly` | `{readOnly, hasRevisions}` pour le bandeau | v2 seulement |
@@ -97,7 +97,7 @@ Chaque ligne cite la donnée utilisée et le comportement en v2, chemins d'erreu
 | `symbol-dialog.mjs` | `editor.canEdit`, `editor.getState()` (cliché), `editSelection(text, cliché)` | identique ; cliché périmé -> `EDITOR_STALE_SELECTION` ; lecture seule : bouton grisé |
 | `editor-context-menu.mjs` | cliché : `revision, anchor, focus, text, canUndo, canRedo, enabled, busy` ; copier/couper lisent `snapshot.text` | v2 : le cliché porte `docLen`, la sélection, et le menu reçoit `hasText` (ajouté) ; copier/couper appellent `selectedText(cliché)` (fenêtre de l'État ou `TextWindow` de 256 Kio au plus ; au-delà `EDITOR_SELECTION_TOO_LARGE`) ; couper = `ReplaceRange` vide ; tout sélectionner = `SetSelection(0, docLen)` |
 | `text-input.mjs` | `getSelection`, `getCaret`, `getClipboardSnapshot` (`text`, `revision` BigInt, sélection) | v2 : instantané construit sur la fenêtre de texte de l'État, sinon sur la dernière `TextWindow` préchargée pour la sélection ; absent -> `onError(EDITOR_CLIPBOARD_UNAVAILABLE)` (jamais une copie vide silencieuse) |
-| `mouse-selection.mjs` | `selectPoint(values)` -> `{anchor, focus}` entiers | v2 : `HitTest` `setCaret` ou `extend` (le moteur calcule l'affinité) ; unités mot et paragraphe (double et triple clic) **absentes** : traitées comme un clic (`capabilities.wordSelect=false`) |
+| `mouse-selection.mjs` | `selectPoint(values)` -> `{anchor, focus}` entiers | v2 : `HitTest` `setCaret` ou `extend` (le moteur calcule l'affinité) ; unités mot et paragraphe (double et triple clic, R7b-1) : sonde `HitTest` puis `SelectUnit` (`0x0122`, `extend` pendant le glisser et pour Maj + double clic ; clé `wordSelect` retirée de `capabilities`) |
 | `text-drag-drop.mjs` | `probePoint`, `onDrop`, `onFilesDrop`, `getSelectionSnapshot` (avec `text` entier) | **non branché en v2** : glisser-déposer de texte absent (le texte déposé est refusé par `EDITOR_UNSUPPORTED_V2`, la sélection ne se déplace pas) ; dépôt de fichiers image : géré directement par `rich-editor.mjs` (`HitTest` probe puis `InsertImage`) |
 | `french-spacing.mjs` | cliché `{text, anchor, focus}` après l'insertion | v2 : fenêtre de l'État (2 Kio autour du curseur), décalages ramenés à des positions plates |
 | `image-insert.mjs` | `insertImageFiles(files, {insertBytes, onError})` | identique (`insertBytes` = `InsertImage`) ; le magasin JS `imageCache` ne concerne que v1 |
@@ -118,15 +118,15 @@ Chaque ligne cite la donnée utilisée et le comportement en v2, chemins d'erreu
 2. Propriétés du document (lecture de l'aperçu DOCX).
 3. Aperçu DOCX en lecture seule distinct (remplacé par l'ouverture dans l'éditeur).
 4. Glisser-déposer de texte (interne et externe) ; le dépôt d'images fonctionne.
-5. Sélection du mot et du paragraphe à la souris (double et triple clic).
-6. Affichage des images insérées (le moteur v2 ne les dessine pas encore).
-7. Texte entier de l'état (`state.text`), géométrie de sélection (`selectionRects`).
+5. ~~Sélection du mot et du paragraphe à la souris~~ : disponible depuis R7b-1.
+6. ~~Affichage des images insérées~~ : disponible depuis R7b-1.
+7. Texte entier de l'état (`state.text`) ; la géométrie de sélection existe (`editor.selectionRects`, hors de l'objet d'état).
 
 ## 8. Écarts connus de R7a (à lever en R7b ou par le protocole)
 
-1. **Sélection invisible à l'écran** (voir §3) : exposer `selection_rects` (commande ou champ d'`State`).
-2. Images insérées : comptées, enregistrées, lues par le miroir, **non dessinées** (pas de `drawImage` dans les pages v2) ; la suite d'images v2 saute géométrie et pixels et le dit.
-3. Double et triple clic : un clic simple (le protocole n'a pas de test de position par mot ou paragraphe).
+1. ~~**Sélection invisible à l'écran**~~ **Fermé (R7b-1, 2026-10-18)** : `SelectionRects` `0x0120` -> `SelectionRects` `0x8110` ; vérifié au pixel par `run-rich-editor-ui-browser`.
+2. ~~Images insérées non dessinées~~ **Fermé (R7b-1)** : boîtes en ligne dans la mise en page (`text-layout::layout_paragraph_boxes`), `DrawImage` dans les pages, `ImageBitmap` `0x0121` -> `0x8111`, cache client borné ; `run-image-insert-browser --engine v2` ne saute plus rien (géométrie, pixels, EXIF, réduction, annuler et rétablir).
+3. ~~Double et triple clic : un clic simple~~ **Fermé (R7b-1)** : `SelectUnit` `0x0122` (mot : `FlatIndex::word_at` ; paragraphe : avec sa coupure ; `extend` par unités).
 4. Glisser-déposer de texte : refusé avec `EDITOR_UNSUPPORTED_V2` ; le dépôt de fichiers image fonctionne.
 5. Recherche, remplacement, statistiques, propriétés : grisés (aucun équivalent protocole).
 6. Encodage : un fichier TXT n'est jamais refusé pour UTF-8 invalide (le moteur détecte l'encodage ; v1 répondait `EDITOR_INVALID_UTF8`).

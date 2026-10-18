@@ -34,6 +34,9 @@ export const RICH_LIMITS = Object.freeze({
   maxNoticeBytes: 255,
   maxStampChars: 255,
   maxSaveBytes: 32 * 1024 * 1024 - HEADER_BYTES - (8 + 4 + 2) - 64 * (4 + 255),
+  // R7b-1: selection rectangles and picture bitmaps.
+  maxSelectionRects: 4096,
+  maxBitmapSide: 1600,
 });
 export const NO_CARET = 0xffffffff;
 
@@ -45,11 +48,14 @@ export const RichOpcode = Object.freeze({
   Save: 0x0110, InsertImage: 0x0111, MakeEditableCopy: 0x0112,
   // R2b
   Resync: 0x0118,
+  // R7b-1
+  SelectionRects: 0x0120, ImageBitmap: 0x0121, SelectUnit: 0x0122,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
   AccessibleWindow: 0x8105,
   SaveData: 0x8106,
+  SelectionRects: 0x8110, ImageBitmap: 0x8111,
 });
 
 export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
@@ -60,6 +66,8 @@ export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
   RICH_STALE_REVISION: 16, RICH_OPEN_FAILED: 17, RICH_INTERNAL: 18, RICH_LIMIT: 19, RICH_NOT_READY: 20,
   // US-218 (R3b)
   RICH_READ_ONLY: 21, RICH_SAVE_FAILED: 22, RICH_IMAGE_INVALID: 23, RICH_REVISIONS_UNSUPPORTED: 24,
+  // R7b-1
+  RICH_UNKNOWN_OBJECT: 30,
 }));
 const ERROR_NAMES = new Map(Object.entries(RichErrorCode).map(([name, code]) => [code, name]));
 
@@ -71,6 +79,8 @@ export const RICH_DIRECTIONS = Object.freeze([
 ]);
 const UNITS = ["grapheme", "word"];
 const HIT_MODES = ["probe", "setCaret", "extend"];
+/** Units of `selectUnit`, by wire value. */
+export const SELECTION_UNITS = Object.freeze(["word", "paragraph"]);
 /** Formats of `save`, by wire value (1..4). */
 export const SAVE_FORMATS = Object.freeze([null, "txt", "docx", "docm", "dotx"]);
 
@@ -301,6 +311,25 @@ function parseCommand(opcode, body) {
       break;
     }
     case RichOpcode.MakeEditableCopy: command = { type: "makeEditableCopy", ...readStamp(r) }; break;
+    case RichOpcode.SelectionRects: {
+      const first = r.u32();
+      const count = r.u32();
+      if (count === 0) fail("RICH_INVALID_BODY");
+      if (count > RICH_LIMITS.maxPagesPerResponse) fail("RICH_TOO_MANY_PAGES");
+      if (first >= RICH_LIMITS.maxPages) fail("RICH_PAGE_RANGE");
+      command = { type: "selectionRects", first, count };
+      break;
+    }
+    case RichOpcode.ImageBitmap: command = { type: "imageBitmap", objectId: r.u64() }; break;
+    case RichOpcode.SelectUnit: {
+      const position = r.u64();
+      const unit = SELECTION_UNITS[r.u8()];
+      if (unit === undefined) fail("RICH_INVALID_BODY");
+      const extend = r.flag();
+      r.zero(2);
+      command = { type: "selectUnit", position, unit, extend };
+      break;
+    }
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   r.finish();
@@ -368,6 +397,9 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
       if (!(command.bytes instanceof Uint8Array)) fail("RICH_INVALID_BODY");
       writeText16(w, command.alt ?? ""); w.raw(command.bytes); opcode = RichOpcode.InsertImage; break;
     case "makeEditableCopy": writeStamp(w, command); opcode = RichOpcode.MakeEditableCopy; break;
+    case "selectionRects": w.u32(u32(command.first)); w.u32(u32(command.count)); opcode = RichOpcode.SelectionRects; break;
+    case "imageBitmap": w.u64(u64(command.objectId)); opcode = RichOpcode.ImageBitmap; break;
+    case "selectUnit": w.u64(u64(command.position)); w.u8(enumIndex(SELECTION_UNITS, command.unit), command.extend ? 1 : 0, 0, 0); opcode = RichOpcode.SelectUnit; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
@@ -555,6 +587,49 @@ function writeSaveData(w, response) {
   }
 }
 
+/** `SelectionRects` (R7b-1): {revision (BigInt), rects: [{page, x, y, width, height}]} in points of the page. */
+function readSelectionRects(r) {
+  const revision = r.u64();
+  const count = r.u32();
+  if (count > RICH_LIMITS.maxSelectionRects) fail("RICH_INVALID_BODY");
+  const rects = [];
+  for (let i = 0; i < count; i += 1) {
+    const page = r.u32();
+    const x = r.f64(); const y = r.f64(); const width = r.f64(); const height = r.f64();
+    if (page >= RICH_LIMITS.maxPages || width < 0 || height < 0) fail("RICH_INVALID_BODY");
+    rects.push({ page, x, y, width, height });
+  }
+  return { type: "selectionRects", revision, rects };
+}
+
+function writeSelectionRects(w, response) {
+  if (!Array.isArray(response.rects) || response.rects.length > RICH_LIMITS.maxSelectionRects) fail("RICH_INVALID_BODY");
+  w.u64(u64(response.revision)); w.u32(response.rects.length);
+  for (const rect of response.rects) {
+    w.u32(u32(rect.page)); w.f64(rect.x); w.f64(rect.y); w.f64(rect.width); w.f64(rect.height);
+  }
+}
+
+function checkBitmap(width, height, length) {
+  const side = (v) => Number.isInteger(v) && v >= 1 && v <= RICH_LIMITS.maxBitmapSide;
+  if (!side(width) || !side(height) || length !== width * height * 4) fail("RICH_INVALID_BODY");
+}
+
+/** `ImageBitmap` (R7b-1): {objectId (BigInt), width, height, rgba (Uint8Array, a view into the frame)}. */
+function readImageBitmap(r) {
+  const objectId = r.u64();
+  const width = r.u32(); const height = r.u32();
+  const len = r.u32();
+  checkBitmap(width, height, len);
+  return { type: "imageBitmap", objectId, width, height, rgba: r.take(len) };
+}
+
+function writeImageBitmap(w, response) {
+  if (!(response.rgba instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+  checkBitmap(response.width, response.height, response.rgba.length);
+  w.u64(u64(response.objectId)); w.u32(response.width); w.u32(response.height); w.u32(response.rgba.length); w.raw(response.rgba);
+}
+
 /** Items: {paraStart, paraEnd (BigInt), role, level, label, text, inlines: [{offset (BigInt), kind, value}]}, one inline per U+FFFC. */
 function readAccessible(r) {
   const count = r.u32();
@@ -657,6 +732,8 @@ export function decodeRichReply(bytes) {
         break;
       }
       case RichReplyOpcode.SaveData: response = readSaveData(r); break;
+      case RichReplyOpcode.SelectionRects: response = readSelectionRects(r); break;
+      case RichReplyOpcode.ImageBitmap: response = readImageBitmap(r); break;
       default: return fail("RICH_UNKNOWN_OPCODE");
     }
     r.finish();
@@ -680,6 +757,8 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     case "closed": opcode = RichReplyOpcode.Closed; break;
     case "accessibleWindow": w.u64(u64(response.revision)); writeAccessible(w, response.items); opcode = RichReplyOpcode.AccessibleWindow; break;
     case "saveData": writeSaveData(w, response); opcode = RichReplyOpcode.SaveData; break;
+    case "selectionRects": writeSelectionRects(w, response); opcode = RichReplyOpcode.SelectionRects; break;
+    case "imageBitmap": writeImageBitmap(w, response); opcode = RichReplyOpcode.ImageBitmap; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());

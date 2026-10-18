@@ -108,6 +108,10 @@ fn describe_request(r: &Request) -> String {
         Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy { .. } => {
             "see io_tests".into()
         }
+        // The vectors of these are in `sel_tests` (tests/rich-editor-selection-vectors.txt).
+        Command::SelectionRects { .. }
+        | Command::ImageBitmap { .. }
+        | Command::SelectUnit { .. } => "see sel_tests".into(),
     };
     format!("{head} {tail}")
 }
@@ -224,6 +228,7 @@ fn describe_reply(r: &Reply) -> String {
             )
         }
         Response::SaveData { .. } => "see io_tests".into(),
+        Response::SelectionRects { .. } | Response::ImageBitmap { .. } => "see sel_tests".into(),
     };
     format!("{head} {tail}")
 }

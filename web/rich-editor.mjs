@@ -14,6 +14,7 @@ import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
 import { RICH_LIMITS, RichProtocolError } from "./rich-editor-protocol.mjs";
 import { createRichEditorClient, EditorPageCache, RichClientError } from "./rich-editor-client.mjs";
+import { createRichImageCache } from "./rich-image-cache.mjs";
 import { createDocumentMirror } from "./document-mirror.mjs";
 import { attachImagePaste, filesFromTransfer, imageAltText, insertImageFiles, transferHasFiles } from "./image-insert.mjs";
 import { clampZoom, fitZoom as calculateFitZoom, isZoomModalOpen, wheelZoom, zoomScrollPosition } from "./zoom.mjs";
@@ -29,7 +30,7 @@ export class EditorError extends Error {
 
 /** What the v2 editor does not offer (docs/r7-ui-parity.md §7); the interface greys the matching commands. */
 export const RICH_CAPABILITIES = Object.freeze({
-  search: false, replace: false, statistics: false, textDragDrop: false, preview: false, properties: false, wordSelect: false,
+  search: false, replace: false, statistics: false, textDragDrop: false, preview: false, properties: false,
 });
 
 const A4 = Object.freeze({ width: 595.276, height: 841.89 });
@@ -141,6 +142,16 @@ export function mirrorWindow({ revision, items }) {
     inlines: item.inlines.map(inline => ({ ...inline, kind: MIRROR_INLINE_KINDS.indexOf(inline.kind) })) })) };
 }
 
+/** A pale 1 x 1 box drawn, stretched, in the place of a picture whose pixels are on their way. */
+function placeholderPicture() {
+  const box = globalThis.document.createElement("canvas");
+  box.width = 1; box.height = 1;
+  const context = box.getContext("2d");
+  context.fillStyle = "#e6e6e6";
+  context.fillRect(0, 0, 1, 1);
+  return box;
+}
+
 function placeholderPage(width, height) {
   const bounds = { min: { x: 0, y: 0 }, max: { x: width, y: height }, width, height };
   return { page: { bounds, width, height }, commands: [] };
@@ -171,7 +182,13 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   // The page cache owns the glyph Path2D objects (one per atlas entry): the renderer keeps none of its own, so an
   // atlas epoch change (new document, resync) can never leave an outline of the previous numbering on screen.
   let resolveGlyph = () => null;
-  const renderer = new CanvasRenderer(canvas, { pageBackground: "#ffffff", maxGlyphCache: 0, resolveGlyph: (font, glyph) => resolveGlyph(font, glyph) });
+  // R7b-1: the bitmaps of the pictures the pages draw (engine `ImageBitmap`). A picture whose bitmap has not
+  // arrived yet is a pale box of its size, replaced when it does.
+  const images = createRichImageCache();
+  let pendingPicture = null;
+  const resolvePicture = id => images.get(id) ?? (pendingPicture ??= placeholderPicture());
+  const renderer = new CanvasRenderer(canvas, { pageBackground: "#ffffff", maxGlyphCache: 0, resolveGlyph: (font, glyph) => resolveGlyph(font, glyph),
+    resolveImage: resolvePicture });
   const compositionPreview = document.createElement("span");
   compositionPreview.className = "composition-preview";
   compositionPreview.setAttribute("aria-hidden", "true");
@@ -205,6 +222,8 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   let mirrorTimer = 0;
   let visibleFlat = null;
   let prefetchKey = "";
+  let highlight = []; // selection rectangles of the visible pages, points of the page (R7b-1)
+  let lastEpoch = null;
   const decoded = new WeakMap();
   const abort = new AbortController();
 
@@ -213,6 +232,11 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   const cache = new EditorPageCache({ onChange: change => { try { onCacheChange(change); } catch (error) { reportError(error); } } });
   resolveGlyph = cache.glyphResolver;
   const rich = createRichEditorClient({ transport: createTransport(client), docId, cache, layoutBudget, signal: abort.signal,
+    onSelectionRects: ({ rects }) => { highlight = rects; repaintOverlay(); },
+    hasImage: id => images.has(id),
+    onImageBitmap: bitmap => {
+      images.add(bitmap.objectId, bitmap).then(held => { if (held && !disposed) renderer.render(); }, error => reportError(toEditorError(error)));
+    },
     onError: error => {
       if (disposed) return;
       // The atlas outgrew the client bound right after a resync: the pages cannot be drawn faithfully, the client stopped.
@@ -250,6 +274,18 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     return page;
   }
 
+  /** Identities of the pictures a decoded page draws (memoised per page). */
+  const drawn = new WeakMap();
+  function pictureIds(list) {
+    let ids = drawn.get(list);
+    if (!ids) {
+      ids = new Set();
+      for (const command of list.commands ?? []) if (command.type === "drawImage") ids.add(command.imageId);
+      drawn.set(list, ids);
+    }
+    return ids;
+  }
+
   function syncPages() {
     const count = cache.pageCount;
     let width = A4.width; let height = A4.height;
@@ -264,6 +300,10 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     const blank = placeholderPage(width, height);
     for (let i = 0; i < count; i += 1) lists[i] ??= blank;
     pageLists = lists;
+    const wanted = new Set();
+    for (const list of lists) for (const id of pictureIds(list)) wanted.add(id);
+    images.retain(wanted);
+    try { rich.setWantedImages(wanted); } catch (error) { reportError(toEditorError(error)); }
     renderer.setPages(pageLists);
     updatePageLayout();
   }
@@ -305,7 +345,9 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     if (!state || disposed) return;
     const caret = caretViewport();
     const compositionRects = composition ? [{ ...composition.caret, width: composition.width, height: 1 }] : [];
-    renderer.setEditorOverlay({ caret, compositionRects, caretVisible });
+    const selectionRects = [];
+    for (const rect of highlight) if (pageLists[rect.page]) selectionRects.push(viewportRect(rect, rect.page));
+    renderer.setEditorOverlay({ selectionRects, caret, compositionRects, caretVisible });
     input.updateCaret(caretScreen());
   }
 
@@ -398,6 +440,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   function onCacheChange() {
     if (disposed) return;
     if (cache.revision === null) return; // a reset, nothing to show yet
+    if (cache.atlasEpoch !== lastEpoch) { lastEpoch = cache.atlasEpoch; images.clear(); }
     const candidate = buildState();
     const previous = state;
     const key = stateKey(candidate);
@@ -726,7 +769,13 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       if (busy || compositionStart || disposed) throw new EditorError("EDITOR_BUSY");
       extensionMode = false;
       try {
-        await rich.command({ type: "hitTest", page: values.page, mode: values.extend ? "extend" : "setCaret", x: values.x, y: values.y });
+        if (values.unit === "word" || values.unit === "paragraph") {
+          // Double and triple click: the engine knows the words and paragraphs; the position comes from a probe.
+          const { response } = await rich.command({ type: "hitTest", page: values.page, mode: "probe", x: values.x, y: values.y });
+          await rich.command({ type: "selectUnit", position: response.position, unit: values.unit, extend: values.extend });
+        } else {
+          await rich.command({ type: "hitTest", page: values.page, mode: values.extend ? "extend" : "setCaret", x: values.x, y: values.y });
+        }
       } catch (error) {
         // A page that is not laid out yet cannot be hit: keep the selection, never an error for a pointer move.
         if (error?.code !== "RICH_NOT_READY" && error?.code !== "RICH_PAGE_RANGE") throw toEditorError(error);
@@ -834,6 +883,8 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       : format === "txt" ? { kind: "txt", profile: "txt", data } : { kind: "docx", profile: "document", data };
     replacedPending = true;
     publishedKey = null;
+    images.clear();
+    highlight = [];
     try {
       await rich.open(spec);
     } catch (error) {
@@ -887,6 +938,16 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     get input() { return input; },
     get mirror() { return mirror; },
     get readOnlyInfo() { return { readOnly: state?.readOnly ?? false, hasRevisions: state?.hasRevisions ?? false }; },
+    /** Pictures the cached pages draw: `{page, id (BigInt), bounds}` in points of the page (R7b-1; for the interface tests). */
+    pictureBoxes() {
+      const out = [];
+      pageLists.forEach((list, page) => { for (const command of list.commands ?? []) if (command.type === "drawImage") out.push({ page, id: command.imageId, bounds: command.bounds }); });
+      return out;
+    },
+    /** Selection rectangles of the visible pages, points of the page (R7b-1). */
+    get selectionRects() { return highlight.map(rect => ({ ...rect })); },
+    /** Pictures whose bitmap is held (R7b-1). */
+    get pictureBitmaps() { return images.size; },
     focus() { return input.focus(); },
     setFrenchSpacing(enabled) { spacingEnabled = Boolean(enabled); },
     setSuspended(value) { if (disposed) throw new EditorError("EDITOR_CLOSED"); setBusy(Boolean(value)); },

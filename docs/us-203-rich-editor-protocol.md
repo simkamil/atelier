@@ -66,6 +66,8 @@ Body layouts; reserved bytes must be zero, flags are `0` or `1`, floats must be 
 | `0x010F` | AccessibleWindow | `start u64`, `end u64` (valid positions, `end - start` at most 256 KiB) | AccessibleWindow |
 | `0x0118` | Resync | empty | State (new atlas epoch, every page invalidated, see "Glyph atlas") |
 
+**R7b-1 (surbrillance de la sélection, images, double et triple clic)** : commandes `0x0120` SelectionRects, `0x0121` ImageBitmap, `0x0122` SelectUnit, réponses `0x8110` et `0x8111`, erreur 30 : [us-203-r7b1-selection-images.md](us-203-r7b1-selection-images.md).
+
 **Background layout.** The tail of a long document paginates incrementally. Every edit, move and selection command also runs `DEFAULT_LAYOUT_BUDGET` (16) paragraphs of pending layout, then answers. `Layout { budget }` runs up to `budget` paragraphs more and answers a State, so the client repeats it until the State carries the layout-complete flag; `page_count` grows meanwhile. `Pages` for a page that is not computed yet answers `RICH_NOT_READY` and the client retries after another `Layout`.
 
 `Open` consistency: a blank document carries no data; TXT requires profile TXT; DOCX requires profile document. A source the engine rejects is `OPEN_FAILED`. `data` is at most `MAX_OPEN_BYTES` (frame limit minus header and fields). Direction numbers: 0 left, 1 right, 2 up, 3 down, 4 home, 5 end, 6 document start, 7 document end, 8 page up, 9 page down, 10 word left, 11 word right, 12 paragraph up, 13 paragraph down.

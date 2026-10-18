@@ -62,7 +62,7 @@ const timer = setTimeout(() => rejectReport(new Error(`Image browser check timed
 try {
   const report = await reportPromise;
   assert.equal(report.status, "passed", JSON.stringify(report));
-  assert(report.checks.length >= (engine === "v2" ? 20 : 25), "all image scenarios must complete");
+  assert(report.checks.length >= 25, "all image scenarios must complete");
   console.log(JSON.stringify({ ...report, executable }));
 } finally {
   clearTimeout(timer);
