@@ -244,6 +244,17 @@ pub struct ImportedDocx {
     /// What the import does not interpret, with its position (US-306).
     pub preserved: Preserved,
     paragraph_order: Vec<NodeId>,
+    /// The model as imported, kept for the writer (US-307): it tells what the
+    /// caller changed without reading the package bytes again.
+    baseline: Baseline,
+}
+
+/// Snapshot of the interpreted model at import time.
+pub(crate) struct Baseline {
+    pub(crate) document: RichDocument,
+    pub(crate) styles: StyleEngine,
+    pub(crate) settings: DocxSettings,
+    pub(crate) theme: Theme,
 }
 impl ImportedDocx {
     /// Resolve paragraph and run properties using the US-201 style engine.
@@ -723,6 +734,12 @@ pub(crate) fn import_package(
     // Parse validation above makes malformed font relationships fail before
     // publishing a result; actual registration is caller-owned and borrow-safe.
     let _ = &mut style_engine;
+    let baseline = Baseline {
+        document: document.clone(),
+        styles: style_engine.clone(),
+        settings: settings.clone(),
+        theme: theme.clone(),
+    };
     Ok(ImportedDocx {
         package,
         document,
@@ -739,6 +756,7 @@ pub(crate) fn import_package(
         tables: table_info,
         preserved: pres.out,
         paragraph_order: ids,
+        baseline,
     })
 }
 

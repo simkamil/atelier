@@ -9,13 +9,13 @@
 //! byte otherwise; every other part of the package is copied as is.
 //!
 //! The writer never modifies the model: it reads the document, the source
-//! skeleton (US-306) and a baseline model obtained by importing the package
-//! again, which tells it what the caller changed.
+//! skeleton (US-306) and the baseline model snapshot
+//! kept by the import, which tells it what the caller changed.
 
 use super::preserve::PreservedPart;
 use super::{
-    CONTENT_DOC, DocxError, DocxLimits, ImportedDocx, REL_DOC, REL_DOC_STRICT, W_NS, W_STRICT_NS,
-    import_package,
+    Baseline, CONTENT_DOC, DocxError, DocxLimits, ImportedDocx, REL_DOC, REL_DOC_STRICT, W_NS,
+    W_STRICT_NS,
 };
 use crate::{OpcError, Package, PartUri, SaveContext, SaveReport, TargetMode};
 use atelier_text_model::rich::{DefaultRichDocument, NodeId, RichDocument, StyleEngine};
@@ -136,7 +136,7 @@ pub struct DocxWriteOptions {
     pub regenerate_all: bool,
     /// Styles added to the style engine since the import.
     pub added_styles: Vec<StyleDecl>,
-    /// Limits of the import that establishes the baseline.
+    /// Limits of the import (unused by the writer since the baseline is kept by the import).
     pub limits: DocxLimits,
     /// Largest XML part the writer produces, in bytes.
     pub max_part_bytes: usize,
@@ -229,6 +229,11 @@ pub enum WriteNotice {
     ThemeNotWritten,
     /// Headers and footers of the model are not written (US-304).
     HeaderFooterNotWritten,
+    /// A paragraph refers to a list (`w:numId` = identifier + 1) that the numbering
+    /// part of the package does not define; Word shows it without numbering.
+    ListDefinitionMissing {
+        list_id: u32,
+    },
     /// Further notices were dropped.
     MoreNotices {
         count: usize,
@@ -244,6 +249,9 @@ pub struct WrittenDocx {
     pub regenerated_parts: Vec<String>,
     /// Interpreted parts copied byte for byte.
     pub reused_parts: Vec<String>,
+    /// Parts the model does not interpret, re-emitted from the opaque store kept
+    /// with the model (`ImportedDocx::package`, US-306), in package order.
+    pub opaque_parts: Vec<String>,
     /// Result of the properties update when `DocxWriteOptions::save` was given.
     pub save: Option<SaveReport>,
 }
@@ -528,7 +536,16 @@ pub fn write_docx(
     options: &DocxWriteOptions,
 ) -> Result<WrittenDocx, WriteError> {
     let mut package = imported.package.clone();
-    let base = import_package(imported.package.clone(), options.limits.clone())?;
+    if options.regenerate_all {
+        if imported.preserved.document.is_none() {
+            return Err(WriteError::Invalid {
+                part: "word/document.xml".into(),
+                detail: "the model has no source skeleton to regenerate from",
+            });
+        }
+        package.canonicalize();
+    }
+    let base = &imported.baseline;
     let main_uri = package
         .relationships(None)
         .iter()
@@ -568,7 +585,7 @@ pub fn write_docx(
             notices: Vec::new(),
             dropped_notices: 0,
             links: Vec::new(),
-            link_prefix: "rIdAtelierLink".into(),
+            link_prefix: free_link_prefix(&package, &main_uri),
             bookmark_ids: BTreeMap::new(),
             fonts: BTreeSet::new(),
             lists: BTreeSet::new(),
@@ -622,7 +639,9 @@ pub fn write_docx(
             )?;
         }
         if !lists.is_empty() {
-            add_numbering_if_missing(&mut package, &main_uri, &lists)?;
+            for list_id in add_numbering_if_missing(&mut package, &main_uri, &lists)? {
+                notices.push(WriteNotice::ListDefinitionMissing { list_id });
+            }
         }
         regenerated.push(part.uri.clone());
     } else if let Some(part) = &imported.preserved.document {
@@ -634,7 +653,7 @@ pub fn write_docx(
         let mut added = options.added_styles.clone();
         added.dedup();
         let changed =
-            options.regenerate_all || !added.is_empty() || styles_changed(imported, &base, part);
+            options.regenerate_all || !added.is_empty() || styles_changed(imported, base, part);
         if changed {
             let (p, extra) = prefixes(&part.declarations, false);
             let attrs = root_attrs(part, &extra);
@@ -677,17 +696,24 @@ pub fn write_docx(
     }
 
     let save = finish_package(&mut package, &main_uri, options, &mut notices)?;
+    let opaque: Vec<String> = package
+        .parts()
+        .keys()
+        .map(ToString::to_string)
+        .filter(|u| !regenerated.contains(u) && !reused.contains(u))
+        .collect();
     let bytes = package.write()?;
     Ok(WrittenDocx {
         bytes,
         notices: finish_notices(notices, dropped),
         regenerated_parts: regenerated,
         reused_parts: reused,
+        opaque_parts: opaque,
         save,
     })
 }
 
-fn styles_changed(imported: &ImportedDocx, base: &ImportedDocx, part: &PreservedPart) -> bool {
+fn styles_changed(imported: &ImportedDocx, base: &Baseline, part: &PreservedPart) -> bool {
     let (cur, old) = (imported.styles.catalog(), base.styles.catalog());
     if cur.defaults() != old.defaults() {
         return true;
@@ -707,13 +733,24 @@ fn add_numbering_if_missing(
     package: &mut Package,
     main: &PartUri,
     lists: &BTreeSet<u32>,
-) -> Result<(), WriteError> {
-    if package
+) -> Result<Vec<u32>, WriteError> {
+    let existing = package
         .relationships(Some(main))
         .iter()
-        .any(|r| r.rel_type == REL_NUMBERING)
-    {
-        return Ok(());
+        .find(|r| r.rel_type == REL_NUMBERING)
+        .and_then(|r| r.resolved_target.clone());
+    if let Some(uri) = existing {
+        // The model holds list references, not definitions: a reference to a
+        // list the copied numbering part does not define is reported.
+        let defined = package
+            .part(&uri)
+            .map(|p| defined_num_ids(&p.bytes))
+            .unwrap_or_default();
+        return Ok(lists
+            .iter()
+            .copied()
+            .filter(|id| !defined.contains(&(id + 1)))
+            .collect());
     }
     let uri = part_uri("word/numbering.xml")?;
     package.insert_part(uri, CT_NUMBERING, parts::numbering_new(lists))?;
@@ -724,7 +761,34 @@ fn add_numbering_if_missing(
         "numbering.xml",
         TargetMode::Internal,
     )?;
-    Ok(())
+    Ok(Vec::new())
+}
+
+/// `w:numId` of every `w:num` of a numbering part (any prefix).
+fn defined_num_ids(bytes: &[u8]) -> BTreeSet<u32> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = BTreeSet::new();
+    for tag in text.split('<').skip(1) {
+        let tag = tag.split('>').next().unwrap_or("");
+        let name = tag
+            .split(|c: char| c.is_whitespace() || c == '/')
+            .next()
+            .unwrap_or("");
+        if name.rsplit(':').next() != Some("num") {
+            continue;
+        }
+        for attr in tag.split_whitespace().skip(1) {
+            let Some((k, v)) = attr.split_once('=') else {
+                continue;
+            };
+            if k.rsplit(':').next() == Some("numId") {
+                if let Ok(n) = v.trim_matches(|c| matches!(c, '"' | '\'' | '/')).parse() {
+                    out.insert(n);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Writes a rich document created from scratch.
@@ -870,6 +934,22 @@ pub fn write_new_docx(
             "word/fontTable.xml".into(),
         ],
         reused_parts: Vec::new(),
+        opaque_parts: Vec::new(),
         save,
     })
+}
+
+/// Prefix of the relationship identifiers given to new hyperlinks: the first of
+/// `rIdAtelierLink`, `rIdAtelierLinkx`... that no relationship of the main part
+/// already uses, so a document saved before can be saved again with new links.
+fn free_link_prefix(package: &Package, main: &PartUri) -> String {
+    let mut prefix = String::from("rIdAtelierLink");
+    while package
+        .relationships(Some(main))
+        .iter()
+        .any(|r| r.id.starts_with(&prefix))
+    {
+        prefix.push('x');
+    }
+    prefix
 }
