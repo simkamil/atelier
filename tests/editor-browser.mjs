@@ -8,6 +8,7 @@ import { checkNavigation } from "./navigation-browser.mjs";
 import { run as checkReplacement } from "./replacement-browser.mjs";
 import { checkDocumentStatus } from "./document-status-integration-browser.mjs";
 import { checkEditorUtilities } from "./editor-utilities-integration-browser.mjs";
+import { checkProperties } from "./properties-integration-browser.mjs";
 
 const checks = [];
 function assert(value, name) {
@@ -598,6 +599,7 @@ try {
     "accessible preview mirror contains actual imported text");
   assert(document.querySelector("#rich-canvas").width > 0 && document.querySelector("#rich-canvas").height > 0,
     "rich preview Canvas has a real visible viewport");
+  await checkProperties({ app, assert, waitFor, key });
   const pixels = document.querySelector("#rich-canvas").getContext("2d").getImageData(0,0,document.querySelector("#rich-canvas").width,document.querySelector("#rich-canvas").height).data;
   let bluePixels = 0;
   for (let i=0; i<pixels.length; i+=4) if (pixels[i+3] > 0 && pixels[i+2] > pixels[i] + 30 && pixels[i+2] > pixels[i+1]) bluePixels += 1;

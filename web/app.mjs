@@ -12,6 +12,8 @@ import { createSymbolDialog } from "/symbol-dialog.mjs";
 import { SYMBOL_CATALOGUE } from "/symbol-catalogue.mjs";
 import { createEditorContextMenu } from "/editor-context-menu.mjs";
 import { createAboutDialog } from "/about-dialog.mjs";
+import { createPropertiesDialog, PROPERTIES_LABEL_KEYS } from "/properties-dialog.mjs";
+import { applyProperties, readProperties } from "/properties-protocol.mjs";
 import { ABOUT_LICENSES } from "/about-licenses.mjs";
 import { BUILD_INFO } from "/build-info.mjs";
 import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
@@ -153,6 +155,8 @@ async function start() {
   let documentStatus;
   let symbols;
   let about;
+  let properties;
+  let previewDocxBytes = null;
   let contextMenu;
   let symbolSnapshot;
   const symbolKeys = ["title", "close", "symbols", "specialCharacters", "search", "block", "allBlocks", "font", "recent", "insert", "noResults", "insertionFailed", "previous", "next", "page"];
@@ -160,10 +164,14 @@ async function start() {
   const aboutKeys = ["dialogTitle", "close", "tabList", "overviewTab", "agplTab", "fontLicensePrefix", "unicodeTab", "version", "buildDate", "sourceUrl", "agplHeading", "unicodeHeading"];
   const contextKeys = ["menu", "undo", "redo", "cut", "copy", "paste", "selectAll"];
   const symbolsAvailable = [...symbolKeys.map(key => `symbols-${key}`), ...specialKeys.map(key => `symbols-${key}`), "symbolsTitle"].every(key => messages.has(key));
+  const propertiesAvailable = [...PROPERTIES_LABEL_KEYS.map(key => `properties-${key}`), "propertiesTitle", "status-properties-loadError"].every(key => messages.has(key));
   const aboutAvailable = [...aboutKeys.map(key => `about-${key}`), "aboutTitle", "about-buildUnavailable"].every(key => messages.has(key));
   const contextAvailable = contextKeys.every(key => messages.has(`context-${key}`));
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
-    symbolsAvailable, aboutAvailable, onSymbols: () => {
+    symbolsAvailable, aboutAvailable, propertiesAvailable, onProperties: () => {
+      if (!properties || !previewReady || !previewDocxBytes || document.querySelector("dialog:modal")) return;
+      properties.open({ returnFocusTo: document.activeElement }).catch(() => showEditorMessage(messages.get("status-properties-loadError"), true));
+    }, onSymbols: () => {
       if (!symbols || !editor?.canEdit || previewActive || document.querySelector("dialog:modal")) return;
       symbolSnapshot = editor.getState(); symbols.open({ returnFocusTo: editor.element });
     },
@@ -192,7 +200,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; previewGeneration += 1; previewAbort?.abort(); listeners.abort();
-    symbols?.dispose(); about?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); preview?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -230,6 +238,7 @@ async function start() {
     const disabled = !initialized || (previewActive ? !previewReady : busy);
     zoomControls.setState({ zoom: view?.getZoom() ?? 1, mode: view?.getZoomMode() ?? "custom", disabled });
     shell.setZoomEnabled(!disabled);
+    shell.setPropertiesEnabled(propertiesAvailable && previewActive && !disabled && previewDocxBytes !== null);
     updateStatus();
   };
   updateZoom();
@@ -294,11 +303,12 @@ async function start() {
       if (!previewActive || disposed) return;
       previewGeneration += 1; previewAbort?.abort(); previewAbort = null;
       previewActive = false;
-      previewReady = false;
+      previewReady = false; previewDocxBytes = null; properties?.close();
       nodes.richWorkspace.hidden = true; nodes.textWorkspace.hidden = false; nodes.closePreview.hidden = true;
       editor.setSuspended(false); preview.close(); shell.ribbon.selectTab("file"); shell.ribbon.setCollapsed(false); nodes.openDocx.focus();
       setPreviewIdentity(false);
       showEditorMessage(messages.get("status-ready"));
+      updateZoom();
     }
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
       spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
@@ -322,6 +332,7 @@ async function start() {
           showEditorMessage(messages.get(result.kind === "cancelled" ? "status-cancelled" : result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-preview-error"), result.kind !== "cancelled");
           return result;
         }
+        previewDocxBytes = result.bytes.slice();
         const document = await editor.previewDocx(result.bytes, { signal });
         if (!current()) return { kind: "cancelled" };
         preview.setDocument(document);
@@ -353,6 +364,18 @@ async function start() {
       about = createAboutDialog({ labels: Object.fromEntries(aboutKeys.map(key => [key, messages.get(`about-${key}`)])),
         metadata: { ...BUILD_INFO, buildDate: buildDateText(BUILD_INFO.buildDate, i18n, messages), buildDateIso: BUILD_INFO.buildDate }, licenseTexts: ABOUT_LICENSES });
       document.body.append(about.element);
+    }
+    if (propertiesAvailable) {
+      properties = createPropertiesDialog({ i18n,
+        load: () => { if (!previewDocxBytes) throw new EditorError("EDITOR_BUSY"); return readProperties(client, previewDocxBytes); },
+        apply: async changes => {
+          if (!previewDocxBytes) throw new EditorError("EDITOR_BUSY");
+          const result = await applyProperties(client, previewDocxBytes, changes);
+          if (result.kind === "tooLong") return result;
+          previewDocxBytes = result.bytes;
+          return { kind: "ok" };
+        } });
+      document.body.append(properties.element);
     }
     if (contextAvailable) {
       contextMenu = createEditorContextMenu({ target: nodes.canvas, focusTarget: editor.element,
@@ -439,7 +462,7 @@ async function start() {
       zoomControls,
       navigation,
       documentStatus,
-      symbols, about, contextMenu,
+      symbols, about, properties, contextMenu,
       openDocx, closePreview, dispose,
       get previewActive() { return previewActive; },
     });

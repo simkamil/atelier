@@ -137,7 +137,7 @@ export function decodeMessage(bytes, direction) {
 }
 
 /** Cooperative job kinds of the staged Editor opcodes (see crates/core-wasm/src/staged.rs). */
-export const StagedKind = Object.freeze({ OpenDocx: 1, ExportDocx: 2 });
+export const StagedKind = Object.freeze({ OpenDocx: 1, ExportDocx: 2, ExportDocxSave: 3 });
 export const STAGED_PROGRESS_TOTAL = 1000;
 const STAGED_OPCODE = Object.freeze({ Begin: 23, Step: 24, Cancel: 25 });
 
@@ -161,12 +161,16 @@ export function stagedOpcodeOf(decoded) {
 }
 
 /** Begin an abortable open (preview) or export of a DOCX; send the frame with `client.request`. */
-export function encodeStagedBegin(requestId, kind, docxBytes) {
-  if (kind !== StagedKind.OpenDocx && kind !== StagedKind.ExportDocx) fail("INVALID_ARGUMENT", "unknown staged job kind.");
+export function encodeStagedBegin(requestId, kind, docxBytes, saveStamp) {
+  if (!Object.values(StagedKind).includes(kind)) fail("INVALID_ARGUMENT", "unknown staged job kind.");
   if (!(docxBytes instanceof Uint8Array)) fail("INVALID_ARGUMENT", "docxBytes must be a Uint8Array.");
-  const body = new Uint8Array(4 + docxBytes.byteLength);
+  // Kind 3 (export as a save, US-328) carries the stamp bytes of `encodeSaveStamp` before the DOCX.
+  if ((kind === StagedKind.ExportDocxSave) !== (saveStamp instanceof Uint8Array)) fail("INVALID_ARGUMENT", "saveStamp is required by, and only by, the save export.");
+  const stamp = saveStamp ?? new Uint8Array(0);
+  const body = new Uint8Array(4 + stamp.byteLength + docxBytes.byteLength);
   new DataView(body.buffer).setUint16(0, kind, true);
-  body.set(docxBytes, 4);
+  body.set(stamp, 4);
+  body.set(docxBytes, 4 + stamp.byteLength);
   return stagedFrame(requestId, STAGED_OPCODE.Begin, body);
 }
 

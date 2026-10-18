@@ -1,0 +1,47 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+.properties-dialog-host.ui-dialog {
+  box-sizing: border-box;
+  width: min(40rem, calc(100vw - 1.5rem));
+  max-width: calc(100vw - 1.5rem);
+  padding: clamp(.75rem, 3vw, 1.25rem);
+}
+.properties-dialog { display: grid; gap: 1rem; min-width: 0; }
+.properties-heading { margin: 0 0 .5rem; font-size: 1rem; color: var(--chrome-ink, var(--ink, #172a2a)); }
+.properties-field { display: grid; gap: .2rem; margin-bottom: .65rem; }
+.properties-label { font-weight: 600; }
+.properties-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: .4rem .55rem;
+  color: var(--chrome-ink, var(--ink, #172a2a));
+  background: var(--chrome-control, var(--paper, #fff));
+  border: 1px solid var(--chrome-control-border, var(--line, #dce5df));
+  border-radius: 5px;
+  font: inherit;
+}
+textarea.properties-input { resize: vertical; min-height: 5.5rem; }
+.properties-input:focus-visible { outline: 2px solid var(--chrome-focus, var(--green, #236c57)); outline-offset: 2px; }
+.properties-input[aria-invalid="true"] { border-color: var(--chrome-danger, #b3261e); }
+.properties-count { justify-self: end; font-size: .8125rem; color: var(--chrome-muted, var(--muted, #5f716d)); font-variant-numeric: tabular-nums; }
+.properties-error, .properties-status { color: var(--chrome-danger, #b3261e); font-size: .875rem; margin: 0; }
+.properties-readonly {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr);
+  gap: .4rem 1rem;
+  margin: 0;
+}
+.properties-term { color: var(--chrome-muted, var(--muted, #5f716d)); }
+.properties-value { min-width: 0; margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.properties-actions { display: flex; justify-content: flex-end; gap: .5rem; }
+.properties-dialog [hidden] { display: none !important; }
+@media (max-width: 34rem) {
+  .properties-readonly { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+  .properties-value { margin-bottom: .45rem; }
+}
+@media (forced-colors: active) {
+  .properties-input { border: 1px solid CanvasText; }
+  .properties-input:focus-visible { outline: 2px solid Highlight; }
+  .properties-input[aria-invalid="true"] { border: 2px solid Mark; }
+}
+.properties-note { margin: 0 0 .5rem; font-size: .875rem; color: var(--chrome-muted, var(--muted, #5f716d)); }

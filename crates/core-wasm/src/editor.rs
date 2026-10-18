@@ -54,6 +54,9 @@ impl EditorSession {
     pub fn transact(&self, payload: &[u8]) -> Result<(Self, Vec<u8>), EditorError> {
         let (opcode, body) = parse_command(payload)?;
         let mut candidate = self.clone();
+        if crate::properties::is_properties(opcode) {
+            return Ok((candidate, crate::properties::handle(opcode, body)?));
+        }
         if opcode == 18 {
             let preview = crate::rich_preview::preview_docx(body)
                 .map_err(|_| EditorError("EDITOR_PREVIEW_FAILED"))?;
@@ -903,6 +906,7 @@ pub(crate) fn parse_command(payload: &[u8]) -> Result<(u16, &[u8]), EditorError>
         16 if (32..=32 + MAX_TEXT).contains(&body.len()) => None,
         17 if (24..=24 + MAX_TEXT).contains(&body.len()) => None,
         18 if body.len() <= 8 * 1024 * 1024 => None,
+        26 | 27 if crate::properties::body_len_ok(opcode, body.len()) => None,
         19 if (16..=16 + MAX_QUERY_BYTES).contains(&body.len()) => None,
         20 => Some(8),
         21 if (36..=36 + MAX_QUERY_BYTES + MAX_TEXT).contains(&body.len()) => None,
