@@ -240,10 +240,12 @@ try {
 
   // --- DOCX ------------------------------------------------------------------------------------------------
   const banner = document.querySelector("#readonly-banner");
-  assert(banner.hidden && banner.getAttribute("role") === "status", "read-only banner is a hidden status region");
+  const bannerActive = () => banner.dataset.active === "true";
+  const bannerStatus = document.querySelector("#readonly-text");
+  assert(!bannerActive() && bannerStatus.getAttribute("role") === "status" && bannerStatus.textContent === "" && document.querySelector("#readonly-copy").hidden, "read-only banner is one status region always in the DOM, empty when not read-only");
   bridge.nextOpen = { name: "basic.docx", format: "docx", bytes: await fixture("basic.docx") };
   await clickAndWait(openDocxButton, () => {}, () => message() === "Document ouvert.");
-  assert(state().docLen > 0 && !state().readOnly && banner.hidden && !state().dirty, "plain DOCX opens editable, without the banner");
+  assert(state().docLen > 0 && !state().readOnly && !bannerActive() && !state().dirty, "plain DOCX opens editable, without the banner");
   assert(/^Ouvrir un document\nfilter:docx=/.test(bridge.lastOpenSpec), "Open DOCX lists DOCX formats first");
   inputText(editor.element, "Z");
   await waitFor(() => state().dirty, "plain DOCX accepts typing");
@@ -254,7 +256,7 @@ try {
   window.confirm = () => true;
   await clickAndWait(openDocxButton, () => {}, () => message().includes("lecture seule"));
   assert(state().readOnly && state().hasRevisions, "DOCX with revisions opens read-only");
-  assert(!banner.hidden && banner.textContent.includes("Document en lecture seule — modifications acceptées affichées."), "banner announces read-only with accepted changes shown");
+  assert(bannerActive() && bannerStatus.textContent === "Document en lecture seule — modifications acceptées affichées." && banner.textContent.includes("Document en lecture seule — modifications acceptées affichées."), "banner announces read-only with accepted changes shown");
   const copyButton = document.querySelector("#readonly-copy");
   assert(copyButton.tagName === "BUTTON" && copyButton.textContent === "Créer une copie modifiable" && !copyButton.disabled, "banner offers a reachable button to make an editable copy");
   const revisionsLength = state().docLen;
@@ -274,7 +276,7 @@ try {
   key(editor.element, "a", { ctrlKey: true });
   await waitFor(() => state().anchor === 0 && state().focus === revisionsLength, "selection and moves stay allowed in read-only");
   assert(!document.querySelector("#save-document").disabled, "saving stays allowed in read-only");
-  await clickAndWait(copyButton, () => {}, () => banner.hidden);
+  await clickAndWait(copyButton, () => {}, () => !bannerActive());
   assert(!state().readOnly && !state().dirty && message().startsWith("Copie modifiable créée"), "editable copy replaces the read-only document and hides the banner");
   assert(await text() === revisionsText, "the copy shows the accepted text");
   inputText(editor.element, "Z");
@@ -284,9 +286,9 @@ try {
 
   bridge.nextOpen = { name: "comments.docx", format: "docx", bytes: await fixture("comments.docx") };
   await clickAndWait(openDocxButton, () => {}, () => state().readOnly);
-  assert(!banner.hidden && state().hasRevisions, "DOCX with comments opens read-only with the banner");
+  assert(bannerActive() && state().hasRevisions, "DOCX with comments opens read-only with the banner");
   bridge.nextOpen = { name: "essai.txt", format: "txt", bytes: encoder.encode("retour") };
-  await clickAndWait(openButton, () => {}, () => !state().readOnly && banner.hidden);
+  await clickAndWait(openButton, () => {}, () => !state().readOnly && !bannerActive());
   assert(await text() === "retour", "opening a TXT after a read-only DOCX hides the banner");
 
   // --- save ----------------------------------------------------------------------------------------------------
@@ -333,7 +335,15 @@ try {
   app.ribbon.selectTab("home");
   for (const id of ["search-command", "replace-command", "statistics-command", "properties-command"]) {
     const button = document.querySelector(`#${id}`);
-    assert(button && button.disabled && /nouvel éditeur/.test(button.title) && button.getAttribute("aria-description") === button.title, `${id} is greyed with an explanatory tooltip in v2`);
+    assert(button && !button.disabled && button.getAttribute("aria-disabled") === "true" && /nouvel éditeur/.test(button.title)
+      && document.getElementById(button.getAttribute("aria-describedby"))?.textContent === button.title, `${id} is aria-disabled, focusable and described by its reason in v2`);
+    for (const tab of ["home", "view", "file"]) { if (button.offsetParent !== null) break; app.ribbon.selectTab(tab); }
+    button.focus();
+    assert(document.activeElement === button, `${id} can take the keyboard focus`);
+    status.textContent = "";
+    button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    button.click();
+    assert(status.textContent === button.title && document.querySelector("#search-slot").hidden && !document.querySelector("dialog[open]"), `${id} activation executes nothing and announces its reason in the status region`);
   }
   assert(await editor.search("a").catch(error => error.code) === "EDITOR_UNSUPPORTED_V2" && await editor.statistics().catch(error => error.code) === "EDITOR_UNSUPPORTED_V2"
     && await editor.replaceAll({}).catch(error => error.code) === "EDITOR_UNSUPPORTED_V2" && editor.setSearchHighlights(null) === true && editor.setSearchHighlights({}) === false,

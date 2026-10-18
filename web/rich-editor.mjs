@@ -213,7 +213,13 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   const cache = new EditorPageCache({ onChange: change => { try { onCacheChange(change); } catch (error) { reportError(error); } } });
   resolveGlyph = cache.glyphResolver;
   const rich = createRichEditorClient({ transport: createTransport(client), docId, cache, layoutBudget, signal: abort.signal,
-    onError: error => { if (!disposed) reportError(toEditorError(error)); } });
+    onError: error => {
+      if (disposed) return;
+      // The atlas outgrew the client bound right after a resync: the pages cannot be drawn faithfully, the client stopped.
+      // Typing is switched off (explicit state) until a document is opened again; the message tells the user to do so.
+      if (error?.code === "CLIENT_ATLAS_FULL") input.element.disabled = true;
+      reportError(toEditorError(error));
+    } });
 
   const input = attachTextInput({
     container: document.body, label: inputLabel, screenReaderMode,
@@ -835,6 +841,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       throw toEditorError(error);
     }
     imageCount = 0;
+    input.element.disabled = busy;
     visibleFlat = null;
     prefetchKey = "";
     lastClipboard = null;

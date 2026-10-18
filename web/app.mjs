@@ -30,7 +30,7 @@ const nodes = {
   frenchSpacing: byId("french-spacing"),
   openDocx: byId("open-docx"), closePreview: byId("close-preview"),
   textWorkspace: byId("text-workspace"), richWorkspace: byId("rich-workspace"),
-  readonlyBanner: byId("readonly-banner"), readonlyCopy: byId("readonly-copy"), options: document.querySelector(".editor-options"),
+  readonlyBanner: byId("readonly-banner"), readonlyText: byId("readonly-text"), readonlyCopy: byId("readonly-copy"), options: document.querySelector(".editor-options"),
 };
 // i18n-ignore-start: dernier recours quand web/i18n/fr-FR.txt est indisponible ; texte identique au catalogue (contrôlé par tests/i18n.mjs)
 const FALLBACK = new Map(Object.entries({
@@ -86,6 +86,7 @@ const FALLBACK = new Map(Object.entries({
   "mirror.reader.shortcut": "Alt+Maj+F1",
   "readonly-banner": "Document en lecture seule — modifications acceptées affichées.",
   "readonly-copy": "Créer une copie modifiable",
+  "status-atlas-full": "Ce document contient trop de glyphes différents pour l’affichage ; fermez-le puis rouvrez-le.",
   "status-readonly-refused": "Ce document est en lecture seule : créez une copie modifiable pour le modifier.",
   "status-readonly-opened": "Document ouvert en lecture seule : modifications acceptées affichées.",
   "status-copy-created": "Copie modifiable créée : modifications acceptées, commentaires retirés.",
@@ -175,6 +176,7 @@ function messageForError(error, messages) {
           : error?.code === "EDITOR_UNSUPPORTED_V2" ? "status-unsupported-v2"
             : ["EDITOR_CLIPBOARD_UNAVAILABLE"].includes(error?.code) ? "status-clipboard-unavailable"
               : error?.code === "EDITOR_SELECTION_TOO_LARGE" ? "status-selection-too-large"
+                : error?.code === "CLIENT_ATLAS_FULL" ? "status-atlas-full"
                 : error?.code === "RICH_REVISIONS_UNSUPPORTED" ? "status-copy-unsupported"
                   : "status-editor-error");
   return messages.get(key) ?? FALLBACK.get(key) ?? FALLBACK.get("status-editor-error");
@@ -266,7 +268,10 @@ async function start() {
   }
   /** Banner of a read-only DOCX (revisions or comments, v2): accepted changes are shown, a copy can be made editable. */
   function showReadOnly(active) {
-    nodes.readonlyBanner.hidden = !active;
+    // One status region, always in the DOM: only its text changes (a region inserted with its text is not announced everywhere).
+    nodes.readonlyText.textContent = active ? messages.get("readonly-banner") : "";
+    nodes.readonlyBanner.dataset.active = active ? "true" : "false";
+    nodes.readonlyCopy.hidden = !active;
     if (!active) nodes.readonlyCopy.disabled = false;
   }
   function dispose() {

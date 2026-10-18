@@ -388,3 +388,4 @@ dialog-filter-docx=Document Word
 dialog-filter-docm=Document Word avec macros
 dialog-filter-dotx=Modèle Word
 dialog-default-name=Document
+status-atlas-full=Ce document contient trop de glyphes différents pour l’affichage ; fermez-le puis rouvrez-le.
