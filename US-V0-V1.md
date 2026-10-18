@@ -1171,7 +1171,7 @@ Réf : §5.2 (1) · Taille : L · Dépend de : US-301, US-032
 
 #### US-307 — Enregistrer en docx
 *En tant qu'*utilisateur, *je veux* enregistrer en docx *afin de* partager mes documents avec des utilisateurs de Word.
-- [ ] Toutes les parties générées depuis le modèle, sortie déterministe.
+- [x] Toutes les parties générées depuis le modèle, sortie déterministe (2026-10-18 : les parties interprétées et les relations sont générées, les autres réémises depuis le magasin opaque ; [contrat](docs/us-307-docx-writer.md)).
 - [ ] Les fichiers produits s'ouvrent sans erreur ni réparation dans Word 365 et LibreOffice (corpus de 100 documents).
 - [ ] Documents créés de zéro dans Atelier : rendu identique dans Word (comparaison visuelle sur un jeu de documents types).
 

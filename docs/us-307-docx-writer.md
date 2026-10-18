@@ -18,7 +18,7 @@ contenu principaux (docx, dotx, docm, dotm) par l'import. Le modèle n'est jamai
   `None` = celui de la source), `save` (`SaveContext` de US-328 : `update_on_save` est appelé),
   `regenerate_all`, `added_styles` (styles ajoutés au moteur depuis l'import : identifiant, nom,
   suivant), `limits`, `max_part_bytes`.
-* `WrittenDocx { bytes, notices, regenerated_parts, reused_parts, save }`. `WriteError` : `Opc`,
+* `WrittenDocx { bytes, notices, regenerated_parts, reused_parts, opaque_parts, save }`. `WriteError` : `Opc`,
   `Import`, `Limit`, `Invalid`. `WriteNotice` (au plus 512 + un décompte) liste ce qui n'a pas été
   écrit fidèlement : `MacrosRemoved`, `ParagraphRebuilt`, `EnvelopeDropped`,
   `AlternateContentFlattened`, `BlocksReordered`, `HighlightApproximated`,
@@ -30,7 +30,7 @@ L'écrivain réimporte le paquet de l'`ImportedDocx` (coût linéaire) : c'est l
 * `word/document.xml` est touchée si `imported.document != base.document` (ou `regenerate_all`) ;
 * `styles.xml` si les valeurs par défaut ou l'un des styles du squelette diffère de la base, ou si
   `added_styles` n'est pas vide ; * `settings.xml` si `default_tab_stop_twips` diffère.
-Une partie non touchée est recopiée octet pour octet (c'est le cas de toutes les autres parties,
+Sans `regenerate_all`, une partie non touchée est recopiée octet pour octet (c'est le cas de toutes les autres parties,
 `fontTable.xml`, le thème, etc. : leur contenu n'est pas régénéré ; un thème modifié donne
 `ThemeNotWritten`). Une partie touchée est régénérée à partir du modèle et du squelette de US-306.
 
@@ -67,6 +67,36 @@ Les nœuds sont comparés à la base **par identifiant**.
   synthétique A4 dans le dernier paragraphe des premières) ; le `sectPr` final de la source reste.
   En-têtes/pieds du modèle : non écrits (`HeaderFooterNotWritten`, US-304).
 
+## Inventaire des parties et `regenerate_all`
+
+Avec `regenerate_all`, aucune partie n'est lue dans les octets du fichier source :
+* **Générées depuis le modèle** (`regenerated_parts`) : `word/document.xml` (modèle riche + squelette US-306),
+  `styles.xml` (catalogue + squelette), `settings.xml` (réglages + squelette), `[Content_Types].xml`
+  et tous les `.rels` (table des relations du paquet, triée, jamais relue du texte source).
+* **Réémises depuis le sous-arbre opaque conservé** (`opaque_parts`) : toute autre partie du paquet. Le
+  magasin opaque du modèle est `ImportedDocx::package` (US-306 : « parties non interprétées, octet pour
+  octet »). Choix : c'est « depuis le modèle » au sens de la spec pour ce que le modèle ne représente pas.
+* **Non régénérables aujourd'hui** (donc opaques) car le modèle les représente avec perte : `fontTable.xml`
+  (`FontRecord` sans panose, charset ni signature), `theme` (`Theme` : couleurs et polices seulement),
+  `numbering.xml` (non lu : US-302), `webSettings.xml`, en-têtes/pieds, notes, commentaires (US-304,
+  non lus), `docProps/core.xml` et `app.xml` (le modèle porte leurs champs ; les enfants inconnus, ex.
+  `HeadingPairs`/`TitlesOfParts`, ne vivent que dans la partie : `update_on_save` met les valeurs à jour
+  dedans, voir US-328), `custom.xml`, glossaire, `customXml`, VBA, médias, polices intégrées.
+
+| Partie | Source de la sortie avec `regenerate_all` |
+|---|---|
+| document, styles, settings | modèle + squelette (octets source ignorés ; test d'altération) |
+| `[Content_Types].xml`, `.rels` | table du paquet, canonique (voir « Déterminisme ») |
+| numbering, fontTable, webSettings, theme, en-têtes, pieds, notes, commentaires | opaque |
+| core, app | opaque, valeurs du modèle appliquées (US-328) |
+| custom, glossaire, customXml, VBA, signatures, médias, polices | opaque |
+
+La référence qui dit ce que l'appelant a changé n'est plus une réimportation du paquet : l'import garde un
+instantané du modèle (`Baseline`, clone du document, des styles, des réglages, du thème). Coût : une copie
+du modèle en mémoire par document ouvert ; gain : l'écriture ne relit plus aucun octet, et `limits` n'est plus
+utilisé. `WrittenDocx::opaque_parts` liste les parties opaques ; `regenerated_parts + reused_parts +
+opaque_parts` couvrent le paquet.
+
 ## Cas délicats
 
 * **Suivi des modifications** : l'enveloppe `w:ins` suit le texte ; si tout son texte est supprimé,
@@ -98,9 +128,20 @@ relations et un avis `MacrosRemoved`.
 
 ## Déterminisme et limites
 
-Parties et relations triées (arbres ordonnés), attributs dans l'ordre de la source ou de
-l'écrivain, dates fournies par l'appelant, aucune horloge. `max_part_bytes` (512 Mio) vérifié à
-chaque bloc ; profondeur d'imbrication bornée (128). Coût linéaire (une réimportation, une passe).
+Même modèle, mêmes octets, quel que soit l'ordre de construction de la source :
+* parties triées (`BTreeMap<PartUri>`), membres ZIP dans cet ordre après `[Content_Types].xml` puis les `.rels` ;
+* relations triées par identifiant à l'écriture (`Package::canonicalize` avec `regenerate_all`, plus
+  d'ordre hérité du fichier source) ; identifiants des nouveaux liens `rIdAtelierLink<n>` dans l'ordre
+  du document (préfixe élargi d'un `x` si le paquet en a déjà) ;
+* types de contenu : un `Override` par partie, un seul `Default` (`rels`) ; les `Default` de la source sont
+  abandonnés avec `regenerate_all` ;
+* horodatage ZIP fixe (zéro DOS), compression Deflate déterministe, aucune horloge (dates fournies par
+  l'appelant) ;
+* aucun `HashMap`/`HashSet` dans `fmt-ooxml` et `zip` (recherche faite) ; attributs dans l'ordre de la source
+  (squelette) ou du code de l'écrivain.
+Sources de non-déterminisme trouvées : l'ordre des relations et les `Default` de la source, qui se
+retrouvaient dans la sortie ; la dépendance aux octets source via la réimportation de référence. Corrigés.
+`max_part_bytes` (512 Mio) vérifié à chaque bloc ; profondeur d'imbrication bornée (128).
 
 ## Différences admises à l'aller-retour
 
@@ -119,6 +160,8 @@ le squelette), `docx_write_new.rs` (120 documents créés de zéro, relus égaux
 `rPr`, `pPr`, `tblPr`, `tcPr`, `sectPr` conforme au schéma, déterminisme), `docx_write_edit.rs`
 (cas ciblés et campagne à graine fixe : 240 documents importés puis édités au hasard, écrits, relus ;
 texte et structure égaux ; au plus 5 écarts de mise en forme tolérés, listés), `docx_write_variants.rs`.
+Critère 1 (« toutes les parties générées depuis le modèle, sortie déterministe »), dans `docx_roundtrip_corpus.rs` (`determinism_problems`, appelé pour chacun des 67 documents : 4 du dépôt, 63 synthétiques) : avec `regenerate_all`, aucune partie réutilisée ; deux écritures identiques ; octets de `document.xml`, `styles.xml`, `settings.xml` du paquet source remplacés par du XML invalide après l'import : sortie identique ; même source reconstruite en ordre inverse (membres ZIP, relations, `Default` en trop) : sortie identique ; point fixe après un second cycle ouvrir/enregistrer ; `regenerated_parts` + `opaque_parts` = parties du paquet. Un test de contrôle montre que sans `regenerate_all` la disposition de la source se voit dans la sortie. `docx_write_new.rs` : 120 documents créés de zéro, construits deux fois indépendamment, mêmes octets, point fixe après aller-retour. Le test d'aller-retour US-306 (0 perte) passe avec `regenerate_all`.
+
 `tools/check-docx-writer-libreoffice.py` : voir « Vérification avec LibreOffice ».
 
 ## Vérification avec LibreOffice

@@ -9,8 +9,8 @@
 //! byte otherwise; every other part of the package is copied as is.
 //!
 //! The writer never modifies the model: it reads the document, the source
-//! skeleton (US-306) and a baseline model obtained by importing the package
-//! again, which tells it what the caller changed.
+//! skeleton (US-306) and the baseline model snapshot
+//! kept by the import, which tells it what the caller changed.
 
 use super::preserve::PreservedPart;
 use super::{
@@ -136,7 +136,7 @@ pub struct DocxWriteOptions {
     pub regenerate_all: bool,
     /// Styles added to the style engine since the import.
     pub added_styles: Vec<StyleDecl>,
-    /// Limits of the import that establishes the baseline.
+    /// Limits of the import (unused by the writer since the baseline is kept by the import).
     pub limits: DocxLimits,
     /// Largest XML part the writer produces, in bytes.
     pub max_part_bytes: usize,
