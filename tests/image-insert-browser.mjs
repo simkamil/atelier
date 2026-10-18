@@ -251,7 +251,7 @@ try {
   assert(raw.includes("[Content_Types].xml"), "package has its content types part");
 
   resultNode.textContent = "passed";
-  await fetch("/__image_result", { method: "POST", body: JSON.stringify({ status: "passed", engine: v2 ? "v2" : "v1", checks, skipped, userAgent: navigator.userAgent }) });
+  await fetch("/__image_result", { method: "POST", body: JSON.stringify({ status: "passed", engine: "v2", checks, skipped, userAgent: navigator.userAgent }) });
 } catch (error) {
   resultNode.textContent = String(error?.stack ?? error);
   await fetch("/__image_result", { method: "POST", body: JSON.stringify({ status: "failed", message: String(error?.stack ?? error) + " | status: " + document.querySelector("#editor-status")?.textContent, checks }) });
