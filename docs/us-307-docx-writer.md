@@ -22,7 +22,7 @@ contenu principaux (docx, dotx, docm, dotm) par l'import. Le modèle n'est jamai
   `Import`, `Limit`, `Invalid`. `WriteNotice` (au plus 512 + un décompte) liste ce qui n'a pas été
   écrit fidèlement : `MacrosRemoved`, `ParagraphRebuilt`, `EnvelopeDropped`,
   `AlternateContentFlattened`, `BlocksReordered`, `HighlightApproximated`,
-  `UnsupportedCharacter`, `ThemeNotWritten`, `HeaderFooterNotWritten`.
+  `UnsupportedCharacter`, `ThemeNotWritten`, `HeaderFooterNotWritten`, `ListDefinitionMissing`.
 
 ## Règle « partie touchée »
 
@@ -170,6 +170,27 @@ Critère 1 (« toutes les parties générées depuis le modèle, sortie détermi
 rapport de livraison). LibreOffice lit de façon tolérante : son acceptation ne prouve pas la
 conformité stricte que Word exige. **Aucune validation de schéma XSD** n'est disponible sur la
 machine ; elle est remplacée par le test de l'ordre des enfants. **Word n'a pas été testé.**
+
+## Réserve sur le critère 1 (non coché)
+
+Déterministe et généré depuis le modèle pour document, styles, settings, types de contenu et relations ;
+restent à générer les en-têtes et pieds (dette US-304 : import non lu ; le modèle les porte
+(`Section.headers/footers`) mais ils sont recopiés, `HeaderFooterNotWritten`) et les définitions de
+numérotation (`abstractNum`/`num` ne sont pas dans le modèle, qui n'a que des `ListRef`) ; les parties hors
+modèle sont réémises depuis le magasin opaque.
+
+* **Numérotation** : un `ListRef` dont l'identifiant (`numId` = identifiant + 1) n'est pas défini par le
+  `numbering.xml` recopié donne `WriteNotice::ListDefinitionMissing { list_id }` (le modèle n'a pas de
+  définition à fusionner). Sans `numbering.xml`, une définition à puces est écrite.
+* **Notes et commentaires** : `footnotes.xml`, `endnotes.xml` et `comments.xml` sont recopiés. Après la
+  suppression d'un texte qui portait une référence, la note ou le commentaire reste dans la partie sans
+  être référencé ; le fichier reste valide (Word ignore les entrées orphelines). Test :
+  `notes_and_comments_copied_keep_unreferenced_entries_after_a_deletion`.
+* **`free_link_prefix`** dépend du contenu du paquet (les identifiants de relation du document principal) :
+  le préfixe des nouveaux liens change si le paquet en contient déjà, donc deux sources aux relations
+  différentes mais au même modèle peuvent nommer leurs liens différemment.
+* **Dette mémoire** : l'instantané `Baseline` coûte environ deux fois le modèle par document ouvert ; à
+  remplacer par une empreinte (hachage par nœud) qui suffise à détecter les modifications.
 
 ## Critère non vérifié : rendu identique dans Word
 
