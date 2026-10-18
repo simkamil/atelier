@@ -786,6 +786,24 @@ fn bad_replies() -> Vec<Bad> {
         ),
         ("state-page-not-atdl", not_atdl, InvalidBody, true),
         (
+            "state-invalidated-touching",
+            state_frame(|b| {
+                // invalidated section starts after revision..caret: 4*8 + 4 + 4 + 4 + 3*8 = 68
+                let at = 68;
+                b.splice(
+                    at..at + 4 + 8,
+                    [2u8, 0, 0, 0]
+                        .into_iter()
+                        .chain(0u32.to_le_bytes())
+                        .chain(1u32.to_le_bytes())
+                        .chain(1u32.to_le_bytes())
+                        .chain(2u32.to_le_bytes()),
+                );
+            }),
+            PageRange,
+            true,
+        ),
+        (
             "state-truncated",
             state_frame(|b| b.truncate(30)),
             InvalidBody,
@@ -953,12 +971,12 @@ fn encoder_refuses_what_decoder_would_reject() {
 
 #[test]
 fn error_codes_are_stable_and_named() {
-    for n in 1..=18u16 {
+    for n in 1..=20u16 {
         let code = ErrorCode::from_u16(n).unwrap();
         assert_eq!(code as u16, n);
         assert!(code.name().starts_with("RICH_"));
     }
-    assert!(ErrorCode::from_u16(0).is_none() && ErrorCode::from_u16(19).is_none());
+    assert!(ErrorCode::from_u16(0).is_none() && ErrorCode::from_u16(21).is_none());
 }
 
 #[test]
@@ -966,4 +984,107 @@ fn range_rules() {
     assert_eq!(check_range(10, 2, 10), Ok(()));
     assert_eq!(check_range(10, 3, 2), Err(ErrorCode::InvalidRange));
     assert_eq!(check_range(10, 2, 11), Err(ErrorCode::PositionOutOfRange));
+}
+
+fn limit_state() -> State {
+    let mut s = state();
+    s.page_count = 40;
+    s.pages = (0..MAX_PAGES_PER_RESPONSE as u32)
+        .map(|i| PageDisplay {
+            index: i * 2,
+            display: page(i as u8),
+        })
+        .collect();
+    s.invalidated = (0..MAX_INVALIDATIONS as u32)
+        .map(|i| (i * 2, i * 2 + 1))
+        .collect();
+    s.doc_len = MAX_WINDOW_BYTES as u64;
+    s.anchor = 0;
+    s.focus = 0;
+    s.window = Some(TextWindowData {
+        start: 0,
+        text: "a".repeat(MAX_WINDOW_BYTES),
+    });
+    s
+}
+
+#[test]
+fn replies_at_the_limits_round_trip_and_beyond_are_refused() {
+    let reply = |s: State| Reply {
+        doc_id: 1,
+        request_id: 1,
+        response: Response::State(s),
+    };
+    let at = reply(limit_state());
+    let bytes = encode_reply(&at).unwrap();
+    assert_eq!(decode_reply(&bytes).unwrap(), at);
+    let mut s = limit_state();
+    s.pages.push(PageDisplay {
+        index: 33,
+        display: page(0),
+    });
+    assert_eq!(encode_reply(&reply(s)), Err(ErrorCode::TooManyPages));
+    let mut s = limit_state();
+    s.window = Some(TextWindowData {
+        start: 0,
+        text: "a".repeat(MAX_WINDOW_BYTES + 1),
+    });
+    s.doc_len += 1;
+    assert_eq!(encode_reply(&reply(s)), Err(ErrorCode::WindowTooLarge));
+    let mut s = limit_state();
+    s.invalidated.push((5000, 5001));
+    assert_eq!(encode_reply(&reply(s)), Err(ErrorCode::InvalidBody));
+    let mut s = limit_state();
+    s.invalidated = vec![(1, 2), (2, 3)];
+    assert_eq!(encode_reply(&reply(s)), Err(ErrorCode::PageRange));
+}
+
+#[test]
+fn page_delta_splits_into_a_valid_state_part() {
+    use crate::rich_layout::PageDelta;
+    let delta = PageDelta {
+        page_count: 100,
+        layout_complete: true,
+        changed: (0..20).rev().collect(),
+        invalidated: vec![(30, 40), (20, 25), (40, 45), (50, 50), (60, MAX_PAGES + 9)],
+    };
+    let (send, ranges) = split_page_delta(&delta);
+    assert_eq!(send, (0..16).collect::<Vec<u32>>());
+    assert_eq!(ranges, vec![(16, 25), (30, 45), (60, MAX_PAGES)]);
+    let many = PageDelta {
+        changed: vec![],
+        invalidated: (0..2000).map(|i| (i * 3, i * 3 + 1)).collect(),
+        ..PageDelta::default()
+    };
+    let (_, ranges) = split_page_delta(&many);
+    assert_eq!(ranges.len(), MAX_INVALIDATIONS);
+    assert_eq!(ranges.last().unwrap().1, 1999 * 3 + 1);
+    assert!(ranges.windows(2).all(|w| w[0].1 < w[1].0));
+}
+
+#[test]
+fn engine_errors_map_to_protocol_codes() {
+    use crate::rich_layout::LayoutError as L;
+    use atelier_text_model::rich::flat::FlatError as F;
+    assert_eq!(
+        ErrorCode::from(F::OutOfRange),
+        ErrorCode::PositionOutOfRange
+    );
+    assert_eq!(
+        ErrorCode::from(F::NotBoundary),
+        ErrorCode::PositionNotBoundary
+    );
+    assert_eq!(ErrorCode::from(F::InvalidRange), ErrorCode::InvalidRange);
+    assert_eq!(ErrorCode::from(F::InvalidText), ErrorCode::InvalidText);
+    assert_eq!(ErrorCode::from(F::Limit), ErrorCode::Limit);
+    assert_eq!(ErrorCode::from(L::PageOutOfRange), ErrorCode::PageRange);
+    assert_eq!(
+        ErrorCode::from(L::PositionOutOfRange),
+        ErrorCode::PositionOutOfRange
+    );
+    assert_eq!(ErrorCode::from(L::NotReady), ErrorCode::NotReady);
+    assert_eq!(to_position(7), Ok(7));
+    if usize::BITS < 64 {
+        assert_eq!(to_position(u64::MAX), Err(ErrorCode::PositionOutOfRange));
+    }
 }

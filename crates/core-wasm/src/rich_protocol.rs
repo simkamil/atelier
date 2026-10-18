@@ -77,6 +77,8 @@ pub enum ErrorCode {
     StaleRevision = 16,
     OpenFailed = 17,
     Internal = 18,
+    Limit = 19,
+    NotReady = 20,
 }
 
 impl ErrorCode {
@@ -100,6 +102,8 @@ impl ErrorCode {
             16 => Self::StaleRevision,
             17 => Self::OpenFailed,
             18 => Self::Internal,
+            19 => Self::Limit,
+            20 => Self::NotReady,
             _ => return None,
         })
     }
@@ -124,6 +128,8 @@ impl ErrorCode {
             Self::StaleRevision => "RICH_STALE_REVISION",
             Self::OpenFailed => "RICH_OPEN_FAILED",
             Self::Internal => "RICH_INTERNAL",
+            Self::Limit => "RICH_LIMIT",
+            Self::NotReady => "RICH_NOT_READY",
         }
     }
 }
@@ -414,7 +420,8 @@ impl<'a> Reader<'a> {
 }
 
 /// Text accepted by edit commands: no U+FFFC (objects are inserted by their
-/// own commands), no `\r`, no control character except `\n` and `\t`.
+/// own commands), no `\r`, no C0 control character except `\n` and `\t`.
+/// DEL (U+007F) and the C1 controls (U+0080..U+009F) are accepted.
 pub fn validate_edit_text(text: &str) -> Result<(), ErrorCode> {
     if text
         .chars()
@@ -650,8 +657,8 @@ fn put_text(out: &mut Vec<u8>, text: &str) -> Result<(), Fail> {
     Ok(())
 }
 
-/// Encodes then re-decodes, so an encoder can never emit a frame the decoder
-/// rejects.
+/// Encodes, and re-decodes the result so that an encoder can never emit a
+/// frame the decoder rejects (replies re-decode in tests only).
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
     let mut b = Vec::new();
     let op = match &request.command {
@@ -722,6 +729,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
 }
 
 fn put_pages(out: &mut Vec<u8>, pages: &[PageDisplay]) -> Result<(), Fail> {
+    if pages.len() > MAX_PAGES_PER_RESPONSE {
+        return Err(Fail::TooManyPages);
+    }
     put_u32(
         out,
         u32::try_from(pages.len()).map_err(|_| Fail::TooManyPages)?,
@@ -762,6 +772,15 @@ fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, F
 }
 
 fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
+    if s.invalidated.len() > MAX_INVALIDATIONS {
+        return Err(Fail::InvalidBody);
+    }
+    if s.window
+        .as_ref()
+        .is_some_and(|w| w.text.len() > MAX_WINDOW_BYTES)
+    {
+        return Err(Fail::WindowTooLarge);
+    }
     for v in [s.revision, s.anchor, s.focus, s.doc_len] {
         put_u64(b, v);
     }
@@ -832,7 +851,7 @@ fn parse_state(r: &mut Reader<'_>) -> Result<State, Fail> {
     let mut invalidated: Vec<(u32, u32)> = Vec::with_capacity(n);
     for _ in 0..n {
         let (first, end) = (r.u32()?, r.u32()?);
-        if first >= end || end > MAX_PAGES || invalidated.last().is_some_and(|p| p.1 > first) {
+        if first >= end || end > MAX_PAGES || invalidated.last().is_some_and(|p| p.1 >= first) {
             return Err(Fail::PageRange);
         }
         invalidated.push((first, end));
@@ -886,6 +905,9 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
             doc_len,
             text,
         } => {
+            if text.len() > MAX_WINDOW_BYTES {
+                return Err(ErrorCode::WindowTooLarge);
+            }
             put_u64(&mut b, *revision);
             put_u64(&mut b, *start);
             put_u64(&mut b, *doc_len);
@@ -915,6 +937,7 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
         Response::Closed => opcode::R_CLOSED,
     };
     let frame = header(op, reply.doc_id, reply.request_id, &b)?;
+    #[cfg(test)]
     decode_reply(&frame).map_err(|e| e.code)?;
     Ok(frame)
 }
@@ -981,6 +1004,78 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
         request_id,
         response,
     })
+}
+
+impl From<atelier_text_model::rich::flat::FlatError> for ErrorCode {
+    fn from(error: atelier_text_model::rich::flat::FlatError) -> Self {
+        use atelier_text_model::rich::flat::FlatError as F;
+        match error {
+            F::OutOfRange => Self::PositionOutOfRange,
+            F::NotBoundary => Self::PositionNotBoundary,
+            F::InvalidRange => Self::InvalidRange,
+            F::InvalidText => Self::InvalidText,
+            F::Limit => Self::Limit,
+        }
+    }
+}
+
+impl From<crate::rich_layout::LayoutError> for ErrorCode {
+    fn from(error: crate::rich_layout::LayoutError) -> Self {
+        use crate::rich_layout::LayoutError as L;
+        match error {
+            L::PageOutOfRange => Self::PageRange,
+            L::PositionOutOfRange => Self::PositionOutOfRange,
+            L::NotReady => Self::NotReady,
+        }
+    }
+}
+
+/// Wire position to `usize`; a value that does not fit is out of range.
+pub fn to_position(value: u64) -> Result<usize, ErrorCode> {
+    usize::try_from(value).map_err(|_| ErrorCode::PositionOutOfRange)
+}
+
+/// Splits a layout delta into what one `State` carries: at most
+/// `MAX_PAGES_PER_RESPONSE` pages to send (the lowest indices of `changed`),
+/// and the invalidation ranges. Changed pages that do not fit become
+/// invalidated single pages so that the client re-requests them with `Pages`.
+/// Ranges are clamped to `MAX_PAGES`, sorted, merged when they overlap or
+/// touch (the decoder refuses touching ranges), and limited to
+/// `MAX_INVALIDATIONS` by merging the tail into one range. The client applies
+/// `invalidated` first, then stores `pages`.
+pub fn split_page_delta(delta: &crate::rich_layout::PageDelta) -> (Vec<u32>, Vec<(u32, u32)>) {
+    let mut changed: Vec<u32> = delta
+        .changed
+        .iter()
+        .copied()
+        .filter(|p| *p < MAX_PAGES)
+        .collect();
+    changed.sort_unstable();
+    changed.dedup();
+    let overflow = changed.split_off(changed.len().min(MAX_PAGES_PER_RESPONSE));
+    let mut ranges: Vec<(u32, u32)> = delta
+        .invalidated
+        .iter()
+        .map(|(first, end)| (*first, (*end).min(MAX_PAGES)))
+        .filter(|(first, end)| first < end)
+        .chain(overflow.iter().map(|p| (*p, *p + 1)))
+        .collect();
+    ranges.sort_unstable();
+    let mut merged: Vec<(u32, u32)> = Vec::with_capacity(ranges.len());
+    for (first, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if first <= last.1 => last.1 = last.1.max(end),
+            _ => merged.push((first, end)),
+        }
+    }
+    if merged.len() > MAX_INVALIDATIONS {
+        let end = merged.last().map_or(0, |r| r.1);
+        merged.truncate(MAX_INVALIDATIONS);
+        if let Some(last) = merged.last_mut() {
+            last.1 = end;
+        }
+    }
+    (changed, merged)
 }
 
 #[cfg(test)]
