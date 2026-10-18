@@ -23,17 +23,6 @@ type Lparam = isize;
 type Wparam = usize;
 type Lresult = isize;
 
-// Structure pour WM_COPYDATA
-#[repr(C)]
-struct CopyDataStruct {
-    dwId: usize,
-    cbData: usize,
-    lpData: LPVOID,
-}
-
-type LPVOID = *mut c_void;
-type DWORD = u32;
-
 const WM_SIZE: u32 = 0x0005;
 const WM_SETFOCUS: u32 = 0x0007;
 const WM_CLOSE: u32 = 0x0010;
@@ -45,8 +34,6 @@ const WM_SETTINGCHANGE: u32 = 0x001a;
 const WM_THEMECHANGED: u32 = 0x031a;
 const WM_TIMER: u32 = 0x0113;
 const WM_GETMINMAXINFO: u32 = 0x0024;
-const WM_COPYDATA: u32 = 0x004a;
-const WM_USER_OPEN_PATHS: u32 = 0x0400; // WM_USER + 0
 const GWLP_USERDATA: i32 = -21;
 const TIMER_WEBVIEW_INIT: usize = 0x1110;
 const TIMER_WEBVIEW_CLOSE: usize = 0x1111;
@@ -67,12 +54,10 @@ const DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: isize = -4;
 const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
 const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
 const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;
-const ERROR_ALREADY_EXISTS: u32 = 183;
 const HKEY_CURRENT_USER: Hkey = (-2147483647isize) as Hkey;
 const RRF_RT_REG_DWORD: u32 = 0x00000010;
 const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
 const DWMWA_USE_IMMERSIVE_DARK_MODE_LEGACY: u32 = 19;
-const MUTEX_ALL_ACCESS: u32 = 0x1F0003;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -214,9 +199,6 @@ unsafe extern "system" {
         data: isize,
     ) -> i32;
     fn SendMessageW(hwnd: Hwnd, message: u32, w: Wparam, l: Lparam) -> Lresult;
-    fn PostMessageW(hwnd: Hwnd, message: u32, w: Wparam, l: Lparam) -> i32;
-    fn FindWindowW(class_name: *const u16, window_name: *const u16) -> Hwnd;
-    fn SetForegroundWindow(hwnd: Hwnd) -> i32;
     fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
     fn GetLastError() -> u32;
     fn GetCurrentProcessId() -> u32;
@@ -237,16 +219,6 @@ unsafe extern "system" {
         data: *mut c_void,
         size: *mut u32,
     ) -> i32;
-    fn CreateMutexW(
-        attributes: *mut c_void,
-        initial_thread: i32,
-        name: *const u16,
-    ) -> Hwnd;
-    fn OpenMutexW(
-        desired_access: u32,
-        inherit_handle: i32,
-        name: *const u16,
-    ) -> Hwnd;
 }
 #[link(name = "kernel32")]
 unsafe extern "system" {
@@ -264,8 +236,6 @@ struct Context {
     close_requested: bool,
     minimized: bool,
     file_runtime: Option<FileRuntime>,
-    mutex_handle: Option<Hwnd>,
-    pending_paths: Vec<String>,
 }
 
 struct FileRuntime {
@@ -325,15 +295,6 @@ fn route_file_request(
                 file_bridge::process_selection(Request::Save { id, bytes }, selected, broker)
             }
             Err(key) => file_reply(&id, Err(key)),
-        },
-        Request::SaveAs { id, bytes, path_hint } => {
-            // For SaveAs, we always show the dialog unless path_hint is provided and valid
-            match choose(FileDialogKind::Save) {
-                Ok(selected) => {
-                    file_bridge::process_selection(Request::SaveAs { id, bytes, path_hint }, selected, broker)
-                }
-                Err(key) => file_reply(&id, Err(key)),
-            }
         },
         Request::Dirty { .. } => unreachable!("dirty messages are handled before dialog routing"),
     }
@@ -961,8 +922,6 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             close_requested: false,
                             minimized: false,
                             file_runtime: None,
-                            mutex_handle: None,
-                            pending_paths: Vec::new(),
                         };
                         (*context).record(save(hwnd, &snapshot));
                         (*context).persisted = true;
@@ -996,69 +955,6 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     }
                     return 0;
                 }
-                WM_COPYDATA => {
-                    // Gérer la réception de chemins de fichiers depuis une autre instance
-                    if w != 0 {
-                        // SAFETY: wparam is a HWND (sender) and lparam is a COPYDATASTRUCT* for valid WM_COPYDATA
-                        let cds = unsafe { &*(l as *const CopyDataStruct) };
-                        if !cds.lpData.is_null() && cds.cbData > 0 {
-                            // Convertir les données UTF-16 en String
-                            let data_slice = unsafe {
-                                std::slice::from_raw_parts(
-                                    cds.lpData as *const u8,
-                                    cds.cbData as usize,
-                                )
-                            };
-                            // Le dernier octet doit être NUL pour UTF-16
-                            if data_slice.len() >= 2 {
-                                // Extraire les chemins séparés par |
-                                let data_u16: Vec<u16> = data_slice
-                                    .chunks_exact(2)
-                                    .map(|c| (c[0] as u16) | ((c[1] as u16) << 8))
-                                    .collect();
-                                // Construire la chaîne manuellement pour éviter from_utf16_lossy
-                                let paths_str = data_u16
-                                    .iter()
-                                    .take_while(|&&c| c != 0)
-                                    .map(|&c| c as u8 as char)
-                                    .collect::<String>();
-                                let paths: Vec<String> = paths_str
-                                    .split('|')
-                                    .filter(|s| !s.is_empty())
-                                    .map(String::from)
-                                    .collect();
-                                if !paths.is_empty() {
-                                    // Stocker les chemins en attente pour traitement futur
-                                    (*context).pending_paths.extend(paths);
-                                    // Envoyer un message pour ouvrir les fichiers
-                                    let _ = PostMessageW(hwnd, WM_USER_OPEN_PATHS, 0, 0);
-                                }
-                            }
-                        }
-                    }
-                    return 0;
-                }
-                WM_USER_OPEN_PATHS => {
-                    // Ouvrir les chemins en attente dans des onglets
-                    if !(*context).pending_paths.is_empty() {
-                        let paths = (*context).pending_paths.clone();
-                        (*context).pending_paths.clear();
-                        // Mettre la fenêtre au premier plan
-                        unsafe {
-                            SetForegroundWindow(hwnd);
-                        }
-                        // Ouvrir chaque chemin dans un onglet
-                        for path in paths {
-                            // Envoyer une requête au WebView2 pour ouvrir le fichier
-                            if let Some(webview) = (*context).webview.as_ref() {
-                                // Créer une requête pour ouvrir le fichier
-                                let request = format!(r#"{{"action":"open_file","path":"{}"}}"#, path.replace('\\', "/"));
-                                let _ = webview.post_web_message_as_string(&request);
-                            }
-                        }
-                    }
-                    return 0;
-                }
                 WM_DESTROY => {
                     if let Some(webview) = (*context).webview.as_mut() {
                         webview.close();
@@ -1076,8 +972,6 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             close_requested: false,
                             minimized: false,
                             file_runtime: None,
-                            mutex_handle: None,
-                            pending_paths: Vec::new(),
                         };
                         (*context).record(save(hwnd, &snapshot));
                         (*context).persisted = true;
@@ -1284,31 +1178,12 @@ fn create_context(
     title: &str,
     state: Option<WindowState>,
 ) -> io::Result<Box<Context>> {
-    create_context_with_paths(path, title, state, &Vec::new())
-}
-
-fn create_context_with_paths(
-    path: &Path,
-    title: &str,
-    state: Option<WindowState>,
-    paths: &[String],
-) -> io::Result<Box<Context>> {
     let screens = monitors()?;
     // SAFETY: pointer-free query of the process's DPI context after initialization.
     let dpi = unsafe { GetDpiForSystem() }.clamp(48, 960);
     let state = restore_state(state, &screens, dpi);
     let mut wide_title: Vec<u16> = title.encode_utf16().collect();
     wide_title.push(0);
-    
-    // Mutex pour instance unique
-    let mutex_name = wide(std::ffi::OsStr::new("AtelierSingleInstanceMutexV1"));
-    let mutex_handle = unsafe { CreateMutexW(null_mut(), 0, mutex_name.as_ptr()) };
-    let mutex_handle = if mutex_handle.is_null() {
-        None
-    } else {
-        Some(mutex_handle)
-    };
-    
     Ok(Box::new(Context {
         state_file: path.to_path_buf(),
         title: wide_title,
@@ -1320,16 +1195,10 @@ fn create_context_with_paths(
         close_requested: false,
         minimized: false,
         file_runtime: None,
-        mutex_handle,
-        pending_paths: paths.to_vec(),
     }))
 }
 
 pub fn run(state_file: &Path, title: &str, webview_data: &Path) -> io::Result<()> {
-    run_with_paths(state_file, title, webview_data, &Vec::new())
-}
-
-pub fn run_with_paths(state_file: &Path, title: &str, webview_data: &Path, paths: &[String]) -> io::Result<()> {
     match webview::probe_runtime()? {
         Some(_) => {}
         None => {
@@ -1341,9 +1210,7 @@ pub fn run_with_paths(state_file: &Path, title: &str, webview_data: &Path, paths
     }
     let _apartment = webview::ComApartment::initialize_sta()?;
     let saved = load_state(state_file)?;
-    
-    // Créer un nouveau contexte avec les chemins en attente
-    let mut context = create_context_with_paths(state_file, title, saved, paths)?;
+    let mut context = create_context(state_file, title, saved)?;
     context.file_runtime =
         Some(FileRuntime::new().map_err(|error| io::Error::other(error.message_key))?);
     let initial = restore_state(saved, &monitors()?, context.dpi);
@@ -1391,16 +1258,6 @@ pub fn run_with_paths(state_file: &Path, title: &str, webview_data: &Path, paths
         );
         UpdateWindow(hwnd);
     }
-    
-    // Si des chemins sont en attente, les envoyer à la fenêtre (premier plan)
-    if !paths.is_empty() {
-        // Mettre la fenêtre au premier plan
-        unsafe {
-            ShowWindow(hwnd, SW_SHOWNORMAL);
-            SetForegroundWindow(hwnd);
-        }
-    }
-    
     let result = pump(hwnd);
     if !hwnd.is_null() && context.callback_error.is_none() && !context.persisted {
         context.record(save(hwnd, &context));
