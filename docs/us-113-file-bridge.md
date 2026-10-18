@@ -1,5 +1,7 @@
 # US-113 — Pont natif de fichiers pour l’éditeur texte
 
+> Mise à jour 2026-10-18 : SharedBuffer, dialogues par formats, tickets, polices et URL sont décrits dans [us-113-native-bridge.md](us-113-native-bridge.md). Les mentions « SharedBuffer, polices/URL restent ouverts » ci-dessous sont historiques.
+
 Le shell Windows accepte `us120-file|1|ID|open|`, `save|BASE64` et
 `dirty|0/1` seulement depuis la source exacte `https://app.atelier/`. Les ID
 sont des décimaux positifs stricts, au plus 20 chiffres, et croissants pendant
