@@ -6,10 +6,10 @@ import { access, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { selectEngine } from "./engine-adapter.mjs";
+import { engineNote, selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-selectEngine("run-editor-utilities-browser", "node tests/run-editor-utilities-browser.mjs [--engine v1|v2]");
+const { engine } = selectEngine("run-editor-utilities-browser", "node tests/run-editor-utilities-browser.mjs [--engine v1|v2]");
 const candidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
@@ -78,7 +78,7 @@ try {
   assert.equal(report.status, "passed", JSON.stringify(report));
   assert(report.checks.length >= 30, "All editor utility browser suites must execute.");
   assert.match(report.userAgent, /(?:Chrome|Edg)\//);
-  console.log(JSON.stringify({ ...report, executable }));
+  console.log(JSON.stringify({ ...report, engine, note: engineNote("run-editor-utilities-browser", engine), executable }));
 } finally {
   clearTimeout(timer);
   if (browser.exitCode === null && browser.signalCode === null) {

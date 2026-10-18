@@ -432,11 +432,8 @@ try {
   await checkFind({ assert, waitFor, editor, openText, text, canvas });
 
   for (const [name, reason] of [
-    ["document-status integration (page count, go-to-page, view menu)", "reads state.text and v1 pages; goToPage and the viewport state are exercised by run-rich-editor-ui-browser"],
-    ["context menu and symbols integration (editor-utilities-integration)", "reads state.text; copy, cut and select-all go through selectedText in run-rich-editor-ui-browser"],
-    ["the properties dialog on the DOCX preview (properties-integration)", "v2 has no preview: the dialog reads the open document, run through run-rich-editor-ui-browser"],
+    ["the properties dialog on the DOCX preview (properties-integration)", "v2 has no preview: the dialog reads the open document; its scenario (six fields, limits, cancel, OK, reread from the DOCX) is run by run-rich-editor-ui-browser"],
     ["DOCX preview mode (openDocx, closePreview)", "replaced by opening the DOCX in the editor"],
-    ["launch documents (US-115) and app-level shortcut harness", "run through app.mjs, whose v1 text-state assertions are not portable; the v2 product page is run-rich-editor-ui-browser"],
   ]) skip(name, reason);
   assert(errors.every(code => typeof code === "string"), "every reported error carries a typed code");
   report = { status: "passed", engine: "v2", checks, skipped, userAgent: navigator.userAgent };

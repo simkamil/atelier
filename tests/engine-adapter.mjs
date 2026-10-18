@@ -17,13 +17,20 @@ export const DEFAULT_ENGINE = "v1";
 export const V2_PENDING_EXIT_CODE = 75;
 export const V2_PENDING_MESSAGE = "v2 en attente de R7b (suite non portée)";
 /** Suites qui passent réellement en v2 (R7a). */
-export const V2_READY_SUITES = Object.freeze(["run-ui-browser", "run-image-insert-browser", "run-editor-browser"]);
+export const V2_READY_SUITES = Object.freeze(["run-ui-browser", "run-image-insert-browser", "run-editor-browser",
+  "run-editor-utilities-browser", "run-frontend-browser", "mouse-selection"]);
+/**
+ * Suites ready in v2 because the code they check is shared by v1 and v2 and drives no editor (R7c): same checks, same
+ * result under both engines. What is specific to v2 is verified where it lives (the second column).
+ */
+export const V2_SHARED_NOTES = Object.freeze({
+  "run-editor-utilities-browser": "modules isolés (menu contextuel, À propos, symboles) sans éditeur ; leur intégration avec l'éditeur v2 est dans run-rich-editor-ui-browser (editor-utilities-integration-v2, document-status-integration-v2)",
+  "run-frontend-browser": "CanvasRenderer et text-input partagés par v1 et v2, sans éditeur ; le rendu des pages v2 (atlas) est dans run-rich-atlas-render-browser et run-rich-editor-ui-browser",
+  "mouse-selection": "module de souris partagé, sans éditeur ; la souris v2 (HitTest, SelectUnit, glisser-déposer MoveText) est dans run-editor-browser --engine v2 et run-rich-editor-ui-browser",
+});
+export const engineNote = (suite, engine) => (engine === "v2" ? V2_SHARED_NOTES[suite] ?? null : null);
 /** Raison du code 75 des suites non portées, par nom de suite. */
 export const V2_PENDING_REASONS = Object.freeze({
-  "run-editor-utilities-browser": "v2 en attente de R7b : le menu contextuel et les symboles sont couverts en v2 par run-rich-editor-ui-browser ; cette suite pilote encore createEditor",
-  "run-frontend-browser": "v2 en attente de R7b : la suite pilote le rendu Canvas et la saisie de createEditor ; l'atlas v2 a run-rich-atlas-render-browser",
-  "mouse-selection": "v2 en attente de R7b : module partagé testé tel quel ; la souris v2 est dans run-rich-editor-ui-browser (double et triple clic absents)",
-  "run-latency-browser": "v2 en attente de R7b : le banc de latence mesure l'éditeur v1 (la mesure v2 est le critère de R7b)",
 });
 export const ENGINES = Object.freeze({
   v1: Object.freeze({ ready: true }),
