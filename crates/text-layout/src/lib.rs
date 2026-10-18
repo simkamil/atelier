@@ -13,6 +13,7 @@ pub mod flow;
 pub mod incremental;
 pub mod inline_object;
 pub mod pagination;
+pub mod stream;
 
 use atelier_font::FontFace;
 use atelier_font::manager::{
