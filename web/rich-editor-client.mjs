@@ -112,7 +112,13 @@ export function createRichEditorClient({
       settleLayoutWaiters(closedError());
       return { response, change: null };
     }
-    const change = cache.apply(response);
+    let change;
+    try { change = cache.apply(response); } catch (error) {
+      // Glyph atlas entries were lost (an aborted request the engine answered): the pages that
+      // refer to them cannot be trusted, so the existing resync is requested.
+      if (error?.cause?.atlas === true && !disposed) { cache.dropPages(); needsResync = true; }
+      throw error;
+    }
     settleLayoutWaiters();
     return { response, change };
   }
@@ -260,6 +266,10 @@ export function createRichEditorClient({
   return Object.freeze({
     cache,
     get opened() { return opened; },
+    /** Epoch of the glyph atlas the pages refer to (null before the first reply). */
+    get atlasEpoch() { return cache.atlasEpoch; },
+    /** `resolveGlyph` of CanvasRenderer for the pages of this document. */
+    glyphResolver: cache.glyphResolver,
     /** Open a document (replaces the active one) and start the layout pump. */
     open(spec, { signal: callerSignal } = {}) {
       return enqueue(async () => {

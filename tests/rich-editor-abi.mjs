@@ -9,6 +9,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
+import { decodeDisplayList } from "../web/display-list.mjs";
+import { EditorPageCache } from "../web/editor-page-cache.mjs";
 import {
   decodeRichReply, encodeRichReply, encodeRichRequest, RichProtocolError,
 } from "../web/rich-editor-protocol.mjs";
@@ -291,12 +293,43 @@ scenario("(v2 only) dense pages: lines of 100 columns open, page bounds hold", "
   const sent = opened.pages.reduce((n, p) => n + p.display.length, 0);
   assert.ok(opened.pages.length === 1 || sent <= 8 * 1024 * 1024);
   assert.ok(opened.pages.every((p) => p.display.length <= 16 * 1024 * 1024));
-  assert.ok(opened.pages[0].display.length > 4 * 1024 * 1024, "the page is above the former 4 MiB limit");
+  // The glyph atlas (R2b): the contours travel once, the page only references them.
+  const atlasBytes = (a) => a.entries.reduce((n, e) => n + e.length, 0);
+  const firstReplyBytes = atlasBytes(opened.atlas) + opened.pages[0].display.length;
+  assert.ok(opened.atlas.entries.length > 0 && opened.atlas.first === 0);
+  assert.ok(firstReplyBytes < 1024 * 1024, `first page with its atlas: ${firstReplyBytes} bytes`);
+  const client = new EditorPageCache();
+  globalThis.Path2D ??= class { moveTo() {} lineTo() {} quadraticCurveTo() {} bezierCurveTo() {} closePath() {} };
+  client.apply(opened);
+  const covered = (pages) => {
+    for (const page of pages) {
+      for (const c of decodeDisplayList(page.display).commands) {
+        assert.notEqual(c.type, "fillPath", "no glyph contour is repeated in a page");
+        if (c.type === "drawGlyphRun") {
+          assert.equal(c.fontId, 0n);
+          for (const g of c.glyphs) assert.ok(client.glyphResolver(c.fontId, g.glyphId), `atlas entry ${g.glyphId}`);
+        }
+      }
+    }
+  };
+  covered(opened.pages);
+  const again = command({ type: "pages", first: 0, count: 1 });
+  assert.equal(again.type, "pages");
+  assert.equal(again.atlas.entries.length, 0, "steady state: the atlas is not sent again");
+  assert.equal(again.atlas.epoch, opened.atlas.epoch);
+  assert.equal(again.atlas.first, opened.atlas.entries.length);
+  client.apply(again);
   // Characters of page 0, from the position at its bottom right.
   const hitReply = command({ type: "hitTest", page: 0, mode: "probe", x: 10000, y: 10000 });
   assert.equal(hitReply.type, "hitResult");
   const shown = textOf().slice(0, Number(hitReply.position)).replace(/\n/g, "").length;
-  measured = { page0Bytes: opened.pages[0].display.length, characters: shown, perGlyph: Math.round(opened.pages[0].display.length / shown) };
+  measured = {
+    page0Bytes: opened.pages[0].display.length, characters: shown, perGlyph: Math.round(again.pages[0].display.length / shown),
+    firstBytes: firstReplyBytes, atlasEntries: opened.atlas.entries.length, atlasBytes: atlasBytes(opened.atlas),
+    firstPerGlyph: Math.round(firstReplyBytes / shown),
+  };
+  assert.equal(again.pages[0].display.length, opened.pages[0].display.length);
+  assert.ok(measured.perGlyph < 60, `${measured.perGlyph} bytes per glyph once the atlas is known`);
   let state = opened;
   for (let i = 0; i < 4000 && !state.layoutComplete; i += 1) state = expectState({ type: "layout", budget: 256 });
   assert.ok(state.layoutComplete);
@@ -304,6 +337,8 @@ scenario("(v2 only) dense pages: lines of 100 columns open, page bounds hold", "
     const r = command({ type: "pages", first, count: 1 });
     assert.equal(r.type, "pages", JSON.stringify(r.code));
     assert.equal(r.pages.length, 1);
+    client.apply(r);
+    covered(r.pages);
   }
 });
 
@@ -322,4 +357,4 @@ console.log("v1 scenario -> v2 equivalent");
 for (const s of SCENARIOS) console.log(`  ${s.run ? "ok   " : "NONE "} ${s.v1} -> ${s.v2 ?? `no equivalent: ${s.reason}`}`);
 console.log(`Rich editor real WASM ABI (v2): ${passed} scenarios passed, ${none.length} v1 scenarios without v2 equivalent.`);
 if (none.length) console.log("US-217 criterion 'the scenarios of editor-abi.mjs pass in v2' stays unticked.");
-if (measured) console.log(`Dense page measure: ${measured.page0Bytes} bytes for ${measured.characters} characters on page 0 (${measured.perGlyph} bytes per glyph).`);
+if (measured) console.log(`Dense page measure: ${measured.page0Bytes} bytes for ${measured.characters} characters on page 0 (${measured.perGlyph} bytes per glyph once the atlas is known); first reply ${measured.firstBytes} bytes with ${measured.atlasEntries} atlas entries (${measured.atlasBytes} bytes), ${measured.firstPerGlyph} bytes per glyph.`);

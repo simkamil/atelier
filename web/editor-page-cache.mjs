@@ -6,7 +6,17 @@
 // arrive as views into the received frame and are copied here, so the cache
 // never retains a reply frame. Application is atomic: a reply that fails the
 // checks leaves the state untouched.
+//
+// Glyph atlas (R2b): pages draw glyphs with `drawGlyphRun` of font 0 whose glyph
+// id is an atlas index. State and Pages replies carry the entries that are new
+// since the previous reply (`atlas.first` = the number the client already
+// knows, `atlas.epoch` changes when the engine numbers from 0 again). The atlas
+// is kept between pages, bounded by RICH_LIMITS.maxAtlasEntries, emptied only by
+// an epoch change or reset(); dropPages() keeps it. `glyphResolver` is the
+// `resolveGlyph` of CanvasRenderer; each Path2D is built once.
 import { RICH_LIMITS } from "./rich-editor-protocol.mjs";
+import { decodeDisplayList } from "./display-list.mjs";
+import { makePath } from "./canvas-renderer.mjs";
 
 export class RichClientError extends Error {
   /** `code` is a RICH_* engine error name or a CLIENT_* name; `detail` carries the optional cause. */
@@ -30,13 +40,18 @@ export class EditorPageCache {
     if (onChange !== undefined && typeof onChange !== "function") throw new TypeError("onChange must be a function.");
     this.onChange = onChange;
     this.pageMap = new Map();
+    this.atlas = [];
+    this.atlasEpoch = null;
     this.version = 0;
+    this.glyphResolver = (fontId, glyphId) => this.#glyph(fontId, glyphId);
     this.reset();
   }
 
   /** Forget everything (document opened, closed or replaced). */
   reset() {
     this.pageMap.clear();
+    this.atlas = [];
+    this.atlasEpoch = null;
     this.revision = null;
     this.pageCount = 0;
     this.docLen = 0n;
@@ -62,6 +77,50 @@ export class EditorPageCache {
   }
 
   get size() { return this.pageMap.size; }
+
+  /** Number of glyph atlas entries known. */
+  get atlasSize() { return this.atlas.length; }
+
+  #glyph(fontId, glyphId) {
+    if ((fontId !== 0n && fontId !== 0) || !Number.isInteger(glyphId)) return null;
+    const entry = this.atlas[glyphId];
+    if (!entry) return null;
+    entry.path ??= makePath(entry.elements);
+    return entry;
+  }
+
+  /**
+   * Check and store the atlas section of a reply. An epoch that differs from
+   * the known one empties the atlas and the pages (their glyph indices belong to
+   * the old numbering) before the entries are stored; `first` must then be 0,
+   * otherwise the number of entries already known.
+   * @returns {boolean} true when a known epoch was replaced (pages were dropped)
+   */
+  #applyAtlas(atlas) {
+    if (!atlas || !Number.isInteger(atlas.epoch) || !Number.isInteger(atlas.first) || !Array.isArray(atlas.entries)) invalid("Atlas section is missing.");
+    const fresh = atlas.epoch !== this.atlasEpoch;
+    const known = fresh ? 0 : this.atlas.length;
+    if (atlas.first !== known) {
+      throw new RichClientError("CLIENT_BAD_REPLY", "Atlas entries do not follow the known ones.", { atlas: true, first: atlas.first, known });
+    }
+    if (known + atlas.entries.length > RICH_LIMITS.maxAtlasEntries) invalid("Atlas is over its bound.");
+    const decoded = atlas.entries.map((bytes) => {
+      let list;
+      try { list = decodeDisplayList(bytes); } catch { return invalid("Atlas entry is not a display list."); }
+      const [command] = list.commands;
+      if (list.commands.length !== 1 || command.type !== "fillPath" || command.rule !== "nonZero"
+          || command.color.r !== 0 || command.color.g !== 0 || command.color.b !== 0 || command.color.a !== 1) invalid("Atlas entry must be one black nonzero contour.");
+      return { elements: command.path, path: null };
+    });
+    const replaced = fresh && this.atlasEpoch !== null;
+    if (fresh) {
+      this.atlas = [];
+      this.atlasEpoch = atlas.epoch;
+      this.pageMap.clear();
+    }
+    this.atlas.push(...decoded);
+    return replaced;
+  }
 
   /** Text window sent with the current revision, or null when it is outdated. */
   get window() {
@@ -99,6 +158,9 @@ export class EditorPageCache {
    */
   apply(response) {
     let change;
+    let atlasReset = false;
+    const held = this.pageMap.size;
+    if (response?.type === "state" || response?.type === "pages") atlasReset = this.#applyAtlas(response.atlas);
     switch (response?.type) {
       case "state": change = this.#applyState(response); break;
       case "pages": change = this.#applyPages(response); break;
@@ -106,7 +168,8 @@ export class EditorPageCache {
       case "hitResult": case "closed": case "error": change = { ignored: true, updated: [], dropped: 0, invalidated: 0 }; break;
       default: return invalid("Reply type is not a cache input.");
     }
-    if (!change.ignored) {
+    if (atlasReset) { change.atlasReset = true; change.dropped += held; }
+    if (!change.ignored || atlasReset) {
       change.dropped += this.#evict();
       this.version += 1;
       if (this.onChange) {

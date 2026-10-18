@@ -6,22 +6,49 @@ import { getEventListeners } from "node:events";
 import { decodeRichRequest, encodeRichReply } from "../web/rich-editor-protocol.mjs";
 import { EditorPageCache, RichClientError, createRichEditorClient } from "../web/rich-editor-client.mjs";
 
+globalThis.Path2D ??= class { moveTo() {} lineTo() {} quadraticCurveTo() {} bezierCurveTo() {} closePath() {} };
 const atdl = (tag) => { const b = new Uint8Array(44); b.set([0x41, 0x54, 0x44, 0x4c]); b[4] = tag & 0xff; b[5] = (tag >> 8) & 0xff; return b; };
 const tagOf = (bytes) => bytes[4] | (bytes[5] << 8);
 const abortError = () => new DOMException("The operation was aborted.", "AbortError");
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 const OPEN = { kind: "blank", profile: "document", data: new Uint8Array(0) };
 
+// One glyph atlas entry: ATDL, a black nonzero FillPath of a triangle of size `size`.
+function atlasEntry(size) {
+  const out = new Uint8Array(44 + 22 + 3 * 17 + 1);
+  const view = new DataView(out.buffer);
+  out.set([0x41, 0x54, 0x44, 0x4c, 1, 0, 0, 0]);
+  view.setFloat64(24, 595.276, true); view.setFloat64(32, 841.89, true);
+  view.setUint32(40, 1, true);
+  let at = 44;
+  out[at++] = 1; out[at++] = 0;
+  for (const v of [0, 0, 0, 1]) { view.setFloat32(at, v, true); at += 4; }
+  view.setUint32(at, 4, true); at += 4;
+  for (const [op, x, y] of [[0, 0, 0], [1, size, 0], [1, size, -size]]) {
+    out[at++] = op; view.setFloat64(at, x, true); view.setFloat64(at + 8, y, true); at += 16;
+  }
+  out[at++] = 4;
+  return out;
+}
+
 /** Engine double: `total` pages, `computed` of them laid out so far, `Layout` computes `budget` more. */
 function makeEngine({ docId = 1, total = 100, firstComputed = 10 } = {}) {
-  const e = { total, computed: firstComputed, rev: 0n, open: false, anchor: 0n, edits: 0 };
+  const e = { total, computed: firstComputed, rev: 0n, open: false, anchor: 0n, edits: 0,
+    atlas: { epoch: 1, sent: 0, fresh: 0 } };
+  // Entries made since the last reply: `atlas.fresh` of them, numbered from `atlas.sent`.
+  const atlasDelta = () => {
+    const a = e.atlas;
+    const delta = { epoch: a.epoch, first: a.sent, entries: Array.from({ length: a.fresh }, (_, i) => atlasEntry(a.sent + i + 1)) };
+    a.sent += a.fresh; a.fresh = 0;
+    return delta;
+  };
   const done = () => e.computed >= e.total;
   // While layout is unfinished the engine already announces a few pages that are not computed yet.
   const count = () => (done() ? e.total : Math.min(e.total, e.computed + 4));
   const pageList = (index) => ({ index, display: atdl(Number(e.rev) * 7 + index) });
   e.state = (extra = {}) => ({
     type: "state", revision: e.rev, anchor: e.anchor, focus: e.anchor, focusUpstream: false, docLen: 100000n, modified: e.rev > 0n,
-    canUndo: e.rev > 0n, canRedo: false, layoutComplete: done(), pageCount: count(), caret: null, invalidated: [], pages: [], window: null, ...extra,
+    canUndo: e.rev > 0n, canRedo: false, layoutComplete: done(), pageCount: count(), caret: null, invalidated: [], atlas: atlasDelta(), pages: [], window: null, ...extra,
   });
   e.handle = (req) => {
     const { command: c } = req;
@@ -33,7 +60,7 @@ function makeEngine({ docId = 1, total = 100, firstComputed = 10 } = {}) {
       case "pages": {
         if (c.first >= count()) return { type: "error", code: "RICH_PAGE_RANGE" };
         if (c.first + c.count > e.computed) return { type: "error", code: "RICH_NOT_READY" };
-        return { type: "pages", revision: e.rev, pageCount: count(), pages: Array.from({ length: c.count }, (_, i) => pageList(c.first + i)) };
+        return { type: "pages", revision: e.rev, pageCount: count(), atlas: atlasDelta(), pages: Array.from({ length: c.count }, (_, i) => pageList(c.first + i)) };
       }
       case "insertText": {
         e.rev += 1n; e.edits += 1;
@@ -303,7 +330,7 @@ await test("visible pages are fetched in the background, again after an invalida
   await client.idle();
   assert.deepEqual([0, 1, 2].map((i) => client.cache.has(i)), [true, true, true]);
   assert.equal(transport.log.filter((x) => x === "pages").length, 1, "one Pages request for the three-page run");
-  client.cache.apply({ type: "state", revision: 5n, anchor: 0n, focus: 0n, focusUpstream: false, docLen: 5n, modified: true, canUndo: true, canRedo: false, layoutComplete: true, pageCount: 30, caret: null, invalidated: [[1, 2]], pages: [], window: null });
+  client.cache.apply({ type: "state", revision: 5n, anchor: 0n, focus: 0n, focusUpstream: false, docLen: 5n, modified: true, canUndo: true, canRedo: false, layoutComplete: true, pageCount: 30, caret: null, invalidated: [[1, 2]], atlas: { epoch: 1, first: 0, entries: [] }, pages: [], window: null });
   client.setVisibleRange(0, 3);
   await client.idle();
   assert.equal(client.cache.has(1), false, "stale revision: the client does not fetch for a revision the engine never reached");
@@ -321,6 +348,35 @@ await test("a visible page that is not ready waits for the pump instead of faili
   assert.deepEqual(errors, []);
   assert.equal([30, 31, 32, 33].every((i) => client.cache.has(i)), true);
   assert.equal(transport.log.includes("layout"), true);
+  client.dispose();
+});
+
+await test("the atlas epoch and entries are relayed; an index gap is CLIENT_BAD_REPLY and requests the resync", async () => {
+  const { client, transport, engine } = setup({}, { total: 30, firstComputed: 30 });
+  engine.atlas.fresh = 3;
+  await client.open(OPEN);
+  assert.equal(client.atlasEpoch, 1);
+  assert.equal(client.cache.atlasSize, 3);
+  assert.ok(client.glyphResolver(0n, 2));
+  engine.atlas.fresh = 2;
+  await client.command({ type: "insertText", text: "a" });
+  assert.equal(client.cache.atlasSize, 5);
+  // A reply to a request that was cancelled after the engine answered: entries 5..6 are lost.
+  engine.atlas.sent += 2;
+  engine.atlas.fresh = 1;
+  transport.log.length = 0;
+  await rejects(client.command({ type: "insertText", text: "b" }), "CLIENT_BAD_REPLY");
+  assert.equal(client.cache.size, 0, "pages were dropped");
+  assert.equal(client.cache.atlasSize, 5, "the atlas is kept");
+  // The resync is requested: a Layout goes before the next command.
+  transport.log.length = 0;
+  await client.command({ type: "layout", budget: 1 }).catch(() => {});
+  assert.equal(transport.log[0], "layout", "resync Layout first");
+  // The engine starts a new epoch (mark_resync): the client recovers.
+  engine.atlas.epoch = 2; engine.atlas.sent = 0; engine.atlas.fresh = 4;
+  await client.command({ type: "layout", budget: 1 });
+  assert.equal(client.atlasEpoch, 2);
+  assert.equal(client.cache.atlasSize, 4);
   client.dispose();
 });
 
