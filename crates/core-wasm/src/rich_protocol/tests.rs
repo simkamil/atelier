@@ -77,6 +77,9 @@ fn describe_request(r: &Request) -> String {
         Command::TextWindow { start, len } => format!("TextWindow start={start} len={len}"),
         Command::Pages { first, count } => format!("Pages first={first} count={count}"),
         Command::MarkSaved { revision } => format!("MarkSaved revision={revision}"),
+        Command::AccessibleWindow { start, end } => {
+            format!("AccessibleWindow start={start} end={end}")
+        }
     };
     format!("{head} {tail}")
 }
@@ -125,6 +128,39 @@ fn describe_reply(r: &Reply) -> String {
             "Pages revision={revision} page_count={page_count} pages={}",
             describe_pages(pages)
         ),
+        Response::AccessibleWindow { revision, items } => {
+            let items = if items.is_empty() {
+                "none".into()
+            } else {
+                items
+                    .iter()
+                    .map(|i| {
+                        let objects = if i.inlines.is_empty() {
+                            "none".into()
+                        } else {
+                            i.inlines
+                                .iter()
+                                .map(|o| {
+                                    format!("{}/{}/{}", o.offset, o.kind, hex(o.value.as_bytes()))
+                                })
+                                .collect::<Vec<_>>()
+                                .join("+")
+                        };
+                        format!(
+                            "{}-{}:{}:{}:{}:{}:{objects}",
+                            i.para_start,
+                            i.para_end,
+                            i.role,
+                            i.level,
+                            hex(i.label.as_bytes()),
+                            hex(i.text.as_bytes())
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(";")
+            };
+            format!("AccessibleWindow revision={revision} items={items}")
+        }
         Response::State(s) => {
             let caret = s.caret.map_or("none".into(), |c| {
                 format!("{}:{}:{}:{}", c.page, bits(c.x), bits(c.y), bits(c.height))
@@ -323,6 +359,25 @@ fn requests() -> Vec<(&'static str, Request)> {
         ),
         ("layout", req(7, 22, Command::Layout { budget: 16 })),
         (
+            "accessible-window",
+            req(7, 24, Command::AccessibleWindow { start: 2, end: 12 }),
+        ),
+        (
+            "accessible-window-empty",
+            req(7, 25, Command::AccessibleWindow { start: 5, end: 5 }),
+        ),
+        (
+            "accessible-window-max",
+            req(
+                7,
+                26,
+                Command::AccessibleWindow {
+                    start: 0,
+                    end: MAX_WINDOW_BYTES as u64,
+                },
+            ),
+        ),
+        (
             "layout-max",
             req(
                 7,
@@ -451,6 +506,71 @@ fn replies() -> Vec<(&'static str, Reply)> {
             r(9, 1, Response::Error(ErrorCode::UnknownDocument)),
         ),
         ("closed", r(7, 5, Response::Closed)),
+        (
+            "accessible-window",
+            r(
+                7,
+                27,
+                Response::AccessibleWindow {
+                    revision: 5,
+                    items: vec![
+                        AccessibleItem {
+                            para_start: 0,
+                            para_end: 5,
+                            role: role::HEADING,
+                            level: 2,
+                            label: String::new(),
+                            text: "Titre".into(),
+                            inlines: vec![],
+                        },
+                        AccessibleItem {
+                            para_start: 6,
+                            para_end: 14,
+                            role: role::LIST_ITEM,
+                            level: 1,
+                            label: "2.".into(),
+                            text: "a\u{fffc}b\u{fffc}".into(),
+                            inlines: vec![
+                                AccessibleInline {
+                                    offset: 1,
+                                    kind: inline_kind::OBJECT,
+                                    value: "Logo".into(),
+                                },
+                                AccessibleInline {
+                                    offset: 5,
+                                    kind: inline_kind::SYMBOL,
+                                    value: "·".into(),
+                                },
+                            ],
+                        },
+                        AccessibleItem {
+                            para_start: 15,
+                            para_end: 18,
+                            role: role::OPAQUE,
+                            level: 0,
+                            label: String::new(),
+                            text: "\u{fffc}".into(),
+                            inlines: vec![AccessibleInline {
+                                offset: 0,
+                                kind: inline_kind::OBJECT,
+                                value: String::new(),
+                            }],
+                        },
+                    ],
+                },
+            ),
+        ),
+        (
+            "accessible-window-empty",
+            r(
+                7,
+                28,
+                Response::AccessibleWindow {
+                    revision: 0,
+                    items: vec![],
+                },
+            ),
+        ),
         (
             "hit-result",
             r(
@@ -744,6 +864,24 @@ fn bad_requests() -> Vec<Bad> {
             true,
         ),
         (
+            "accessible-window-too-large",
+            frame(opcode::ACCESSIBLE_WINDOW, 7, 1, &acc_range(0, 262_145)),
+            WindowTooLarge,
+            true,
+        ),
+        (
+            "accessible-window-inverted",
+            frame(opcode::ACCESSIBLE_WINDOW, 7, 1, &acc_range(5, 2)),
+            InvalidRange,
+            true,
+        ),
+        (
+            "accessible-window-truncated",
+            frame(opcode::ACCESSIBLE_WINDOW, 7, 1, &acc_range(0, 1)[..15]),
+            InvalidBody,
+            true,
+        ),
+        (
             "window-too-large",
             frame(
                 opcode::TEXT_WINDOW,
@@ -791,6 +929,43 @@ fn bad_requests() -> Vec<Bad> {
             true,
         ),
     ]
+}
+
+fn acc_range(start: u64, end: u64) -> Vec<u8> {
+    let mut b = start.to_le_bytes().to_vec();
+    b.extend_from_slice(&end.to_le_bytes());
+    b
+}
+
+/// One `AccessibleWindow` item, written by hand so that invalid ones can be made.
+fn acc_item(
+    (start, end): (u64, u64),
+    (role, level, reserved): (u8, u8, u8),
+    text: &str,
+    inlines: &[(u64, u8)],
+) -> Vec<u8> {
+    let mut b = start.to_le_bytes().to_vec();
+    b.extend_from_slice(&end.to_le_bytes());
+    b.extend_from_slice(&[role, level, reserved, 0]);
+    b.extend_from_slice(&0u16.to_le_bytes());
+    b.extend_from_slice(&(text.len() as u32).to_le_bytes());
+    b.extend_from_slice(text.as_bytes());
+    b.extend_from_slice(&(inlines.len() as u16).to_le_bytes());
+    for (offset, kind) in inlines {
+        b.extend_from_slice(&offset.to_le_bytes());
+        b.extend_from_slice(&[*kind, 0]);
+        b.extend_from_slice(&0u16.to_le_bytes());
+    }
+    b
+}
+
+fn acc_reply(items: &[Vec<u8>]) -> Vec<u8> {
+    let mut body = 5u64.to_le_bytes().to_vec();
+    body.extend_from_slice(&(items.len() as u32).to_le_bytes());
+    for item in items {
+        body.extend_from_slice(item);
+    }
+    frame(opcode::R_ACCESSIBLE_WINDOW, 7, 1, &body)
 }
 
 fn bad_replies() -> Vec<Bad> {
@@ -899,6 +1074,102 @@ fn bad_replies() -> Vec<Bad> {
             "state-truncated",
             state_frame(|b| b.truncate(30)),
             InvalidBody,
+            true,
+        ),
+        (
+            "accessible-role-5",
+            acc_reply(&[acc_item((0, 1), (5, 0, 0), "a", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-heading-level-0",
+            acc_reply(&[acc_item((0, 1), (1, 0, 0), "a", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-list-level-9",
+            acc_reply(&[acc_item((0, 1), (2, 9, 0), "a", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-paragraph-with-level",
+            acc_reply(&[acc_item((0, 1), (0, 1, 0), "a", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-reserved",
+            acc_reply(&[acc_item((0, 1), (0, 0, 1), "a", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-length-mismatch",
+            acc_reply(&[acc_item((0, 2), (0, 0, 0), "a", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-items-overlap",
+            acc_reply(&[
+                acc_item((0, 1), (0, 0, 0), "a", &[]),
+                acc_item((1, 2), (0, 0, 0), "b", &[]),
+            ]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-object-not-fffc",
+            acc_reply(&[acc_item((0, 3), (0, 0, 0), "abc", &[(0, 0)])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-inlines-overlap",
+            acc_reply(&[acc_item(
+                (0, 6),
+                (0, 0, 0),
+                "\u{fffc}\u{fffc}",
+                &[(0, 0), (0, 0)],
+            )]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-inline-missing",
+            acc_reply(&[acc_item((0, 3), (0, 0, 0), "\u{fffc}", &[])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-inline-kind-4",
+            acc_reply(&[acc_item((0, 3), (0, 0, 0), "\u{fffc}", &[(0, 4)])]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-inline-reserved",
+            {
+                let mut f = acc_reply(&[acc_item((0, 3), (0, 0, 0), "\u{fffc}", &[(0, 0)])]);
+                let at = f.len() - 3;
+                f[at] = 1;
+                f
+            },
+            InvalidBody,
+            true,
+        ),
+        (
+            "accessible-invalid-utf8",
+            {
+                let mut f = acc_reply(&[acc_item((0, 1), (0, 0, 0), "a", &[])]);
+                let at = f.len() - 3;
+                f[at] = 0xff;
+                f
+            },
+            InvalidUtf8,
             true,
         ),
         (
@@ -1040,6 +1311,48 @@ fn encoder_refuses_what_decoder_would_reject() {
         response: Response::State(s),
     };
     assert_eq!(encode_reply(&reply), Err(ErrorCode::PageRange));
+    let item = |inlines: Vec<AccessibleInline>| AccessibleItem {
+        para_start: 0,
+        para_end: 3,
+        role: role::PARAGRAPH,
+        level: 0,
+        label: String::new(),
+        text: "\u{fffc}".into(),
+        inlines,
+    };
+    let accessible = |items: Vec<AccessibleItem>| Reply {
+        doc_id: 1,
+        request_id: 1,
+        response: Response::AccessibleWindow { revision: 1, items },
+    };
+    assert!(
+        encode_reply(&accessible(vec![item(vec![AccessibleInline {
+            offset: 0,
+            kind: inline_kind::OBJECT,
+            value: "x".into()
+        }])]))
+        .is_ok()
+    );
+    let too_many: Vec<AccessibleItem> = (0..=MAX_ACCESSIBLE_ITEMS as u64)
+        .map(|i| AccessibleItem {
+            para_start: i * 4,
+            para_end: i * 4 + 3,
+            ..item(vec![])
+        })
+        .collect();
+    assert_eq!(
+        encode_reply(&accessible(too_many)),
+        Err(ErrorCode::InvalidBody)
+    );
+    let long_alt = vec![AccessibleInline {
+        offset: 0,
+        kind: inline_kind::OBJECT,
+        value: "a".repeat(65_536),
+    }];
+    assert_eq!(
+        encode_reply(&accessible(vec![item(long_alt)])),
+        Err(ErrorCode::InvalidBody)
+    );
     let open = |n| {
         req(
             1,
@@ -1188,4 +1501,56 @@ fn engine_errors_map_to_protocol_codes() {
     if usize::BITS < 64 {
         assert_eq!(to_position(u64::MAX), Err(ErrorCode::PositionOutOfRange));
     }
+}
+
+fn atdl_of(index: u32, len: usize) -> PageDisplay {
+    let mut display = vec![0u8; len];
+    display[..4].copy_from_slice(b"ATDL");
+    PageDisplay { index, display }
+}
+
+#[test]
+fn page_byte_limits_are_checked_on_both_sides() {
+    let pages_reply = |pages: Vec<PageDisplay>| Reply {
+        doc_id: 1,
+        request_id: 1,
+        response: Response::Pages {
+            revision: 1,
+            page_count: 4,
+            pages,
+        },
+    };
+    let mib = 1024 * 1024;
+    // One page may reach the per-page limit, even above the response sum.
+    const { assert!(MAX_PAGE_DISPLAY_BYTES > MAX_RESPONSE_PAGE_BYTES) };
+    assert!(encode_reply(&pages_reply(vec![atdl_of(0, MAX_PAGE_DISPLAY_BYTES)])).is_ok());
+    assert_eq!(
+        encode_reply(&pages_reply(vec![atdl_of(0, MAX_PAGE_DISPLAY_BYTES + 1)])),
+        Err(ErrorCode::FrameTooLarge)
+    );
+    // Several pages share the response sum.
+    assert!(encode_reply(&pages_reply(vec![atdl_of(0, 4 * mib), atdl_of(1, 4 * mib)])).is_ok());
+    assert_eq!(
+        encode_reply(&pages_reply(vec![
+            atdl_of(0, 4 * mib),
+            atdl_of(1, 4 * mib + 1)
+        ])),
+        Err(ErrorCode::FrameTooLarge)
+    );
+    // The decoder refuses what the encoder refuses.
+    let mut body = 1u64.to_le_bytes().to_vec();
+    body.extend_from_slice(&4u32.to_le_bytes());
+    body.extend_from_slice(&2u32.to_le_bytes());
+    for (index, len) in [(0u32, 4 * mib), (1, 4 * mib + 1)] {
+        body.extend_from_slice(&index.to_le_bytes());
+        body.extend_from_slice(&(len as u32).to_le_bytes());
+        body.extend_from_slice(&atdl_of(index, len).display);
+    }
+    let error = decode_reply(&frame(opcode::R_PAGES, 1, 1, &body)).unwrap_err();
+    assert_eq!(error.code, ErrorCode::FrameTooLarge);
+    // The helper behind both.
+    assert!(page_fits(0, 0, MAX_PAGE_DISPLAY_BYTES));
+    assert!(!page_fits(1, MAX_RESPONSE_PAGE_BYTES, 1));
+    assert!(page_fits(1, MAX_RESPONSE_PAGE_BYTES - 1, 1));
+    assert!(!page_fits(0, 0, MAX_PAGE_DISPLAY_BYTES + 1));
 }

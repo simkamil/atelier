@@ -35,9 +35,17 @@ function describeRequest({ docId, requestId, command: c }) {
     textWindow: () => `TextWindow start=${c.start} len=${c.len}`,
     pages: () => `Pages first=${c.first} count=${c.count}`,
     markSaved: () => `MarkSaved revision=${c.revision}`,
+    accessibleWindow: () => `AccessibleWindow start=${c.start} end=${c.end}`,
   }[c.type]();
   return `${head} ${tail}`;
 }
+
+const INLINE_KINDS = { object: 0, lineBreak: 1, pageBreak: 2, symbol: 3 };
+const ROLES = { paragraph: 0, heading: 1, listItem: 2, tableCell: 3, opaque: 4 };
+const describeItems = (items) => (items.length
+  ? items.map((i) => `${i.paraStart}-${i.paraEnd}:${ROLES[i.role]}:${i.level}:${textHex(i.label)}:${textHex(i.text)}:${
+    i.inlines.length ? i.inlines.map((o) => `${o.offset}/${INLINE_KINDS[o.kind]}/${textHex(o.value)}`).join("+") : "none"}`).join(";")
+  : "none");
 
 const describePages = (pages) => (pages.length ? pages.map((p) => `${p.index}:${p.display.length}`).join(",") : "none");
 
@@ -46,6 +54,7 @@ function describeReply({ docId, requestId, response: s }) {
   const tail = {
     error: () => `Error code=${s.code}`,
     closed: () => "Closed",
+    accessibleWindow: () => `AccessibleWindow revision=${s.revision} items=${describeItems(s.items)}`,
     hitResult: () => `HitResult revision=${s.revision} page=${s.page} position=${s.position} upstream=${flag(s.upstream)}`,
     textWindow: () => `TextWindow revision=${s.revision} start=${s.start} doc_len=${s.docLen} text=${textHex(s.text)}`,
     pages: () => `Pages revision=${s.revision} page_count=${s.pageCount} pages=${describePages(s.pages)}`,
@@ -89,7 +98,7 @@ for (const [kind, name, frameHex, expected] of rows) {
     expectCode(() => decode(bytes), code, note !== "nocontext");
   }
 }
-assert.deepEqual(counts, { request: 24, reply: 10, "bad-request": 38, "bad-reply": 14 });
+assert.deepEqual(counts, { request: 27, reply: 12, "bad-request": 41, "bad-reply": 27 });
 
 // Truncation: every strict prefix of a valid frame is rejected, never thrown as a foreign error.
 for (const [kind, , frameHex] of rows.filter((row) => row[0] === "request" || row[0] === "reply")) {
@@ -159,6 +168,19 @@ const limitState = () => ({
   over((r) => { r.invalidated.push([5000, 5001]); }, "RICH_INVALID_BODY");
   over((r) => { r.window.text += "a"; r.docLen += 1n; }, "RICH_WINDOW_TOO_LARGE");
   over((r) => { r.invalidated = [[1, 2], [2, 3]]; }, "RICH_PAGE_RANGE");
+}
+
+// Page byte limits: one page up to 16 MiB, several pages within 8 MiB together.
+{
+  const mib = 1024 * 1024;
+  const big = (index, len) => { const d = new Uint8Array(len); d.set([0x41, 0x54, 0x44, 0x4c]); return { index, display: d }; };
+  const pagesReply = (pages) => ({ docId: 1, requestId: 1, response: { type: "pages", revision: 1n, pageCount: 4, pages } });
+  assert.equal(RICH_LIMITS.maxPageDisplayBytes, 16 * mib);
+  assert.equal(RICH_LIMITS.maxResponsePageBytes, 8 * mib);
+  assert.equal(decodeRichReply(encodeRichReply(pagesReply([big(0, 16 * mib)]))).response.pages.length, 1);
+  expectCode(() => encodeRichReply(pagesReply([big(0, 16 * mib + 1)])), "RICH_FRAME_TOO_LARGE", false);
+  assert.equal(decodeRichReply(encodeRichReply(pagesReply([big(0, 4 * mib), big(1, 4 * mib)]))).response.pages.length, 2);
+  expectCode(() => encodeRichReply(pagesReply([big(0, 4 * mib), big(1, 4 * mib + 1)])), "RICH_FRAME_TOO_LARGE", false);
 }
 
 // Typed errors for malformed caller input, no inherited keys as codes.

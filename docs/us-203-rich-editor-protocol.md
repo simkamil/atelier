@@ -29,7 +29,7 @@ Batch 1 and R2 do not lay out tables, headers or footers. Paragraphs of table ce
 
 ## Positions
 
-Flat positions are an **interchange representation of this protocol only**. The model and the recovery journal keep node id + offset (SPEC §6.3) and never store flat positions; the model converts flat position <-> (node id, offset) on demand (`FlatIndex`), and side tables are remapped through `position_map`.
+Flat positions are an **interchange representation of this protocol only**. The model and the recovery journal keep node id + offset (SPEC §6.3) and never store flat positions; the model converts flat position <-> (node id, offset) on demand (`FlatIndex`), and the model keeps no side table: breaks, symbols and objects are inline items of the paragraph (3 flat bytes each) and run styles a run attribute, so `position_map` remaps nothing outside the model (`ImportedDocx::breaks`, `symbols` and `run_styles` survive only as a derived view for the legacy `RichSession`, removed with R8).
 
 The flat text of a document covers **every paragraph in document order**, table cell paragraphs included (table by table, row by row, cell by cell), joined by one `\n` byte, with no trailing `\n`; headers and footers are not part of it. An opaque block counts as one paragraph made of a single U+FFFC. Inside a paragraph, every inline item that is not text counts as U+FFFC, **3 bytes** (`EF BF BC`) each: anchored objects (images...), line, page and column breaks and symbols. `run_styles` is a run attribute (`CharAttrs::char_style`), not an inline item: it counts **0 bytes**. Items at one text offset appear in `id` order across anchored objects, breaks and symbols. All positions, ranges and lengths are **byte offsets into that text**, `u64` on the wire (BigInt in JS), valid in `0..=doc_len`; the engine converts them with `usize::try_from` (`rich_protocol::to_position`), a value that does not fit is out of range.
 
@@ -63,6 +63,7 @@ Body layouts; reserved bytes must be zero, flags are `0` or `1`, floats must be 
 | `0x010C` | Pages | `first u32`, `count u32` (1 to 16) | Pages (`NOT_READY` if a requested page is not computed yet) |
 | `0x010D` | MarkSaved | `revision u64` | State (`modified` cleared if the revision is current, else `STALE_REVISION`) |
 | `0x010E` | Layout | `budget u32` (1 to 4096 paragraphs) | State |
+| `0x010F` | AccessibleWindow | `start u64`, `end u64` (valid positions, `end - start` at most 256 KiB) | AccessibleWindow |
 
 **Background layout.** The tail of a long document paginates incrementally. Every edit, move and selection command also runs `DEFAULT_LAYOUT_BUDGET` (16) paragraphs of pending layout, then answers. `Layout { budget }` runs up to `budget` paragraphs more and answers a State, so the client repeats it until the State carries the layout-complete flag; `page_count` grows meanwhile. `Pages` for a page that is not computed yet answers `RICH_NOT_READY` and the client retries after another `Layout`.
 
@@ -72,7 +73,7 @@ Body layouts; reserved bytes must be zero, flags are `0` or `1`, floats must be 
 
 ## Replies
 
-Reply opcodes: `0x8000` Error, `0x8100` State, `0x8101` TextWindow, `0x8102` Pages, `0x8103` HitResult, `0x8104` Closed. The full export is never returned.
+Reply opcodes: `0x8000` Error, `0x8100` State, `0x8101` TextWindow, `0x8102` Pages, `0x8103` HitResult, `0x8104` Closed, `0x8105` AccessibleWindow. The full export is never returned.
 
 **Error** (`0x8000`): `code u16`, `0 u16`.
 
@@ -87,15 +88,33 @@ Reply opcodes: `0x8000` Error, `0x8100` State, `0x8101` TextWindow, `0x8102` Pag
 | page_count | u32 | pages so far (grows while `layout_complete` is 0) |
 | caret | u32 page (`0xFFFFFFFF` none), `x f64`, `y f64`, `height f64` | geometry of the focus; zeros when none |
 | invalidated | `n u32` (at most 1024), `n` x (`first u32`, `end u32`) | half-open page ranges the client must drop; sorted and disjoint; ranges that overlap or **touch** (`end == next first`) are merged by the sender (`split_page_delta`) and refused by the decoder (`PAGE_RANGE`) |
-| pages | `n u32` (at most 16), `n` x (`index u32`, `len u32`, ATDL) | pages that changed, indices strictly increasing and `< page_count`; each is a complete ATDL display list (`docs/us-080-display-list.md`, 44 bytes to 4 MiB) |
+| pages | `n u32` (at most 16), `n` x (`index u32`, `len u32`, ATDL) | pages that changed, indices strictly increasing and `< page_count`; each is a complete ATDL display list (`docs/us-080-display-list.md`, 44 bytes to 16 MiB); the sum of the lists of one reply is at most 8 MiB unless the reply carries a single page (`rich_protocol::page_fits`, checked by encoders and decoders, `RICH_FRAME_TOO_LARGE`); the engine drops the pages that do not fit from `pages` and reports them in `invalidated`, the client asks for them with `Pages` |
 | window | `start u64`, `len u32`, UTF-8 (at most 256 KiB, within `doc_len`) | only if flag 4: the text around the focus that the engine chooses to send so the DOM mirror stays current |
 
-When more than 16 pages change, the first 16 are sent and the others appear in `invalidated`: the client re-requests them with `Pages`. A page absent from both lists is unchanged and its cached list stays valid.
+When more than 16 pages change, or their display lists exceed the reply bound, the first ones are sent and the others appear in `invalidated`: the client re-requests them with `Pages` (which also stops at the bound and answers fewer pages, the first one always). A display list is about 500 to 1600 bytes per glyph today (see `us-217-rich-editor.md`), so a dense page can pass 4 MiB.
+
+**Resynchronisation.** When the engine knows that a reply never reached the client (encoding failure, ABI `STATUS_LIMIT`, `EDITOR_RESPONSE_LIMIT`), the next `State` carries `invalidated = [(0, page_count)]` and a text window, once; the client then rebuilds its cache from `Pages` requests.
+
+**Moves and the layout.** A move or a hit test whose target is not laid out yet lays the tail out itself (blocks of 256 then 1024 paragraphs, at most 4096 paragraphs per command) and answers a `State` with the pages it changed; when the budget is spent the selection stays and the `State` has no caret and `layout_complete = 0`: the client sends `Layout` and repeats. `RICH_NOT_READY` is answered to `Pages` (and to a `HitTest` probe that cannot be placed). After a layout failure the engine rebuilds its layout instead of staying blocked. A page absent from both lists is unchanged and its cached list stays valid.
 
 **TextWindow** (`0x8101`): `revision u64`, `start u64`, `doc_len u64`, `len u32`, UTF-8, with `start + len <= doc_len`.
 **Pages** (`0x8102`): `revision u64`, `page_count u32`, then the page list as above.
 **HitResult** (`0x8103`): `revision u64`, `page u32`, `position u64` (a valid position), `upstream u8` (flag), `0 u8[3]`.
 **Closed** (`0x8104`): empty.
+**AccessibleWindow** (`0x8105`), added by US-217 for the accessible DOM mirror (US-209): `revision u64`, `count u32` (at most 256), then `count` items in document order:
+
+| Field | Type | Meaning |
+|---|---|---|
+| para_start, para_end | u64, u64 | flat positions of the paragraph (`para_end - para_start` is the byte length of its text; the separator is not part of it) |
+| role | u8 | 0 paragraph, 1 heading, 2 list item, 3 table cell, 4 opaque block |
+| level | u8 | heading 1-9, list level 0-8 (list items only), else 0 |
+| reserved | u16 | 0 |
+| label | `len u16`, UTF-8 | computed list label (`1.`), possibly empty |
+| text | `len u32`, UTF-8 | flat text of the paragraph, objects, breaks and symbols as U+FFFC |
+| inlines | `n u16`, then `n` x (`offset u64`, `kind u8`, `0 u8`, `len u16` + UTF-8) | exactly one per U+FFFC of the text, in text order; `offset` is flat, relative to `para_start`, and always on a U+FFFC |
+
+Inline kinds: 0 anchored object (value: alternative text, possibly empty), 1 line break or text-wrapping break (empty value), 2 page or column break (empty value), 3 symbol (value: the displayable character; a code point F000-F0FF is reduced to its low Latin-1 byte, as the R2 drawing does). The command answers the paragraphs that intersect `[start, end)`: the one that holds `start` (a position on a separator belongs to the paragraph that ends there) up to the one that holds the last byte before `end` (only that of `start` when `start == end`), at most 256 items; a client that needs more continues from `last para_end + 1`. Both positions must be valid positions (`POSITION_NOT_BOUNDARY`, `POSITION_OUT_OF_RANGE`); `start > end` is `INVALID_RANGE`; `end - start` over 256 KiB is `WINDOW_TOO_LARGE`. The decoders check the whole structure (roles and levels, ordering, lengths, one inline per U+FFFC at its place). JS: `decodeRichReply` returns `items[].inlines: [{ offset: BigInt, kind, value }]` with `kind` one of `object`, `lineBreak`, `pageBreak`, `symbol`; the command is `{ type: "accessibleWindow", start, end }`.
+Limits of the model (US-217): it holds no numbering definitions, so a list label is the decimal counter of the paragraph followed by a dot (bullets are not distinguished), and an object has no alternative text yet (empty value). Heading levels come from the style id (`atelier.heading.N`, `HeadingN`, `Heading N`, `TitreN`, case-insensitive) or from the styles it is based on.
 
 **Client rules (R4).** The client applies `invalidated` first, then stores `pages`. It drops its cached pages with index `>= page_count` whenever the page count decreases (the sender clamps its own ranges to `page_count`). It ignores a `Pages` reply whose `revision` is not the current revision (an edit happened since the request) and requests again. Cache entries are keyed by page index and are valid until invalidated, replaced or dropped.
 
@@ -148,7 +167,8 @@ Engine error mapping (`impl From` in `rich_protocol`): `FlatError::OutOfRange` t
 | `InsertText` / `ReplaceRange` text | 1 MiB |
 | Text window (request and reply) | 256 KiB |
 | Pages per reply | 16 |
-| One page display list | 4 MiB |
+| One page display list | 16 MiB |
+| Display lists in one reply | 8 MiB (a single page may exceed it, up to 16 MiB) |
 | Invalidation ranges per State | 1024 |
 | Pages per document (`MAX_PAGES`) | 2^20 |
 
@@ -158,7 +178,7 @@ Encoders check the size limits themselves; in tests every encoded reply is also 
 
 - R1 (US-204): implements on `RichDocument`, in `atelier_text_model::rich::flat`, `FlatIndex` (prefix sums, locate/position, `snap_back`, `prev/next_grapheme`, `prev/next_word`, `word_at`, implemented with `crates/unicode` plus the cluster overrides), `LayoutContext` and `FlatEdit`; `EditOutcome` reports `start`, `removed_bytes`, `inserted_bytes`, `doc_len`, the paragraph span (before/after indices, same meaning for undo and redo), `layout_scope` (`Paragraphs` or `All` for style or section changes) and `can_undo`/`can_redo`. `prev_word` is the start of the word strictly before the position (skipping the blanks in between), `next_word` the start of the word strictly after (skipping the blanks that follow the current word), as Ctrl+Left and Ctrl+Right in Word (US-221). `EditOutcome::map_position` can land inside a cluster merged by the edit: pass its result through `snap_back`. The conversions between a flat offset in a paragraph and an offset in `Paragraph::text`, both ways and aware of objects, breaks and symbols, are implemented (`paragraph_flat`, `flat_to_text_offset`, `text_to_flat_offset` and the matching `LayoutContext` methods). **Model fields frozen by US-203, behaviour left to R1** (`paragraph.rs`, `attrs.rs`): `Inline::Break(InlineBreak)` and `Inline::Symbol(InlineSymbol)` with `Paragraph::breaks` and `Paragraph::symbols` (3 bytes each in flat text), and `CharAttrs::char_style` (0 bytes). R1 feeds them from the DOCX import (`crates/fmt-ooxml/src/docx.rs:234-236` tables), shifts them with text edits and validates them (`paragraph.rs`, `ops.rs`, `validate.rs`). `VecParagraphs` (`rich/flat_double.rs`, a public module compiled out of wasm32 builds, so it adds no byte to the product WASM; tests that use it are host-only (`#[cfg(not(target_arch = "wasm32"))]`)) is a test double implementing `FlatIndex` and `LayoutContext` so that R2 does not wait for R1.
 - R2 (US-216): `crate::rich_layout::{RichPageCache, PageDelta, CaretGeometry, LayoutError}` in `crates/core-wasm/src/rich_layout.rs`, declarations only, with the empty submodule `rich_layout::rich_paint` (file `crates/core-wasm/src/rich_layout/rich_paint.rs`) declared so that R2 never touches `lib.rs`. The cache owns no document: `new`, `apply_edit`, `step` and `page_display` receive a `&dyn LayoutContext`, which gives the style catalog and theme, the resolved properties (`resolved(index)` for the paragraph after document defaults, table style, paragraph style and direct formatting; `resolved_run(index, direct)` for one run, `direct.char_style` selecting the character style; `StyleEngine::resolve_detached` is the document-free cascade behind them), the paragraphs (none for an opaque block), the block kind (body, table cell with table, row and cell ids, or opaque), the section and its `page_setup(section)` (`PageSetup`, twips, normalized: read from `Section::opaque` attributes of the WordprocessingML namespace named `pgSz.w`, `pgSz.h`, `pgSz.orient`, `pgMar.top`, `pgMar.right`, `pgMar.bottom`, `pgMar.left`, `pgMar.header`, `pgMar.footer`, `pgMar.gutter`, whose values are the ASCII text of the `w:sectPr` attributes; defaults are those of the US-202 default document, A4 11906 x 16838 with 1417 margins, plus 708 for header and footer distances and 0 gutter, which the code does not define; R1 must fill these attributes from the DOCX import, and `example_section()` in the test double shows the form), object resources and the list counters before each paragraph. `step` takes a budget in paragraphs, never a clock (`Instant::now()` panics on wasm32-unknown-unknown). Queries: `caret(position, upstream)`, `line_edges(position, upstream)`, `hit_test` (position and affinity), `move_vertical`, `move_page(position, pages, preferred_x)`. Target under 4 ms per keystroke on 300 pages, no global pagination pre-validation. `rich_protocol::split_page_delta` turns a `PageDelta` into the pages to send (at most 16, all `< page_count`) and the merged invalidation ranges (at most 1024).
-- R3a (US-217): maps `Command` to `FlatEdit` and `RichPageCache` and builds `State` (`rich_protocol::State`).
+- R3a (US-217): maps `Command` to `FlatEdit` and `RichPageCache` and builds `State` (`rich_protocol::State`); delivered in `crates/core-wasm/src/rich_editor.rs`, see [us-217-rich-editor.md](us-217-rich-editor.md). The route (`rich_editor::is_rich` in `lib.rs`) sends version 2 frames to it.
 - R4: `web/rich-editor-protocol.mjs` is frozen by R0; R4 created `web/editor-page-cache.mjs` and `web/rich-editor-client.mjs` (section Client). Editor wiring is R7.
 - Integrator: routing by version byte in `editor.rs`, and `node tests/rich-editor-protocol.mjs` in CI next to `tests/editor-protocol.mjs`.
 

@@ -18,6 +18,7 @@ mod images;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod properties;
 pub mod protocol;
+pub mod rich_editor;
 pub mod rich_layout;
 pub mod rich_preview;
 pub mod rich_protocol;
@@ -223,6 +224,14 @@ fn staged_engine() -> &'static Mutex<staged::StagedEngine> {
     STAGED.get_or_init(|| Mutex::new(staged::StagedEngine::default()))
 }
 
+/// The rich editor (ATED v2) of this instance: one active document, edited
+/// in place, never cloned per command like the v1 session.
+#[cfg(target_arch = "wasm32")]
+fn rich_editor_session() -> &'static Mutex<rich_editor::RichEditor> {
+    static RICH: OnceLock<Mutex<rich_editor::RichEditor>> = OnceLock::new();
+    RICH.get_or_init(|| Mutex::new(rich_editor::RichEditor::default()))
+}
+
 #[cfg(target_arch = "wasm32")]
 fn editor_session() -> &'static Mutex<editor::EditorSession> {
     static SESSION: OnceLock<Mutex<editor::EditorSession>> = OnceLock::new();
@@ -335,7 +344,13 @@ fn dispatch_editor(
     let mut state = editor_session()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let (mut candidate, response) = if staged::is_staged(&message.payload) {
+    let was_rich = rich_editor::is_rich(&message.payload);
+    let (mut candidate, response) = if rich_editor::is_rich(&message.payload) {
+        let mut rich = rich_editor_session()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        (None, rich.respond(message))
+    } else if staged::is_staged(&message.payload) {
         let mut staged = staged_engine()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -352,6 +367,9 @@ fn dispatch_editor(
                 request_id: message.request_id,
                 payload: b"EDITOR_RESPONSE_LIMIT".to_vec(),
             };
+            if was_rich {
+                mark_rich_resync();
+            }
             match protocol::encode(&failed) {
                 Ok(bytes) => bytes,
                 Err(_) => {
@@ -378,11 +396,26 @@ fn dispatch_editor(
             }
             descriptor
         }
-        Err(_) => match prefix_status(Vec::new(), STATUS_LIMIT) {
-            Ok(payload) => register_response(registry, payload),
-            Err(_) => 0,
-        },
+        Err(_) => {
+            // The client never saw the reply: it resynchronises.
+            if was_rich {
+                mark_rich_resync();
+            }
+            match prefix_status(Vec::new(), STATUS_LIMIT) {
+                Ok(payload) => register_response(registry, payload),
+                Err(_) => 0,
+            }
+        }
     }
+}
+
+/// Tells the rich editor that its last reply was lost.
+#[cfg(target_arch = "wasm32")]
+fn mark_rich_resync() {
+    rich_editor_session()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .mark_resync();
 }
 
 #[cfg(target_arch = "wasm32")]

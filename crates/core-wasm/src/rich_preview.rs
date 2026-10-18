@@ -19,6 +19,10 @@ use crate::rich_layout::rich_paint::{
 const MAX_DOCX_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_TEXT_BYTES: usize = 128 * 1024;
 const MAX_PARAGRAPHS: usize = 1024;
+/// Limits of the editor's DOCX import (the preview keeps the ones above).
+const EDITOR_MAX_PARAGRAPHS: usize = 262_144;
+const EDITOR_MAX_TEXT_BYTES: usize = 16 * 1024 * 1024;
+const EDITOR_MAX_RUNS: usize = 1 << 20;
 const MAX_PAGES: usize = 256;
 const ATLAS_TEXT_THRESHOLD: usize = 65_536;
 const MAX_EMBEDDED_FONT_BYTES: usize = 8 * 1024 * 1024;
@@ -77,7 +81,30 @@ pub fn import_preview_docx(bytes: &[u8]) -> Result<ImportedDocx, PreviewError> {
     };
     let imported =
         import_docx_with_limits(bytes, limits).map_err(|e| PreviewError::Import(e.to_string()))?;
-    validate_retained_text(&imported)?;
+    validate_retained_text(&imported, MAX_PARAGRAPHS, MAX_TEXT_BYTES)?;
+    Ok(imported)
+}
+
+/// Imports a DOCX for editing: the limits of the editor (262 144 paragraphs,
+/// 16 MiB of text, 1 M runs), the same input size and package bounds as the
+/// preview. Failures are coded, not formatted.
+pub fn import_docx_for_editor(bytes: &[u8]) -> Result<ImportedDocx, PreviewError> {
+    if bytes.len() > MAX_DOCX_BYTES {
+        return Err(PreviewError::InputTooLarge);
+    }
+    let limits = DocxLimits {
+        max_paragraphs: EDITOR_MAX_PARAGRAPHS,
+        max_runs: EDITOR_MAX_RUNS,
+        max_text_bytes: EDITOR_MAX_TEXT_BYTES,
+        max_styles: 4_096,
+        max_fonts: 16,
+        max_font_bytes: MAX_EMBEDDED_FONT_BYTES,
+        package: bounded_package_limits(atelier_fmt_ooxml::Limits::default()),
+        ..DocxLimits::default()
+    };
+    let imported =
+        import_docx_with_limits(bytes, limits).map_err(|_| PreviewError::Limit("docx import"))?;
+    validate_retained_text(&imported, EDITOR_MAX_PARAGRAPHS, EDITOR_MAX_TEXT_BYTES)?;
     Ok(imported)
 }
 
@@ -182,7 +209,7 @@ pub fn render_imported_docx(imported: &mut ImportedDocx) -> Result<RichPreview, 
 impl RenderJob {
     pub fn new(imported: &ImportedDocx) -> Result<Self, PreviewError> {
         let ids = imported.paragraph_ids().to_vec();
-        validate_retained_text(imported)?;
+        validate_retained_text(imported, MAX_PARAGRAPHS, MAX_TEXT_BYTES)?;
         let paragraph_bytes = ids
             .iter()
             .map(|id| imported.document.paragraph(*id).map(|p| p.text.len()))
@@ -490,9 +517,13 @@ pub fn preview_docx(bytes: &[u8]) -> Result<RichPreview, PreviewError> {
     render_imported_docx(&mut imported)
 }
 
-fn validate_retained_text(imported: &ImportedDocx) -> Result<(), PreviewError> {
+fn validate_retained_text(
+    imported: &ImportedDocx,
+    max_paragraphs: usize,
+    max_text: usize,
+) -> Result<(), PreviewError> {
     let ids = imported.paragraph_ids();
-    if ids.len() > MAX_PARAGRAPHS {
+    if ids.len() > max_paragraphs {
         return Err(PreviewError::Limit("paragraphs"));
     }
     let total = ids
@@ -510,7 +541,7 @@ fn validate_retained_text(imported: &ImportedDocx) -> Result<(), PreviewError> {
                 .and_then(|n| n.checked_add(usize::from(index > 0)))
                 .ok_or(PreviewError::Limit("text"))
         })?;
-    if total > MAX_TEXT_BYTES {
+    if total > max_text {
         return Err(PreviewError::Limit("text"));
     }
     Ok(())

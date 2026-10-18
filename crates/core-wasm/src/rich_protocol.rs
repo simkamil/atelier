@@ -23,7 +23,10 @@ pub const MAX_WINDOW_BYTES: usize = 256 * 1024;
 /// Largest number of page display lists in one response.
 pub const MAX_PAGES_PER_RESPONSE: usize = 16;
 /// Largest display list of one page.
-pub const MAX_PAGE_DISPLAY_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_PAGE_DISPLAY_BYTES: usize = 16 * 1024 * 1024;
+/// Largest sum of the display lists of one response, unless it carries a
+/// single page (a page alone may reach `MAX_PAGE_DISPLAY_BYTES`).
+pub const MAX_RESPONSE_PAGE_BYTES: usize = 8 * 1024 * 1024;
 /// Smallest valid display list (an empty `ATDL` page).
 pub const MIN_PAGE_DISPLAY_BYTES: usize = 44;
 /// Largest number of invalidation ranges in one state.
@@ -36,6 +39,16 @@ pub const DEFAULT_LAYOUT_BUDGET: u32 = 16;
 pub const MAX_LAYOUT_BUDGET: u32 = 4096;
 /// `Caret::page` value meaning "no caret geometry".
 pub const NO_CARET: u32 = u32::MAX;
+/// Largest number of paragraphs in one `AccessibleWindow` reply.
+pub const MAX_ACCESSIBLE_ITEMS: usize = 256;
+/// Roles of an accessible paragraph.
+pub mod role {
+    pub const PARAGRAPH: u8 = 0;
+    pub const HEADING: u8 = 1;
+    pub const LIST_ITEM: u8 = 2;
+    pub const TABLE_CELL: u8 = 3;
+    pub const OPAQUE: u8 = 4;
+}
 
 pub mod opcode {
     pub const OPEN: u16 = 0x0101;
@@ -52,12 +65,14 @@ pub mod opcode {
     pub const PAGES: u16 = 0x010C;
     pub const MARK_SAVED: u16 = 0x010D;
     pub const LAYOUT: u16 = 0x010E;
+    pub const ACCESSIBLE_WINDOW: u16 = 0x010F;
     pub const R_ERROR: u16 = 0x8000;
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
     pub const R_PAGES: u16 = 0x8102;
     pub const R_HIT: u16 = 0x8103;
     pub const R_CLOSED: u16 = 0x8104;
+    pub const R_ACCESSIBLE_WINDOW: u16 = 0x8105;
 }
 
 /// Stable error codes; the numeric values never change.
@@ -278,6 +293,12 @@ pub enum Command {
     Layout {
         budget: u32,
     },
+    /// Paragraphs intersecting the flat range `[start, end)`, for the
+    /// accessible DOM mirror; `end - start` is at most `MAX_WINDOW_BYTES`.
+    AccessibleWindow {
+        start: u64,
+        end: u64,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -330,6 +351,43 @@ pub struct State {
     pub window: Option<TextWindowData>,
 }
 
+/// Kinds of an inline item (every U+FFFC of an accessible paragraph).
+pub mod inline_kind {
+    /// Anchored object; the value is its alternative text.
+    pub const OBJECT: u8 = 0;
+    /// Line break or text wrapping break; empty value.
+    pub const LINE_BREAK: u8 = 1;
+    /// Page or column break; empty value.
+    pub const PAGE_BREAK: u8 = 2;
+    /// Symbol; the value is its displayable character.
+    pub const SYMBOL: u8 = 3;
+}
+
+/// The inline item behind one U+FFFC of an accessible paragraph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessibleInline {
+    /// Flat offset relative to the paragraph start, on a U+FFFC.
+    pub offset: u64,
+    pub kind: u8,
+    pub value: String,
+}
+
+/// One paragraph of an `AccessibleWindow` reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccessibleItem {
+    pub para_start: u64,
+    pub para_end: u64,
+    pub role: u8,
+    /// Heading level 1-9 (role heading), list level 0-8 (role list item), else 0.
+    pub level: u8,
+    /// Computed list label (a number and a dot, a bullet), possibly empty.
+    pub label: String,
+    /// Flat text of the paragraph (`para_end - para_start` bytes).
+    pub text: String,
+    /// Exactly one per U+FFFC of `text`, in text order.
+    pub inlines: Vec<AccessibleInline>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Response {
     Error(ErrorCode),
@@ -352,6 +410,10 @@ pub enum Response {
         upstream: bool,
     },
     Closed,
+    AccessibleWindow {
+        revision: u64,
+        items: Vec<AccessibleItem>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -414,6 +476,14 @@ impl<'a> Reader<'a> {
             1 => Ok(true),
             _ => Err(Fail::InvalidBody),
         }
+    }
+    /// A `u16` length followed by that many UTF-8 bytes.
+    fn text16(&mut self) -> Result<String, Fail> {
+        let len = usize::from(self.u16()?);
+        let raw = self.take(len)?;
+        Ok(core::str::from_utf8(raw)
+            .map_err(|_| Fail::InvalidUtf8)?
+            .to_owned())
     }
     fn finish(&self) -> Result<(), Fail> {
         if self.at == self.bytes.len() {
@@ -646,6 +716,14 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
             }
             Command::Layout { budget }
         }
+        opcode::ACCESSIBLE_WINDOW => {
+            let (start, end) = (r.u64()?, r.u64()?);
+            check_range(u64::MAX, start, end)?;
+            if end - start > MAX_WINDOW_BYTES as u64 {
+                return Err(Fail::WindowTooLarge);
+            }
+            Command::AccessibleWindow { start, end }
+        }
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -759,15 +837,35 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
             put_u64(&mut b, *revision);
             opcode::MARK_SAVED
         }
+        Command::AccessibleWindow { start, end } => {
+            put_u64(&mut b, *start);
+            put_u64(&mut b, *end);
+            opcode::ACCESSIBLE_WINDOW
+        }
     };
     let frame = header(op, request.doc_id, request.request_id, &b)?;
     decode_request(&frame).map_err(|e| e.code)?;
     Ok(frame)
 }
 
+/// True when a page of `next` bytes fits in a response that already carries
+/// `count` pages and `total` bytes of display lists: the first page always
+/// fits (up to the per-page limit), later ones only under the response sum.
+pub fn page_fits(count: usize, total: usize, next: usize) -> bool {
+    next <= MAX_PAGE_DISPLAY_BYTES
+        && (count == 0 || total.saturating_add(next) <= MAX_RESPONSE_PAGE_BYTES)
+}
+
 fn put_pages(out: &mut Vec<u8>, pages: &[PageDisplay]) -> Result<(), Fail> {
     if pages.len() > MAX_PAGES_PER_RESPONSE {
         return Err(Fail::TooManyPages);
+    }
+    let mut total = 0usize;
+    for (n, page) in pages.iter().enumerate() {
+        if !page_fits(n, total, page.display.len()) {
+            return Err(Fail::FrameTooLarge);
+        }
+        total += page.display.len();
     }
     put_u32(
         out,
@@ -790,6 +888,7 @@ fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, F
         return Err(Fail::TooManyPages);
     }
     let mut pages = Vec::with_capacity(n);
+    let mut total = 0usize;
     for _ in 0..n {
         let index = r.u32()?;
         let len = r.u32()? as usize;
@@ -799,6 +898,10 @@ fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, F
         if !(MIN_PAGE_DISPLAY_BYTES..=MAX_PAGE_DISPLAY_BYTES).contains(&len) {
             return Err(Fail::InvalidBody);
         }
+        if !page_fits(pages.len(), total, len) {
+            return Err(Fail::FrameTooLarge);
+        }
+        total += len;
         let display = r.take(len)?.to_vec();
         if display[..4] != *b"ATDL" {
             return Err(Fail::InvalidBody);
@@ -806,6 +909,110 @@ fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, F
         pages.push(PageDisplay { index, display });
     }
     Ok(pages)
+}
+
+fn put_text16(out: &mut Vec<u8>, text: &str) -> Result<(), Fail> {
+    out.extend_from_slice(
+        &u16::try_from(text.len())
+            .map_err(|_| Fail::InvalidBody)?
+            .to_le_bytes(),
+    );
+    out.extend_from_slice(text.as_bytes());
+    Ok(())
+}
+
+fn put_accessible(out: &mut Vec<u8>, items: &[AccessibleItem]) -> Result<(), Fail> {
+    if items.len() > MAX_ACCESSIBLE_ITEMS {
+        return Err(Fail::InvalidBody);
+    }
+    put_u32(
+        out,
+        u32::try_from(items.len()).map_err(|_| Fail::InvalidBody)?,
+    );
+    for item in items {
+        put_u64(out, item.para_start);
+        put_u64(out, item.para_end);
+        out.extend_from_slice(&[item.role, item.level, 0, 0]);
+        put_text16(out, &item.label)?;
+        put_text(out, &item.text)?;
+        out.extend_from_slice(
+            &u16::try_from(item.inlines.len())
+                .map_err(|_| Fail::InvalidBody)?
+                .to_le_bytes(),
+        );
+        for inline in &item.inlines {
+            put_u64(out, inline.offset);
+            out.extend_from_slice(&[inline.kind, 0]);
+            put_text16(out, &inline.value)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_accessible(r: &mut Reader<'_>) -> Result<Vec<AccessibleItem>, Fail> {
+    const OBJECT: [u8; 3] = [0xEF, 0xBF, 0xBC];
+    let count = r.u32()? as usize;
+    if count > MAX_ACCESSIBLE_ITEMS {
+        return Err(Fail::InvalidBody);
+    }
+    let mut items: Vec<AccessibleItem> = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (para_start, para_end) = (r.u64()?, r.u64()?);
+        let (role, level) = (r.u8()?, r.u8()?);
+        r.zero(2)?;
+        let level_ok = match role {
+            role::HEADING => (1..=9).contains(&level),
+            role::LIST_ITEM => level <= 8,
+            role::PARAGRAPH | role::TABLE_CELL | role::OPAQUE => level == 0,
+            _ => false,
+        };
+        let label = r.text16()?;
+        let len = r.u32()? as usize;
+        let raw = r.take(len)?;
+        let text = core::str::from_utf8(raw)
+            .map_err(|_| Fail::InvalidUtf8)?
+            .to_owned();
+        let ordered = items.last().is_none_or(|p| para_start > p.para_end);
+        if !level_ok || para_start > para_end || para_end - para_start != len as u64 || !ordered {
+            return Err(Fail::InvalidBody);
+        }
+        let n = usize::from(r.u16()?);
+        let mut inlines: Vec<AccessibleInline> = Vec::with_capacity(n);
+        let mut floor = 0usize;
+        for _ in 0..n {
+            let offset = r.u64()?;
+            let kind = r.u8()?;
+            r.zero(1)?;
+            let value = r.text16()?;
+            let at = usize::try_from(offset).map_err(|_| Fail::InvalidBody)?;
+            if kind > inline_kind::SYMBOL
+                || at < floor
+                || raw.get(at..at.saturating_add(3)) != Some(&OBJECT[..])
+            {
+                return Err(Fail::InvalidBody);
+            }
+            floor = at + 3;
+            inlines.push(AccessibleInline {
+                offset,
+                kind,
+                value,
+            });
+        }
+        // Every U+FFFC of the text has its inline.
+        if text.matches('\u{FFFC}').count() != n {
+            return Err(Fail::InvalidBody);
+        }
+        items.push(AccessibleItem {
+            para_start,
+            para_end,
+            role,
+            level,
+            label,
+            text,
+            inlines,
+        });
+    }
+    Ok(items)
 }
 
 fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
@@ -976,6 +1183,11 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
             opcode::R_HIT
         }
         Response::Closed => opcode::R_CLOSED,
+        Response::AccessibleWindow { revision, items } => {
+            put_u64(&mut b, *revision);
+            put_accessible(&mut b, items)?;
+            opcode::R_ACCESSIBLE_WINDOW
+        }
     };
     let frame = header(op, reply.doc_id, reply.request_id, &b)?;
     #[cfg(test)]
@@ -1040,6 +1252,10 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
                 }
             }
             opcode::R_CLOSED => Response::Closed,
+            opcode::R_ACCESSIBLE_WINDOW => Response::AccessibleWindow {
+                revision: r.u64()?,
+                items: read_accessible(&mut r)?,
+            },
             _ => return Err(Fail::UnknownOpcode),
         };
         r.finish()?;

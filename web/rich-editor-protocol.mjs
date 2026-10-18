@@ -16,22 +16,25 @@ export const RICH_LIMITS = Object.freeze({
   maxTextBytes: 1024 * 1024,
   maxWindowBytes: 256 * 1024,
   maxPagesPerResponse: 16,
-  maxPageDisplayBytes: 4 * 1024 * 1024,
+  maxPageDisplayBytes: 16 * 1024 * 1024,
+  maxResponsePageBytes: 8 * 1024 * 1024,
   minPageDisplayBytes: 44,
   maxInvalidations: 1024,
   maxPages: 1 << 20,
   maxLayoutBudget: 4096,
   defaultLayoutBudget: 16,
+  maxAccessibleItems: 256,
 });
 export const NO_CARET = 0xffffffff;
 
 export const RichOpcode = Object.freeze({
   Open: 0x0101, Close: 0x0102, InsertText: 0x0103, ReplaceRange: 0x0104, Delete: 0x0105,
   Move: 0x0106, SetSelection: 0x0107, HitTest: 0x0108, Undo: 0x0109, Redo: 0x010a,
-  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e,
+  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e, AccessibleWindow: 0x010f,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
+  AccessibleWindow: 0x8105,
 });
 
 export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
@@ -253,6 +256,14 @@ function parseCommand(opcode, body) {
       command = { type: "layout", budget };
       break;
     }
+    case RichOpcode.AccessibleWindow: {
+      const start = r.u64();
+      const end = r.u64();
+      if (start > end) fail("RICH_INVALID_RANGE");
+      if (end - start > BigInt(RICH_LIMITS.maxWindowBytes)) fail("RICH_WINDOW_TOO_LARGE");
+      command = { type: "accessibleWindow", start, end };
+      break;
+    }
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   r.finish();
@@ -313,6 +324,7 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "pages": w.u32(u32(command.first)); w.u32(u32(command.count)); opcode = RichOpcode.Pages; break;
     case "markSaved": w.u64(u64(command.revision)); opcode = RichOpcode.MarkSaved; break;
     case "layout": w.u32(u32(command.budget)); opcode = RichOpcode.Layout; break;
+    case "accessibleWindow": w.u64(u64(command.start)); w.u64(u64(command.end)); opcode = RichOpcode.AccessibleWindow; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
@@ -324,11 +336,14 @@ function readPages(r, pageCount) {
   const n = r.u32();
   if (n > RICH_LIMITS.maxPagesPerResponse) fail("RICH_TOO_MANY_PAGES");
   const pages = [];
+  let total = 0;
   for (let i = 0; i < n; i += 1) {
     const index = r.u32();
     const len = r.u32();
     if (index >= pageCount || (pages.length && pages[pages.length - 1].index >= index)) fail("RICH_PAGE_RANGE");
     if (len < RICH_LIMITS.minPageDisplayBytes || len > RICH_LIMITS.maxPageDisplayBytes) fail("RICH_INVALID_BODY");
+    if (pages.length > 0 && total + len > RICH_LIMITS.maxResponsePageBytes) fail("RICH_FRAME_TOO_LARGE");
+    total += len;
     const display = r.take(len);
     if (String.fromCharCode(...display.subarray(0, 4)) !== "ATDL") fail("RICH_INVALID_BODY");
     pages.push({ index, display });
@@ -338,8 +353,11 @@ function readPages(r, pageCount) {
 
 function writePages(w, pages) {
   w.u32(pages.length);
-  for (const page of pages) {
+  let total = 0;
+  for (const [n, page] of pages.entries()) {
     if (!(page.display instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+    if (page.display.length > RICH_LIMITS.maxPageDisplayBytes || (n > 0 && total + page.display.length > RICH_LIMITS.maxResponsePageBytes)) fail("RICH_FRAME_TOO_LARGE");
+    total += page.display.length;
     w.u32(page.index); w.u32(page.display.length); w.raw(page.display);
   }
 }
@@ -394,6 +412,82 @@ function writeState(w, s) {
   if (s.window) { w.u64(u64(s.window.start)); w.text(s.window.text); }
 }
 
+const OBJECT_BYTES = [0xef, 0xbf, 0xbc];
+const INLINE_KINDS = ["object", "lineBreak", "pageBreak", "symbol"];
+const ACCESSIBLE_ROLES = ["paragraph", "heading", "listItem", "tableCell", "opaque"];
+
+function text16(r) {
+  const len = r.u16();
+  try { return decoder.decode(r.take(len)); } catch (error) {
+    if (error instanceof RichProtocolError) throw error;
+    return fail("RICH_INVALID_UTF8");
+  }
+}
+
+function writeText16(w, value) {
+  const b = encoder.encode(value);
+  if (b.length > 0xffff) fail("RICH_INVALID_BODY");
+  w.u16(b.length); w.raw(b);
+}
+
+/** Items: {paraStart, paraEnd (BigInt), role, level, label, text, inlines: [{offset (BigInt), kind, value}]}, one inline per U+FFFC. */
+function readAccessible(r) {
+  const count = r.u32();
+  if (count > RICH_LIMITS.maxAccessibleItems) fail("RICH_INVALID_BODY");
+  const items = [];
+  for (let i = 0; i < count; i += 1) {
+    const paraStart = r.u64(); const paraEnd = r.u64();
+    const roleCode = r.u8(); const level = r.u8();
+    r.zero(2);
+    const role = ACCESSIBLE_ROLES[roleCode];
+    const levelOk = roleCode === 1 ? level >= 1 && level <= 9 : roleCode === 2 ? level <= 8 : level === 0;
+    if (role === undefined || !levelOk) fail("RICH_INVALID_BODY");
+    const label = text16(r);
+    const len = r.u32();
+    const raw = r.take(len);
+    let text;
+    try { text = decoder.decode(raw); } catch { return fail("RICH_INVALID_UTF8"); }
+    const previous = items[items.length - 1];
+    if (paraStart > paraEnd || paraEnd - paraStart !== BigInt(len) || (previous && paraStart <= previous.paraEnd)) fail("RICH_INVALID_BODY");
+    const n = r.u16();
+    const inlines = [];
+    let floor = 0;
+    for (let k = 0; k < n; k += 1) {
+      const offset = r.u64();
+      const kindCode = r.u8();
+      r.zero(1);
+      const value = text16(r);
+      const kind = INLINE_KINDS[kindCode];
+      if (kind === undefined || offset > BigInt(len)) fail("RICH_INVALID_BODY");
+      const at = Number(offset);
+      if (at < floor || at + 3 > len || OBJECT_BYTES.some((b, j) => raw[at + j] !== b)) fail("RICH_INVALID_BODY");
+      floor = at + 3;
+      inlines.push({ offset, kind, value });
+    }
+    let marks = 0;
+    for (let at = 0; at + 2 < len; at += 1) {
+      if (raw[at] === 0xef && raw[at + 1] === 0xbf && raw[at + 2] === 0xbc) { marks += 1; at += 2; }
+    }
+    if (marks !== n) fail("RICH_INVALID_BODY");
+    items.push({ paraStart, paraEnd, role, level, label, text, inlines });
+  }
+  return items;
+}
+
+function writeAccessible(w, items) {
+  if (!Array.isArray(items) || items.length > RICH_LIMITS.maxAccessibleItems) fail("RICH_INVALID_BODY");
+  w.u32(items.length);
+  for (const item of items) {
+    w.u64(u64(item.paraStart)); w.u64(u64(item.paraEnd));
+    w.u8(enumIndex(ACCESSIBLE_ROLES, item.role), item.level, 0, 0);
+    writeText16(w, item.label);
+    w.text(item.text);
+    if (item.inlines.length > 0xffff) fail("RICH_INVALID_BODY");
+    w.u16(item.inlines.length);
+    for (const inline of item.inlines) { w.u64(u64(inline.offset)); w.u8(enumIndex(INLINE_KINDS, inline.kind), 0); writeText16(w, inline.value); }
+  }
+}
+
 /** @returns {{docId:number, requestId:number, response:object}} */
 export function decodeRichReply(bytes) {
   const { opcode, context, body } = split(bytes);
@@ -431,6 +525,11 @@ export function decodeRichReply(bytes) {
         break;
       }
       case RichReplyOpcode.Closed: response = { type: "closed" }; break;
+      case RichReplyOpcode.AccessibleWindow: {
+        const revision = r.u64();
+        response = { type: "accessibleWindow", revision, items: readAccessible(r) };
+        break;
+      }
       default: return fail("RICH_UNKNOWN_OPCODE");
     }
     r.finish();
@@ -452,6 +551,7 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     case "pages": w.u64(u64(response.revision)); w.u32(u32(response.pageCount)); writePages(w, response.pages); opcode = RichReplyOpcode.Pages; break;
     case "hitResult": w.u64(u64(response.revision)); w.u32(u32(response.page)); w.u64(u64(response.position)); w.u8(response.upstream ? 1 : 0, 0, 0, 0); opcode = RichReplyOpcode.HitResult; break;
     case "closed": opcode = RichReplyOpcode.Closed; break;
+    case "accessibleWindow": w.u64(u64(response.revision)); writeAccessible(w, response.items); opcode = RichReplyOpcode.AccessibleWindow; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
