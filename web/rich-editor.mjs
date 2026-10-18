@@ -140,15 +140,18 @@ function placeholderPage(width, height) {
   return { page: { bounds, width, height }, commands: [] };
 }
 
+// i18n-ignore-start: valeurs par défaut d’un composant autonome ; l’application transmet le texte du catalogue (confirm-discard, dialog-*)
+const DEFAULT_CONFIRM_DISCARD = "Le document contient des modifications. Continuer sans les enregistrer ?";
+const DEFAULT_DIALOG_LABELS = Object.freeze({ openTitle: "Ouvrir un document", saveTitle: "Enregistrer le document", docx: "Document Word",
+  docm: "Document Word avec macros", dotx: "Modèle Word", txt: "Texte brut", defaultName: "Document" });
+// i18n-ignore-end
+
 /** Connects the v2 protocol, atlas renderer, hidden native text input, DOM mirror and file host. */
-// i18n-ignore: valeurs par défaut d’un composant autonome ; l’application transmet le texte du catalogue (dialogLabels, confirm-discard, input-label)
 export function createRichEditor({ client, host, canvas, scrollport, spacer, textRepresentation = null, frenchSpacing = true, inputLabel,
-  confirmDiscard = "Le document contient des modifications. Continuer sans les enregistrer ?",
+  confirmDiscard = DEFAULT_CONFIRM_DISCARD,
   onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {}, onImages = () => {}, imageAlt = () => "",
   t = null, user = "", version = "", onReadOnly = () => {}, screenReaderMode = false, onScreenReaderMode = () => {},
-  docId = 1, layoutBudget = 16, mirrorContainer = null,
-  dialogLabels = { openTitle: "Ouvrir un document", saveTitle: "Enregistrer le document", docx: "Document Word", docm: "Document Word avec macros",
-    dotx: "Modèle Word", txt: "Texte brut", defaultName: "Document" } } = {}) {
+  docId = 1, layoutBudget = 16, mirrorContainer = null, dialogLabels = DEFAULT_DIALOG_LABELS } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.notifyDirty !== "function"
       || (typeof host.pickOpen !== "function" && (typeof host.open !== "function" || typeof host.save !== "function"))) {
     throw new TypeError("client and native host are required.");

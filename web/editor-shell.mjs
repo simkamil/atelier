@@ -96,6 +96,14 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
     setZoomEnabled(enabled) { zoomCommand.disabled = !enabled; ribbon.refresh(); },
     setNavigationEnabled(enabled) { searchCommand.disabled = !enabled; replaceCommand.disabled = !enabled; statisticsCommand.disabled = !enabled; ribbon.refresh(); },
     setPropertiesEnabled(enabled) { propertiesCommand.disabled = !enabled; ribbon.refresh(); },
+    /** Commands the engine in use does not offer stay disabled; the reason is their tooltip and description (R7a, engine v2). */
+    setUnavailable(navigationReason, propertiesReason) {
+      for (const [element, reason] of [[searchCommand, navigationReason], [replaceCommand, navigationReason], [statisticsCommand, navigationReason], [propertiesCommand, propertiesReason]]) {
+        if (!reason) continue;
+        element.title = reason;
+        element.setAttribute("aria-description", reason);
+      }
+    },
     setSymbolsEnabled(enabled) { symbolsCommand.disabled = !enabled; ribbon.refresh(); },
     setImageEnabled(enabled) { imageCommand.disabled = !enabled; ribbon.refresh(); },
     refresh: () => ribbon.refresh(),

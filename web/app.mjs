@@ -18,7 +18,9 @@ import { ABOUT_LICENSES } from "/about-licenses.mjs";
 import { BUILD_INFO } from "/build-info.mjs";
 import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
 import { createImagePicker, imageMessageKey } from "/image-insert.mjs";
+import { chooseEngine } from "/engine-choice.mjs";
 
+const READER_MODE_KEY = "atelier.screenReaderMode";
 const byId = id => document.getElementById(id);
 const nodes = {
   title: byId("status-title"), detail: byId("status-detail"), indicator: byId("status-indicator"), engine: byId("engine-state"),
@@ -28,6 +30,7 @@ const nodes = {
   frenchSpacing: byId("french-spacing"),
   openDocx: byId("open-docx"), closePreview: byId("close-preview"),
   textWorkspace: byId("text-workspace"), richWorkspace: byId("rich-workspace"),
+  readonlyBanner: byId("readonly-banner"), readonlyCopy: byId("readonly-copy"), options: document.querySelector(".editor-options"),
 };
 // i18n-ignore-start: dernier recours quand web/i18n/fr-FR.txt est indisponible ; texte identique au catalogue (contrôlé par tests/i18n.mjs)
 const FALLBACK = new Map(Object.entries({
@@ -73,6 +76,7 @@ document.addEventListener("securitypolicyviolation", event => {
 
 const FILE_ERROR_KEYS = ["files.error.invalid_text", "files.error.too_large", "files.error.queue_full", "files.error.unsupported_type", "files.error.timeout"];
 const MAX_TEXT_FILE_BYTES = 128 * 1024;
+const MAX_RICH_FILE_BYTES = 32 * 1024 * 1024;
 
 /** Loads the catalogue and returns the translator plus `messages`, the reader used to build module labels. */
 async function loadCatalog() {
@@ -109,9 +113,9 @@ function buildDateText(value, i18n, messages) {
 }
 
 /** Message of a rejected file operation: catalogue key from the host, with its named parameters. */
-function fileErrorMessage(key, i18n, messages) {
+function fileErrorMessage(key, i18n, messages, limit = MAX_TEXT_FILE_BYTES) {
   if (!FILE_ERROR_KEYS.includes(key)) return messages.get(key);
-  return i18n.t(key, key === "files.error.too_large" ? { limit: i18n.formatFileSize(MAX_TEXT_FILE_BYTES, { binary: true }) } : {});
+  return i18n.t(key, key === "files.error.too_large" ? { limit: i18n.formatFileSize(limit, { binary: true }) } : {});
 }
 
 function showPing(ok, messages) {
@@ -128,7 +132,12 @@ function messageForError(error, messages) {
   const key = imageMessageKey(error?.code) ?? (error?.code === "EDITOR_STALE_SAVE" ? "status-stale-save"
     : error?.code === "EDITOR_UNSUPPORTED_INPUT" ? "status-unsupported-input"
       : ["EDITOR_INVALID_STATE", "EDITOR_INVALID_EXPORT", "INVALID_RESPONSE"].includes(error?.code) ? "status-invalid-document"
-        : "status-editor-error");
+        : error?.code === "EDITOR_READ_ONLY" ? "status-readonly-refused"
+          : error?.code === "EDITOR_UNSUPPORTED_V2" ? "status-unsupported-v2"
+            : ["EDITOR_CLIPBOARD_UNAVAILABLE"].includes(error?.code) ? "status-clipboard-unavailable"
+              : error?.code === "EDITOR_SELECTION_TOO_LARGE" ? "status-selection-too-large"
+                : error?.code === "RICH_REVISIONS_UNSUPPORTED" ? "status-copy-unsupported"
+                  : "status-editor-error");
   return messages.get(key) ?? FALLBACK.get(key) ?? FALLBACK.get("status-editor-error");
 }
 
@@ -139,6 +148,12 @@ function showEditorMessage(text, isError = false) {
 
 async function start() {
   const { i18n, messages } = await loadCatalog();
+  let storage = null;
+  try { storage = globalThis.localStorage; } catch { /* preference storage can be blocked */ }
+  const engine = chooseEngine({ search: globalThis.location?.search ?? "", storage });
+  const v2 = engine === "v2";
+  const fileLimit = v2 ? MAX_RICH_FILE_BYTES : MAX_TEXT_FILE_BYTES;
+  document.documentElement.dataset.engine = engine;
   const toolKeys = ["searchTitle", "searchQuery", "searchMatchCase", "searchWholeWord", "searchIgnoreAccents", "searchMatchNbsp",
     "searchPrevious", "searchNext", "searchClose", "searchCount", "searchEmptyQuery", "searchNoResults", "searchTruncated",
     "searchBusy", "searchError", "searchDisabled", "searchWrapped", "searchResult", "searchOptions", "searchResults",
@@ -184,6 +199,7 @@ async function start() {
   let client;
   let host;
   let editor;
+  let richEditorError = null;
   let preview;
   let previewActive = false;
   let previewReady = false;
@@ -208,6 +224,11 @@ async function start() {
     document.title = active ? `${messages.get("preview-title")} — Atelier` : textWindowTitle;
     nodes.documentState.textContent = active ? messages.get("preview-state") : messages.get(editor?.state?.dirty ? "state-dirty" : "state-clean");
     nodes.documentState.classList.toggle("dirty", !active && Boolean(editor?.state?.dirty));
+  }
+  /** Banner of a read-only DOCX (revisions or comments, v2): accepted changes are shown, a copy can be made editable. */
+  function showReadOnly(active) {
+    nodes.readonlyBanner.hidden = !active;
+    if (!active) nodes.readonlyCopy.disabled = false;
   }
   function dispose() {
     if (disposed) return;
@@ -263,10 +284,11 @@ async function start() {
     nodes.openDocx.disabled = blocked;
     updateZoom();
     const toolsEnabled = !blocked && !previewActive;
+    const writable = !state?.readOnly;
     navigation?.setEnabled(toolsEnabled, { preview: previewActive });
-    shell.setNavigationEnabled(toolsEnabled && toolsAvailable);
-    shell.setSymbolsEnabled(toolsEnabled && symbolsAvailable);
-    shell.setImageEnabled(toolsEnabled && imageAvailable);
+    shell.setNavigationEnabled(toolsEnabled && toolsAvailable && !v2);
+    shell.setSymbolsEnabled(toolsEnabled && symbolsAvailable && writable);
+    shell.setImageEnabled(toolsEnabled && imageAvailable && writable);
     if (!toolsEnabled) { symbols?.close(); contextMenu?.close({ restoreFocus: false }); }
     shell.refresh();
   };
@@ -307,7 +329,7 @@ async function start() {
     }
     try { nodes.frenchSpacing.checked = localStorage.getItem("atelier.frenchSpacing") !== "false"; }
     catch { /* The option works for this session even without preference storage. */ }
-    editor = createEditor({
+    const editorOptions = {
       client, host, canvas: nodes.canvas, scrollport: nodes.scrollport, spacer: nodes.spacer,
       frenchSpacing: nodes.frenchSpacing.checked,
       confirmDiscard: messages.get("confirm-discard"), inputLabel: messages.get("input-label"), textRepresentation: nodes.textRepresentation, onState, onError, onBusy,
@@ -315,7 +337,23 @@ async function start() {
       onViewport: () => { if (!previewActive) updateStatus(); },
       imageAlt: number => i18n.t("image-alt-default", { number }),
       onImages: ({ inserted, failed }) => { if (inserted > 0 && failed === 0) showEditorMessage(i18n.t("image-inserted", { count: inserted })); },
-    });
+    };
+    if (v2) {
+      // Loaded only for v2: the rich editor and its modules stay out of a v1 session.
+      const { createRichEditor, EditorError: RichEditorError } = await import("/rich-editor.mjs");
+      richEditorError = RichEditorError;
+      let readerMode = false;
+      try { readerMode = storage?.getItem(READER_MODE_KEY) === "true"; } catch { /* default: off */ }
+      editor = createRichEditor({ ...editorOptions, t: (key, values) => i18n.t(key, values), version: BUILD_INFO.version, screenReaderMode: readerMode,
+        onScreenReaderMode: on => { try { storage?.setItem(READER_MODE_KEY, String(on)); } catch { /* kept for this session */ } },
+        onReadOnly: info => showReadOnly(info.readOnly && info.hasRevisions),
+        dialogLabels: { openTitle: messages.get("dialog-open-title"), saveTitle: messages.get("dialog-save-title"), txt: messages.get("dialog-filter-txt"),
+          docx: messages.get("dialog-filter-docx"), docm: messages.get("dialog-filter-docm"), dotx: messages.get("dialog-filter-dotx"), defaultName: messages.get("dialog-default-name") } });
+      const { createReaderModeToggle } = await import("/document-mirror.mjs");
+      const toggle = createReaderModeToggle({ container: nodes.options, input: editor.input, t: (key, values) => i18n.t(key, values) });
+      listeners.signal.addEventListener("abort", () => toggle.dispose(), { once: true });
+      shell.setUnavailable?.(messages.get("v2-unavailable-search"), messages.get("v2-unavailable-properties"));
+    } else editor = createEditor(editorOptions);
     function closePreview() {
       if (!previewActive || disposed) return;
       previewGeneration += 1; previewAbort?.abort(); previewAbort = null;
@@ -330,9 +368,19 @@ async function start() {
     preview = createRichPreview({ canvas: byId("rich-canvas"), scrollport: byId("rich-scroll"),
       spacer: byId("rich-spacer"), textRepresentation: byId("rich-text"), onClose: closePreview, onError,
       onZoom: () => { if (previewActive) updateZoom(); }, onViewport: () => { if (previewActive) updateStatus(); } });
-    if (toolsAvailable) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
+    if (toolsAvailable && !v2) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
-    async function openDocx(source = () => host.openDocx()) {
+    async function openDocxInEditor(source) {
+      if (!initialized || busy || disposed) return { kind: "cancelled" };
+      const result = await editor.openDocument(source, { formats: ["docx", "docm", "dotx", "txt"] });
+      if (result.kind === "ok") showEditorMessage(messages.get(editor.state?.readOnly ? "status-readonly-opened" : "status-opened"));
+      else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
+      else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
+      return result;
+    }
+    async function openDocx(source) {
+      if (v2) return openDocxInEditor(source);
+      source ??= () => host.openDocx();
       if (!initialized || busy || disposed) return { kind: "cancelled" };
       const generation = ++previewGeneration;
       previewAbort = new AbortController();
@@ -398,14 +446,15 @@ async function start() {
       contextMenu = createEditorContextMenu({ target: nodes.canvas, focusTarget: editor.element,
         labels: Object.fromEntries(contextKeys.map(key => [key, messages.get(`context-${key}`)])),
         getState: () => { const current = editor.getState(); return { revision: current.revision, anchor: current.anchor, focus: current.focus,
-          text: current.text, canUndo: current.canUndo, canRedo: current.canRedo, enabled: editor.canEdit && !previewActive, busy, preview: previewActive }; },
+          ...(v2 ? { hasText: current.docLen > 0 } : { text: current.text }),
+          canUndo: current.canUndo, canRedo: current.canRedo, enabled: editor.canEdit && !previewActive, busy, preview: previewActive }; },
         clipboardCapabilities: { read: () => typeof navigator.clipboard?.readText === "function", write: () => typeof navigator.clipboard?.writeText === "function" },
         onError: () => showEditorMessage(messages.get("utilities-clipboardError"), true),
         onCommand: async (action, snapshot) => {
           if (previewActive || !editor.canEdit) throw new EditorError("EDITOR_BUSY");
           if (["copy", "cut"].includes(action)) {
-            const bytes = new TextEncoder().encode(snapshot.text);
-            const selected = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(Math.min(snapshot.anchor, snapshot.focus), Math.max(snapshot.anchor, snapshot.focus)));
+            const selected = v2 ? await editor.selectedText(snapshot)
+              : new TextDecoder("utf-8", { fatal: true }).decode(new TextEncoder().encode(snapshot.text).subarray(Math.min(snapshot.anchor, snapshot.focus), Math.max(snapshot.anchor, snapshot.focus)));
             await navigator.clipboard.writeText(selected);
             if (action === "cut") await editor.editSelection("", snapshot);
           } else if (action === "paste") {
@@ -420,6 +469,16 @@ async function start() {
     showEditorMessage(messages.get("status-ready"));
     nodes.openDocx.addEventListener("click", () => { void openDocx(); }, { signal: listeners.signal });
     nodes.closePreview.addEventListener("click", closePreview, { signal: listeners.signal });
+    nodes.readonlyCopy.addEventListener("click", async () => {
+      if (!v2 || nodes.readonlyCopy.disabled) return;
+      nodes.readonlyCopy.disabled = true;
+      try {
+        const result = await editor.makeEditableCopy();
+        if (result.kind === "ok") showEditorMessage(messages.get("status-copy-created"));
+        else showEditorMessage(messages.get("status-copy-error"), true);
+      } catch (error) { onError(error); if (error?.code === "RICH_REVISIONS_UNSUPPORTED") showEditorMessage(messages.get("status-copy-unsupported"), true); }
+      finally { nodes.readonlyCopy.disabled = false; }
+    }, { signal: listeners.signal });
 
     nodes.new.addEventListener("click", async () => {
       try {
@@ -433,7 +492,7 @@ async function start() {
         const result = await editor.openDocument();
         if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
-        else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
+        else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
       } catch (error) { onError(error); }
     }, { signal: listeners.signal });
     nodes.save.addEventListener("click", async () => {
@@ -441,7 +500,7 @@ async function start() {
         const result = await editor.saveAs();
         if (result.kind === "ok") showEditorMessage(messages.get("status-saved"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
-        else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
+        else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
       } catch (error) { onError(error); }
     }, { signal: listeners.signal });
     nodes.undo.addEventListener("click", () => { void editor.undo().catch(onError); }, { signal: listeners.signal });
@@ -474,13 +533,13 @@ async function start() {
     let claiming = false;
     let claimAgain = false;
     async function openLaunched(launched) {
-      const source = async () => ({ kind: "ok", bytes: launched.bytes });
+      const source = async () => ({ kind: "ok", bytes: launched.bytes, format: launched.type });
       if (launched.type === "docx") await openDocx(source);
       else {
         const result = await editor.openDocument(source);
         if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
-        else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get("status-open-error"), true);
+        else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get("status-open-error"), true);
       }
       // Un seul message : le résultat de l'ouverture suivi du nombre de fichiers ignorés.
       if (launched.skipped > 0) {
@@ -500,7 +559,7 @@ async function start() {
             if (result.kind === "ok" && !result.document) break;
             if (result.kind === "ok") { await openLaunched(result.document); break; }
             if (result.kind !== "error" || !result.key.startsWith("files.error.")) break;
-            showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get("status-open-error"), true);
+            showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get("status-open-error"), true);
           }
         } while (claimAgain && !disposed);
       } catch (error) { if (!disposed) onError(error); }
@@ -511,7 +570,7 @@ async function start() {
     void claimLaunch();
     editor.focus();
     return Object.freeze({
-      status: "ready",
+      status: "ready", engine,
       getState: () => editor.getState(),
       exportDocument: () => editor.exportDocument(),
       editor, host,

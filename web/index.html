@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="/symbol-dialog.css">
     <link rel="stylesheet" href="/about-dialog.css">
     <link rel="stylesheet" href="/properties-dialog.css">
+    <link rel="stylesheet" href="/document-mirror.css">
     <script type="module" src="/app.mjs"></script>
   </head>
   <body>
@@ -49,6 +50,10 @@
         </details>
         <span id="editor-status" class="editor-status" role="status" aria-live="polite" data-i18n="status-loading">Initialisation du document…</span>
       </nav>
+      <div id="readonly-banner" class="readonly-banner" role="status" hidden>
+        <span data-i18n="readonly-banner">Document en lecture seule — modifications acceptées affichées.</span>
+        <button id="readonly-copy" type="button" class="ui-button" data-i18n="readonly-copy">Créer une copie modifiable</button>
+      </div>
       <section id="text-workspace" class="workspace" aria-label="Éditeur de texte" data-i18n-aria-label="workspace-label">
         <div id="search-slot" hidden></div>
         <div id="document-scroll" class="document-scroll" tabindex="0" aria-label="Pages du document" data-i18n-aria-label="pages-label">
