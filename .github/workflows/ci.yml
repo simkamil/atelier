@@ -151,6 +151,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-client.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/native-bridge-protocol.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/editor-abi.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/properties-abi.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
