@@ -351,7 +351,7 @@ async function start() {
     }
     if (aboutAvailable) {
       about = createAboutDialog({ labels: Object.fromEntries(aboutKeys.map(key => [key, messages.get(`about-${key}`)])),
-        metadata: { ...BUILD_INFO, buildDate: buildDateText(BUILD_INFO.buildDate, i18n, messages) }, licenseTexts: ABOUT_LICENSES });
+        metadata: { ...BUILD_INFO, buildDate: buildDateText(BUILD_INFO.buildDate, i18n, messages), buildDateIso: BUILD_INFO.buildDate }, licenseTexts: ABOUT_LICENSES });
       document.body.append(about.element);
     }
     if (contextAvailable) {
