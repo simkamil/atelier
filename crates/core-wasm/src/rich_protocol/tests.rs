@@ -55,9 +55,17 @@ fn describe_request(r: &Request) -> String {
             *direction as u8,
             u8::from(*extend)
         ),
-        Command::SetSelection { anchor, focus } => {
-            format!("SetSelection anchor={anchor} focus={focus}")
+        Command::SetSelection {
+            anchor,
+            focus,
+            upstream,
+        } => {
+            format!(
+                "SetSelection anchor={anchor} focus={focus} upstream={}",
+                u8::from(*upstream)
+            )
         }
+        Command::Layout { budget } => format!("Layout budget={budget}"),
         Command::HitTest { page, mode, x, y } => format!(
             "HitTest page={page} mode={} x={} y={}",
             *mode as u8,
@@ -93,8 +101,12 @@ fn describe_reply(r: &Reply) -> String {
             revision,
             page,
             position,
+            upstream,
         } => {
-            format!("HitResult revision={revision} page={page} position={position}")
+            format!(
+                "HitResult revision={revision} page={page} position={position} upstream={}",
+                u8::from(*upstream)
+            )
         }
         Response::TextWindow {
             revision,
@@ -130,10 +142,11 @@ fn describe_reply(r: &Reply) -> String {
                 format!("{}:{}", w.start, hex(w.text.as_bytes()))
             });
             format!(
-                "State revision={} anchor={} focus={} doc_len={} modified={} can_undo={} can_redo={} layout_complete={} page_count={} caret={caret} invalidated={inval} pages={} window={window}",
+                "State revision={} anchor={} focus={} focus_upstream={} doc_len={} modified={} can_undo={} can_redo={} layout_complete={} page_count={} caret={caret} invalidated={inval} pages={} window={window}",
                 s.revision,
                 s.anchor,
                 s.focus,
+                u8::from(s.focus_upstream),
                 s.doc_len,
                 u8::from(s.modified),
                 u8::from(s.can_undo),
@@ -292,6 +305,30 @@ fn requests() -> Vec<(&'static str, Request)> {
                 Command::SetSelection {
                     anchor: 9,
                     focus: 2,
+                    upstream: true,
+                },
+            ),
+        ),
+        (
+            "set-selection-downstream",
+            req(
+                7,
+                21,
+                Command::SetSelection {
+                    anchor: 0,
+                    focus: 0,
+                    upstream: false,
+                },
+            ),
+        ),
+        ("layout", req(7, 22, Command::Layout { budget: 16 })),
+        (
+            "layout-max",
+            req(
+                7,
+                23,
+                Command::Layout {
+                    budget: MAX_LAYOUT_BUDGET,
                 },
             ),
         ),
@@ -358,6 +395,7 @@ fn state() -> State {
         revision: 42,
         anchor: 3,
         focus: 5,
+        focus_upstream: true,
         doc_len: 12,
         modified: true,
         can_undo: true,
@@ -422,6 +460,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                     revision: 5,
                     page: 3,
                     position: 17,
+                    upstream: true,
                 },
             ),
         ),
@@ -647,6 +686,46 @@ fn bad_requests() -> Vec<Bad> {
             true,
         ),
         (
+            "set-selection-upstream-2",
+            frame(
+                opcode::SET_SELECTION,
+                7,
+                1,
+                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0],
+            ),
+            InvalidBody,
+            true,
+        ),
+        (
+            "set-selection-reserved",
+            frame(
+                opcode::SET_SELECTION,
+                7,
+                1,
+                &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+            ),
+            InvalidBody,
+            true,
+        ),
+        (
+            "set-selection-v1-length",
+            frame(opcode::SET_SELECTION, 7, 1, &[0; 16]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "layout-zero",
+            frame(opcode::LAYOUT, 7, 1, &[0, 0, 0, 0]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "layout-too-large",
+            frame(opcode::LAYOUT, 7, 1, &(MAX_LAYOUT_BUDGET + 1).to_le_bytes()),
+            InvalidBody,
+            true,
+        ),
+        (
             "hit-nan",
             frame(opcode::HIT_TEST, 7, 1, &hit_nan),
             InvalidBody,
@@ -768,7 +847,7 @@ fn bad_replies() -> Vec<Bad> {
         ),
         (
             "state-reserved-flags",
-            state_frame(|b| u32_at(b, 32, 0x20)),
+            state_frame(|b| u32_at(b, 32, 0x40)),
             InvalidBody,
             true,
         ),
@@ -801,6 +880,19 @@ fn bad_replies() -> Vec<Bad> {
                 );
             }),
             PageRange,
+            true,
+        ),
+        (
+            "hit-result-reserved",
+            frame(
+                opcode::R_HIT,
+                7,
+                1,
+                &[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+                ],
+            ),
+            InvalidBody,
             true,
         ),
         (
@@ -1045,13 +1137,21 @@ fn page_delta_splits_into_a_valid_state_part() {
     let delta = PageDelta {
         page_count: 100,
         layout_complete: true,
-        changed: (0..20).rev().collect(),
-        invalidated: vec![(30, 40), (20, 25), (40, 45), (50, 50), (60, MAX_PAGES + 9)],
+        changed: (0..20).rev().chain([100, 500]).collect(),
+        invalidated: vec![
+            (30, 40),
+            (20, 25),
+            (40, 45),
+            (50, 50),
+            (60, MAX_PAGES + 9),
+            (200, 300),
+        ],
     };
     let (send, ranges) = split_page_delta(&delta);
     assert_eq!(send, (0..16).collect::<Vec<u32>>());
-    assert_eq!(ranges, vec![(16, 25), (30, 45), (60, MAX_PAGES)]);
+    assert_eq!(ranges, vec![(16, 25), (30, 45), (60, 100)]);
     let many = PageDelta {
+        page_count: 10_000,
         changed: vec![],
         invalidated: (0..2000).map(|i| (i * 3, i * 3 + 1)).collect(),
         ..PageDelta::default()

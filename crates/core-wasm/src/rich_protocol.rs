@@ -30,6 +30,10 @@ pub const MIN_PAGE_DISPLAY_BYTES: usize = 44;
 pub const MAX_INVALIDATIONS: usize = 1024;
 /// Largest page count and exclusive bound of page indices.
 pub const MAX_PAGES: u32 = 1 << 20;
+/// Paragraphs of background layout that every edit command also runs.
+pub const DEFAULT_LAYOUT_BUDGET: u32 = 16;
+/// Largest budget (in paragraphs) of one `Layout` command.
+pub const MAX_LAYOUT_BUDGET: u32 = 4096;
 /// `Caret::page` value meaning "no caret geometry".
 pub const NO_CARET: u32 = u32::MAX;
 
@@ -47,6 +51,7 @@ pub mod opcode {
     pub const TEXT_WINDOW: u16 = 0x010B;
     pub const PAGES: u16 = 0x010C;
     pub const MARK_SAVED: u16 = 0x010D;
+    pub const LAYOUT: u16 = 0x010E;
     pub const R_ERROR: u16 = 0x8000;
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
@@ -246,6 +251,9 @@ pub enum Command {
     SetSelection {
         anchor: u64,
         focus: u64,
+        /// Affinity of the focus at a soft line wrap: true draws the caret at
+        /// the end of the previous line.
+        upstream: bool,
     },
     HitTest {
         page: u32,
@@ -265,6 +273,10 @@ pub enum Command {
     },
     MarkSaved {
         revision: u64,
+    },
+    /// Runs at most `budget` paragraphs of pending layout; answered by `State`.
+    Layout {
+        budget: u32,
     },
 }
 
@@ -301,6 +313,8 @@ pub struct State {
     pub revision: u64,
     pub anchor: u64,
     pub focus: u64,
+    /// Affinity of the focus (bit 5 of the flags).
+    pub focus_upstream: bool,
     pub doc_len: u64,
     pub modified: bool,
     pub can_undo: bool,
@@ -335,6 +349,7 @@ pub enum Response {
         revision: u64,
         page: u32,
         position: u64,
+        upstream: bool,
     },
     Closed,
 }
@@ -571,10 +586,16 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
             r.zero(2)?;
             Command::Move { direction, extend }
         }
-        opcode::SET_SELECTION => Command::SetSelection {
-            anchor: r.u64()?,
-            focus: r.u64()?,
-        },
+        opcode::SET_SELECTION => {
+            let (anchor, focus) = (r.u64()?, r.u64()?);
+            let upstream = r.flag()?;
+            r.zero(3)?;
+            Command::SetSelection {
+                anchor,
+                focus,
+                upstream,
+            }
+        }
         opcode::HIT_TEST => {
             let page = r.u32()?;
             let mode = match r.u8()? {
@@ -618,6 +639,13 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
             Command::Pages { first, count }
         }
         opcode::MARK_SAVED => Command::MarkSaved { revision: r.u64()? },
+        opcode::LAYOUT => {
+            let budget = r.u32()?;
+            if !(1..=MAX_LAYOUT_BUDGET).contains(&budget) {
+                return Err(Fail::InvalidBody);
+            }
+            Command::Layout { budget }
+        }
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -696,10 +724,19 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
             b.extend_from_slice(&[*direction as u8, u8::from(*extend), 0, 0]);
             opcode::MOVE
         }
-        Command::SetSelection { anchor, focus } => {
+        Command::SetSelection {
+            anchor,
+            focus,
+            upstream,
+        } => {
             put_u64(&mut b, *anchor);
             put_u64(&mut b, *focus);
+            b.extend_from_slice(&[u8::from(*upstream), 0, 0, 0]);
             opcode::SET_SELECTION
+        }
+        Command::Layout { budget } => {
+            put_u32(&mut b, *budget);
+            opcode::LAYOUT
         }
         Command::HitTest { page, mode, x, y } => {
             put_u32(&mut b, *page);
@@ -788,7 +825,8 @@ fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
         | u32::from(s.can_undo) << 1
         | u32::from(s.can_redo) << 2
         | u32::from(s.layout_complete) << 3
-        | u32::from(s.window.is_some()) << 4;
+        | u32::from(s.window.is_some()) << 4
+        | u32::from(s.focus_upstream) << 5;
     put_u32(b, flags);
     put_u32(b, s.page_count);
     let caret = s.caret.unwrap_or(Caret {
@@ -820,7 +858,7 @@ fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
 fn parse_state(r: &mut Reader<'_>) -> Result<State, Fail> {
     let (revision, anchor, focus, doc_len) = (r.u64()?, r.u64()?, r.u64()?, r.u64()?);
     let flags = r.u32()?;
-    if flags & !0x1f != 0 || anchor > doc_len || focus > doc_len {
+    if flags & !0x3f != 0 || anchor > doc_len || focus > doc_len {
         return Err(Fail::InvalidBody);
     }
     let page_count = r.u32()?;
@@ -879,6 +917,7 @@ fn parse_state(r: &mut Reader<'_>) -> Result<State, Fail> {
         can_undo: flags & 2 != 0,
         can_redo: flags & 4 != 0,
         layout_complete: flags & 8 != 0,
+        focus_upstream: flags & 0x20 != 0,
         page_count,
         caret,
         invalidated,
@@ -928,10 +967,12 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
             revision,
             page,
             position,
+            upstream,
         } => {
             put_u64(&mut b, *revision);
             put_u32(&mut b, *page);
             put_u64(&mut b, *position);
+            b.extend_from_slice(&[u8::from(*upstream), 0, 0, 0]);
             opcode::R_HIT
         }
         Response::Closed => opcode::R_CLOSED,
@@ -987,11 +1028,17 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
                     pages: read_pages(&mut r, page_count)?,
                 }
             }
-            opcode::R_HIT => Response::HitResult {
-                revision: r.u64()?,
-                page: r.u32()?,
-                position: r.u64()?,
-            },
+            opcode::R_HIT => {
+                let (revision, page, position) = (r.u64()?, r.u32()?, r.u64()?);
+                let upstream = r.flag()?;
+                r.zero(3)?;
+                Response::HitResult {
+                    revision,
+                    page,
+                    position,
+                    upstream,
+                }
+            }
             opcode::R_CLOSED => Response::Closed,
             _ => return Err(Fail::UnknownOpcode),
         };
@@ -1039,16 +1086,18 @@ pub fn to_position(value: u64) -> Result<usize, ErrorCode> {
 /// `MAX_PAGES_PER_RESPONSE` pages to send (the lowest indices of `changed`),
 /// and the invalidation ranges. Changed pages that do not fit become
 /// invalidated single pages so that the client re-requests them with `Pages`.
-/// Ranges are clamped to `MAX_PAGES`, sorted, merged when they overlap or
+/// Pages and ranges at or beyond `delta.page_count` are dropped or clamped
+/// (the client also drops its own pages `>= page_count`). Ranges are clamped, sorted, merged when they overlap or
 /// touch (the decoder refuses touching ranges), and limited to
 /// `MAX_INVALIDATIONS` by merging the tail into one range. The client applies
 /// `invalidated` first, then stores `pages`.
 pub fn split_page_delta(delta: &crate::rich_layout::PageDelta) -> (Vec<u32>, Vec<(u32, u32)>) {
+    let page_count = delta.page_count.min(MAX_PAGES);
     let mut changed: Vec<u32> = delta
         .changed
         .iter()
         .copied()
-        .filter(|p| *p < MAX_PAGES)
+        .filter(|p| *p < page_count)
         .collect();
     changed.sort_unstable();
     changed.dedup();
@@ -1056,7 +1105,7 @@ pub fn split_page_delta(delta: &crate::rich_layout::PageDelta) -> (Vec<u32>, Vec
     let mut ranges: Vec<(u32, u32)> = delta
         .invalidated
         .iter()
-        .map(|(first, end)| (*first, (*end).min(MAX_PAGES)))
+        .map(|(first, end)| (*first, (*end).min(page_count)))
         .filter(|(first, end)| first < end)
         .chain(overflow.iter().map(|p| (*p, *p + 1)))
         .collect();
