@@ -3,7 +3,7 @@
 // decoded with the R0 codec, so the cache only ever sees what the product decoder produces.
 import assert from "node:assert/strict";
 import { RichProtocolError, decodeRichReply, encodeRichReply } from "../web/rich-editor-protocol.mjs";
-import { EditorPageCache, RichClientError } from "../web/editor-page-cache.mjs";
+import { EditorPageCache, MAX_ATLAS_CLIENT_BYTES, RichClientError } from "../web/editor-page-cache.mjs";
 
 // Path2D double: the cache builds each glyph path once.
 let paths = 0;
@@ -374,6 +374,67 @@ test("atlas: bounded, and entries must be one black nonzero contour", () => {
     assert.equal(fresh.atlasSize, 0);
   }
   assert.throws(() => fresh.apply({ ...decoded(state({ revision: 1n })), atlas: undefined }), (e) => e.code === "CLIENT_BAD_REPLY");
+});
+
+test("atlas: a reply invalid after a valid atlas section changes nothing (atomic application)", () => {
+  const cache = new EditorPageCache();
+  cache.apply(decoded(state({ revision: 1n, pageCount: 2, atlas: withAtlas(1, 0, [1, 2]), pages: pagesOf(0, 1) })));
+  const snapshot = () => JSON.stringify([cache.atlasEpoch, cache.atlasSize, cache.atlasBytes, known(cache), String(cache.revision), cache.pageCount]);
+  const before = snapshot();
+  const good = decoded(state({ revision: 2n, pageCount: 2, atlas: withAtlas(2, 0, [5]), pages: pagesOf(0) }));
+  // Same epoch change (which empties atlas and pages) followed by an invalid State, then an invalid Pages reply.
+  const badState = [
+    { ...good, anchor: 5000n },
+    { ...good, pageCount: 1, pages: pagesOf(0, 1) },
+    { ...good, invalidated: [[3, 3]] },
+    { ...good, revision: 2 },
+  ];
+  for (const bad of badState) {
+    assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
+    assert.equal(snapshot(), before);
+  }
+  const goodPages = decoded({ type: "pages", revision: 1n, pageCount: 2, atlas: withAtlas(3, 0, [5, 6]), pages: pagesOf(1) });
+  for (const bad of [{ ...goodPages, pageCount: 1 }, { ...goodPages, pages: [{ index: 1, display: new Uint8Array(3) }] }, { ...goodPages, pageCount: -1 }]) {
+    assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
+    assert.equal(snapshot(), before);
+  }
+  assert.equal(cache.glyphResolver(0n, 1) !== null, true, "the old atlas still resolves");
+  // The valid reply then applies as a whole.
+  const change = cache.apply(good);
+  assert.equal(change.atlasReset, true);
+  assert.equal(cache.atlasEpoch, 2);
+});
+
+test("atlas: the bytes of the client atlas are bounded (MAX_ATLAS_CLIENT_BYTES)", () => {
+  const cache = new EditorPageCache();
+  const entryOf = (points) => {
+    const out = new Uint8Array(44 + 22 + (points + 1) * 17 + 1);
+    const view = new DataView(out.buffer);
+    out.set([0x41, 0x54, 0x44, 0x4c, 1, 0, 0, 0]);
+    view.setFloat64(24, 595.276, true); view.setFloat64(32, 841.89, true);
+    view.setUint32(40, 1, true);
+    let at = 44;
+    out[at++] = 1; out[at++] = 0;
+    for (const v of [0, 0, 0, 1]) { view.setFloat32(at, v, true); at += 4; }
+    view.setUint32(at, points + 2, true); at += 4;
+    out[at] = 0; at += 17;
+    for (let i = 0; i < points; i += 1) { out[at] = 1; view.setFloat64(at + 1, i, true); at += 17; }
+    out[at] = 4;
+    return out;
+  };
+  const big = entryOf(3800);
+  assert.equal(big.length < 64 * 1024, true);
+  const fit = Math.floor(MAX_ATLAS_CLIENT_BYTES / big.length);
+  const reply = (entries, first, rev) => ({ ...decoded(state({ revision: rev })), atlas: { epoch: 1, first, entries } });
+  cache.apply(reply(Array.from({ length: fit }, () => big), 0, 1n));
+  assert.equal(cache.atlasSize, fit);
+  assert.equal(cache.atlasBytes, fit * big.length);
+  assert.throws(() => cache.apply(reply(Array.from({ length: 2 }, () => big), fit, 2n)), (e) => e.code === "CLIENT_BAD_REPLY" && e.cause?.atlas !== true);
+  assert.equal(cache.atlasSize, fit);
+  assert.equal(cache.revision, 1n);
+  // A new epoch counts from zero again.
+  cache.apply({ ...decoded(state({ revision: 3n })), atlas: { epoch: 2, first: 0, entries: [big] } });
+  assert.equal(cache.atlasBytes, big.length);
 });
 
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }
