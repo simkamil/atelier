@@ -3,8 +3,10 @@
 
 pub mod data;
 pub mod files;
+pub mod fonts;
 pub mod instance;
 pub mod resources;
+pub mod url_open;
 pub mod window;
 
 #[cfg(windows)]
