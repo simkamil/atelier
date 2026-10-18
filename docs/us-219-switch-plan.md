@@ -99,3 +99,9 @@ node tests/run-editor-browser.mjs --engine v2        # attendu : code 75 tant qu
 ```
 
 Une étape « v2 en attente » doit traiter explicitement le code 75 (par ex. `$LASTEXITCODE -eq 75` est accepté et affiché comme « en attente », tout autre code non nul échoue) et **être retirée au lot 3** : alors v2 devient le défaut et 75 devient un échec. Même schéma pour `run-editor-utilities-browser`, `run-frontend-browser`, `run-ui-browser` (`--forced-colors` inclus), `run-image-insert-browser` et `mouse-selection`.
+
+## 5. R7a — interface branchée (2026-10-18)
+
+L'interface crée l'éditeur v2 avec `?engine=v2` (ou `localStorage["atelier.engine"] = "v2"`, `?engine=v1` forçant v1) ; `tests/engine-adapter.mjs` tient maintenant un statut **par suite** : `run-ui-browser`, `run-image-insert-browser` et `run-editor-browser` passent en v2, les autres gardent le code 75 avec leur raison. `tests/editor-test-adapter.mjs` produit les trames hors bande du moteur de la page de test. Voir [r7-ui-parity.md](r7-ui-parity.md) (parité d'API, fonctions désactivées, écarts) et [tests/README.md](../tests/README.md).
+
+À faire en R7b avant de basculer le défaut : surbrillance de la sélection (protocole), dessin des images, sélection par mot et paragraphe, mesure de latence v2 (`run-latency-browser --engine v2` : le banc pilote encore `createEditor`), recopie de la CI (`run-rich-editor-ui-browser`, `rich-editor-unit`, lignes `--engine v2` des trois suites ; le code 75 des autres reste accepté comme « en attente »).

@@ -63,6 +63,8 @@ export class EditorPageCache {
     this.selection = { anchor: 0n, focus: 0n, upstream: false };
     this.caret = null;
     this.modified = false;
+    this.readOnly = false; // US-218: DOCX with revisions or comments (edits refused by the engine)
+    this.hasRevisions = false;
     this.canUndo = false;
     this.canRedo = false;
     this.layoutComplete = false;
@@ -268,6 +270,8 @@ export class EditorPageCache {
     this.selection = { anchor: s.anchor, focus: s.focus, upstream: s.focusUpstream === true };
     this.caret = s.caret ? { ...s.caret } : null;
     this.modified = s.modified === true;
+    this.readOnly = s.readOnly === true;
+    this.hasRevisions = s.hasRevisions === true;
     this.canUndo = s.canUndo === true;
     this.canRedo = s.canRedo === true;
     this.layoutComplete = s.layoutComplete === true;

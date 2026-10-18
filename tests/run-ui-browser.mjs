@@ -10,8 +10,11 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const { rest: args } = selectEngine("run-ui-browser", "node tests/run-ui-browser.mjs [--forced-colors] [--screenshots] [--engine v1|v2]",
+const { engine, rest: args } = selectEngine("run-ui-browser", "node tests/run-ui-browser.mjs [--forced-colors] [--screenshots] [--engine v1|v2]",
   rest => rest.every(arg => ["--forced-colors", "--screenshots"].includes(arg)));
+const v2 = engine === "v2";
+const engineQuery = v2 ? "engine=v2" : "";
+const skipped = [];
 const forcedColors = args.includes("--forced-colors");
 const screenshots = args.includes("--screenshots");
 let executable;
@@ -96,7 +99,7 @@ async function captureShell() {
   const output = join(root, "target/ui-screenshots");
   if (screenshots) await mkdir(output, { recursive: true });
   try {
-    await send("Page.navigate", { url: `${origin}/index.html` });
+    await send("Page.navigate", { url: `${origin}/index.html${v2 ? "?engine=v2" : ""}` });
     for (let tries = 0; tries < 100; tries++) {
       try { if (await evaluate("document.readyState === 'complete' && !!document.getElementById('ribbon')")) break; } catch { /* navigation context */ }
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -126,35 +129,38 @@ async function captureShell() {
         const shot = await send("Page.captureScreenshot", { format: "png" });
         await writeFile(join(output, `${forcedColors ? "forced-" : ""}${name}.png`), Buffer.from(shot.data, "base64"));
       }
-      await evaluate("(()=>{window.atelierScreenshotApp.navigation.openSearch(); const q=document.querySelector('[data-search-query]');q.value='document';q.dispatchEvent(new Event('input',{bubbles:true}));})()");
-      for (let tries=0;tries<100;tries++) {
-        if (await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2")) break;
-        await new Promise(resolve=>setTimeout(resolve,20));
+      if (v2) skipped.push(`${name}: search pane, statistics dialog and replacement controls are absent in v2 (docs/r7-ui-parity.md)`);
+      else {
+        await evaluate("(()=>{window.atelierScreenshotApp.navigation.openSearch(); const q=document.querySelector('[data-search-query]');q.value='document';q.dispatchEvent(new Event('input',{bubbles:true}));})()");
+        for (let tries=0;tries<100;tries++) {
+          if (await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2")) break;
+          await new Promise(resolve=>setTimeout(resolve,20));
+        }
+        assert(await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2 && document.documentElement.scrollWidth<=innerWidth && document.body.scrollHeight<=innerHeight"), `${name} open search pane fits the real shell`);
+        if (screenshots) {
+          await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+          const shot=await send("Page.captureScreenshot",{format:"png"});
+          await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-search.png`),Buffer.from(shot.data,"base64"));
+        }
+        await evaluate("document.querySelector('[data-search-close]').click(); window.atelierScreenshotApp.navigation.openStatistics();");
+        await new Promise(resolve=>setTimeout(resolve,180));
+        assert(await evaluate("(()=>{const d=document.querySelector('[data-statistics-dialog]');const r=d.getBoundingClientRect();return d.open&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} statistics dialog stays inside the viewport`);
+        if (screenshots) {
+          await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+          const shot=await send("Page.captureScreenshot",{format:"png"});
+          await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-statistics.png`),Buffer.from(shot.data,"base64"));
+        }
+        await evaluate("document.querySelector('[data-statistics-dialog] .ui-dialog-close').click()");
+        await evaluate("window.atelierScreenshotApp.navigation.openReplace();document.querySelector('[data-replace-text]').scrollIntoView({block:'nearest'})");
+        await new Promise(resolve=>setTimeout(resolve,180));
+        assert(await evaluate("(()=>{const c=document.querySelector('.replace-controls');const r=c.getBoundingClientRect();return !c.hidden&&r.left>=0&&r.right<=innerWidth&&document.documentElement.scrollWidth<=innerWidth&&document.body.scrollHeight<=innerHeight;})()"),`${name} replacement controls fit the actual viewport`);
+        if (screenshots) {
+          await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+          const shot=await send("Page.captureScreenshot",{format:"png"});
+          await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-replace.png`),Buffer.from(shot.data,"base64"));
+        }
       }
-      assert(await evaluate("window.atelierScreenshotApp.navigation.searchResult?.items.length===2 && document.documentElement.scrollWidth<=innerWidth && document.body.scrollHeight<=innerHeight"), `${name} open search pane fits the real shell`);
-      if (screenshots) {
-        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
-        const shot=await send("Page.captureScreenshot",{format:"png"});
-        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-search.png`),Buffer.from(shot.data,"base64"));
-      }
-      await evaluate("document.querySelector('[data-search-close]').click(); window.atelierScreenshotApp.navigation.openStatistics();");
-      await new Promise(resolve=>setTimeout(resolve,180));
-      assert(await evaluate("(()=>{const d=document.querySelector('[data-statistics-dialog]');const r=d.getBoundingClientRect();return d.open&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} statistics dialog stays inside the viewport`);
-      if (screenshots) {
-        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
-        const shot=await send("Page.captureScreenshot",{format:"png"});
-        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-statistics.png`),Buffer.from(shot.data,"base64"));
-      }
-      await evaluate("document.querySelector('[data-statistics-dialog] .ui-dialog-close').click()");
-      await evaluate("window.atelierScreenshotApp.navigation.openReplace();document.querySelector('[data-replace-text]').scrollIntoView({block:'nearest'})");
-      await new Promise(resolve=>setTimeout(resolve,180));
-      assert(await evaluate("(()=>{const c=document.querySelector('.replace-controls');const r=c.getBoundingClientRect();return !c.hidden&&r.left>=0&&r.right<=innerWidth&&document.documentElement.scrollWidth<=innerWidth&&document.body.scrollHeight<=innerHeight;})()"),`${name} replacement controls fit the actual viewport`);
-      if (screenshots) {
-        await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
-        const shot=await send("Page.captureScreenshot",{format:"png"});
-        await writeFile(join(output,`${forcedColors ? "forced-" : ""}${name}-replace.png`),Buffer.from(shot.data,"base64"));
-      }
-      await evaluate("document.querySelector('[data-search-close]').click();document.querySelector('.document-status-page').click()");
+      await evaluate(v2 ? "document.querySelector('.document-status-page').click()" : "document.querySelector('[data-search-close]').click();document.querySelector('.document-status-page').click()");
       assert(await evaluate("(()=>{const d=document.querySelector('[data-status-goto-dialog]');const r=d.getBoundingClientRect();return d.open&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"),`${name} page dialog fits the viewport`);
       if (screenshots) {
         await evaluate("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
@@ -174,12 +180,12 @@ async function captureShell() {
     }
     for (const catalogFailure of ["unavailable", "partial"]) {
     unavailableCatalog = catalogFailure;
-    await send("Page.navigate", { url: `${origin}/index.html?catalog-${catalogFailure}` });
+    await send("Page.navigate", { url: `${origin}/index.html?catalog-${catalogFailure}${v2 ? "&engine=v2" : ""}` });
     for (let tries=0;tries<100;tries++) {
-      try { if (await evaluate(`location.search==='?catalog-${catalogFailure}' && document.readyState==='complete' && !!document.getElementById('ribbon')`)) break; } catch { /* navigation context */ }
+      try { if (await evaluate(`location.search==='?catalog-${catalogFailure}${v2 ? "&engine=v2" : ""}' && document.readyState==='complete' && !!document.getElementById('ribbon')`)) break; } catch { /* navigation context */ }
       await new Promise(resolve=>setTimeout(resolve,50));
     }
-    assert(await evaluate("(async()=>{const app=await (await import('/app.mjs')).editorReady;if(app.status!=='ready'||app.navigation||document.querySelector('#search-command,#statistics-command,.search-pane,[data-statistics-status]'))return false;app.editor.element.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:'secours',bubbles:true,cancelable:true}));await app.exportDocument();return app.getState().text==='secours';})()"),
+    assert(await evaluate("(async()=>{const app=await (await import('/app.mjs')).editorReady;if(app.status!=='ready'||app.navigation||document.querySelector('#search-command,#statistics-command,.search-pane,[data-statistics-status]'))return false;app.editor.element.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:'secours',bubbles:true,cancelable:true}));await app.exportDocument();return "+(v2 ? "(await app.editor.readText())==='secours'" : "app.getState().text==='secours'")+";})()"),
       "catalog failure preserves legacy editing without exposing untranslated navigation controls");
     }
   } finally { socket.close(); }
@@ -192,11 +198,13 @@ try {
   assert(report.checks.length >= 20, "all UI suites must execute");
   await captureShell();
   report.checks.push("real packaged app follows live browser system-theme media changes", "real packaged shell fits 1280px and 420px without horizontal overflow");
-  report.checks.push("real search pane and statistics dialog fit 1280px and 420px in light/dark themes");
-  report.checks.push("replacement, page dialog and six-field status menu fit 1280px and 420px in light/dark themes");
+  if (!v2) {
+    report.checks.push("real search pane and statistics dialog fit 1280px and 420px in light/dark themes");
+    report.checks.push("replacement, page dialog and six-field status menu fit 1280px and 420px in light/dark themes");
+  } else report.checks.push("page dialog and six-field status menu fit 1280px and 420px in light/dark themes (v2: no search pane, statistics or replacement controls)");
   report.checks.push("missing or partial catalog keeps editing available and omits untranslated navigation tools");
   if (forcedColors) report.checks.push("primary button and mark preserve readable forced-colors system pairs");
-  console.log(JSON.stringify({ ...report, executable, screenshots, environment: "real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence" }));
+  console.log(JSON.stringify({ ...report, engine, skipped: [...new Set(skipped.map(item => item.replace(/^[a-z]+: /, "")))], executable, screenshots, environment: "real DOM; synthetic keyboard events, not physical keyboard or screen-reader evidence" }));
 } finally {
   clearTimeout(timer);
   if (browser.exitCode === null && browser.signalCode === null) {

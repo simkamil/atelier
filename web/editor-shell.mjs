@@ -11,6 +11,7 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
   const command = (id, label, keyTip, element) => ({ id, label: t(label), keyTip, element });
   const future = (id, label, keyTip) => ({ id, label: t(label), keyTip, disabled: true });
   const status = byId("editor-status");
+  const unavailable = new Set();
   const back = byId("close-preview");
   const options = toolbar.querySelector(".editor-options");
   const zoomCommand = doc.createElement("button");
@@ -94,8 +95,28 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
   return Object.freeze({
     theme, ribbon,
     setZoomEnabled(enabled) { zoomCommand.disabled = !enabled; ribbon.refresh(); },
-    setNavigationEnabled(enabled) { searchCommand.disabled = !enabled; replaceCommand.disabled = !enabled; statisticsCommand.disabled = !enabled; ribbon.refresh(); },
-    setPropertiesEnabled(enabled) { propertiesCommand.disabled = !enabled; ribbon.refresh(); },
+    setNavigationEnabled(enabled) { for (const c of [searchCommand, replaceCommand, statisticsCommand]) if (!unavailable.has(c)) c.disabled = !enabled; ribbon.refresh(); },
+    setPropertiesEnabled(enabled) { if (!unavailable.has(propertiesCommand)) propertiesCommand.disabled = !enabled; ribbon.refresh(); },
+    /** Commands the engine in use does not offer stay disabled; the reason is their tooltip and description (R7a, engine v2). */
+    setUnavailable(navigationReason, propertiesReason) {
+      for (const [element, reason] of [[searchCommand, navigationReason], [replaceCommand, navigationReason], [statisticsCommand, navigationReason], [propertiesCommand, propertiesReason]]) {
+        if (!reason || unavailable.has(element)) continue;
+        unavailable.add(element);
+        // Focusable and announced, not natively disabled: activating it executes nothing and says why in the status region.
+        const reasonNode = doc.createElement("span");
+        reasonNode.id = `${element.id}-reason`; reasonNode.hidden = true; reasonNode.textContent = reason;
+        element.after(reasonNode);
+        element.disabled = false;
+        element.title = reason;
+        element.setAttribute("aria-disabled", "true");
+        element.setAttribute("aria-describedby", reasonNode.id);
+        element.addEventListener("click", event => {
+          event.stopImmediatePropagation(); event.preventDefault();
+          status.textContent = reason; status.classList.remove("error");
+        }, true);
+      }
+      ribbon.refresh();
+    },
     setSymbolsEnabled(enabled) { symbolsCommand.disabled = !enabled; ribbon.refresh(); },
     setImageEnabled(enabled) { imageCommand.disabled = !enabled; ribbon.refresh(); },
     refresh: () => ribbon.refresh(),

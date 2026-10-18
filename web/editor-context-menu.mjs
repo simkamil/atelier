@@ -53,7 +53,7 @@ export function createEditorContextMenu({
       cut: canWrite && selected,
       copy: canWrite && selected,
       paste: canRead,
-      selectAll: !blocked && typeof snapshot.text === "string" && snapshot.text.length > 0,
+      selectAll: !blocked && (snapshot.hasText === true || (typeof snapshot.text === "string" && snapshot.text.length > 0)),
     };
     const items = ACTIONS.map(action => ({ label: menuLabels[action], value: action, disabled: !enabled[action] }));
     const onSelect = action => {

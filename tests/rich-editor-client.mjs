@@ -663,5 +663,75 @@ await test("whenLayoutComplete rejects on Closed and when open fails", async () 
   b.client.dispose();
 });
 
+await test("R7a: accessibleWindow, save, makeEditableCopy and insertImage get their own reply types and never reach the cache", async () => {
+  const { client, engine, transport } = setup();
+  const item = { paraStart: 0n, paraEnd: 2n, role: "paragraph", level: 0, label: "", text: "ab", inlines: [] };
+  const base = engine.handle;
+  engine.handle = (req) => {
+    switch (req.command.type) {
+      case "accessibleWindow": return { type: "accessibleWindow", revision: engine.rev, items: [item] };
+      case "save": case "makeEditableCopy": return { type: "saveData", revision: engine.rev, bytes: Uint8Array.of(1, 2, 3), notices: [{ code: 0x0300, text: "n" }] };
+      case "insertImage": engine.rev += 1n; return engine.state();
+      default: return base(req);
+    }
+  };
+  await client.open(OPEN);
+  await client.whenLayoutComplete();
+  await client.idle();
+  const version = client.cache.version;
+  const window = await client.accessibleWindow(0n, 2n);
+  assert.deepEqual(window, { revision: 0n, items: [item] });
+  const saved = await client.command({ type: "save", format: "txt", nowMs: 1n, user: "u", version: "v" });
+  assert.equal(saved.response.type, "saveData");
+  assert.deepEqual([...saved.response.bytes], [1, 2, 3]);
+  assert.equal(saved.change, null, "SaveData is not a cache input");
+  const copy = await client.command({ type: "makeEditableCopy", nowMs: 1n, user: "", version: "" });
+  assert.equal(copy.response.notices[0].code, 0x0300);
+  assert.equal(client.cache.version, version, "neither reply touches the page cache");
+  const image = await client.command({ type: "insertImage", alt: "x", bytes: Uint8Array.of(1) });
+  assert.equal(image.response.type, "state");
+  assert.equal(client.cache.revision, 1n, "InsertImage answers a State the cache applies");
+  assert.deepEqual(transport.log.slice(-4), ["accessibleWindow", "save", "makeEditableCopy", "insertImage"]);
+  client.dispose();
+});
+
+await test("R7a: a refused Open restores the previous document by a Resync instead of leaving an empty client", async () => {
+  const { client, engine, transport } = setup();
+  const base = engine.handle;
+  let refuse = false;
+  engine.handle = (req) => (req.command.type === "open" && refuse ? { type: "error", code: "RICH_OPEN_FAILED" } : base(req));
+  await client.open(OPEN);
+  await client.whenLayoutComplete();
+  await client.idle();
+  refuse = true;
+  await rejects(client.open(OPEN), "RICH_OPEN_FAILED");
+  assert.equal(client.opened, true, "the engine kept the previous document, so does the client");
+  await client.idle();
+  await client.command({ type: "undo" });
+  assert.equal(transport.log.includes("resync"), true, "the cache emptied by the refused Open is rebuilt");
+  assert.equal(client.cache.pageCount > 0 && client.cache.revision !== null, true);
+  refuse = false;
+  // A refused first Open leaves nothing to restore.
+  const fresh = setup();
+  fresh.engine.handle = () => ({ type: "error", code: "RICH_OPEN_FAILED" });
+  await rejects(fresh.client.open(OPEN), "RICH_OPEN_FAILED");
+  assert.equal(fresh.client.opened, false);
+  client.dispose(); fresh.client.dispose();
+});
+
+await test("R7a: the page cache keeps the read-only and revision flags of the State", async () => {
+  const cache = new EditorPageCache();
+  const state = (extra) => ({ type: "state", revision: 0n, anchor: 0n, focus: 0n, focusUpstream: false, docLen: 5n, modified: false, canUndo: false, canRedo: false,
+    layoutComplete: true, pageCount: 0, caret: null, invalidated: [], atlas: { epoch: 1, first: 0, entries: [] }, pages: [], window: null, ...extra });
+  cache.apply(state({ readOnly: true, hasRevisions: true }));
+  assert.equal(cache.readOnly, true);
+  assert.equal(cache.hasRevisions, true);
+  cache.apply(state({ revision: 1n }));
+  assert.equal(cache.readOnly, false, "a later State without the flags clears them");
+  cache.apply(state({ readOnly: true, hasRevisions: true, revision: 2n }));
+  cache.reset();
+  assert.equal(cache.readOnly || cache.hasRevisions, false, "reset clears them");
+});
+
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }
 console.log("rich-editor-client: all tests passed");

@@ -2046,6 +2046,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
             ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
           ];
+          paths.push(['/engine-choice.mjs','text/javascript'],['/rich-editor.mjs','text/javascript'],['/rich-editor-client.mjs','text/javascript'],['/rich-editor-protocol.mjs','text/javascript'],['/editor-page-cache.mjs','text/javascript'],['/document-mirror.mjs','text/javascript'],['/document-mirror.css','text/css']);
           paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);
           paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/build-info.mjs','text/javascript'],['/image-insert.mjs','text/javascript'],['/properties-dialog.mjs','text/javascript'],['/properties-dialog.css','text/css'],['/properties-protocol.mjs','text/javascript']);
           // Keep required log probes within the bounded request log.
