@@ -24,7 +24,12 @@ const LINE: i64 = 14 * 64;
 const PAGE: i64 = 40 * LINE;
 
 fn paragraph(rng: &mut Rng, rich_rules: bool) -> StreamParagraph {
-    let lines = 1 + rng.below(9);
+    // Rich rules also give paragraphs without any line (empty paragraphs).
+    let lines = if rich_rules && rng.below(12) == 0 {
+        0
+    } else {
+        1 + rng.below(9)
+    };
     let (before, after) = if rich_rules {
         (rng.below(3) as i64 * 64 * 6, rng.below(3) as i64 * 64 * 6)
     } else {
@@ -66,6 +71,10 @@ fn paragraph(rng: &mut Rng, rich_rules: bool) -> StreamParagraph {
         rules.keep_with_next = rng.below(5) == 0;
         rules.keep_together = rng.below(8) == 0;
         rules.break_before = rng.below(40) == 0;
+        rules.break_after = rng.below(25) == 0;
+        if lines >= 3 && rng.below(10) == 0 {
+            rules.line_breaks_before = vec![1 + rng.below(lines - 1)];
+        }
         rules.contextual_spacing = rng.below(4) == 0;
         rules.style_id = rng.below(2) as u64;
         rules.widow_min = 1 + rng.below(2);
@@ -102,7 +111,11 @@ fn run(seed: u64, paragraphs: usize, edits: usize, rich_rules: bool) -> (usize, 
             .replace(at, 0, batch, RunLimit::Pages(3))
             .expect("append");
         settle(&mut stream, &mirror, &mut rng);
-        assert_eq!(*stream.pagination(), full(&mirror), "after append at {at}");
+        same(
+            stream.pagination(),
+            &full(&mirror),
+            &format!("after append at {at}"),
+        );
     }
     let (mut early, mut total, mut gave_up) = (0, 0, 0);
     for step in 0..edits {
@@ -129,10 +142,10 @@ fn run(seed: u64, paragraphs: usize, edits: usize, rich_rules: bool) -> (usize, 
             stream.paginated_paragraphs() == mirror.len()
         );
         settle(&mut stream, &mirror, &mut rng);
-        assert_eq!(
-            *stream.pagination(),
-            full(&mirror),
-            "step {step}: replace {removed} at {first} by {inserted}"
+        same(
+            stream.pagination(),
+            &full(&mirror),
+            &format!("step {step}: replace {removed} at {first} by {inserted}"),
         );
         assert_eq!(stream.paragraph_count(), mirror.len());
         total += 1;
@@ -143,6 +156,30 @@ fn run(seed: u64, paragraphs: usize, edits: usize, rich_rules: bool) -> (usize, 
     }
     assert!(gave_up <= total);
     (early, total)
+}
+
+/// Equality with a readable failure (the first difference, not the dumps).
+fn same(
+    got: &atelier_text_layout::pagination::Pagination,
+    want: &atelier_text_layout::pagination::Pagination,
+    context: &str,
+) {
+    if let Some(i) = (0..got.placements.len().max(want.placements.len()))
+        .find(|&i| got.placements.get(i) != want.placements.get(i))
+    {
+        panic!(
+            "{context}: placement {i} differs: {:?} vs {:?}",
+            got.placements.get(i),
+            want.placements.get(i)
+        );
+    }
+    assert!(got.pages == want.pages, "{context}: pages differ");
+    assert!(
+        got.diagnostics == want.diagnostics,
+        "{context}: diagnostics differ: {:?} vs {:?}",
+        got.diagnostics,
+        want.diagnostics
+    );
 }
 
 /// The placements known so far are the first placements of the full pagination.
@@ -184,7 +221,7 @@ fn incremental_pagination_equals_full_pagination_plain_rules() {
 
 #[test]
 fn incremental_pagination_equals_full_pagination_rich_rules() {
-    for seed in 1..=40u64 {
+    for seed in 1..=60u64 {
         run(seed * 104_729, 150, 60, true);
     }
 }

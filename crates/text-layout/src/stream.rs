@@ -291,11 +291,19 @@ impl PageStream {
         let first_on_page = page
             .and_then(|page| self.page_placements(page).first())
             .map_or(base, |p| p.paragraph_index);
-        let mut restart = first_on_page.saturating_sub(1);
-        while restart > 0 && self.entries[restart - 1].rules.keep_with_next {
+        let mut restart = first_on_page
+            .saturating_sub(1)
+            .min(self.paginated.saturating_sub(1));
+        // The run must start on a paragraph with lines (a `break_after` before
+        // trailing empty paragraphs depends on what follows them) and rewind
+        // across keep-with-next chains.
+        while restart > 0
+            && (self.entries[restart].layout.lines.is_empty()
+                || self.entries[restart - 1].rules.keep_with_next)
+        {
             restart -= 1;
         }
-        restart.min(self.paginated.saturating_sub(1))
+        restart
     }
 
     /// Replaces `removed` paragraphs at `first` by `new` and repaginates until

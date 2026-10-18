@@ -237,7 +237,7 @@ pub(crate) fn paginate_recording<L: ParagraphLayoutRef>(
     )
 }
 
-fn explicit_boundary_after<S: ParagraphSource>(src: &S, index: usize) -> bool {
+fn explicit_boundary_after(src: &dyn ParagraphSource, index: usize) -> bool {
     let rule = src.rules(index);
     rule.break_after
         || !rule.line_breaks_before.is_empty()
@@ -247,7 +247,7 @@ fn explicit_boundary_after<S: ParagraphSource>(src: &S, index: usize) -> bool {
         })
 }
 
-fn lines_height<S: ParagraphSource>(src: &S, index: usize) -> Result<i64, PaginationError> {
+fn lines_height(src: &dyn ParagraphSource, index: usize) -> Result<i64, PaginationError> {
     src.layout(index)
         .lines
         .iter()
@@ -255,18 +255,23 @@ fn lines_height<S: ParagraphSource>(src: &S, index: usize) -> Result<i64, Pagina
         .ok_or(PaginationError::ArithmeticOverflow)
 }
 
-/// Whether any paragraph after `index` has lines (a scan that stops at the
-/// first one, so it touches the next paragraph in practice).
-fn has_following_nonempty<S: ParagraphSource>(src: &S, index: usize) -> bool {
-    (index + 1..src.len()).any(|next| !src.layout(next).lines.is_empty())
+/// Index of the last paragraph that has lines, found by one backward scan
+/// the first time a run needs it (a long run of empty paragraphs at the end
+/// is scanned once, not once per paragraph).
+fn last_nonempty(src: &dyn ParagraphSource, cache: &mut Option<Option<usize>>) -> Option<usize> {
+    *cache.get_or_insert_with(|| {
+        (0..src.len())
+            .rev()
+            .find(|&i| !src.layout(i).lines.is_empty())
+    })
 }
 
 /// Height of the keep-with-next chain that starts at `index`, memoised in
 /// `memo` over the paragraphs the run actually looked at.
-fn keep_chain_height<S: ParagraphSource>(
-    src: &S,
+fn keep_chain_height(
+    src: &dyn ParagraphSource,
     index: usize,
-    memo: &mut std::collections::HashMap<usize, i64>,
+    memo: &mut std::collections::BTreeMap<usize, i64>,
 ) -> Result<i64, PaginationError> {
     let mut pending = Vec::new();
     let mut at = index;
@@ -295,8 +300,8 @@ fn keep_chain_height<S: ParagraphSource>(
 
 /// Checks one paragraph, once, when the run reaches it. There is no global
 /// pre-validation pass: a paragraph that is never reached is not checked.
-fn validate_paragraph<S: ParagraphSource>(
-    src: &S,
+fn validate_paragraph(
+    src: &dyn ParagraphSource,
     paragraph_index: usize,
     work: &mut usize,
     max_work: usize,
@@ -360,8 +365,8 @@ fn validate_paragraph<S: ParagraphSource>(
     Ok(prefix)
 }
 
-pub(crate) fn paginate_source<S: ParagraphSource>(
-    src: &S,
+pub(crate) fn paginate_source(
+    src: &dyn ParagraphSource,
     options: PaginationOptions,
     record_checkpoints: bool,
     seed: Option<(&PaginationCheckpoint, &Pagination)>,
@@ -379,7 +384,8 @@ pub(crate) fn paginate_source<S: ParagraphSource>(
     }
     let paragraph_total = src.len();
     let mut work = 0usize;
-    let mut chain_memo = std::collections::HashMap::new();
+    let mut chain_memo = std::collections::BTreeMap::new();
+    let mut last_nonempty_cache: Option<Option<usize>> = None;
 
     let preflight_work = work;
     let (
@@ -466,7 +472,8 @@ pub(crate) fn paginate_source<S: ParagraphSource>(
                 break_after_pending,
                 open_page_placements: result.placements.len().saturating_sub(page_start),
                 keep_chain_height: keep_chain_height(src, paragraph_index, &mut chain_memo)?,
-                has_following_nonempty: has_following_nonempty(src, paragraph_index),
+                has_following_nonempty: last_nonempty(src, &mut last_nonempty_cache)
+                    .is_some_and(|last| last > paragraph_index),
             };
             if record_checkpoints {
                 checkpoints.push(checkpoint.clone());
@@ -779,7 +786,9 @@ pub(crate) fn paginate_source<S: ParagraphSource>(
                 explicit_before = false;
             }
         }
-        break_after_pending |= rule.break_after && has_following_nonempty(src, paragraph_index);
+        break_after_pending |= rule.break_after
+            && last_nonempty(src, &mut last_nonempty_cache)
+                .is_some_and(|last| last > paragraph_index);
         previous_paragraph = Some(paragraph_index);
     }
     if stopped_at.is_none() && result.placements.len() > page_start {
