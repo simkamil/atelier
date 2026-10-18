@@ -1,0 +1,144 @@
+# US-203 — Rich editor protocol (ATED v2)
+
+Contract of the single rich editor of the [migration plan](rich-editor-migration.md). It fixes the envelope, the position model, the command and reply catalogue, the errors and the limits so that the flat model (R1, US-204), the incremental layout (R2, US-216), the JS codec and page cache (R4) and the editor (R3a, US-217) can be written independently. Reference code: `crates/core-wasm/src/rich_protocol.rs` (Rust), `web/rich-editor-protocol.mjs` (JS), frozen vectors `tests/rich-editor-protocol-vectors.txt`.
+
+## Compatibility
+
+ATED v1 (`docs/us-120-editor-engine.md`, opcodes 0-30) is unchanged and frozen until the parity switch (US-219). v1 and v2 share the outer US-091 `Editor` / `EditorResult` messages and the 4-byte magic `ATED`; the version field at offset 4 selects the codec (`1` routes to `editor.rs` as before, `2` to the rich editor). v2 opcodes (`0x0101..`) never collide with v1 (`0..30`). A v1 frame is never valid v2 and the reverse: a v2 decoder answers `RICH_UNSUPPORTED_VERSION` to version 1. Routing belongs to the integrator; this story adds no route.
+
+## Envelope
+
+Little-endian, 20-byte header then exactly `body_len` bytes (no trailing data). The whole frame is at most `MAX_FRAME_BYTES = 32 MiB`, in both directions.
+
+| Offset | Width | Field | Rule |
+|---:|---:|---|---|
+| 0 | 4 | Magic | `ATED` |
+| 4 | 2 | Version | `2` |
+| 6 | 2 | Opcode | command `0x01xx`, reply `0x8xxx` |
+| 8 | 4 | Document id | `u32`, `0` reserved and always invalid |
+| 12 | 4 | Request id | `u32`, chosen by the caller, echoed unchanged in the reply |
+| 16 | 4 | Body length | `u32` |
+
+Document id: one active document until US-327. `Open` with id `N` replaces the active document (the previous one is dropped without notice). Any other command with an id that is not the active one is answered `RICH_UNKNOWN_DOCUMENT`. The outer US-091 request id (`u64`) still correlates transport messages; the inner `u32` correlates editor requests.
+
+Every request gets exactly one reply: the success reply of its command or an `Error` reply carrying the same document and request ids. When the header cannot be read (no magic, version other than 2, shorter than 20 bytes) there is nothing to echo and the host answers with the outer `Failed` message whose payload is the ASCII error name. The state is never changed by a refused command.
+
+## Positions
+
+Flat positions are an **interchange representation of this protocol only**. The model and the recovery journal keep node id + offset (SPEC §6.3) and never store flat positions; the model converts flat position <-> (node id, offset) on demand (`FlatIndex`), and side tables are remapped through `position_map`.
+
+The flat text of a document is the body paragraphs in order, joined by one `\n` byte, with no trailing `\n`. Inline objects count as U+FFFC, **3 bytes** (`EF BF BC`) each: images and anchored objects, and, once R1 integrates the side tables of `crates/fmt-ooxml/src/docx.rs:234-236` as inline items, every `breaks` entry (line, page, column break) and every `symbols` entry. `run_styles` are attributes of text runs, not inline items: they count **0 bytes** (to be confirmed by the integrator if R1 models them as items, in which case they would also count 3). Everything else is its UTF-8. All positions, ranges and lengths are **byte offsets into that text**, `u64` on the wire (BigInt in JS), valid in `0..=doc_len`.
+
+Rules, checked by the engine (`RICH_*` code in parentheses):
+
+- A position greater than `doc_len` is refused (`POSITION_OUT_OF_RANGE`). A range with `start > end` is refused (`INVALID_RANGE`), checked in the codec.
+- A position must be on a UTF-8 scalar boundary and never inside U+FFFC (`POSITION_NOT_BOUNDARY`).
+- `ReplaceRange` accepts any scalar boundary, even inside a grapheme cluster. `SetSelection` snaps both ends backwards to the previous grapheme boundary. A selection reported by the engine always lies on grapheme boundaries (an object is one cluster).
+- Deletions by unit (`Delete`) are computed by the engine on grapheme or word boundaries (UAX #29), never by the caller. A non-collapsed selection is deleted whole whatever the unit.
+- Text sent by the caller (`InsertText`, `ReplaceRange`): valid UTF-8 (`INVALID_UTF8`); no U+FFFC, no `\r`, no control character except `\n` and `\t` (`INVALID_TEXT`). `\n` splits paragraphs. An object enters the document only through its own command (US-218).
+- A selection is `(anchor, focus)`, not ordered; the caret is `anchor == focus`.
+- `revision` counts applied edits (undo and redo included) from 0 at `Open`. Selection changes do not change it.
+
+## Commands
+
+Body layouts; reserved bytes must be zero, flags are `0` or `1`, floats must be finite.
+
+| Opcode | Name | Body | Reply |
+|---:|---|---|---|
+| `0x0101` | Open | `kind u8` (0 blank, 1 TXT, 2 DOCX), `profile u8` (0 document, 1 TXT), `0 u16`, `len u32`, `data` | State (revision 0, first pages) |
+| `0x0102` | Close | empty | Closed |
+| `0x0103` | InsertText | `len u32`, UTF-8 (non-empty, at most 1 MiB): replaces the selection | State |
+| `0x0104` | ReplaceRange | `start u64`, `end u64`, `len u32`, UTF-8 (may be empty = delete) | State |
+| `0x0105` | Delete | `forward u8`, `unit u8` (0 grapheme, 1 word), `0 u16` | State |
+| `0x0106` | Move | `direction u8` (v1 numbering 0-13), `extend u8`, `0 u16` | State |
+| `0x0107` | SetSelection | `anchor u64`, `focus u64` | State |
+| `0x0108` | HitTest | `page u32`, `mode u8` (0 probe, 1 set caret, 2 extend), `0 u8[3]`, `x f64`, `y f64` (page points) | probe: HitResult; else State |
+| `0x0109` | Undo | empty | State (unchanged state when nothing to undo) |
+| `0x010A` | Redo | empty | State |
+| `0x010B` | TextWindow | `start u64`, `len u32` (1 to 256 KiB) | TextWindow |
+| `0x010C` | Pages | `first u32`, `count u32` (1 to 16) | Pages |
+| `0x010D` | MarkSaved | `revision u64` | State (`modified` cleared if the revision is current, else `STALE_REVISION`) |
+
+`Open` consistency: a blank document carries no data; TXT requires profile TXT; DOCX requires profile document. A source the engine rejects is `OPEN_FAILED`. `data` is at most `MAX_OPEN_BYTES` (frame limit minus header and fields). Direction numbers: 0 left, 1 right, 2 up, 3 down, 4 home, 5 end, 6 document start, 7 document end, 8 page up, 9 page down, 10 word left, 11 word right, 12 paragraph up, 13 paragraph down.
+
+`TextWindow`: `start` must be a scalar boundary; the engine returns at most `len` bytes, shortened backwards to a scalar boundary, and fewer at the end of the document. `Pages`: pages `first .. first+count` clamped to the page count; a `first` at or beyond it is `PAGE_RANGE`.
+
+## Replies
+
+Reply opcodes: `0x8000` Error, `0x8100` State, `0x8101` TextWindow, `0x8102` Pages, `0x8103` HitResult, `0x8104` Closed. The full export is never returned.
+
+**Error** (`0x8000`): `code u16`, `0 u16`.
+
+**State** (`0x8100`), after every command that can change the state:
+
+| Field | Type | Meaning |
+|---|---|---|
+| revision | u64 | after the command |
+| anchor, focus | u64, u64 | selection, `<= doc_len` |
+| doc_len | u64 | flat bytes |
+| flags | u32 | bit 0 modified, 1 can undo, 2 can redo, 3 layout complete, 4 text window present; other bits 0 |
+| page_count | u32 | pages so far (grows while `layout_complete` is 0) |
+| caret | u32 page (`0xFFFFFFFF` none), `x f64`, `y f64`, `height f64` | geometry of the focus; zeros when none |
+| invalidated | `n u32` (at most 1024), `n` x (`first u32`, `end u32`) | half-open page ranges the client must drop; sorted, disjoint |
+| pages | `n u32` (at most 16), `n` x (`index u32`, `len u32`, ATDL) | pages that changed, indices strictly increasing and `< page_count`; each is a complete ATDL display list (`docs/us-080-display-list.md`, 44 bytes to 4 MiB) |
+| window | `start u64`, `len u32`, UTF-8 (at most 256 KiB, within `doc_len`) | only if flag 4: the text around the focus that the engine chooses to send so the DOM mirror stays current |
+
+When more than 16 pages change, the first 16 are sent and the others appear in `invalidated`: the client re-requests them with `Pages`. A page absent from both lists is unchanged and its cached list stays valid.
+
+**TextWindow** (`0x8101`): `revision u64`, `start u64`, `doc_len u64`, `len u32`, UTF-8, with `start + len <= doc_len`.
+**Pages** (`0x8102`): `revision u64`, `page_count u32`, then the page list as above.
+**HitResult** (`0x8103`): `revision u64`, `page u32`, `position u64` (a grapheme boundary).
+**Closed** (`0x8104`): empty.
+
+## Errors
+
+Stable numeric codes and names, never renumbered:
+
+| Code | Name | When |
+|---:|---|---|
+| 1 | `RICH_INVALID_ENVELOPE` | bad magic, header shorter than 20, length mismatch or trailing bytes |
+| 2 | `RICH_UNSUPPORTED_VERSION` | version other than 2 |
+| 3 | `RICH_UNKNOWN_OPCODE` | opcode not in the table (including a reply opcode sent as request) |
+| 4 | `RICH_INVALID_BODY` | wrong body size, non-zero reserved byte, bad enum or flag, non-finite float, inconsistent `Open`, zero-length window or page count |
+| 5 | `RICH_INVALID_DOCUMENT_ID` | document id `0` |
+| 6 | `RICH_UNKNOWN_DOCUMENT` | id is not the active document (engine) |
+| 7 | `RICH_POSITION_OUT_OF_RANGE` | position or range end beyond `doc_len` (engine) |
+| 8 | `RICH_POSITION_NOT_BOUNDARY` | not on a scalar boundary or inside an object (engine) |
+| 9 | `RICH_INVALID_RANGE` | `start > end` |
+| 10 | `RICH_INVALID_UTF8` | text not valid UTF-8 |
+| 11 | `RICH_INVALID_TEXT` | U+FFFC, `\r` or a forbidden control character |
+| 12 | `RICH_FRAME_TOO_LARGE` | frame, text or `Open` data over its limit |
+| 13 | `RICH_WINDOW_TOO_LARGE` | window over 256 KiB |
+| 14 | `RICH_PAGE_RANGE` | page index at or beyond the page count / `MAX_PAGES` |
+| 15 | `RICH_TOO_MANY_PAGES` | more than 16 pages requested or returned |
+| 16 | `RICH_STALE_REVISION` | `MarkSaved` with a revision that is not current (engine) |
+| 17 | `RICH_OPEN_FAILED` | `Open` source rejected (engine) |
+| 18 | `RICH_INTERNAL` | engine invariant failure; state unchanged |
+
+Checks run in this order: envelope, document id, opcode, body (in field order), then engine rules.
+
+## Limits
+
+| Limit | Value |
+|---|---|
+| Frame, either direction | 32 MiB |
+| `InsertText` / `ReplaceRange` text | 1 MiB |
+| Text window (request and reply) | 256 KiB |
+| Pages per reply | 16 |
+| One page display list | 4 MiB |
+| Invalidation ranges per State | 1024 |
+| Pages per document (`MAX_PAGES`) | 2^20 |
+
+Encoders re-decode their own output, so a frame the decoder would refuse is never produced.
+
+## Interfaces left to the other slices
+
+- R1 (US-204): `atelier_text_model::rich::flat::{FlatIndex, FlatEdit, EditOutcome, FlatError, ParagraphPosition}` in `crates/text-model/src/rich/flat.rs`, declarations only.
+- R2 (US-216): target under 4 ms per keystroke on 300 pages, with no global pagination pre-validation; `crate::rich_layout::{RichPageCache, PageDelta, CaretGeometry, LayoutError}` in `crates/core-wasm/src/rich_layout.rs`, declarations only.
+- R3a (US-217): maps `Command` to `FlatEdit` and `RichPageCache` and builds `State` (`rich_protocol::State`).
+- R4: page cache and integration on top of `web/rich-editor-protocol.mjs`.
+- Integrator: routing by version byte in `editor.rs`, and `node tests/rich-editor-protocol.mjs` in CI next to `tests/editor-protocol.mjs`.
+
+## Frozen vectors
+
+`tests/rich-editor-protocol-vectors.txt`: tab-separated `kind`, `name`, frame hex, expectation. `request` and `reply` rows carry a canonical field dump; `bad-request` and `bad-reply` rows carry the expected error name (`nocontext` when the header is unreadable). The Rust test regenerates the file and fails on any difference (`ATELIER_REGEN_VECTORS=1` rewrites it, only for a deliberate v2 change); the JS test decodes every row, compares the dump, re-encodes to the same bytes, and checks that every strict prefix of a valid frame is rejected.
