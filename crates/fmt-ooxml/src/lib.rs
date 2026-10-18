@@ -420,6 +420,28 @@ impl Package {
         self.app_dirty = true;
         &mut self.app
     }
+    /// Replaces the bytes of an existing part; `false` when there is none.
+    /// The properties parts are not re-read.
+    pub fn replace_part_bytes(&mut self, uri: &PartUri, bytes: Vec<u8>) -> bool {
+        match self.parts.get_mut(uri) {
+            Some(p) => {
+                p.bytes = bytes;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Puts the package in the form the writer emits whatever order it was
+    /// built or read in (US-307): relationships sorted by identifier and no
+    /// `Default` entries beyond `rels` (every part has an `Override`).
+    pub(crate) fn canonicalize(&mut self) {
+        for list in self.relationships.values_mut() {
+            list.sort_by(|a, b| a.id.cmp(&b.id));
+        }
+        self.defaults.clear();
+    }
+
     pub fn insert_part(
         &mut self,
         uri: PartUri,

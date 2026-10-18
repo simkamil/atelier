@@ -14,8 +14,8 @@
 
 use super::preserve::PreservedPart;
 use super::{
-    CONTENT_DOC, DocxError, DocxLimits, ImportedDocx, REL_DOC, REL_DOC_STRICT, W_NS, W_STRICT_NS,
-    import_package,
+    Baseline, CONTENT_DOC, DocxError, DocxLimits, ImportedDocx, REL_DOC, REL_DOC_STRICT, W_NS,
+    W_STRICT_NS,
 };
 use crate::{OpcError, Package, PartUri, SaveContext, SaveReport, TargetMode};
 use atelier_text_model::rich::{DefaultRichDocument, NodeId, RichDocument, StyleEngine};
@@ -244,6 +244,9 @@ pub struct WrittenDocx {
     pub regenerated_parts: Vec<String>,
     /// Interpreted parts copied byte for byte.
     pub reused_parts: Vec<String>,
+    /// Parts the model does not interpret, re-emitted from the opaque store kept
+    /// with the model (`ImportedDocx::package`, US-306), in package order.
+    pub opaque_parts: Vec<String>,
     /// Result of the properties update when `DocxWriteOptions::save` was given.
     pub save: Option<SaveReport>,
 }
@@ -528,7 +531,16 @@ pub fn write_docx(
     options: &DocxWriteOptions,
 ) -> Result<WrittenDocx, WriteError> {
     let mut package = imported.package.clone();
-    let base = import_package(imported.package.clone(), options.limits.clone())?;
+    if options.regenerate_all {
+        if imported.preserved.document.is_none() {
+            return Err(WriteError::Invalid {
+                part: "word/document.xml".into(),
+                detail: "the model has no source skeleton to regenerate from",
+            });
+        }
+        package.canonicalize();
+    }
+    let base = &imported.baseline;
     let main_uri = package
         .relationships(None)
         .iter()
@@ -568,7 +580,7 @@ pub fn write_docx(
             notices: Vec::new(),
             dropped_notices: 0,
             links: Vec::new(),
-            link_prefix: "rIdAtelierLink".into(),
+            link_prefix: free_link_prefix(&package, &main_uri),
             bookmark_ids: BTreeMap::new(),
             fonts: BTreeSet::new(),
             lists: BTreeSet::new(),
@@ -634,7 +646,7 @@ pub fn write_docx(
         let mut added = options.added_styles.clone();
         added.dedup();
         let changed =
-            options.regenerate_all || !added.is_empty() || styles_changed(imported, &base, part);
+            options.regenerate_all || !added.is_empty() || styles_changed(imported, base, part);
         if changed {
             let (p, extra) = prefixes(&part.declarations, false);
             let attrs = root_attrs(part, &extra);
@@ -677,17 +689,24 @@ pub fn write_docx(
     }
 
     let save = finish_package(&mut package, &main_uri, options, &mut notices)?;
+    let opaque: Vec<String> = package
+        .parts()
+        .keys()
+        .map(ToString::to_string)
+        .filter(|u| !regenerated.contains(u) && !reused.contains(u))
+        .collect();
     let bytes = package.write()?;
     Ok(WrittenDocx {
         bytes,
         notices: finish_notices(notices, dropped),
         regenerated_parts: regenerated,
         reused_parts: reused,
+        opaque_parts: opaque,
         save,
     })
 }
 
-fn styles_changed(imported: &ImportedDocx, base: &ImportedDocx, part: &PreservedPart) -> bool {
+fn styles_changed(imported: &ImportedDocx, base: &Baseline, part: &PreservedPart) -> bool {
     let (cur, old) = (imported.styles.catalog(), base.styles.catalog());
     if cur.defaults() != old.defaults() {
         return true;
@@ -870,6 +889,22 @@ pub fn write_new_docx(
             "word/fontTable.xml".into(),
         ],
         reused_parts: Vec::new(),
+        opaque_parts: Vec::new(),
         save,
     })
+}
+
+/// Prefix of the relationship identifiers given to new hyperlinks: the first of
+/// `rIdAtelierLink`, `rIdAtelierLinkx`... that no relationship of the main part
+/// already uses, so a document saved before can be saved again with new links.
+fn free_link_prefix(package: &Package, main: &PartUri) -> String {
+    let mut prefix = String::from("rIdAtelierLink");
+    while package
+        .relationships(Some(main))
+        .iter()
+        .any(|r| r.id.starts_with(&prefix))
+    {
+        prefix.push('x');
+    }
+    prefix
 }
