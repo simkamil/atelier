@@ -161,6 +161,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-save.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/rich-editor-selection.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/rich-editor-find.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/properties-abi.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise real Worker transfers and cancellation
