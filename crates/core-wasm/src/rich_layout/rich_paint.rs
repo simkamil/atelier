@@ -525,14 +525,58 @@ struct GlyphProto {
     encoded_len: usize,
 }
 
-/// Glyph outlines converted once, keyed by face, glyph and size.
-#[derive(Default)]
+/// Where a glyph is drawn from in an editor page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AtlasSlot {
+    /// No contour (space): nothing to draw.
+    Empty,
+    /// Atlas entry of the document.
+    Entry(u32),
+    /// Atlas full or entry too large: the page carries the contour itself.
+    Inline,
+}
+
+/// Glyph outlines converted once, keyed by face, glyph and size, and the glyph
+/// atlas of the document session: one `ATDL` display list (a black `FillPath`
+/// at the origin) per distinct (face, glyph, size), numbered in creation
+/// order. Pages draw an atlas glyph with a `DrawGlyphRun` of font 0 whose
+/// glyph id is the atlas index; `rich_protocol` sends each entry once.
 pub(crate) struct GlyphCache {
     index: std::collections::BTreeMap<(u64, u16, i64), Option<usize>>,
     protos: Vec<GlyphProto>,
+    slots: std::collections::BTreeMap<(u64, u16, i64), AtlasSlot>,
+    atlas: Vec<Vec<u8>>,
+    atlas_bytes: usize,
+    /// Entries `..atlas_sent` were handed to a reply.
+    atlas_sent: usize,
+    /// Entry count bound (`MAX_ATLAS_ENTRIES` unless a test lowers it).
+    atlas_limit: usize,
+    page: (i64, i64),
+}
+
+impl Default for GlyphCache {
+    fn default() -> Self {
+        Self {
+            index: BTreeMap::new(),
+            protos: Vec::new(),
+            slots: BTreeMap::new(),
+            atlas: Vec::new(),
+            atlas_bytes: 0,
+            atlas_sent: 0,
+            atlas_limit: MAX_ATLAS_ENTRIES,
+            page: (1, 1),
+        }
+    }
 }
 
 const MAX_CACHED_GLYPHS: usize = 16_384;
+// A contour whose entry exceeds MAX_ATLAS_ENTRY_BYTES, or that would take the
+// atlas past MAX_ATLAS_TOTAL_BYTES (the bytes of one reply), is drawn inline.
+use crate::rich_protocol::{
+    MAX_ATLAS_ENTRIES as WIRE_ATLAS_ENTRIES, MAX_ATLAS_ENTRY_BYTES,
+    MAX_ATLAS_RESPONSE_BYTES as MAX_ATLAS_TOTAL_BYTES,
+};
+const _: () = assert!(MAX_ATLAS_ENTRIES == WIRE_ATLAS_ENTRIES as usize);
 
 impl GlyphCache {
     fn lookup(
@@ -622,6 +666,117 @@ impl GlyphCache {
     }
 }
 
+impl GlyphCache {
+    /// Sets the page size (1/64 pt) stamped in the header of atlas entries.
+    pub(crate) fn set_page(&mut self, width: i64, height: i64) {
+        self.page = (width, height);
+    }
+
+    /// Lowers the entry bound (tests of the inline fallback).
+    #[cfg(all(test, not(target_arch = "wasm32")))]
+    pub(crate) fn set_atlas_limit(&mut self, limit: usize) {
+        self.atlas_limit = limit;
+    }
+
+    /// The atlas entries of the session.
+    pub(crate) fn atlas(&self) -> &[Vec<u8>] {
+        &self.atlas
+    }
+
+    /// The entries no reply carried yet, with the index of the first, and
+    /// marks them sent.
+    pub(crate) fn take_atlas(&mut self) -> (u32, Vec<Vec<u8>>) {
+        let first = self.atlas_sent;
+        self.atlas_sent = self.atlas.len();
+        (first as u32, self.atlas[first..].to_vec())
+    }
+
+    /// Forgets the atlas (a new epoch starts at entry 0). Painted pages that
+    /// refer to it must be dropped by the caller.
+    pub(crate) fn reset_atlas(&mut self) {
+        self.slots.clear();
+        self.atlas.clear();
+        self.atlas_bytes = 0;
+        self.atlas_sent = 0;
+    }
+
+    fn slot(
+        &mut self,
+        fonts: &FontManager<'_>,
+        glyph: &atelier_text_layout::LayoutGlyph,
+        style: GlyphStyle,
+        source_char: char,
+    ) -> Result<(AtlasSlot, Option<usize>), PreviewError> {
+        let key = (glyph.font_id.get(), glyph.glyph_id, glyph.size);
+        if let Some(slot) = self.slots.get(&key).copied() {
+            let proto = match slot {
+                AtlasSlot::Inline => self.lookup(fonts, glyph, style, source_char)?,
+                _ => None,
+            };
+            return Ok((slot, proto));
+        }
+        let proto = self.lookup(fonts, glyph, style, source_char)?;
+        let Some(proto_index) = proto else {
+            self.slots.insert(key, AtlasSlot::Empty);
+            return Ok((AtlasSlot::Empty, None));
+        };
+        let entry = {
+            let proto = &self.protos[proto_index];
+            if self.atlas.len() >= self.atlas_limit
+                || proto.encoded_len + 66 > MAX_ATLAS_ENTRY_BYTES
+                || self.atlas_bytes + proto.encoded_len + 66 > MAX_ATLAS_TOTAL_BYTES
+            {
+                None
+            } else {
+                let mut bytes = encode_page(Vec::new(), self.page.0, self.page.1)?;
+                put_fill(&mut bytes, proto, BLACK, 0.0, 0.0);
+                bytes[40..44].copy_from_slice(&1u32.to_le_bytes());
+                Some(bytes)
+            }
+        };
+        let slot = match entry {
+            Some(bytes) => {
+                self.atlas_bytes += bytes.len();
+                self.atlas.push(bytes);
+                AtlasSlot::Entry((self.atlas.len() - 1) as u32)
+            }
+            None => AtlasSlot::Inline,
+        };
+        self.slots.insert(key, slot);
+        Ok((slot, (slot == AtlasSlot::Inline).then_some(proto_index)))
+    }
+}
+
+const BLACK: Color = Color {
+    red: 0.0,
+    green: 0.0,
+    blue: 0.0,
+    alpha: 1.0,
+};
+
+/// One `FillPath` command of `proto` translated by (`x`, `y`).
+fn put_fill(out: &mut Vec<u8>, proto: &GlyphProto, color: Color, x: f64, y: f64) {
+    out.reserve(18 + proto.encoded_len);
+    out.push(1);
+    out.push(0); // FillRule::NonZero
+    put_color_bytes(out, color);
+    out.extend_from_slice(&(proto.elements.len() as u32).to_le_bytes());
+    for element in &proto.elements {
+        let mut buffer = [0u8; 49];
+        buffer[0] = element.tag;
+        let mut at = 1;
+        for point in &element.points[..usize::from(element.count)] {
+            buffer[at..at + 8].copy_from_slice(&(x + point[0]).to_le_bytes());
+            buffer[at + 8..at + 16].copy_from_slice(&(y + point[1]).to_le_bytes());
+            at += 16;
+        }
+        out.extend_from_slice(&buffer[..at]);
+    }
+}
+
+/// Atlas index and position of one glyph of a run.
+type AtlasGlyph = (u32, f64, f64);
+
 /// Writes the commands of one page straight into `ATDL` bytes.
 pub(crate) struct PageWriter {
     /// The 44-byte header (its command count patched by `finish`), then the commands.
@@ -629,6 +784,8 @@ pub(crate) struct PageWriter {
     commands: usize,
     path_elements: usize,
     glyphs: usize,
+    /// Atlas glyphs of the open run: colour, then (index, x, y) per glyph.
+    run: Option<(Color, Vec<AtlasGlyph>)>,
 }
 
 fn put_color_bytes(out: &mut Vec<u8>, color: Color) {
@@ -647,6 +804,7 @@ impl PageWriter {
             commands: 0,
             path_elements: 0,
             glyphs: 0,
+            run: None,
         })
     }
 
@@ -672,23 +830,51 @@ impl PageWriter {
         x: f64,
         y: f64,
     ) -> Result<(), PreviewError> {
+        self.flush_run()?;
         self.count_command(proto.elements.len())?;
+        put_fill(&mut self.bytes, proto, color, x, y);
+        Ok(())
+    }
+
+    /// Adds an atlas glyph to the open run, which continues while the colour
+    /// does; any other command ends it, so that the paint order is kept.
+    fn atlas_glyph(
+        &mut self,
+        index: u32,
+        color: Color,
+        x: f64,
+        y: f64,
+    ) -> Result<(), PreviewError> {
+        // Same validation as a `DrawGlyphRun` of `Command`.
+        Point::try_new(x, y).map_err(render_error)?;
+        if self.run.as_ref().is_some_and(|(open, _)| *open != color) {
+            self.flush_run()?;
+        }
+        self.run
+            .get_or_insert_with(|| (color, Vec::new()))
+            .1
+            .push((index, x, y));
+        Ok(())
+    }
+
+    /// Writes the open run as one `DrawGlyphRun` of font 0.
+    fn flush_run(&mut self) -> Result<(), PreviewError> {
+        let Some((color, glyphs)) = self.run.take() else {
+            return Ok(());
+        };
+        self.count_command(0)?;
         let out = &mut self.bytes;
-        out.reserve(18 + proto.encoded_len);
-        out.push(1);
-        out.push(0); // FillRule::NonZero
+        out.reserve(29 + 36 * glyphs.len());
+        out.push(3);
+        out.extend_from_slice(&0u64.to_le_bytes());
         put_color_bytes(out, color);
-        out.extend_from_slice(&(proto.elements.len() as u32).to_le_bytes());
-        for element in &proto.elements {
-            let mut buffer = [0u8; 49];
-            buffer[0] = element.tag;
-            let mut at = 1;
-            for point in &element.points[..usize::from(element.count)] {
-                buffer[at..at + 8].copy_from_slice(&(x + point[0]).to_le_bytes());
-                buffer[at + 8..at + 16].copy_from_slice(&(y + point[1]).to_le_bytes());
-                at += 16;
-            }
-            out.extend_from_slice(&buffer[..at]);
+        out.extend_from_slice(&(glyphs.len() as u32).to_le_bytes());
+        for (index, x, y) in glyphs {
+            out.extend_from_slice(&index.to_le_bytes());
+            out.extend_from_slice(&x.to_le_bytes());
+            out.extend_from_slice(&y.to_le_bytes());
+            out.extend_from_slice(&0f64.to_le_bytes());
+            out.extend_from_slice(&0f64.to_le_bytes());
         }
         Ok(())
     }
@@ -700,6 +886,7 @@ impl PageWriter {
         from: [f64; 2],
         to: [f64; 2],
     ) -> Result<(), PreviewError> {
+        self.flush_run()?;
         // Same validation as the display path of `paint_line`.
         DisplayPath::new(vec![
             PathElement::MoveTo(Point::try_new(from[0], from[1]).map_err(render_error)?),
@@ -728,6 +915,7 @@ impl PageWriter {
 
     /// The finished display list.
     pub(crate) fn finish(mut self) -> Result<Vec<u8>, PreviewError> {
+        self.flush_run()?;
         let count_at = 40;
         let count = u32::try_from(self.commands).map_err(|_| PreviewError::Limit("commands"))?;
         self.bytes[count_at..count_at + 4].copy_from_slice(&count.to_le_bytes());
@@ -786,8 +974,14 @@ pub(crate) fn paint_line_fast(
         ))?;
         let origin_x = (margin.0 + glyph.x) as f64 * ATDL_SCALE;
         let origin_y = (margin.1 + glyph.y + baseline - line.baseline) as f64 * ATDL_SCALE;
-        if let Some(index) = cache.lookup(fonts, glyph, style, source_char)? {
-            writer.fill_glyph(&cache.protos[index], style.color, origin_x, origin_y)?;
+        match cache.slot(fonts, glyph, style, source_char)? {
+            (AtlasSlot::Entry(index), _) => {
+                writer.atlas_glyph(index, style.color, origin_x, origin_y)?;
+            }
+            (AtlasSlot::Inline, Some(proto)) => {
+                writer.fill_glyph(&cache.protos[proto], style.color, origin_x, origin_y)?;
+            }
+            _ => {}
         }
         if style.underline && glyph.x_advance > 0 {
             let glyph_size_pt = glyph.size as f64 * ATDL_SCALE;

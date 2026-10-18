@@ -1312,3 +1312,147 @@ fn a_dense_page_is_sent_within_the_response_bounds() {
         }
     }
 }
+
+/// What a client keeps of the atlas: the epoch and the number of entries.
+#[derive(Default)]
+struct AtlasView {
+    epoch: Option<u32>,
+    len: u32,
+}
+
+impl AtlasView {
+    /// Applies a delta by the client rules; `true` when the epoch changed.
+    fn apply(&mut self, atlas: &proto::AtlasDelta) -> bool {
+        let fresh = self.epoch != Some(atlas.epoch);
+        if fresh {
+            self.epoch = Some(atlas.epoch);
+            self.len = 0;
+        }
+        assert_eq!(atlas.first, self.len, "atlas_first follows the known index");
+        self.len += atlas.entries.len() as u32;
+        fresh
+    }
+
+    /// Every glyph of the pages refers to a known entry.
+    fn covers(&self, pages: &[PageDisplay]) {
+        for page in pages {
+            let list = atelier_render::DisplayList::decode(&page.display).unwrap();
+            for command in list.commands {
+                if let atelier_render::Command::DrawGlyphRun {
+                    font_id, glyphs, ..
+                } = command
+                {
+                    assert_eq!(font_id, 0);
+                    assert!(glyphs.iter().all(|g| g.glyph_id < self.len));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn atlas_entries_arrive_once_in_order_and_cover_the_pages() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt("Hello world, hello atlas.");
+    assert!(view.apply(&opened.atlas), "the first reply starts an epoch");
+    assert!(!opened.atlas.entries.is_empty());
+    assert!(
+        opened
+            .atlas
+            .entries
+            .iter()
+            .all(|e| e.starts_with(b"ATDL") && e.len() < proto::MAX_ATLAS_ENTRY_BYTES)
+    );
+    view.covers(&opened.pages);
+    let known = view.len;
+    // A page already painted brings nothing new.
+    match h.send(1, Command::Pages { first: 0, count: 1 }) {
+        Response::Pages { atlas, pages, .. } => {
+            assert!(!view.apply(&atlas));
+            assert_eq!((atlas.first, atlas.entries.len()), (known, 0));
+            view.covers(&pages);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Only the glyphs of a new letter are added by an edit.
+    let state = h.insert("Q");
+    assert!(!view.apply(&state.atlas));
+    assert_eq!(state.atlas.first, known);
+    assert!(!state.atlas.entries.is_empty() && state.atlas.entries.len() <= 3);
+    view.covers(&state.pages);
+    let known = view.len;
+    let state = h.insert("Q");
+    assert!(!view.apply(&state.atlas));
+    assert_eq!(
+        state.atlas.entries.len(),
+        0,
+        "a known glyph is not sent again"
+    );
+    assert_eq!(view.len, known);
+    view.covers(&state.pages);
+}
+
+#[test]
+fn the_atlas_epoch_changes_at_open_and_at_resync() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let first = h.txt(&"mot ".repeat(2000));
+    assert!(view.apply(&first.atlas));
+    h.finish_layout();
+    // Open again: a new epoch and numbering from 0.
+    let second = h.txt("autre texte");
+    assert_ne!(second.atlas.epoch, first.atlas.epoch);
+    assert_eq!(second.atlas.first, 0);
+    assert!(view.apply(&second.atlas));
+    view.covers(&second.pages);
+    // A lost reply: the next State starts a new atlas, with every entry the
+    // pages it sends use, and the pages painted before are painted again.
+    h.editor.mark_resync();
+    let state = h.state(Command::Layout { budget: 1 });
+    assert_ne!(state.atlas.epoch, second.atlas.epoch);
+    assert_eq!(state.atlas.first, 0);
+    assert!(view.apply(&state.atlas));
+    assert_eq!(state.invalidated.len(), usize::from(state.page_count > 0));
+    match h.send(1, Command::Pages { first: 0, count: 1 }) {
+        Response::Pages { atlas, pages, .. } => {
+            assert_eq!(atlas.epoch, state.atlas.epoch);
+            assert!(!view.apply(&atlas));
+            view.covers(&pages);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Closed and opened again: never the epoch of the closed document.
+    let last = view.epoch;
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    let third = h.txt("encore");
+    assert_ne!(Some(third.atlas.epoch), last);
+}
+
+#[test]
+fn a_lost_pages_reply_is_recovered_by_the_epoch() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt(&"Zéro ".repeat(300));
+    view.apply(&opened.atlas);
+    // The reply to this edit never reaches the client: the host calls
+    // mark_resync, the client's atlas (already complete for the old pages)
+    // is dropped with the new epoch.
+    h.insert("W");
+    h.editor.mark_resync();
+    let state = h.state(Command::Layout { budget: 1 });
+    assert!(view.apply(&state.atlas), "the epoch changed");
+    assert_eq!(view.len, state.atlas.entries.len() as u32);
+    for index in 0..state.page_count.min(2) {
+        if let Response::Pages { atlas, pages, .. } = h.send(
+            1,
+            Command::Pages {
+                first: index,
+                count: 1,
+            },
+        ) {
+            assert!(!view.apply(&atlas));
+            view.covers(&pages);
+        }
+    }
+}

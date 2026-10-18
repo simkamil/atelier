@@ -19,8 +19,9 @@ use crate::protocol::{Message, MessageType};
 use crate::rich_layout::{LayoutError, PageCache, PageDelta, RichPageCache};
 use crate::rich_preview::import_docx_for_editor;
 use crate::rich_protocol::{
-    self as proto, Caret, Command, DEFAULT_LAYOUT_BUDGET, DecodeError, DeleteUnit, Direction,
-    ErrorCode, HitMode, OpenKind, PageDisplay, Profile, Reply, Response, State, TextWindowData,
+    self as proto, AtlasDelta, Caret, Command, DEFAULT_LAYOUT_BUDGET, DecodeError, DeleteUnit,
+    Direction, ErrorCode, HitMode, OpenKind, PageDisplay, Profile, Reply, Response, State,
+    TextWindowData,
 };
 
 mod accessible;
@@ -44,6 +45,8 @@ pub fn is_rich(payload: &[u8]) -> bool {
 #[derive(Default)]
 pub struct RichEditor {
     active: Option<Session>,
+    /// Atlas epoch of the last closed document (a new `Open` never reuses it).
+    last_epoch: u32,
 }
 
 struct Session {
@@ -66,6 +69,9 @@ struct Session {
     /// A reply was lost (encoding failure, ABI limit): the next `State`
     /// invalidates every page and carries the text window.
     resync: bool,
+    /// Epoch of the glyph atlas of `cache`: changes at `Open`, at a resync and
+    /// whenever the cache is rebuilt, i.e. whenever atlas indices restart at 0.
+    epoch: u32,
 }
 
 /// Paragraphs of layout a move or a hit test may run to reach its target.
@@ -130,6 +136,8 @@ impl RichEditor {
     pub fn mark_resync(&mut self) {
         if let Some(session) = self.active.as_mut() {
             session.resync = true;
+            // The client may have missed atlas entries: start a new atlas.
+            session.new_atlas_epoch();
         }
     }
 
@@ -142,6 +150,11 @@ impl RichEditor {
         {
             // The previous document survives a refused `Open`.
             let mut session = Session::open(id, kind, profile, &data)?;
+            session.epoch = self
+                .active
+                .as_ref()
+                .map_or(self.last_epoch, |s| s.epoch)
+                .wrapping_add(1);
             let state = session.open_state()?;
             self.active = Some(session);
             return Ok(Response::State(state));
@@ -151,6 +164,7 @@ impl RichEditor {
             _ => return Err(ErrorCode::UnknownDocument),
         };
         if matches!(command, Command::Close) {
+            self.last_epoch = session.epoch;
             self.active = None;
             return Ok(Response::Closed);
         }
@@ -213,7 +227,14 @@ impl Session {
             txt,
             pending: PageDelta::default(),
             resync: false,
+            epoch: 0,
         })
+    }
+
+    /// Restarts the glyph atlas: new epoch, no entry, no painted page.
+    fn new_atlas_epoch(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
+        self.cache.reset_atlas();
     }
 
     /// Adds the changes of a layout step done outside a `State`.
@@ -229,6 +250,8 @@ impl Session {
         let old = self.cache.page_count();
         if let Ok(cache) = PageCache::new(&self.doc, self.txt) {
             self.cache = cache;
+            // A fresh cache numbers its atlas from 0.
+            self.epoch = self.epoch.wrapping_add(1);
             let count = self.cache.page_count();
             self.carry(PageDelta {
                 page_count: count,
@@ -368,6 +391,7 @@ impl Session {
                 Ok(Response::Pages {
                     revision: self.revision(),
                     page_count,
+                    atlas: self.take_atlas(),
                     pages,
                 })
             }
@@ -643,6 +667,7 @@ impl Session {
                 height: c.height,
             });
         let revision = self.revision();
+        let atlas = self.take_atlas();
         Ok(State {
             revision,
             anchor: self.anchor as u64,
@@ -656,6 +681,7 @@ impl Session {
             page_count,
             caret,
             invalidated,
+            atlas,
             pages,
             window: if window {
                 self.window_around_focus()
@@ -663,6 +689,17 @@ impl Session {
                 None
             },
         })
+    }
+
+    /// The glyph atlas entries the pages painted so far need and no reply
+    /// carried yet.
+    fn take_atlas(&mut self) -> AtlasDelta {
+        let (first, entries) = self.cache.take_atlas();
+        AtlasDelta {
+            epoch: self.epoch,
+            first,
+            entries,
+        }
     }
 
     fn window_around_focus(&self) -> Option<TextWindowData> {

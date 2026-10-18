@@ -15,6 +15,66 @@ use atelier_text_model::rich::{
 };
 use std::collections::HashMap;
 
+/// The commands of a page as the editor drew them before the glyph atlas:
+/// every glyph of a `DrawGlyphRun` becomes the `FillPath` of its atlas
+/// contour moved to the glyph position. Atlas indices depend on paint order,
+/// so two caches are compared through this.
+fn drawn(cache: &mut PageCache, doc: &dyn LayoutContext, page: u32) -> Vec<Command> {
+    use atelier_geom::Point;
+    use atelier_render::{DisplayPath, FillRule, PathElement};
+    let bytes = cache.page_display(doc, page).unwrap();
+    let mut out = Vec::new();
+    for command in DisplayList::decode(&bytes).unwrap().commands {
+        let Command::DrawGlyphRun {
+            font_id,
+            color,
+            glyphs,
+        } = command
+        else {
+            out.push(command);
+            continue;
+        };
+        assert_eq!(font_id, 0);
+        for glyph in glyphs {
+            let entry = DisplayList::decode(&cache.atlas()[glyph.glyph_id as usize]).unwrap();
+            let [Command::FillPath { path, .. }] = entry.commands.as_slice() else {
+                panic!("an atlas entry is one FillPath");
+            };
+            let at = |p: Point| {
+                Point::try_new(glyph.position.x() + p.x(), glyph.position.y() + p.y()).unwrap()
+            };
+            let elements = path
+                .elements
+                .iter()
+                .map(|e| match *e {
+                    PathElement::MoveTo(p) => PathElement::MoveTo(at(p)),
+                    PathElement::LineTo(p) => PathElement::LineTo(at(p)),
+                    PathElement::QuadraticTo { control, to } => PathElement::QuadraticTo {
+                        control: at(control),
+                        to: at(to),
+                    },
+                    PathElement::CubicTo {
+                        control1,
+                        control2,
+                        to,
+                    } => PathElement::CubicTo {
+                        control1: at(control1),
+                        control2: at(control2),
+                        to: at(to),
+                    },
+                    PathElement::Close => PathElement::Close,
+                })
+                .collect();
+            out.push(Command::FillPath {
+                path: DisplayPath::new(elements).unwrap(),
+                color,
+                rule: FillRule::NonZero,
+            });
+        }
+    }
+    out
+}
+
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -227,8 +287,8 @@ fn assert_same_as_full(cache: &mut PageCache, doc: &VecParagraphs, txt: bool, rn
     sampled.dedup();
     for page in sampled.into_iter().filter(|p| *p < pages) {
         assert_eq!(
-            cache.page_display(doc, page).unwrap(),
-            fresh.page_display(doc, page).unwrap(),
+            drawn(cache, doc, page),
+            drawn(&mut fresh, doc, page),
             "display list of page {page}"
         );
     }
@@ -380,8 +440,9 @@ fn page_display_lists_are_valid_atdl_and_memoised() {
     assert!(
         list.commands
             .iter()
-            .any(|c| matches!(c, Command::FillPath { .. }))
+            .any(|c| matches!(c, Command::DrawGlyphRun { font_id: 0, .. }))
     );
+    assert!(!cache.atlas().is_empty());
     assert_eq!(cache.page_display(&doc, 0).unwrap(), first);
     assert_eq!(
         cache.page_display(&doc, cache.page_count()).err(),
@@ -816,10 +877,7 @@ fn the_real_model_drives_the_cache_through_flat_edits() {
         assert_eq!(cache.pagination(), fresh.pagination());
         assert_eq!(cache.page_count(), fresh.page_count());
         for page in [0, fresh.page_count() / 2, fresh.page_count() - 1] {
-            assert_eq!(
-                cache.page_display(doc, page).unwrap(),
-                fresh.page_display(doc, page).unwrap()
-            );
+            assert_eq!(drawn(cache, doc, page), drawn(&mut fresh, doc, page));
         }
         let at = rng.below(doc.len().max(1));
         if let Ok(snapped) = doc.snap_back(at) {

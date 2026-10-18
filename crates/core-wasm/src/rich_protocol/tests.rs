@@ -28,6 +28,29 @@ fn page(fill: u8) -> Vec<u8> {
     p
 }
 
+fn describe_atlas(a: &AtlasDelta) -> String {
+    let lens = a
+        .entries
+        .iter()
+        .map(|e| e.len().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{}/{}/{}",
+        a.epoch,
+        a.first,
+        if lens.is_empty() { "none" } else { &lens }
+    )
+}
+
+fn atlas_delta(first: u32, fills: &[u8]) -> AtlasDelta {
+    AtlasDelta {
+        epoch: 3,
+        first,
+        entries: fills.iter().map(|f| page(*f)).collect(),
+    }
+}
+
 fn describe_request(r: &Request) -> String {
     let head = format!("doc={} req={}", r.doc_id, r.request_id);
     let tail = match &r.command {
@@ -123,9 +146,11 @@ fn describe_reply(r: &Reply) -> String {
         Response::Pages {
             revision,
             page_count,
+            atlas,
             pages,
         } => format!(
-            "Pages revision={revision} page_count={page_count} pages={}",
+            "Pages revision={revision} page_count={page_count} atlas={} pages={}",
+            describe_atlas(atlas),
             describe_pages(pages)
         ),
         Response::AccessibleWindow { revision, items } => {
@@ -178,7 +203,7 @@ fn describe_reply(r: &Reply) -> String {
                 format!("{}:{}", w.start, hex(w.text.as_bytes()))
             });
             format!(
-                "State revision={} anchor={} focus={} focus_upstream={} doc_len={} modified={} can_undo={} can_redo={} layout_complete={} page_count={} caret={caret} invalidated={inval} pages={} window={window}",
+                "State revision={} anchor={} focus={} focus_upstream={} doc_len={} modified={} can_undo={} can_redo={} layout_complete={} page_count={} caret={caret} invalidated={inval} atlas={} pages={} window={window}",
                 s.revision,
                 s.anchor,
                 s.focus,
@@ -189,6 +214,7 @@ fn describe_reply(r: &Reply) -> String {
                 u8::from(s.can_redo),
                 u8::from(s.layout_complete),
                 s.page_count,
+                describe_atlas(&s.atlas),
                 describe_pages(&s.pages)
             )
         }
@@ -464,6 +490,7 @@ fn state() -> State {
             height: 14.0,
         }),
         invalidated: vec![(2, 3)],
+        atlas: atlas_delta(5, &[7, 9]),
         pages: vec![
             PageDisplay {
                 index: 0,
@@ -491,6 +518,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
     bare.caret = None;
     bare.invalidated.clear();
     bare.pages.clear();
+    bare.atlas = atlas_delta(7, &[]);
     bare.window = None;
     bare.modified = false;
     bare.can_undo = false;
@@ -618,6 +646,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                 Response::Pages {
                     revision: 5,
                     page_count: 6,
+                    atlas: atlas_delta(7, &[11]),
                     pages: vec![
                         PageDisplay {
                             index: 4,
@@ -639,6 +668,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                 Response::Pages {
                     revision: 5,
                     page_count: 2,
+                    atlas: atlas_delta(7, &[]),
                     pages: vec![],
                 },
             ),
@@ -983,13 +1013,47 @@ fn bad_replies() -> Vec<Bad> {
     past_end.extend_from_slice(&text_body(b"ab"));
     let mut unordered = vec![0u8; 8];
     unordered.extend_from_slice(&6u32.to_le_bytes());
+    unordered.extend_from_slice(&[0u8; 12]); // atlas: epoch 0, first 0, no entry
     unordered.extend_from_slice(&2u32.to_le_bytes());
     for _ in 0..2 {
         unordered.extend_from_slice(&3u32.to_le_bytes());
         unordered.extend_from_slice(&(MIN_PAGE_DISPLAY_BYTES as u32).to_le_bytes());
         unordered.extend_from_slice(&page(3));
     }
+    let atlas_pages = |first: u32, entries: &[Vec<u8>]| {
+        let mut body = 1u64.to_le_bytes().to_vec();
+        body.extend_from_slice(&1u32.to_le_bytes());
+        for v in [3u32, first, entries.len() as u32] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        for e in entries {
+            body.extend_from_slice(&(e.len() as u32).to_le_bytes());
+            body.extend_from_slice(e);
+        }
+        body.extend_from_slice(&0u32.to_le_bytes());
+        frame(opcode::R_PAGES, 7, 1, &body)
+    };
+    let mut bad_entry = page(1);
+    bad_entry[0] = b'X';
     vec![
+        (
+            "atlas-entry-not-atdl",
+            atlas_pages(0, &[bad_entry]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "atlas-entry-too-short",
+            atlas_pages(0, &[vec![b'A'; MIN_PAGE_DISPLAY_BYTES - 1]]),
+            InvalidBody,
+            true,
+        ),
+        (
+            "atlas-past-the-bound",
+            atlas_pages(MAX_ATLAS_ENTRIES, &[page(1)]),
+            InvalidBody,
+            true,
+        ),
         (
             "error-code-zero",
             frame(opcode::R_ERROR, 7, 1, &[0, 0, 0, 0]),
@@ -1517,6 +1581,7 @@ fn page_byte_limits_are_checked_on_both_sides() {
         response: Response::Pages {
             revision: 1,
             page_count: 4,
+            atlas: AtlasDelta::default(),
             pages,
         },
     };
@@ -1540,6 +1605,7 @@ fn page_byte_limits_are_checked_on_both_sides() {
     // The decoder refuses what the encoder refuses.
     let mut body = 1u64.to_le_bytes().to_vec();
     body.extend_from_slice(&4u32.to_le_bytes());
+    body.extend_from_slice(&[0u8; 12]);
     body.extend_from_slice(&2u32.to_le_bytes());
     for (index, len) in [(0u32, 4 * mib), (1, 4 * mib + 1)] {
         body.extend_from_slice(&index.to_le_bytes());
@@ -1553,4 +1619,60 @@ fn page_byte_limits_are_checked_on_both_sides() {
     assert!(!page_fits(1, MAX_RESPONSE_PAGE_BYTES, 1));
     assert!(page_fits(1, MAX_RESPONSE_PAGE_BYTES - 1, 1));
     assert!(!page_fits(0, 0, MAX_PAGE_DISPLAY_BYTES + 1));
+}
+
+#[test]
+fn atlas_limits_are_checked_on_both_sides() {
+    let reply = |atlas: AtlasDelta| Reply {
+        doc_id: 1,
+        request_id: 1,
+        response: Response::Pages {
+            revision: 1,
+            page_count: 1,
+            atlas,
+            pages: vec![],
+        },
+    };
+    let entry = |len: usize| {
+        let mut e = vec![0u8; len];
+        e[..4].copy_from_slice(b"ATDL");
+        e
+    };
+    let at = |first: u32, entries: Vec<Vec<u8>>| AtlasDelta {
+        epoch: 9,
+        first,
+        entries,
+    };
+    // The whole atlas fits: every index below the bound, entries up to 64 KiB.
+    let full = at(
+        0,
+        (0..MAX_ATLAS_ENTRIES)
+            .map(|_| entry(MIN_PAGE_DISPLAY_BYTES))
+            .collect(),
+    );
+    let bytes = encode_reply(&reply(full.clone())).unwrap();
+    assert_eq!(decode_reply(&bytes).unwrap(), reply(full));
+    let big = at(0, vec![entry(MAX_ATLAS_ENTRY_BYTES)]);
+    assert!(encode_reply(&reply(big)).is_ok());
+    for refused in [
+        at(0, vec![entry(MAX_ATLAS_ENTRY_BYTES + 1)]),
+        at(0, vec![entry(MIN_PAGE_DISPLAY_BYTES - 1)]),
+        at(MAX_ATLAS_ENTRIES, vec![entry(MIN_PAGE_DISPLAY_BYTES)]),
+        at(
+            1,
+            (0..MAX_ATLAS_ENTRIES)
+                .map(|_| entry(MIN_PAGE_DISPLAY_BYTES))
+                .collect(),
+        ),
+        at(
+            0,
+            (0..MAX_ATLAS_RESPONSE_BYTES / MAX_ATLAS_ENTRY_BYTES + 1)
+                .map(|_| entry(MAX_ATLAS_ENTRY_BYTES))
+                .collect(),
+        ),
+    ] {
+        assert_eq!(encode_reply(&reply(refused)), Err(ErrorCode::InvalidBody));
+    }
+    // Same epoch, nothing new: first may sit anywhere up to the bound.
+    assert!(encode_reply(&reply(at(MAX_ATLAS_ENTRIES, vec![]))).is_ok());
 }
