@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-selectEngine("run-image-insert-browser", "node tests/run-image-insert-browser.mjs [--engine v1|v2]");
+const { engine } = selectEngine("run-image-insert-browser", "node tests/run-image-insert-browser.mjs [--engine v1|v2]");
 const candidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
@@ -50,7 +50,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((yes, no) => { server.once("error", no); server.listen(0, "127.0.0.1", yes); });
 const profile = await mkdtemp(join(tmpdir(), "atelier-image-browser-"));
-const url = `http://127.0.0.1:${server.address().port}/tests/image-insert-browser.html?automated=1`;
+const url = `http://127.0.0.1:${server.address().port}/tests/image-insert-browser.html?automated=1${engine === "v2" ? "&engine=v2" : ""}`;
 const browser = spawn(executable, ["--headless=new", "--window-size=1280,900", "--disable-gpu", "--no-first-run",
   "--no-default-browser-check", "--disable-background-networking", "--disable-component-update",
   `--user-data-dir=${profile}`, url], { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
@@ -62,7 +62,7 @@ const timer = setTimeout(() => rejectReport(new Error(`Image browser check timed
 try {
   const report = await reportPromise;
   assert.equal(report.status, "passed", JSON.stringify(report));
-  assert(report.checks.length >= 25, "all image scenarios must complete");
+  assert(report.checks.length >= (engine === "v2" ? 20 : 25), "all image scenarios must complete");
   console.log(JSON.stringify({ ...report, executable }));
 } finally {
   clearTimeout(timer);

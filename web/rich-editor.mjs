@@ -69,6 +69,12 @@ function sanitizeAlt(text) {
   return out.trim();
 }
 
+/** PNG, JPEG, GIF or BMP signature: the formats the engine decodes. */
+function hasImageSignature(bytes) {
+  const at = (...values) => values.every((value, index) => bytes[index] === value);
+  return at(0x89, 0x50, 0x4e, 0x47) || at(0xff, 0xd8, 0xff) || at(0x47, 0x49, 0x46, 0x38) || at(0x42, 0x4d);
+}
+
 function sniffFormat(bytes) {
   return ZIP_MAGIC.every((b, i) => bytes[i] === b) ? "docx" : "txt";
 }
@@ -386,10 +392,14 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   function onCacheChange() {
     if (disposed) return;
     if (cache.revision === null) return; // a reset, nothing to show yet
-    const next = buildState();
+    const candidate = buildState();
     const previous = state;
-    const key = stateKey(next);
+    const key = stateKey(candidate);
     const documentReplaced = replacedPending;
+    // The state object stays the same while nothing it carries changed (a page fetch, a zoom): consumers compare identity.
+    const unchanged = Boolean(previous) && !documentReplaced && key === publishedKey
+      && previous.pageCount === candidate.pageCount && previous.layoutComplete === candidate.layoutComplete;
+    const next = unchanged ? previous : candidate;
     state = next;
     syncPages();
     const selectionMoved = !previous || previous.revision !== next.revision || previous.anchor !== next.anchor || previous.focus !== next.focus
@@ -747,7 +757,12 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
           await setSelection(target, target);
         }
         const alt = sanitizeAlt(imageAltText(file, imageAlt(imageCount + 1)));
-        const reply = await send({ type: "insertImage", alt, bytes }, "image");
+        let reply;
+        try { reply = await send({ type: "insertImage", alt, bytes }, "image"); } catch (error) {
+          // The engine answers one code for every undecodable image: a known signature means a damaged file, not another format.
+          if (error?.code === "EDITOR_IMAGE_UNSUPPORTED" && hasImageSignature(bytes)) throw new EditorError("EDITOR_IMAGE_CORRUPT", error.message, { cause: error });
+          throw error;
+        }
         imageCount += 1;
         return reply;
       }),

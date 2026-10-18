@@ -8,7 +8,7 @@ const wheel = (node, values = {}) => {
   return event;
 };
 
-export async function checkEditorZoom({ editor, scrollport, canvas, openText, assert, waitFor, key, inputText, pointer }) {
+export async function checkEditorZoom({ editor, scrollport, canvas, openText, assert, waitFor, key, inputText, pointer, textOf = null }) {
   await openText(Array.from({ length: 250 }, (_, i) => `ligne ${i} café`).join("\r\n"));
   editor.setZoom(1);
   scrollport.scrollTop = 1200;
@@ -77,11 +77,13 @@ export async function checkEditorZoom({ editor, scrollport, canvas, openText, as
     bounds.top + caret.y * 2 - scrollport.scrollTop + caret.height);
   await waitFor(() => editor.state.focus === 2 && editor.state.anchor === 2, "zoomed click maps back to document byte offset");
   assert(editor.state.focus === 2, "zoomed hit-testing retains UTF-8 model coordinates");
-  const text = editor.state.text;
+  // v1 reads the text from the state; another engine passes `textOf` (and an asynchronous `waitFor`).
+  const read = textOf ?? (async () => editor.state.text);
+  const text = await read();
   inputText(editor.element, "Z");
-  await waitFor(() => editor.state.text !== text, "edit after zoom");
+  await waitFor(textOf ? async () => await read() !== text : () => editor.state.text !== text, "edit after zoom");
   await editor.undo();
-  assert(editor.state.text === text && editor.getZoom() === 2, "undo restores text after zoom without changing its factor");
+  assert(await read() === text && editor.getZoom() === 2, "undo restores text after zoom without changing its factor");
 }
 
 export async function checkAppZoom({ app, scrollport, assert, waitFor }) {
