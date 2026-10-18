@@ -66,6 +66,10 @@ pub mod opcode {
     pub const MARK_SAVED: u16 = 0x010D;
     pub const LAYOUT: u16 = 0x010E;
     pub const ACCESSIBLE_WINDOW: u16 = 0x010F;
+    // Open, create and save (US-218, R3b).
+    pub const SAVE: u16 = 0x0110;
+    pub const INSERT_IMAGE: u16 = 0x0111;
+    pub const MAKE_EDITABLE_COPY: u16 = 0x0112;
     pub const R_ERROR: u16 = 0x8000;
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
@@ -73,6 +77,7 @@ pub mod opcode {
     pub const R_HIT: u16 = 0x8103;
     pub const R_CLOSED: u16 = 0x8104;
     pub const R_ACCESSIBLE_WINDOW: u16 = 0x8105;
+    pub const R_SAVE_DATA: u16 = 0x8106;
 }
 
 /// Stable error codes; the numeric values never change.
@@ -99,6 +104,14 @@ pub enum ErrorCode {
     Internal = 18,
     Limit = 19,
     NotReady = 20,
+    /// The session is read-only (revisions or comments, US-218).
+    ReadOnly = 21,
+    /// The document could not be written.
+    SaveFailed = 22,
+    /// The picture is not a PNG, JPEG, GIF or BMP, or is corrupt.
+    ImageInvalid = 23,
+    /// The revisions of the document cannot be accepted faithfully.
+    RevisionsUnsupported = 24,
 }
 
 impl ErrorCode {
@@ -124,6 +137,10 @@ impl ErrorCode {
             18 => Self::Internal,
             19 => Self::Limit,
             20 => Self::NotReady,
+            21 => Self::ReadOnly,
+            22 => Self::SaveFailed,
+            23 => Self::ImageInvalid,
+            24 => Self::RevisionsUnsupported,
             _ => return None,
         })
     }
@@ -150,6 +167,10 @@ impl ErrorCode {
             Self::Internal => "RICH_INTERNAL",
             Self::Limit => "RICH_LIMIT",
             Self::NotReady => "RICH_NOT_READY",
+            Self::ReadOnly => "RICH_READ_ONLY",
+            Self::SaveFailed => "RICH_SAVE_FAILED",
+            Self::ImageInvalid => "RICH_IMAGE_INVALID",
+            Self::RevisionsUnsupported => "RICH_REVISIONS_UNSUPPORTED",
         }
     }
 }
@@ -299,6 +320,19 @@ pub enum Command {
         start: u64,
         end: u64,
     },
+    /// Serialises the document; answered by `SaveData`, no state change.
+    Save {
+        format: SaveFormat,
+    },
+    /// Inserts a picture as an inline object at the caret (replacing the
+    /// selection); answered by `State`.
+    InsertImage {
+        alt: String,
+        bytes: Vec<u8>,
+    },
+    /// Replaces a read-only document by an editable copy where the revisions
+    /// are accepted and the comments removed; answered by `State`.
+    MakeEditableCopy,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -349,6 +383,10 @@ pub struct State {
     /// Re-rendered pages, strictly increasing indices.
     pub pages: Vec<PageDisplay>,
     pub window: Option<TextWindowData>,
+    /// The session refuses edits (bit 6 of the flags, US-218).
+    pub read_only: bool,
+    /// The source had tracked changes or comments (bit 7 of the flags, US-218).
+    pub has_revisions: bool,
 }
 
 /// Kinds of an inline item (every U+FFFC of an accessible paragraph).
@@ -413,6 +451,12 @@ pub enum Response {
     AccessibleWindow {
         revision: u64,
         items: Vec<AccessibleItem>,
+    },
+    /// The serialised document (US-218).
+    SaveData {
+        revision: u64,
+        bytes: Vec<u8>,
+        notices: Vec<Notice>,
     },
 }
 
@@ -724,6 +768,9 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
             }
             Command::AccessibleWindow { start, end }
         }
+        opcode::SAVE | opcode::INSERT_IMAGE | opcode::MAKE_EDITABLE_COPY => {
+            io::parse_command(opcode, &mut r)?
+        }
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -841,6 +888,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
             put_u64(&mut b, *start);
             put_u64(&mut b, *end);
             opcode::ACCESSIBLE_WINDOW
+        }
+        Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy => {
+            io::encode_command(&request.command, &mut b)?
         }
     };
     let frame = header(op, request.doc_id, request.request_id, &b)?;
@@ -1033,7 +1083,9 @@ fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
         | u32::from(s.can_redo) << 2
         | u32::from(s.layout_complete) << 3
         | u32::from(s.window.is_some()) << 4
-        | u32::from(s.focus_upstream) << 5;
+        | u32::from(s.focus_upstream) << 5
+        | u32::from(s.read_only) << 6
+        | u32::from(s.has_revisions) << 7;
     put_u32(b, flags);
     put_u32(b, s.page_count);
     let caret = s.caret.unwrap_or(Caret {
@@ -1065,7 +1117,7 @@ fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
 fn parse_state(r: &mut Reader<'_>) -> Result<State, Fail> {
     let (revision, anchor, focus, doc_len) = (r.u64()?, r.u64()?, r.u64()?, r.u64()?);
     let flags = r.u32()?;
-    if flags & !0x3f != 0 || anchor > doc_len || focus > doc_len {
+    if flags & !0xff != 0 || anchor > doc_len || focus > doc_len {
         return Err(Fail::InvalidBody);
     }
     let page_count = r.u32()?;
@@ -1125,6 +1177,8 @@ fn parse_state(r: &mut Reader<'_>) -> Result<State, Fail> {
         can_redo: flags & 4 != 0,
         layout_complete: flags & 8 != 0,
         focus_upstream: flags & 0x20 != 0,
+        read_only: flags & 0x40 != 0,
+        has_revisions: flags & 0x80 != 0,
         page_count,
         caret,
         invalidated,
@@ -1187,6 +1241,14 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
             put_u64(&mut b, *revision);
             put_accessible(&mut b, items)?;
             opcode::R_ACCESSIBLE_WINDOW
+        }
+        Response::SaveData {
+            revision,
+            bytes,
+            notices,
+        } => {
+            io::put_save_data(&mut b, *revision, bytes, notices)?;
+            opcode::R_SAVE_DATA
         }
     };
     let frame = header(op, reply.doc_id, reply.request_id, &b)?;
@@ -1256,6 +1318,7 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
                 revision: r.u64()?,
                 items: read_accessible(&mut r)?,
             },
+            opcode::R_SAVE_DATA => io::read_save_data(&mut r)?,
             _ => return Err(Fail::UnknownOpcode),
         };
         r.finish()?;
@@ -1344,5 +1407,13 @@ pub fn split_page_delta(delta: &crate::rich_layout::PageDelta) -> (Vec<u32>, Vec
     (changed, merged)
 }
 
+mod io;
+pub use io::{
+    MAX_ALT_BYTES, MAX_IMAGE_BYTES, MAX_NOTICE_BYTES, MAX_NOTICES, MAX_SAVE_BYTES, Notice,
+    SaveFormat, notice,
+};
+
+#[cfg(test)]
+mod io_tests;
 #[cfg(test)]
 mod tests;

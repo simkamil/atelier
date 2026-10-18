@@ -198,7 +198,8 @@ fn object_document() -> RichDocument {
 
 fn harness_with(doc: RichDocument) -> Harness {
     let mut h = Harness::new();
-    h.editor.active = Some(Session::with_document(1, doc, true).unwrap());
+    h.editor.active =
+        Some(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     h
 }
 
@@ -1311,4 +1312,416 @@ fn a_dense_page_is_sent_within_the_response_bounds() {
             other => panic!("{other:?}"),
         }
     }
+}
+
+// ---- US-218: open, create and save ---------------------------------------
+
+use crate::rich_protocol::{SaveFormat, notice};
+
+fn fixture(name: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/../../tests/docx-reference/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+impl Harness {
+    fn save(&mut self, format: SaveFormat) -> (Vec<u8>, Vec<proto::Notice>) {
+        match self.send(1, Command::Save { format }) {
+            Response::SaveData { bytes, notices, .. } => (bytes, notices),
+            other => panic!("expected SaveData, got {other:?}"),
+        }
+    }
+
+    fn docx(&mut self, bytes: &[u8]) -> State {
+        self.open_state(OpenKind::Docx, Profile::Document, bytes)
+    }
+}
+
+/// `text` (LF breaks) as a file: line break, encoding, BOM.
+fn file_bytes(text: &str, eol: &str, encoding: &str, bom: bool) -> Vec<u8> {
+    let text = text.replace('\n', eol);
+    let mut out = Vec::new();
+    match encoding {
+        "utf8" => {
+            if bom {
+                out.extend_from_slice(&[0xef, 0xbb, 0xbf]);
+            }
+            out.extend_from_slice(text.as_bytes());
+        }
+        "utf16le" | "utf16be" => {
+            let le = encoding == "utf16le";
+            if bom {
+                out.extend_from_slice(if le { &[0xff, 0xfe] } else { &[0xfe, 0xff] });
+            }
+            for unit in text.encode_utf16() {
+                out.extend_from_slice(&if le {
+                    unit.to_le_bytes()
+                } else {
+                    unit.to_be_bytes()
+                });
+            }
+        }
+        _ => {
+            for c in text.chars() {
+                out.push(match c {
+                    '\u{e9}' => 0xe9,
+                    '\u{e8}' => 0xe8,
+                    '\u{e0}' => 0xe0,
+                    '\u{20ac}' => 0x80,
+                    c if c.is_ascii() => c as u8,
+                    other => panic!("not in the test table: {other}"),
+                });
+            }
+        }
+    }
+    out
+}
+
+const CORPUS_TEXT: &str =
+    "Premier \u{e9}t\u{e9}, \u{e0} 5\u{20ac}\n\nTroisi\u{e8}me ligne\tavec tabulation\nfin";
+
+type TextCase = (String, Vec<u8>, &'static str, bool, &'static str, bool);
+
+fn text_corpus() -> Vec<TextCase> {
+    let mut out = Vec::new();
+    for (eol_name, eol) in [("lf", "\n"), ("crlf", "\r\n"), ("cr", "\r")] {
+        for (encoding, bom) in [
+            ("utf8", false),
+            ("utf8", true),
+            ("utf16le", true),
+            ("utf16be", true),
+            ("cp1252", false),
+        ] {
+            for final_break in [false, true] {
+                let text = format!("{CORPUS_TEXT}{}", if final_break { "\n" } else { "" });
+                out.push((
+                    format!("{encoding}-bom{bom}-{eol_name}-final{final_break}"),
+                    file_bytes(&text, eol, encoding, bom),
+                    encoding,
+                    bom,
+                    eol,
+                    final_break,
+                ));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn text_files_save_back_byte_for_byte_and_after_an_edit() {
+    for (name, bytes, encoding, bom, eol, final_break) in text_corpus() {
+        let mut h = Harness::new();
+        h.open_state(OpenKind::Txt, Profile::Txt, &bytes);
+        let (saved, notices) = h.save(SaveFormat::Txt);
+        assert_eq!(saved, bytes, "{name}: unmodified file");
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        // Edit: insert after "Premier", then delete the last character.
+        h.select(7, 7);
+        h.insert("!");
+        let end = h.text().len() as u64;
+        h.select(end, end);
+        h.delete(false, DeleteUnit::Grapheme);
+        let mut expected = CORPUS_TEXT.to_owned();
+        expected.insert(7, '!');
+        if final_break {
+            expected.push('\n');
+        }
+        expected.pop();
+        let (saved, notices) = h.save(SaveFormat::Txt);
+        assert_eq!(
+            saved,
+            file_bytes(&expected, eol, encoding, bom),
+            "{name}: edited file"
+        );
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+    }
+}
+
+#[test]
+fn mixed_line_breaks_and_unmappable_characters_are_reported() {
+    let mut h = Harness::new();
+    h.open_state(OpenKind::Txt, Profile::Txt, b"a\r\nb\r\nc\nd");
+    let (saved, notices) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, b"a\r\nb\r\nc\r\nd");
+    assert_eq!(
+        notices.iter().map(|n| n.code).collect::<Vec<_>>(),
+        [notice::LINE_BREAKS_NORMALISED]
+    );
+    // A Windows-1252 file that gains a character the encoding cannot hold.
+    h.open_state(OpenKind::Txt, Profile::Txt, &[b'a', 0xe9, b'\n']);
+    h.select(0, 0);
+    h.insert("\u{4e2d}");
+    let (saved, notices) = h.save(SaveFormat::Txt);
+    assert_eq!(saved, [b'?', b'a', 0xe9, b'\n']);
+    assert_eq!(
+        notices.iter().map(|n| n.code).collect::<Vec<_>>(),
+        [notice::REPLACED_CHARACTERS]
+    );
+}
+
+#[test]
+fn a_new_document_saves_as_utf8_crlf_text_and_as_docx() {
+    let mut h = Harness::new();
+    h.blank();
+    h.insert("Bonjour\n\u{e9}t\u{e9}");
+    let (text, _) = h.save(SaveFormat::Txt);
+    assert_eq!(text, "Bonjour\r\n\u{e9}t\u{e9}".as_bytes());
+    for format in [SaveFormat::Docx, SaveFormat::Docm, SaveFormat::Dotx] {
+        let (bytes, notices) = h.save(format);
+        assert!(notices.is_empty(), "{format:?}: {notices:?}");
+        let mut again = Harness::new();
+        let state = again.docx(&bytes);
+        assert!(!state.read_only && !state.has_revisions);
+        assert_eq!(again.text(), "Bonjour\n\u{e9}t\u{e9}");
+    }
+}
+
+#[test]
+fn docx_files_round_trip_without_a_notice() {
+    for name in ["basic.docx", "libreoffice/properties.docx"] {
+        let bytes = fixture(name);
+        let mut h = Harness::new();
+        h.docx(&bytes);
+        let text = h.text();
+        let (saved, notices) = h.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        let mut again = Harness::new();
+        again.docx(&saved);
+        assert_eq!(again.text(), text, "{name}");
+        // Modified: still no notice for a plain insertion in a text paragraph.
+        h.select(0, 0);
+        h.insert("Ajout ");
+        let (edited, notices) = h.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name} edited: {notices:?}");
+        let mut again = Harness::new();
+        again.docx(&edited);
+        assert_eq!(again.text(), format!("Ajout {text}"), "{name}");
+    }
+}
+
+fn edit_commands() -> Vec<Command> {
+    vec![
+        Command::InsertText { text: "x".into() },
+        Command::ReplaceRange {
+            start: 0,
+            end: 0,
+            text: "x".into(),
+        },
+        Command::Delete {
+            forward: true,
+            unit: DeleteUnit::Grapheme,
+        },
+        Command::Undo,
+        Command::Redo,
+        Command::InsertImage {
+            alt: String::new(),
+            bytes: vec![1, 2, 3],
+        },
+    ]
+}
+
+#[test]
+fn revisions_and_comments_open_read_only_in_the_accepted_state() {
+    for (name, text) in [
+        (
+            "revisions.docx",
+            "D\u{e9}but ins\u{e9}r\u{e9} fin.\n\nd\u{e9}plac\u{e9}\ngras\ncentr\u{e9}\nsuite",
+        ),
+        ("comments.docx", "Avant comment\u{e9} apr\u{e8}s.\nFin."),
+    ] {
+        let bytes = fixture(name);
+        let mut h = Harness::new();
+        let state = h.docx(&bytes);
+        assert!(state.read_only && state.has_revisions, "{name}");
+        assert_eq!(h.text(), text, "{name}");
+        for command in edit_commands() {
+            assert_eq!(h.error(command), ErrorCode::ReadOnly, "{name}");
+        }
+        assert_eq!(h.text(), text, "{name}: nothing changed");
+        // Moving and selecting are not edits.
+        let moved = h.step(Direction::Right, false);
+        assert!(moved.read_only && moved.has_revisions && !moved.modified);
+        // Saving the read-only document gives back what was opened.
+        let (saved, notices) = h.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        let mut again = Harness::new();
+        assert!(again.docx(&saved).read_only, "{name}");
+        assert_eq!(again.text(), text);
+        // The editable copy: a DOCX without revisions or comments, with notices.
+        let (copy, notices) = match h.send(1, Command::MakeEditableCopy) {
+            Response::SaveData { bytes, notices, .. } => (bytes, notices),
+            other => panic!("{other:?}"),
+        };
+        assert!(!notices.is_empty(), "{name}");
+        let mut editable = Harness::new();
+        let state = editable.docx(&copy);
+        assert!(!state.read_only && !state.has_revisions, "{name}");
+        assert_eq!(editable.text(), text, "{name}: same accepted text");
+        editable.select(0, 0);
+        editable.insert("Z");
+        assert_eq!(editable.text(), format!("Z{text}"));
+        let (out, notices) = editable.save(SaveFormat::Docx);
+        assert!(notices.is_empty(), "{name}: {notices:?}");
+        assert!(!out.is_empty());
+    }
+    // The flags are those of the session just opened, not of the previous one.
+    let mut h = Harness::new();
+    let state = h.docx(&fixture("revisions.docx"));
+    assert!(state.read_only);
+    let state = h.docx(&fixture("basic.docx"));
+    assert!(!state.read_only && !state.has_revisions);
+    h.insert("ok");
+}
+
+#[test]
+fn make_editable_copy_of_an_editable_document_is_its_save() {
+    let mut h = Harness::new();
+    h.blank();
+    h.insert("abc");
+    let Response::SaveData { bytes, .. } = h.send(1, Command::MakeEditableCopy) else {
+        panic!("expected SaveData");
+    };
+    let mut again = Harness::new();
+    again.docx(&bytes);
+    assert_eq!(again.text(), "abc");
+}
+
+fn png() -> Vec<u8> {
+    std::fs::read(format!(
+        "{}/../image/tests/fixtures/png/browser-200x100-red.png",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap()
+}
+
+fn media_parts(docx: &[u8]) -> Vec<String> {
+    atelier_fmt_ooxml::Package::read(docx)
+        .unwrap()
+        .parts()
+        .keys()
+        .filter(|u| u.as_str().starts_with("word/media/"))
+        .map(ToString::to_string)
+        .collect()
+}
+
+#[test]
+fn an_inserted_picture_is_an_object_saved_in_word_media() {
+    let mut h = Harness::new();
+    h.blank();
+    h.insert("ab");
+    h.select(1, 1);
+    let state = h.state(Command::InsertImage {
+        alt: "Un carr\u{e9} rouge".into(),
+        bytes: png(),
+    });
+    assert_eq!(state.doc_len, 5);
+    assert_eq!((state.anchor, state.focus), (4, 4));
+    assert!(state.modified && state.can_undo);
+    assert_eq!(h.text(), format!("a{OBJ}b"));
+    let (bytes, notices) = h.save(SaveFormat::Docx);
+    assert!(notices.is_empty(), "{notices:?}");
+    assert_eq!(media_parts(&bytes), ["word/media/image1.png"]);
+    let package = atelier_fmt_ooxml::Package::read(&bytes).unwrap();
+    let uri = atelier_fmt_ooxml::PartUri::parse("word/document.xml").unwrap();
+    let xml = String::from_utf8(package.part(&uri).unwrap().bytes.clone()).unwrap();
+    assert!(xml.contains("Un carr\u{e9} rouge"), "alt text kept");
+    // The text save drops the picture and says so.
+    let (text, notices) = h.save(SaveFormat::Txt);
+    assert_eq!(text, b"ab");
+    assert!(
+        notices.iter().any(|n| n.code == notice::LOSS_BASE + 4),
+        "{notices:?}"
+    );
+    // Undo and redo are one step.
+    assert_eq!(h.undo().doc_len, 2);
+    assert_eq!(h.redo().doc_len, 5);
+    // A selection is replaced by the picture.
+    h.select(0, 1);
+    h.state(Command::InsertImage {
+        alt: String::new(),
+        bytes: png(),
+    });
+    assert_eq!(h.text(), format!("{OBJ}{OBJ}b"));
+}
+
+#[test]
+fn a_picture_added_to_an_imported_docx_gets_a_free_media_name() {
+    // rich.docx already holds word/media/image1.png.
+    let source = fixture("libreoffice/rich.docx");
+    let before = media_parts(&source);
+    assert_eq!(before, ["word/media/image1.png"]);
+    let mut h = Harness::new();
+    let state = h.docx(&source);
+    // rich.docx has revisions and comments: the picture goes in the copy.
+    assert!(state.read_only);
+    let Response::SaveData { bytes: copy, .. } = h.send(1, Command::MakeEditableCopy) else {
+        panic!("copy");
+    };
+    h.docx(&copy);
+    h.select(0, 0);
+    h.state(Command::InsertImage {
+        alt: "neuf".into(),
+        bytes: png(),
+    });
+    let (saved, notices) = h.save(SaveFormat::Docx);
+    // The paragraph that received the picture is written from the model.
+    assert_eq!(
+        notices.iter().map(|n| n.code).collect::<Vec<_>>(),
+        [notice::WRITE_BASE + 1],
+        "{notices:?}"
+    );
+    let after = media_parts(&saved);
+    assert_eq!(after.len(), 2, "{after:?}");
+    assert!(after.contains(&"word/media/image1.png".to_owned()));
+    // The first picture is unchanged byte for byte.
+    let kept = atelier_fmt_ooxml::Package::read(&saved).unwrap();
+    let original = atelier_fmt_ooxml::Package::read(&source).unwrap();
+    let uri = atelier_fmt_ooxml::PartUri::parse("word/media/image1.png").unwrap();
+    assert_eq!(
+        kept.part(&uri).unwrap().bytes,
+        original.part(&uri).unwrap().bytes
+    );
+}
+
+#[test]
+fn pictures_are_validated_and_bounded() {
+    let mut h = Harness::new();
+    h.blank();
+    let image = |bytes: Vec<u8>| Command::InsertImage {
+        alt: String::new(),
+        bytes,
+    };
+    assert_eq!(h.error(image(vec![1, 2, 3])), ErrorCode::ImageInvalid);
+    let mut truncated = png();
+    truncated.truncate(40);
+    assert_eq!(h.error(image(truncated)), ErrorCode::ImageInvalid);
+    let mut huge = png();
+    huge.resize(proto::MAX_IMAGE_BYTES + 1, 0);
+    let frame = proto::encode_request(&Request {
+        doc_id: 1,
+        request_id: 9,
+        command: image(huge),
+    });
+    assert!(frame.is_err(), "the codec refuses a picture over 8 MiB");
+    assert_eq!(h.text(), "");
+    assert_eq!(h.state(Command::Layout { budget: 1 }).doc_len, 0);
+    // The store of one document holds 512 pictures at most.
+    for _ in 0..512 {
+        h.state(image(png()));
+    }
+    assert_eq!(h.error(image(png())), ErrorCode::Limit);
+}
+
+#[test]
+fn save_with_nothing_open_is_refused() {
+    let mut h = Harness::new();
+    assert_eq!(
+        h.error(Command::Save {
+            format: SaveFormat::Txt
+        }),
+        ErrorCode::UnknownDocument
+    );
 }

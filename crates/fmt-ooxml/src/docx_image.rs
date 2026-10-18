@@ -96,6 +96,9 @@ struct Media {
     relationship: String,
 }
 
+/// Replacement operations and the media they need.
+type PreparedPictures = (Vec<RichOp>, Vec<Media>);
+
 /// The picture objects of `document` as `w:drawing` replacements, with the
 /// media they need. `taken` says whether a part name or a relationship id is
 /// already used by the package. `None` when the document holds no picture.
@@ -104,7 +107,7 @@ fn prepare_pictures(
     text_width_pt: f64,
     text_height_pt: f64,
     taken: &dyn Fn(&str) -> bool,
-) -> Result<Option<(Vec<RichOp>, Vec<Media>)>, WriteError> {
+) -> Result<Option<PreparedPictures>, WriteError> {
     let mut found: Vec<(NodeId, AnchoredObject)> = Vec::new();
     for para in document.paragraph_ids() {
         let Ok(paragraph) = document.paragraph(para) else {

@@ -80,6 +80,10 @@ fn describe_request(r: &Request) -> String {
         Command::AccessibleWindow { start, end } => {
             format!("AccessibleWindow start={start} end={end}")
         }
+        // The vectors of these are in `io_tests` (tests/rich-editor-save-vectors.txt).
+        Command::Save { .. } | Command::InsertImage { .. } | Command::MakeEditableCopy => {
+            "see io_tests".into()
+        }
     };
     format!("{head} {tail}")
 }
@@ -192,6 +196,7 @@ fn describe_reply(r: &Reply) -> String {
                 describe_pages(&s.pages)
             )
         }
+        Response::SaveData { .. } => "see io_tests".into(),
     };
     format!("{head} {tail}")
 }
@@ -478,6 +483,8 @@ fn state() -> State {
             start: 2,
             text: "a\nb".into(),
         }),
+        read_only: false,
+        has_revisions: false,
     }
 }
 
@@ -1022,7 +1029,7 @@ fn bad_replies() -> Vec<Bad> {
         ),
         (
             "state-reserved-flags",
-            state_frame(|b| u32_at(b, 32, 0x40)),
+            state_frame(|b| u32_at(b, 32, 0x100)),
             InvalidBody,
             true,
         ),
@@ -1376,12 +1383,12 @@ fn encoder_refuses_what_decoder_would_reject() {
 
 #[test]
 fn error_codes_are_stable_and_named() {
-    for n in 1..=20u16 {
+    for n in 1..=24u16 {
         let code = ErrorCode::from_u16(n).unwrap();
         assert_eq!(code as u16, n);
         assert!(code.name().starts_with("RICH_"));
     }
-    assert!(ErrorCode::from_u16(0).is_none() && ErrorCode::from_u16(21).is_none());
+    assert!(ErrorCode::from_u16(0).is_none() && ErrorCode::from_u16(25).is_none());
 }
 
 #[test]

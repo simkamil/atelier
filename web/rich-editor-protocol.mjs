@@ -24,6 +24,12 @@ export const RICH_LIMITS = Object.freeze({
   maxLayoutBudget: 4096,
   defaultLayoutBudget: 16,
   maxAccessibleItems: 256,
+  // US-218 (R3b): pictures and saved files.
+  maxImageBytes: 8 * 1024 * 1024,
+  maxAltBytes: 512,
+  maxNotices: 64,
+  maxNoticeBytes: 255,
+  maxSaveBytes: 32 * 1024 * 1024 - HEADER_BYTES - (8 + 4 + 2) - 64 * (4 + 255),
 });
 export const NO_CARET = 0xffffffff;
 
@@ -31,10 +37,13 @@ export const RichOpcode = Object.freeze({
   Open: 0x0101, Close: 0x0102, InsertText: 0x0103, ReplaceRange: 0x0104, Delete: 0x0105,
   Move: 0x0106, SetSelection: 0x0107, HitTest: 0x0108, Undo: 0x0109, Redo: 0x010a,
   TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e, AccessibleWindow: 0x010f,
+  // US-218 (R3b)
+  Save: 0x0110, InsertImage: 0x0111, MakeEditableCopy: 0x0112,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
   AccessibleWindow: 0x8105,
+  SaveData: 0x8106,
 });
 
 export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
@@ -43,6 +52,8 @@ export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
   RICH_POSITION_NOT_BOUNDARY: 8, RICH_INVALID_RANGE: 9, RICH_INVALID_UTF8: 10, RICH_INVALID_TEXT: 11,
   RICH_FRAME_TOO_LARGE: 12, RICH_WINDOW_TOO_LARGE: 13, RICH_PAGE_RANGE: 14, RICH_TOO_MANY_PAGES: 15,
   RICH_STALE_REVISION: 16, RICH_OPEN_FAILED: 17, RICH_INTERNAL: 18, RICH_LIMIT: 19, RICH_NOT_READY: 20,
+  // US-218 (R3b)
+  RICH_READ_ONLY: 21, RICH_SAVE_FAILED: 22, RICH_IMAGE_INVALID: 23, RICH_REVISIONS_UNSUPPORTED: 24,
 }));
 const ERROR_NAMES = new Map(Object.entries(RichErrorCode).map(([name, code]) => [code, name]));
 
@@ -54,6 +65,8 @@ export const RICH_DIRECTIONS = Object.freeze([
 ]);
 const UNITS = ["grapheme", "word"];
 const HIT_MODES = ["probe", "setCaret", "extend"];
+/** Formats of `save`, by wire value (1..4). */
+export const SAVE_FORMATS = Object.freeze([null, "txt", "docx", "docm", "dotx"]);
 
 const MAGIC = [0x41, 0x54, 0x45, 0x44];
 const MAX_U64 = (1n << 64n) - 1n;
@@ -264,6 +277,23 @@ function parseCommand(opcode, body) {
       command = { type: "accessibleWindow", start, end };
       break;
     }
+    case RichOpcode.Save: {
+      const format = SAVE_FORMATS[r.u8()];
+      if (!format) fail("RICH_INVALID_BODY");
+      r.zero(3);
+      command = { type: "save", format };
+      break;
+    }
+    case RichOpcode.InsertImage: {
+      const alt = text16(r);
+      if (encoder.encode(alt).length > RICH_LIMITS.maxAltBytes || /[ -]/.test(alt)) fail("RICH_INVALID_TEXT");
+      const len = r.bytes.length - r.at;
+      if (len === 0) fail("RICH_INVALID_BODY");
+      if (len > RICH_LIMITS.maxImageBytes) fail("RICH_LIMIT");
+      command = { type: "insertImage", alt, bytes: r.take(len) };
+      break;
+    }
+    case RichOpcode.MakeEditableCopy: command = { type: "makeEditableCopy" }; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   r.finish();
@@ -325,6 +355,11 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "markSaved": w.u64(u64(command.revision)); opcode = RichOpcode.MarkSaved; break;
     case "layout": w.u32(u32(command.budget)); opcode = RichOpcode.Layout; break;
     case "accessibleWindow": w.u64(u64(command.start)); w.u64(u64(command.end)); opcode = RichOpcode.AccessibleWindow; break;
+    case "save": w.u8(enumIndex(SAVE_FORMATS, command.format), 0, 0, 0); opcode = RichOpcode.Save; break;
+    case "insertImage":
+      if (!(command.bytes instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+      writeText16(w, command.alt ?? ""); w.raw(command.bytes); opcode = RichOpcode.InsertImage; break;
+    case "makeEditableCopy": opcode = RichOpcode.MakeEditableCopy; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
@@ -365,7 +400,7 @@ function writePages(w, pages) {
 function parseState(r) {
   const revision = r.u64(); const anchor = r.u64(); const focus = r.u64(); const docLen = r.u64();
   const flags = r.u32();
-  if ((flags & ~0x3f) !== 0 || anchor > docLen || focus > docLen) fail("RICH_INVALID_BODY");
+  if ((flags & ~0xff) !== 0 || anchor > docLen || focus > docLen) fail("RICH_INVALID_BODY");
   const pageCount = r.u32();
   if (pageCount > RICH_LIMITS.maxPages) fail("RICH_TOO_MANY_PAGES");
   const caretPage = r.u32();
@@ -395,6 +430,7 @@ function parseState(r) {
   }
   return {
     revision, anchor, focus, focusUpstream: (flags & 0x20) !== 0, docLen,
+    readOnly: (flags & 0x40) !== 0, hasRevisions: (flags & 0x80) !== 0,
     modified: (flags & 1) !== 0, canUndo: (flags & 2) !== 0, canRedo: (flags & 4) !== 0, layoutComplete: (flags & 8) !== 0,
     pageCount, caret, invalidated, pages, window,
   };
@@ -402,7 +438,7 @@ function parseState(r) {
 
 function writeState(w, s) {
   for (const v of [s.revision, s.anchor, s.focus, s.docLen]) w.u64(u64(v));
-  w.u32((s.modified ? 1 : 0) | (s.canUndo ? 2 : 0) | (s.canRedo ? 4 : 0) | (s.layoutComplete ? 8 : 0) | (s.window ? 16 : 0) | (s.focusUpstream ? 32 : 0));
+  w.u32((s.modified ? 1 : 0) | (s.canUndo ? 2 : 0) | (s.canRedo ? 4 : 0) | (s.layoutComplete ? 8 : 0) | (s.window ? 16 : 0) | (s.focusUpstream ? 32 : 0) | (s.readOnly ? 64 : 0) | (s.hasRevisions ? 128 : 0));
   w.u32(u32(s.pageCount));
   const c = s.caret ?? { page: NO_CARET, x: 0, y: 0, height: 0 };
   w.u32(c.page); w.f64(c.x); w.f64(c.y); w.f64(c.height);
@@ -428,6 +464,36 @@ function writeText16(w, value) {
   const b = encoder.encode(value);
   if (b.length > 0xffff) fail("RICH_INVALID_BODY");
   w.u16(b.length); w.raw(b);
+}
+
+/** `SaveData` (US-218): {revision (BigInt), bytes, notices: [{code, text}]}. `bytes` is a view into the frame. */
+function readSaveData(r) {
+  const revision = r.u64();
+  const len = r.u32();
+  if (len > RICH_LIMITS.maxSaveBytes) fail("RICH_LIMIT");
+  const bytes = r.take(len);
+  const count = r.u16();
+  if (count > RICH_LIMITS.maxNotices) fail("RICH_INVALID_BODY");
+  const notices = [];
+  for (let i = 0; i < count; i += 1) {
+    const code = r.u16();
+    const text = text16(r);
+    if (encoder.encode(text).length > RICH_LIMITS.maxNoticeBytes) fail("RICH_INVALID_BODY");
+    notices.push({ code, text });
+  }
+  return { type: "saveData", revision, bytes, notices };
+}
+
+function writeSaveData(w, response) {
+  if (!(response.bytes instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+  if (response.bytes.length > RICH_LIMITS.maxSaveBytes) fail("RICH_LIMIT");
+  if (!Array.isArray(response.notices) || response.notices.length > RICH_LIMITS.maxNotices) fail("RICH_INVALID_BODY");
+  w.u64(u64(response.revision)); w.u32(response.bytes.length); w.raw(response.bytes);
+  w.u16(response.notices.length);
+  for (const n of response.notices) {
+    if (encoder.encode(n.text).length > RICH_LIMITS.maxNoticeBytes) fail("RICH_INVALID_BODY");
+    w.u16(n.code); writeText16(w, n.text);
+  }
 }
 
 /** Items: {paraStart, paraEnd (BigInt), role, level, label, text, inlines: [{offset (BigInt), kind, value}]}, one inline per U+FFFC. */
@@ -530,6 +596,7 @@ export function decodeRichReply(bytes) {
         response = { type: "accessibleWindow", revision, items: readAccessible(r) };
         break;
       }
+      case RichReplyOpcode.SaveData: response = readSaveData(r); break;
       default: return fail("RICH_UNKNOWN_OPCODE");
     }
     r.finish();
@@ -552,6 +619,7 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     case "hitResult": w.u64(u64(response.revision)); w.u32(u32(response.page)); w.u64(u64(response.position)); w.u8(response.upstream ? 1 : 0, 0, 0, 0); opcode = RichReplyOpcode.HitResult; break;
     case "closed": opcode = RichReplyOpcode.Closed; break;
     case "accessibleWindow": w.u64(u64(response.revision)); writeAccessible(w, response.items); opcode = RichReplyOpcode.AccessibleWindow; break;
+    case "saveData": writeSaveData(w, response); opcode = RichReplyOpcode.SaveData; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
