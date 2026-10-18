@@ -66,7 +66,7 @@ const fromHex = (h) => Uint8Array.from(Buffer.from(h, "hex"));
     for (let cut = 0; cut < bytes.length; cut += 1) assert.throws(() => decode(bytes.subarray(0, cut)), RichProtocolError);
   }
   // The flag bits of State.
-  const state = { type: "state", revision: 1n, anchor: 0n, focus: 0n, docLen: 0n, focusUpstream: false, modified: false, canUndo: false, canRedo: false, layoutComplete: true, pageCount: 0, caret: null, invalidated: [], pages: [], window: null };
+  const state = { type: "state", revision: 1n, anchor: 0n, focus: 0n, docLen: 0n, focusUpstream: false, modified: false, canUndo: false, canRedo: false, layoutComplete: true, pageCount: 0, atlas: { epoch: 1, first: 0, entries: [] }, caret: null, invalidated: [], pages: [], window: null };
   for (const [readOnly, hasRevisions] of [[false, false], [true, false], [false, true], [true, true]]) {
     const back = decodeRichReply(encodeRichReply({ docId: 1, requestId: 1, response: { ...state, readOnly, hasRevisions } })).response;
     assert.deepEqual([back.readOnly, back.hasRevisions], [readOnly, hasRevisions]);
