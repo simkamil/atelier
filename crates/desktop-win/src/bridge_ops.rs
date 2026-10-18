@@ -256,9 +256,13 @@ pub(crate) fn valid_font_id(text: &str) -> bool {
             .all(|b| b.is_ascii_digit() || matches!(b, b'f' | b'-'))
 }
 
+/// Inactivité au-delà de laquelle une écriture en morceaux abandonnée libère son ticket.
+const STAGING_IDLE_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
 struct Staging {
     ticket: u64,
     next_seq: u32,
+    last_chunk: std::time::Instant,
     bytes: Vec<u8>,
 }
 
@@ -356,6 +360,23 @@ impl BridgeState {
         result.outcome
     }
 
+    /// Libère le ticket d'une écriture en morceaux restée sans nouveau morceau depuis `idle`.
+    fn expire_idle_write(
+        &mut self,
+        broker: &FileBroker,
+        now: std::time::Instant,
+        idle: std::time::Duration,
+    ) {
+        let expired = self
+            .staging
+            .as_ref()
+            .filter(|staging| now.saturating_duration_since(staging.last_chunk) >= idle)
+            .map(|staging| staging.ticket);
+        if let Some(ticket) = expired {
+            self.forget_write(ticket, broker);
+        }
+    }
+
     /// Retire un ticket d'écriture (et l'écriture en cours) sans le révoquer : le travail qui
     /// l'utilise encore le révoque lui-même.
     fn detach_write(&mut self, ticket: u64) {
@@ -396,6 +417,7 @@ pub(crate) fn begin_bridge_request(
     broker: &Arc<FileBroker>,
     host: &mut dyn BridgeHost,
 ) -> Step {
+    state.expire_idle_write(broker, std::time::Instant::now(), STAGING_IDLE_LIMIT);
     match request {
         Request::PickOpen { id, spec } => Step::Done(pick_open(&id, &spec, state, broker, host)),
         Request::PickSave { id, spec } => Step::Done(pick_save(&id, &spec, state, broker, host)),
@@ -597,6 +619,7 @@ fn write_ticket(
         None => Staging {
             ticket,
             next_seq: 0,
+            last_chunk: std::time::Instant::now(),
             bytes: Vec::new(),
         },
     };
@@ -610,6 +633,7 @@ fn write_ticket(
     }
     staging.bytes.extend_from_slice(&bytes);
     staging.next_seq += 1;
+    staging.last_chunk = std::time::Instant::now();
     if !last {
         state.staging = Some(staging);
         return Step::Done(ok_reply(&id, ""));
@@ -1045,6 +1069,57 @@ mod tests {
 
     fn text_of(outcome: &Outcome) -> String {
         outcome.text()
+    }
+
+    #[test]
+    fn idle_chunked_write_releases_its_ticket_after_the_idle_limit() {
+        let dir = work_dir("idle");
+        let file = dir.join("out.txt");
+        let broker = Arc::new(FileBroker::new());
+        let mut state = BridgeState::new(Vec::new());
+        let mut host = FakeHost::new(None);
+        let handle = state.issue_write_ticket(&broker, &file).unwrap();
+        let (_, ticket) = parse_ticket(&handle).unwrap();
+        let chunk = process_bridge_request(
+            Request::WriteTicket {
+                id: "1".into(),
+                ticket,
+                seq: 0,
+                last: false,
+                bytes: b"abc".to_vec(),
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        );
+        assert_eq!(text_of(&chunk), "us120-file|1|1|ok|");
+        assert!(state.staging.is_some());
+        let started = std::time::Instant::now();
+        let almost = started + STAGING_IDLE_LIMIT - std::time::Duration::from_secs(5);
+        state.expire_idle_write(&broker, almost, STAGING_IDLE_LIMIT);
+        assert_eq!(state.outstanding(), (0, 1), "still within the idle limit");
+        let late = started + STAGING_IDLE_LIMIT + std::time::Duration::from_secs(5);
+        state.expire_idle_write(&broker, late, STAGING_IDLE_LIMIT);
+        assert_eq!(state.outstanding(), (0, 0));
+        assert!(state.staging.is_none());
+        let after = process_bridge_request(
+            Request::WriteTicket {
+                id: "2".into(),
+                ticket,
+                seq: 1,
+                last: true,
+                bytes: b"d".to_vec(),
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        );
+        assert_eq!(
+            text_of(&after),
+            "us120-file|1|2|error|files.error.unknown_ticket"
+        );
+        assert!(!file.exists(), "nothing was written");
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]
