@@ -758,10 +758,12 @@ Réf : §6.3, §6.7 · Taille : M · Dépend de : US-091
 
 #### US-204 — Modèle riche éditable à positions plates
 *En tant que* développeur, *je veux* éditer le modèle riche en place par positions plates *afin que* la saisie reste rapide sur un long document.
-- [ ] Index de sommes préfixes par paragraphe (O(log n)) ; conversions position plate ↔ (paragraphe, décalage) cohérentes.
-- [ ] Édition multi-paragraphes (Entrée scinde avec le style suivant, suppression qui fusionne) appliquée en place avec son inverse, sans clone ; 10 000 séquences aléatoires reviennent à l'état initial après inversion.
-- [ ] Une édition au milieu d'un document de 300 pages coûte moins de 1 ms côté modèle (banc).
-- [ ] Sauts manuels, symboles et styles de run (aujourd'hui tables annexes `breaks`, `symbols`, `run_styles` de `fmt-ooxml/src/docx.rs`) deviennent des éléments en ligne du modèle, modifiés par `RichOp` ; l'import DOCX les produit directement et aucune table n'est plus remappée par `position_map`.
+- [x] Index de sommes préfixes par paragraphe (O(log n)) ; conversions position plate ↔ (paragraphe, décalage) ↔ (identifiant de nœud, décalage) cohérentes.
+- [x] Édition multi-paragraphes (Entrée scinde avec le style suivant, suppression qui fusionne) appliquée en place avec son inverse, sans clone ; 10 000 séquences aléatoires reviennent à l'état initial après inversion. (Le modèle n'a pas de champ « style suivant » : le nouveau paragraphe prend le style du paragraphe scindé.)
+- [x] Une édition au milieu d'un document de 300 pages coûte moins de 1 ms côté modèle (banc).
+- [ ] Sauts manuels, symboles et styles de run (aujourd'hui tables annexes `breaks`, `symbols`, `run_styles` de `fmt-ooxml/src/docx.rs`) deviennent des éléments en ligne du modèle, modifiés par `RichOp` ; l'import DOCX les produit directement et aucune table n'est plus remappée par `position_map`. (Fait côté modèle, import et écriture DOCX, et `Section.opaque` reçoit `pgSz` et `pgMar` ; reste à retirer les tables annexes `ImportedDocx::breaks`, `symbols` et `run_styles`, gardées en vue dérivée tant que `RichSession` de `core-wasm` les lit.)
+
+Validation US-204 (2026-10-18) : tranche R1 développée sur la branche `us-204-flat-model`, ni relue par un agent indépendant ni intégrée ; critères 1 à 3 vérifiés (10 000 séquences à graine fixe ; banc sur 300 pages : médianes de 11 à 28 µs, 99e centile au plus 84 µs, maximum 0,4 ms), critère 4 partiel ; [contrat, règles et preuves](docs/us-204-flat-model.md).
 
 Réf : §6.3, §6.4 · Taille : M · Dépend de : US-200, US-203
 

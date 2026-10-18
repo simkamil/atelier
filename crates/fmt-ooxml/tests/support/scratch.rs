@@ -5,9 +5,9 @@
 
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
-    Alignment, Bookmark, CharAttrs, Color, DefaultRichDocument, Field, Inline, LineRule,
-    LineSpacing, Link, LinkTarget, ListRef, Node, NodeId, ParaProps, RichDocument, RichOp,
-    Underline, VerticalAlign, default_rich_document,
+    Alignment, Bookmark, BreakKind, CharAttrs, Color, DefaultRichDocument, Field, Inline,
+    InlineBreak, LineRule, LineSpacing, Link, LinkTarget, ListRef, Node, NodeId, ParaProps,
+    RichDocument, RichOp, Underline, VerticalAlign, default_rich_document,
 };
 
 pub struct Rng(pub u64);
@@ -53,12 +53,37 @@ pub fn last_section(doc: &RichDocument) -> NodeId {
 }
 
 /// Appends a paragraph with attributed segments `(text, attrs)` to a section.
+/// The text of a sample without its `\n`, and the offsets (in that text)
+/// where the breaks go: the model keeps a break as an inline item.
+pub fn strip_breaks(text: &str) -> (String, Vec<usize>) {
+    let mut out = String::new();
+    let mut breaks = Vec::new();
+    for c in text.chars() {
+        if c == '\n' {
+            breaks.push(out.len());
+        } else {
+            out.push(c);
+        }
+    }
+    (out, breaks)
+}
+
 pub fn push_paragraph(
     doc: &mut RichDocument,
     section: NodeId,
     segments: &[(String, CharAttrs)],
     props: ParaProps,
 ) -> NodeId {
+    let mut stripped: Vec<(String, CharAttrs)> = Vec::new();
+    let mut break_offsets = Vec::new();
+    let mut base = 0;
+    for (t, a) in segments {
+        let (s, breaks) = strip_breaks(t);
+        break_offsets.extend(breaks.into_iter().map(|o| base + o));
+        base += s.len();
+        stripped.push((s, a.clone()));
+    }
+    let segments = &stripped[..];
     let text: String = segments.iter().map(|(t, _)| t.as_str()).collect();
     let sub = doc.new_paragraph(&text).unwrap();
     let id = sub.root;
@@ -87,6 +112,17 @@ pub fn push_paragraph(
             });
         }
         at += t.len();
+    }
+    for offset in break_offsets {
+        let break_id = doc.alloc_id().unwrap();
+        ops.push(RichOp::InsertInline {
+            para: id,
+            item: Inline::Break(InlineBreak {
+                id: break_id,
+                offset,
+                kind: BreakKind::Line,
+            }),
+        });
     }
     assert!(apply(doc, ops), "push_paragraph");
     id
@@ -199,7 +235,7 @@ pub fn random_props(rng: &mut Rng) -> ParaProps {
 pub fn all_text(doc: &RichDocument) -> Vec<String> {
     doc.paragraph_ids()
         .iter()
-        .map(|id| doc.paragraph(*id).unwrap().text.clone())
+        .map(|id| atelier_fmt_ooxml::source_text(doc.paragraph(*id).unwrap()))
         .collect()
 }
 
@@ -243,24 +279,34 @@ pub fn scratch_document(i: usize) -> Built {
     let section = last_section(&d.document);
     // Replace the empty first paragraph by a title.
     let first = d.document.paragraph_ids()[0];
-    let title = SAMPLES[i % SAMPLES.len()];
+    let (title, title_breaks) = strip_breaks(SAMPLES[i % SAMPLES.len()]);
+    let mut title_ops = vec![RichOp::InsertText {
+        para: first,
+        offset: 0,
+        text: title,
+    }];
+    for offset in title_breaks {
+        let id = d.document.alloc_id().unwrap();
+        title_ops.push(RichOp::InsertInline {
+            para: first,
+            item: Inline::Break(InlineBreak {
+                id,
+                offset,
+                kind: BreakKind::Line,
+            }),
+        });
+    }
+    assert!(apply(&mut d.document, title_ops));
     assert!(apply(
         &mut d.document,
-        vec![
-            RichOp::InsertText {
-                para: first,
-                offset: 0,
-                text: title.into(),
+        vec![RichOp::SetParaProps {
+            para: first,
+            set: ParaProps {
+                style: Some("atelier.title".into()),
+                ..ParaProps::default()
             },
-            RichOp::SetParaProps {
-                para: first,
-                set: ParaProps {
-                    style: Some("atelier.title".into()),
-                    ..ParaProps::default()
-                },
-                clear: ParaProps::default(),
-            },
-        ]
+            clear: ParaProps::default(),
+        },]
     ));
     let heading = format!("atelier.heading.{}", 1 + i % 3);
     push_paragraph(
@@ -513,13 +559,13 @@ pub fn mutate(doc: &mut RichDocument, rng: &mut Rng) -> bool {
     let at = cuts[rng.below(cuts.len())];
     match rng.below(14) {
         0 | 1 => {
-            let s = SAMPLES[rng.below(SAMPLES.len())];
+            let s = strip_breaks(SAMPLES[rng.below(SAMPLES.len())]).0;
             apply(
                 doc,
                 vec![RichOp::InsertText {
                     para: pid,
                     offset: at,
-                    text: s.into(),
+                    text: s,
                 }],
             )
         }

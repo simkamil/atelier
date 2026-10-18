@@ -20,28 +20,38 @@ pub(crate) fn map_tree_error(error: IndexedTreeError) -> RichError {
 }
 
 /// An ordered sequence of child ids, stored in the balanced indexed tree of
-/// `atelier-model` (positional insert, removal and lookup in O(log n)).
+/// `atelier-model` (positional insert, removal and lookup in O(log n)). A side
+/// map from child id to tree identity gives the reverse lookup,
+/// [`BlockList::position`], in O(log n) too.
 #[derive(Clone, Default)]
-pub struct BlockList(IndexedTree<NodeId>);
+pub struct BlockList {
+    tree: IndexedTree<NodeId>,
+    by_child: BTreeMap<NodeId, NodeId>,
+}
 
 impl BlockList {
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.tree.len()
     }
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.tree.is_empty()
     }
     pub fn get(&self, position: usize) -> Option<NodeId> {
-        self.0.get(position).copied()
+        self.tree.get(position).copied()
+    }
+    /// Position of the child `id`, `None` when it is not in the list.
+    pub fn position(&self, id: NodeId) -> Option<usize> {
+        self.tree.position_of(*self.by_child.get(&id)?)
     }
     pub fn insert(&mut self, position: usize, id: NodeId) -> Result<(), RichError> {
-        self.0
-            .insert(position, id)
-            .map(|_| ())
-            .map_err(map_tree_error)
+        let tree_id = self.tree.insert(position, id).map_err(map_tree_error)?;
+        self.by_child.insert(id, tree_id);
+        Ok(())
     }
     pub fn remove(&mut self, position: usize) -> Result<NodeId, RichError> {
-        self.0.remove(position).map_err(map_tree_error)
+        let id = self.tree.remove(position).map_err(map_tree_error)?;
+        self.by_child.remove(&id);
+        Ok(id)
     }
     pub fn to_vec(&self) -> Vec<NodeId> {
         (0..self.len()).filter_map(|i| self.get(i)).collect()

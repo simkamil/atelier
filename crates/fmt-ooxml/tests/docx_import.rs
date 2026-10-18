@@ -3,6 +3,7 @@ use atelier_fmt_ooxml::{
     DocxLimits, Package, PartUri, TargetMode, import_docx, import_docx_with_limits,
 };
 use atelier_font::manager::{FontManager, FontRequest, FontStyle};
+use atelier_text_model::rich::BreakKind;
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const MAIN_REL: &str =
@@ -119,19 +120,36 @@ fn text_controls_false_overrides_and_prefixes_keep_utf8_offsets_and_break_types(
     let mut imported = import_docx(&bytes).unwrap();
     let id = imported.paragraph_ids()[0];
     let p = imported.document.paragraph(id).unwrap();
-    assert_eq!(p.text, "A é\t\nΩ");
+    // The break and the symbol are inline items of the model, not text.
+    assert_eq!(p.text, "A é\t");
     assert!(p.text.is_char_boundary(p.text.len()));
+    assert_eq!(p.breaks.len(), 1);
+    assert_eq!(p.breaks[0].kind, BreakKind::Page);
+    assert_eq!(p.breaks[0].offset, p.text.len());
+    assert_eq!(p.symbols.len(), 1);
+    assert_eq!(
+        (
+            p.symbols[0].font.as_str(),
+            p.symbols[0].code,
+            p.symbols[0].offset
+        ),
+        ("Symbol", 0x03a9, p.text.len())
+    );
+    assert!(p.breaks[0].id < p.symbols[0].id);
+    assert_eq!(
+        atelier_text_model::rich::flat::paragraph_flat(p)
+            .chars()
+            .filter(|c| *c == '\u{fffc}')
+            .count(),
+        2
+    );
+    // The annex tables remain, in the offsets of the model text.
+    assert_eq!(imported.breaks[0].offset, p.text.len());
     assert_eq!(imported.breaks[0].break_type.as_deref(), Some("page"));
     assert_eq!(imported.symbols[0].font, "Symbol");
     assert_eq!(imported.symbols[0].character_code, "03A9");
     let (resolved, _) = imported.resolved_paragraph(id).unwrap();
     assert!(resolved.runs.iter().any(|r| r.attrs.bold == Some(false)));
-    assert!(
-        resolved
-            .runs
-            .iter()
-            .any(|r| r.attrs.font.as_deref() == Some("Symbol"))
-    );
 }
 
 #[test]

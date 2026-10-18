@@ -453,7 +453,9 @@ fn shape(doc: &RichDocument) -> Vec<String> {
                     }
                 }
                 Some(Node::Opaque(o)) => out.push(format!("opaque {}", o.kind)),
-                Some(Node::Paragraph(p)) => out.push(format!("p {}", p.text)),
+                Some(Node::Paragraph(p)) => {
+                    out.push(format!("p {}", atelier_fmt_ooxml::source_text(p)))
+                }
                 _ => {}
             }
         }

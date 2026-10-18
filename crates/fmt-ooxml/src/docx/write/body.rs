@@ -11,6 +11,7 @@
 use super::super::preserve::{Preserved, PreservedChild, PreservedElement};
 use super::super::{ppr_rank, rpr_rank};
 use super::WriteNotice;
+use super::legacy::{Legacy, LegacyItem, legacy};
 use super::props::{
     GenEl, Item, Prefixes, ThemeRefs, insert_ranked, local_of, local_of_bytes, merge_ppr,
     merge_rpr, new_ppr, new_rpr,
@@ -18,7 +19,8 @@ use super::props::{
 use super::xml::{Out, xml_char};
 use atelier_model::NodeId as ModelNodeId;
 use atelier_text_model::rich::{
-    AnchoredObject, CharAttrs, Color, LinkTarget, Node, ParaProps, Paragraph, RichDocument,
+    AnchoredObject, BreakKind, CharAttrs, ClearSide, Color, LinkTarget, Node, ParaProps, Paragraph,
+    RichDocument,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -160,6 +162,8 @@ impl Mapper {
 struct ParaCx<'p> {
     id: NodeId,
     cur: &'p Paragraph,
+    /// Breaks and symbols of `cur`, by offset in its (source) text.
+    items: &'p [(usize, LegacyItem)],
     base: &'p Paragraph,
     map: Mapper,
     emitted: String,
@@ -613,7 +617,10 @@ impl<'a> Gen<'a> {
             if cur.fields.is_empty() && cur.bookmarks.is_empty() && cur.links.is_empty() {
                 let mark = self.mark();
                 let notes = self.notices.len();
-                if self.paragraph_from_skeleton(id, skel, cur, base, sect) {
+                // The skeleton counts breaks and symbols in the text.
+                let (source_cur, source_base) = (legacy(cur), legacy(base));
+                if self.paragraph_from_skeleton(id, skel, &source_cur, &source_base.paragraph, sect)
+                {
                     return;
                 }
                 self.rollback(&mark);
@@ -678,13 +685,15 @@ impl<'a> Gen<'a> {
         &mut self,
         id: NodeId,
         skel: &PreservedElement,
-        cur: &Paragraph,
+        source_cur: &Legacy<'_>,
         base: &Paragraph,
         sect: Option<&[u8]>,
     ) -> bool {
+        let cur: &Paragraph = &source_cur.paragraph;
         let mut cx = ParaCx {
             id,
             cur,
+            items: &source_cur.items,
             base,
             map: Mapper::new(&base.text, &cur.text),
             emitted: String::with_capacity(cur.text.len()),
@@ -818,6 +827,90 @@ impl<'a> Gen<'a> {
         }
         let (a, b) = (cx.map.start(lo), cx.map.end(hi));
         cx.base.text.get(lo..hi) != cx.cur.text.get(a..b.max(a))
+    }
+
+    /// Writes the source text `cs..ce` of the current paragraph: each stretch
+    /// of text through `write_text`, each break or symbol of the model that
+    /// stands in it as its own element.
+    fn write_source_text(
+        &mut self,
+        cx: &mut ParaCx<'_>,
+        cs: usize,
+        ce: usize,
+        mut write_text: impl FnMut(&mut Self, &str),
+    ) {
+        let mut at = cs;
+        for (offset, item) in cx.items {
+            if *offset < at || *offset >= ce {
+                continue;
+            }
+            if *offset > at {
+                let text = cx.cur.text.get(at..*offset).unwrap_or("");
+                write_text(self, text);
+                cx.emitted.push_str(text);
+            }
+            let len = match item {
+                LegacyItem::Break(_) => 1,
+                LegacyItem::Symbol { code, .. } => char::from_u32(*code).map_or(0, char::len_utf8),
+            };
+            self.write_inline_item(item);
+            cx.emitted
+                .push_str(cx.cur.text.get(*offset..*offset + len).unwrap_or(""));
+            at = *offset + len;
+        }
+        if at < ce {
+            let text = cx.cur.text.get(at..ce).unwrap_or("");
+            write_text(self, text);
+            cx.emitted.push_str(text);
+        }
+    }
+
+    /// `w:br` or `w:sym` for an item of the model.
+    fn write_inline_item(&mut self, item: &LegacyItem) {
+        let w = self.p.w.clone();
+        match item {
+            LegacyItem::Break(kind) => {
+                let name = format!("{w}:br");
+                let type_name = format!("{w}:type");
+                match kind {
+                    BreakKind::Line => self.out.empty(&name, std::iter::empty()),
+                    BreakKind::Page => self.out.empty(&name, [(type_name.as_str(), "page")]),
+                    BreakKind::Column => self.out.empty(&name, [(type_name.as_str(), "column")]),
+                    BreakKind::Wrapping {
+                        explicit_type,
+                        clear,
+                    } => {
+                        let clear_name = format!("{w}:clear");
+                        let mut attrs: Vec<(&str, &str)> = Vec::new();
+                        if *explicit_type {
+                            attrs.push((type_name.as_str(), "textWrapping"));
+                        }
+                        if let Some(side) = clear {
+                            let value = match side {
+                                ClearSide::None => "none",
+                                ClearSide::Left => "left",
+                                ClearSide::Right => "right",
+                                ClearSide::All => "all",
+                            };
+                            attrs.push((clear_name.as_str(), value));
+                        }
+                        self.out.empty(&name, attrs);
+                    }
+                }
+            }
+            LegacyItem::Symbol { font, code } => {
+                let name = format!("{w}:sym");
+                let (font_name, char_name) = (format!("{w}:font"), format!("{w}:char"));
+                let value = format!("{code:04X}");
+                self.out.empty(
+                    &name,
+                    [
+                        (font_name.as_str(), font.as_str()),
+                        (char_name.as_str(), value.as_str()),
+                    ],
+                );
+            }
+        }
     }
 
     fn emit_run(&mut self, el: &PreservedElement, cx: &mut ParaCx<'_>) {
@@ -1037,46 +1130,49 @@ impl<'a> Gen<'a> {
                         if cs >= ce {
                             continue;
                         }
-                        let text = cx.cur.text.get(cs..ce).unwrap_or("");
                         if local_of(&l.name) == "t" {
-                            let mut attrs: Vec<(&str, &str)> = l
-                                .attrs
-                                .iter()
-                                .map(|a| (a.name.as_str(), a.value.as_str()))
-                                .collect();
-                            if !cx.map.identity
-                                && needs_preserve(text)
-                                && !l.attrs.iter().any(|a| a.name == "xml:space")
-                            {
-                                attrs.push(("xml:space", "preserve"));
-                            }
-                            self.out.start(&l.name, attrs);
-                            self.out.text(text);
-                            for k in &l.children {
-                                if let PreservedChild::Opaque(bytes) = k {
-                                    self.out.raw(bytes);
+                            let identity = cx.map.identity;
+                            self.write_source_text(cx, cs, ce, |this, text| {
+                                let mut attrs: Vec<(&str, &str)> = l
+                                    .attrs
+                                    .iter()
+                                    .map(|a| (a.name.as_str(), a.value.as_str()))
+                                    .collect();
+                                if !identity
+                                    && needs_preserve(text)
+                                    && !l.attrs.iter().any(|a| a.name == "xml:space")
+                                {
+                                    attrs.push(("xml:space", "preserve"));
                                 }
-                            }
-                            self.out.end();
+                                this.out.start(&l.name, attrs);
+                                this.out.text(text);
+                                for k in &l.children {
+                                    if let PreservedChild::Opaque(bytes) = k {
+                                        this.out.raw(bytes);
+                                    }
+                                }
+                                this.out.end();
+                            });
                         } else {
+                            let text = cx.cur.text.get(cs..ce).unwrap_or("");
                             self.write_plain(l);
+                            cx.emitted.push_str(text);
                         }
-                        cx.emitted.push_str(text);
                     }
                     Part::Gap(x, y) => {
                         let (cs, ce) = ((*x).max(s), (*y).min(e));
                         if cs < ce {
-                            let text = cx.cur.text.get(cs..ce).unwrap_or("");
-                            let tag = format!("{}:t", self.p.w);
-                            let attrs: &[(&str, &str)] = if needs_preserve(text) {
-                                &[("xml:space", "preserve")]
-                            } else {
-                                &[]
-                            };
-                            self.out.start(&tag, attrs.iter().copied());
-                            self.out.text(text);
-                            self.out.end();
-                            cx.emitted.push_str(text);
+                            self.write_source_text(cx, cs, ce, |this, text| {
+                                let tag = format!("{}:t", this.p.w);
+                                let attrs: &[(&str, &str)] = if needs_preserve(text) {
+                                    &[("xml:space", "preserve")]
+                                } else {
+                                    &[]
+                                };
+                                this.out.start(&tag, attrs.iter().copied());
+                                this.out.text(text);
+                                this.out.end();
+                            });
                         }
                     }
                     Part::Anch(id) => {
@@ -1161,6 +1257,12 @@ impl<'a> Gen<'a> {
         for a in &cur.anchored {
             cuts.insert(a.offset.min(len));
         }
+        for b in &cur.breaks {
+            cuts.insert(b.offset.min(len));
+        }
+        for x in &cur.symbols {
+            cuts.insert(x.offset.min(len));
+        }
         for f in &cur.fields {
             cuts.insert(f.start.min(len));
             cuts.insert(f.end.min(len));
@@ -1211,11 +1313,46 @@ impl<'a> Gen<'a> {
             for f in cur.fields.iter().filter(|f| f.start.min(len) == o) {
                 self.field_begin(&f.instruction);
             }
-            for a in cur.anchored.iter().filter(|a| a.offset.min(len) == o) {
-                if skip.contains(&a.id) || self.branch_text_follows(a, &cur.text, o) {
-                    continue;
+            // Objects, breaks and symbols at this offset, in the order of the
+            // flat text: by id.
+            let mut here: Vec<(NodeId, Option<&AnchoredObject>, Option<LegacyItem>)> = Vec::new();
+            here.extend(
+                cur.anchored
+                    .iter()
+                    .filter(|a| a.offset.min(len) == o)
+                    .map(|a| (a.id, Some(a), None)),
+            );
+            here.extend(
+                cur.breaks
+                    .iter()
+                    .filter(|b| b.offset.min(len) == o)
+                    .map(|b| (b.id, None, Some(LegacyItem::Break(b.kind)))),
+            );
+            here.extend(
+                cur.symbols
+                    .iter()
+                    .filter(|x| x.offset.min(len) == o)
+                    .map(|x| {
+                        (
+                            x.id,
+                            None,
+                            Some(LegacyItem::Symbol {
+                                font: x.font.clone(),
+                                code: x.code,
+                            }),
+                        )
+                    }),
+            );
+            here.sort_by_key(|(item_id, _, _)| *item_id);
+            for (_, object, item) in here {
+                if let Some(a) = object {
+                    if skip.contains(&a.id) || self.branch_text_follows(a, &cur.text, o) {
+                        continue;
+                    }
+                    self.anchored_flat(id, a, &cur.attrs_at(o));
+                } else if let Some(item) = item {
+                    self.item_run(id, &item, &cur.attrs_at(o));
                 }
-                self.anchored_flat(id, a, &cur.attrs_at(o));
             }
             if let Some(&next) = cuts.get(i + 1) {
                 if next > o {
@@ -1373,6 +1510,18 @@ impl<'a> Gen<'a> {
         } else {
             self.out.raw(&a.data);
         }
+    }
+
+    /// A run holding one break or symbol.
+    fn item_run(&mut self, para: NodeId, item: &LegacyItem, attrs: &CharAttrs) {
+        let w = self.p.w.clone();
+        self.out.start(&format!("{w}:r"), std::iter::empty());
+        self.write_rpr_new(attrs, para);
+        self.write_inline_item(item);
+        if let LegacyItem::Symbol { font, .. } = item {
+            self.fonts.insert(font.clone());
+        }
+        self.out.end();
     }
 
     fn write_rpr_new(&mut self, attrs: &CharAttrs, para: NodeId) {

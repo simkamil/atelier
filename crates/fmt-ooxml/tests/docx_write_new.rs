@@ -35,7 +35,9 @@ fn table_shape(doc: &RichDocument) -> Vec<String> {
                                     .blocks
                                     .to_vec()
                                     .iter()
-                                    .filter_map(|b| doc.paragraph(*b).ok().map(|p| p.text.clone()))
+                                    .filter_map(|b| {
+                                        doc.paragraph(*b).ok().map(atelier_fmt_ooxml::source_text)
+                                    })
                                     .collect();
                                 out.push(format!(
                                     "cell {}x{} {:?}",

@@ -18,7 +18,7 @@ pub use docx::{
     PreservedPart, ResolvedCell, RowHeight, RowProps, Shading, StyleDecl, TableAlign, TableColor,
     TableLayout, TableLook, TableProps, TableStyleDef, TableWidth, VMerge, WriteError, WriteNotice,
     WrittenDocx, import_docx, import_docx_with_limits, interpreted_elements, para_mark_rpr_rank,
-    ppr_rank, rpr_rank, sect_pr_rank, write_docx, write_new_docx,
+    ppr_rank, rpr_rank, sect_pr_rank, source_text, write_docx, write_new_docx,
 };
 
 pub use properties::{
