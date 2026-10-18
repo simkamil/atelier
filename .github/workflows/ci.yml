@@ -159,6 +159,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-abi.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/rich-editor-save.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/properties-abi.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Exercise real Worker transfers and cancellation
@@ -181,6 +183,8 @@ jobs:
           node --test tests/document-mirror.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-document-mirror-browser.mjs
+      - name: Check that glyph atlas pages render exactly like the per-glyph painter
+        run: node tests/run-rich-atlas-render-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests
