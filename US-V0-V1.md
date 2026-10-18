@@ -562,6 +562,7 @@ Validation US-114 (2026-10-11) : [sonde injectée, diagnostic natif et barrière
 *En tant qu'*utilisateur, *je veux* que l'ouverture d'un document depuis l'Explorateur utilise la fenêtre déjà ouverte *afin de* garder mes documents ensemble.
 - [ ] Mutex nommé ; transmission des chemins à l'instance existante (`WM_COPYDATA`) ; mise au premier plan.
 - [ ] Plusieurs fichiers en argument ouverts chacun dans un onglet.
+- État (2026-10-18) : mutex, transmission synchrone, file d'ouverture et signalement vérifiés, détail dans [docs/us-115-single-instance.md](docs/us-115-single-instance.md). Premier critère non coché : mise au premier plan non vérifiée automatiquement. Second critère non coché : l'application n'a pas d'onglets de documents ; le premier fichier s'ouvre, les suivants sont signalés.
 
 Réf : §6.8, F-COM-002 · Taille : S · Dépend de : US-113
 
