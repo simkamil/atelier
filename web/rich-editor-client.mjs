@@ -13,7 +13,10 @@ export { EditorPageCache, RichClientError };
 const REPLY_TYPE = {
   open: "state", insertText: "state", replaceRange: "state", delete: "state", move: "state", setSelection: "state",
   undo: "state", redo: "state", markSaved: "state", layout: "state", resync: "state", textWindow: "textWindow", pages: "pages", close: "closed",
+  // US-217 / US-218: replies that carry no page data and never reach the page cache.
+  accessibleWindow: "accessibleWindow", save: "saveData", makeEditableCopy: "saveData", insertImage: "state",
 };
+const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData"]);
 
 function abortError() { return new DOMException("The operation was aborted.", "AbortError"); }
 const isAbort = (error) => error?.name === "AbortError";
@@ -113,6 +116,7 @@ export function createRichEditorClient({
       settleLayoutWaiters(closedError());
       return { response, change: null };
     }
+    if (NOT_CACHE_INPUT.has(response.type)) { settleLayoutWaiters(); return { response, change: null }; }
     let change;
     try { change = cache.apply(response); } catch (error) {
       // Glyph atlas entries were lost (an abandoned reply the engine counted as sent): the pages that
@@ -306,6 +310,7 @@ export function createRichEditorClient({
     /** Open a document (replaces the active one) and start the layout pump. */
     open(spec, { signal: callerSignal } = {}) {
       return enqueue(async () => {
+        const wasOpened = opened;
         cache.reset();
         opened = false;
         pumpHalt = null;
@@ -314,6 +319,9 @@ export function createRichEditorClient({
         pumpController = new AbortController();
         let result;
         try { result = await exchange({ type: "open", ...spec }, callerSignal); } catch (error) {
+          // The engine keeps the previous document when it refuses an Open (and holds either one when the
+          // transport failed): the cache was emptied, so a Resync rebuilds it instead of leaving a blank editor.
+          if (wasOpened && !disposed && error?.code !== "CLIENT_CLOSED") { opened = true; needsResync = true; pumpHalt = null; }
           settleLayoutWaiters(error);
           throw error;
         }
@@ -325,6 +333,16 @@ export function createRichEditorClient({
     command(command, { signal: callerSignal } = {}) {
       if (command?.type === "open") return Promise.reject(new TypeError("Use open() to open a document."));
       return enqueue(() => (command?.type === "close" ? closeExchange(callerSignal) : guarded(command, callerSignal)), callerSignal, command?.type === "close");
+    },
+    /**
+     * Accessible window of [start, end) (flat positions, BigInt) for the DOM mirror (US-209):
+     * resolves `{revision, items}`. It changes neither the cache nor the document, so a failure never forces a resync.
+     */
+    accessibleWindow(start, end, { signal: callerSignal } = {}) {
+      return enqueue(async () => {
+        const { response } = await exchange({ type: "accessibleWindow", start, end }, callerSignal);
+        return { revision: response.revision, items: response.items };
+      }, callerSignal);
     },
     /** Fetch the unknown pages of [first, end), retrying after Layout on RICH_NOT_READY. */
     ensurePages(first, end, { signal: callerSignal } = {}) {
