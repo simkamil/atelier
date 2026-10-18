@@ -6,8 +6,11 @@ import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectEngine } from "./engine-adapter.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const { rest: suiteArgs } = selectEngine("run-editor-browser");
+assert.equal(suiteArgs.length, 0, "Usage: node tests/run-editor-browser.mjs [--engine v1|v2]");
 const browserCandidates = [process.env.ATELIER_BROWSER_EXECUTABLE,
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
@@ -36,6 +39,7 @@ const files = new Map([
   ["/tests/document-status-integration-browser.mjs", ["tests/document-status-integration-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser.html", ["tests/editor-browser.html", "text/html; charset=utf-8"]],
   ["/tests/editor-browser.mjs", ["tests/editor-browser.mjs", "text/javascript; charset=utf-8"]],
+  ["/tests/editor-test-adapter.mjs", ["tests/editor-test-adapter.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/zoom-browser.mjs", ["tests/zoom-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/navigation-browser.mjs", ["tests/navigation-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser-watchdog.mjs", ["tests/editor-browser-watchdog.mjs", "text/javascript; charset=utf-8"]],
