@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // US-209 : miroir DOM accessible dans Edge/Chromium (structure, rôles, alt, sélection DOM, focus, contraste forcé).
-import { createDocumentMirror } from "/document-mirror.mjs";
+import { createDocumentMirror, createReaderModeToggle } from "/document-mirror.mjs";
 import { attachTextInput } from "/text-input.mjs";
 import { createI18n } from "/i18n.mjs";
 
@@ -28,11 +28,11 @@ async function main() {
   let selection = { anchor: 0n, focus: 0n };
   const commands = [], phases = [];
   let mirror;
+  const f1 = extra => new KeyboardEvent("keydown", { key: "F1", altKey: true, shiftKey: true, bubbles: true, cancelable: true, ...extra });
   const input = attachTextInput({
     container: host, getSelection: () => selection, getCaret: () => ({ x: 10, y: 10, width: 1, height: 12 }),
     onCommand: command => commands.push(command), onComposition: event => phases.push(event.phase),
     getClipboardSnapshot: () => ({ text: "Café crème", revision: 1n, selection: { anchor: 0, focus: 5 } }),
-    onScreenReaderMode: on => mirror?.setScreenReaderMode(on),
   });
   input.focus();
   assert(document.activeElement === input.element, "the input has the focus before the mirror exists");
@@ -132,12 +132,18 @@ async function main() {
   assert((await old).status === "stale" && slow.element.querySelector("p") === null && (await newer).status === "stale", "stale revision never reaches the DOM");
   slow.dispose();
 
-  // Screen reader mode (Ctrl+Alt+Z): the focused input holds the paragraph and the selection.
+  // Screen reader mode (Alt+Shift+F1, or the toggle button): the focused input holds the paragraph and the selection.
   assert(input.element.value === "" && !mirror.screenReaderMode(), "reader mode is off by default and the input is empty");
   selection = { anchor: BigInt(S_LAST + 1), focus: BigInt(S_LAST + 3) };
   await push();
+  const toggle = createReaderModeToggle({ container: host, input, t });
+  assert(toggle.element.getAttribute("aria-pressed") === "false" && toggle.element.textContent === "Mode lecteur d’écran" && toggle.element.title.includes("Alt+Maj+F1"), "the toggle button is labelled and shows the shortcut");
+  const altGr = f1({ ctrlKey: true, modifierAltGraph: true });
+  input.element.dispatchEvent(altGr);
   input.element.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
-  assert(mirror.screenReaderMode() && input.screenReaderMode(), "Ctrl+Alt+Z turns screen reader mode on");
+  assert(!mirror.screenReaderMode() && !altGr.defaultPrevented, "Ctrl+Alt+Z and AltGr combinations do not toggle the mode");
+  input.element.dispatchEvent(f1());
+  assert(mirror.screenReaderMode() && input.screenReaderMode() && toggle.element.getAttribute("aria-pressed") === "true", "Alt+Shift+F1 turns the mode on in the input, the mirror and the button");
   assert(live.textContent === "Mode lecteur d’écran activé", "the mode change is announced");
   await push();
   const ta = input.element;
@@ -174,9 +180,20 @@ async function main() {
   ta.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
   ta.dispatchEvent(new CompositionEvent("compositionend", { data: "", bubbles: true }));
   assert(phases.join() === "start,cancel", "a cancelled composition inserts nothing");
-  ta.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, altKey: true, bubbles: true, cancelable: true }));
-  assert(!mirror.screenReaderMode() && ta.value === "" && !ta.hasAttribute("aria-multiline"), "Ctrl+Alt+Z turns the mode off and empties the input");
-  assert(live.textContent === "Mode lecteur d’écran désactivé", "leaving the mode is announced");
+  // Browser-managed text that nobody handles is replaced by the paragraph again.
+  ta.value = "zz";
+  ta.dispatchEvent(new InputEvent("input", { inputType: "formatBold", bubbles: true }));
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert(ta.value === "Café crème brûlée", "unhandled native edits are undone in reader mode");
+  // The button toggles the same state, keeps the focus in the input, and the mirror announces it.
+  toggle.element.click();
+  assert(!mirror.screenReaderMode() && ta.value === "" && !ta.hasAttribute("aria-multiline") && toggle.element.getAttribute("aria-pressed") === "false", "the button turns the mode off and empties the input");
+  assert(live.textContent === "Mode lecteur d’écran désactivé" && document.activeElement === ta, "leaving the mode is announced and the focus is back in the input");
+  toggle.element.click();
+  assert(mirror.screenReaderMode() && live.textContent === "Mode lecteur d’écran activé", "the button turns it on again");
+  ta.dispatchEvent(f1());
+  assert(!mirror.screenReaderMode() && toggle.element.getAttribute("aria-pressed") === "false", "the shortcut turns it off: button and mirror follow");
+  toggle.dispose();
 
   mirror.dispose();
   assert(!root.isConnected && !input.element.hasAttribute("aria-activedescendant"), "dispose removes the mirror and the reference");

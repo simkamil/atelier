@@ -8,6 +8,8 @@ export const MAX_ITEMS = 256;
 export const MAX_TEXT_UNITS = 256 * 1024;
 const SELECTION_TEXT_LIMIT = 100;
 const MAX_PARAGRAPH_ANNOUNCE = 400;
+/** UTF-16 units of the paragraph given to the input in screen reader mode, around the caret. */
+export const READER_WINDOW = 2000;
 const ROLE_HEADING = 1, ROLE_LIST_ITEM = 2, ROLE_CELL = 3, ROLE_OPAQUE = 4;
 const ROLE_NAMES = ["paragraph", "heading", "list-item", "cell", "opaque"];
 
@@ -197,7 +199,9 @@ export function createDocumentMirror({ container, getAccessibleWindow, t, input 
   let latest = null;
   let lastAnnounce = { key: -1n, revision: -1n, anchor: -1n, focus: -1n };
   let announceTimer = null;
-  let readerMode = false;
+  let readerMode = input?.screenReaderMode?.() === true;
+  let readerCross = false;
+  let unsubscribe = null;
   let wrappers = [];
   let counter = 0;
   let disposed = false;
@@ -409,14 +413,19 @@ export function createDocumentMirror({ container, getAccessibleWindow, t, input 
     // In screen reader mode the input reads the caret and the selection itself, except across paragraphs.
     if (readerMode && anchorAt?.index === at.index) return;
     const wasRange = last.anchor !== last.focus;
+    // Reader mode, selection across paragraphs: the input only holds the focus paragraph. Say so once.
+    const cross = readerMode && anchor !== focus;
+    const wasCross = readerCross;
+    readerCross = cross;
+    const sayRange = message => say(cross && !wasCross ? t("mirror.reader.truncated", { selection: message }) : message);
     if (anchor !== focus) {
       const lo = anchor < focus ? anchor : focus, hi = anchor < focus ? focus : anchor;
       if (wasRange && last.anchor === anchor && last.revision === revision) {
         const dlo = last.focus < focus ? last.focus : focus, dhi = last.focus < focus ? focus : last.focus;
         const grew = (focus > anchor ? focus - anchor : anchor - focus) > (last.focus > anchor ? last.focus - anchor : anchor - last.focus);
-        say(grew ? selectionMessage(rangeText(dlo, dhi), "mirror.selection.added", "mirror.selection.count")
+        sayRange(grew ? selectionMessage(rangeText(dlo, dhi), "mirror.selection.added", "mirror.selection.count")
           : selectionMessage(rangeText(dlo, dhi), "mirror.selection.removed", "mirror.selection.uncount"));
-      } else say(selectionMessage(rangeText(lo, hi), "mirror.selection", "mirror.selection.count"));
+      } else sayRange(selectionMessage(rangeText(lo, hi), "mirror.selection", "mirror.selection.count"));
     } else if (last.key !== current.item.paraStart) say(describe(current));
     else if (wasRange) say(t("mirror.selection.cleared"));
     else if (revision === last.revision) {
@@ -454,7 +463,16 @@ export function createDocumentMirror({ container, getAccessibleWindow, t, input 
       return offset;
     };
     const a = offsetOf(anchor), f = offsetOf(focus);
-    return { text, start: Math.min(a, f), end: Math.max(a, f), backward: f < a };
+    // Long paragraph: only a window of READER_WINDOW units around the focus goes to the input.
+    let lo = 0, hi = text.length;
+    if (text.length > READER_WINDOW) {
+      lo = Math.max(0, Math.min(f - READER_WINDOW / 2, text.length - READER_WINDOW));
+      hi = lo + READER_WINDOW;
+      if (/[\udc00-\udfff]/.test(text[lo])) lo += 1;
+      if (/[\ud800-\udbff]/.test(text[hi - 1])) hi -= 1;
+    }
+    const inside = x => Math.min(Math.max(x, lo), hi) - lo;
+    return { text: text.slice(lo, hi), start: Math.min(inside(a), inside(f)), end: Math.max(inside(a), inside(f)), backward: f < a };
   }
 
   function syncSelection(state) {
@@ -534,15 +552,20 @@ export function createDocumentMirror({ container, getAccessibleWindow, t, input 
     const on = Boolean(enabled);
     if (disposed || on === readerMode) return;
     readerMode = on;
+    readerCross = false;
     input?.setScreenReaderMode?.(on);
     say(t(on ? "mirror.reader.on" : "mirror.reader.off"), true);
     if (latest) syncSelection(latest);
   }
+  // The input is the other half of the mode: any change made there (shortcut, button) reaches the mirror, never out of sync.
+  unsubscribe = input?.onScreenReaderModeChange?.(on => setScreenReaderMode(on)) ?? null;
+  if (readerMode) input?.setScreenReaderMode?.(true);
 
   function dispose() {
     if (disposed) return;
     disposed = true;
     pending?.controller.abort();
+    unsubscribe?.();
     if (readerMode) input?.setScreenReaderMode?.(false);
     activeDescendantTarget?.removeAttribute("aria-activedescendant");
     root.remove();
@@ -550,4 +573,28 @@ export function createDocumentMirror({ container, getAccessibleWindow, t, input 
   }
 
   return Object.freeze({ element: root, update, dispose, setScreenReaderMode, screenReaderMode: () => readerMode, stats, entryCount: () => entries.length });
+}
+
+/**
+ * Visible toggle for screen reader mode, for users who cannot use Alt+Shift+F1. It follows the input whatever changes the
+ * mode (shortcut, API, this button). Place `element` in the options or the ribbon.
+ * @param {{container: Element, input: object, t: (key: string, values?: object) => string}} options
+ */
+export function createReaderModeToggle({ container, input, t } = {}) {
+  if (!container?.ownerDocument || typeof input?.setScreenReaderMode !== "function" || typeof input?.onScreenReaderModeChange !== "function" || typeof t !== "function") {
+    throw invalidInput("MIRROR_BAD_OPTIONS", "container, input and t are required");
+  }
+  const button = container.ownerDocument.createElement("button");
+  button.type = "button";
+  button.className = "document-mirror-reader-toggle";
+  button.setAttribute("aria-keyshortcuts", "Alt+Shift+F1");
+  button.textContent = t("mirror.reader.toggle");
+  button.title = t("mirror.reader.toggle.hint", { shortcut: t("mirror.reader.shortcut") });
+  const show = on => button.setAttribute("aria-pressed", String(on));
+  show(input.screenReaderMode() === true);
+  const unsubscribe = input.onScreenReaderModeChange(show);
+  const click = () => { input.setScreenReaderMode(!input.screenReaderMode()); input.focus?.(); };
+  button.addEventListener("click", click);
+  container.append(button);
+  return Object.freeze({ element: button, dispose() { unsubscribe(); button.removeEventListener("click", click); button.remove(); } });
 }

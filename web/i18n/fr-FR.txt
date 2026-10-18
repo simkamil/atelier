@@ -328,3 +328,7 @@ mirror.selection.uncount={count, plural, one {# caractère désélectionné} oth
 mirror.selection.cleared=Sélection annulée
 mirror.reader.on=Mode lecteur d’écran activé
 mirror.reader.off=Mode lecteur d’écran désactivé
+mirror.reader.truncated={selection} Seul le paragraphe courant est dans la zone de saisie.
+mirror.reader.toggle=Mode lecteur d’écran
+mirror.reader.toggle.hint=Active ou désactive le mode lecteur d’écran ({shortcut}).
+mirror.reader.shortcut=Alt+Maj+F1

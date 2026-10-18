@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildSegments, byteToUtf16, createDocumentMirror, DocumentMirrorError, flatToSegmentPoint, planReconcile, segmentPointToFlat,
+  buildSegments, byteToUtf16, READER_WINDOW, createDocumentMirror, DocumentMirrorError, flatToSegmentPoint, planReconcile, segmentPointToFlat,
   sliceSegments, utf16ToByte, validateWindow,
 } from "../web/document-mirror.mjs";
 
@@ -46,6 +46,17 @@ const item = (start, text, extra = {}) => ({
 });
 const reply = (revision, items) => ({ revision: BigInt(revision), items });
 const state = (revision, anchor, focus = anchor, docLen = 10000n) => ({ revision: BigInt(revision), docLen, selection: { anchor: BigInt(anchor), focus: BigInt(focus) } });
+function fakeInput() {
+  const calls = [], listeners = new Set();
+  let on = false;
+  const input = {
+    setScreenReaderMode(value) { if (value === on) return; on = value; calls.push(["mode", value]); for (const l of [...listeners]) l(value); },
+    screenReaderMode: () => on,
+    onScreenReaderModeChange(l) { listeners.add(l); return () => listeners.delete(l); },
+    setScreenReaderContent: c => calls.push(["content", c]),
+  };
+  return { input, calls, listeners };
+}
 const tree = mirror => [...mirror.element.kids[0].kids];
 
 test("byte and UTF-16 offsets agree on multi-byte text", () => {
@@ -335,8 +346,7 @@ test("a long selection is announced by its size", async () => {
 
 test("screen reader mode gives the input the current paragraph and the selection", async () => {
   const doc = fakeDocument();
-  const calls = [];
-  const input = { setScreenReaderMode: on => calls.push(["mode", on]), setScreenReaderContent: c => calls.push(["content", c]) };
+  const { input, calls } = fakeInput();
   const mirror = createDocumentMirror({ container: doc.body, t, input, announceDelay: 0, getAccessibleWindow: async () => reply(1, [
     item(0, "Titre", { role: 1, level: 1 }), item(6, "un", { role: 2, label: "1." }), item(9, "a\uFFFCb\uFFFC", { inlines: [obj(1, "chat"), inline(5, 3, "§")] }),
   ]) });
@@ -360,4 +370,47 @@ test("screen reader mode gives the input the current paragraph and the selection
   mirror.setScreenReaderMode(false);
   assert.deepEqual(calls.at(-1), ["mode", false]);
   assert.equal(live.textContent, t("mirror.reader.off"));
+});
+
+test("the mirror follows the input's mode, whoever changes it, and announces it", async () => {
+  const doc = fakeDocument();
+  const { input, calls, listeners } = fakeInput();
+  const mirror = createDocumentMirror({ container: doc.body, t, input, announceDelay: 0, getAccessibleWindow: async () => reply(1, [item(0, "abc")]) });
+  const live = mirror.element.kids[1];
+  await mirror.update(state(1, 1));
+  input.setScreenReaderMode(true); // as the shortcut or the button do
+  assert.equal(mirror.screenReaderMode(), true);
+  assert.equal(live.textContent, t("mirror.reader.on"));
+  assert.deepEqual(calls.at(-1)[1], { text: "abc", start: 1, end: 1, backward: false }, "content pushed at once");
+  input.setScreenReaderMode(false);
+  assert.equal(mirror.screenReaderMode(), false);
+  assert.equal(live.textContent, t("mirror.reader.off"));
+  mirror.setScreenReaderMode(true); // as the API does
+  assert.equal(input.screenReaderMode(), true);
+  mirror.dispose();
+  assert.equal(input.screenReaderMode(), false, "disposing leaves the mode");
+  assert.equal(listeners.size, 0, "and unsubscribes");
+  const second = fakeInput();
+  second.input.setScreenReaderMode(true);
+  const late = createDocumentMirror({ container: doc.body, t, input: second.input, getAccessibleWindow: async () => reply(1, []) });
+  assert.equal(late.screenReaderMode(), true, "a mirror created while the mode is on starts in it");
+});
+
+test("reader mode: the paragraph is capped around the caret, and a cross-paragraph selection is said to be truncated", async () => {
+  const doc = fakeDocument();
+  const { input, calls } = fakeInput();
+  const long = "ab".repeat(2500) + "😀" + "cd".repeat(2500);
+  const mirror = createDocumentMirror({ container: doc.body, t, input, announceDelay: 0, getAccessibleWindow: async () => reply(1, [item(0, "court"), item(6, long)]) });
+  const live = mirror.element.kids[1];
+  input.setScreenReaderMode(true);
+  const mid = 6 + Buffer.byteLength("ab".repeat(2500));
+  await mirror.update(state(1, mid));
+  const content = calls.at(-1)[1];
+  assert.equal(content.text.length, READER_WINDOW);
+  assert.equal(content.start, content.end);
+  assert.equal(content.text.slice(content.start, content.start + 2), "😀", "the caret stays on the right character in the window");
+  await mirror.update(state(1, 2, mid));
+  assert.ok(live.textContent.startsWith("mirror.reader.truncated"), "said once when the selection leaves the paragraph");
+  await mirror.update(state(1, 2, mid + 10));
+  assert.ok(!live.textContent.startsWith("mirror.reader.truncated"), "not repeated while it stays across paragraphs");
 });

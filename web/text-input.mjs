@@ -129,6 +129,7 @@ export function attachTextInput({
   // Screen reader mode (US-209): the textarea holds the current paragraph and its selection instead of staying empty.
   let readerMode = false;
   let readerContent = null;
+  const readerListeners = new Set();
 
   function reportError(error) {
     try { onError(error); } catch { /* keep the input surface usable */ }
@@ -169,7 +170,16 @@ export function attachTextInput({
     if (on) textarea.setAttribute("aria-multiline", "true");
     else textarea.removeAttribute("aria-multiline");
     if (!nativeComposing) clearValue();
-    try { onScreenReaderMode?.(on); } catch (error) { reportError(error); }
+    for (const listener of [...(onScreenReaderMode ? [onScreenReaderMode] : []), ...readerListeners]) {
+      try { listener(on); } catch (error) { reportError(error); }
+    }
+  }
+
+  /** Subscribes to mode changes (shortcut, button, API); returns the unsubscribe function. */
+  function onScreenReaderModeChange(listener) {
+    if (typeof listener !== "function") throw new TypeError("listener must be a function.");
+    readerListeners.add(listener);
+    return () => { readerListeners.delete(listener); };
   }
 
   function readSelection() { return copySelection(getSelection()); }
@@ -238,8 +248,9 @@ export function attachTextInput({
 
   function onKeyDown(event) {
     if (disposed || textarea.disabled || event.isComposing || event.keyCode === 229 || nativeComposing) return;
-    // Ctrl+Alt+Z toggles screen reader mode. A real Z key reports "z"; AltGr+Z on a layout that maps it reports its character.
-    if (event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey && (event.key === "z" || event.key === "Z")) {
+    // Alt+Shift+F1 toggles screen reader mode. No Ctrl: on Windows AltGr is reported as Ctrl+Alt, so any Ctrl+Alt shortcut would
+    // fire while typing with AltGr. AltGr itself is excluded too.
+    if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.key === "F1" && !event.getModifierState?.("AltGraph")) {
       event.preventDefault();
       setScreenReaderMode(!readerMode);
       return;
@@ -361,6 +372,7 @@ export function attachTextInput({
     } else if (emitUnhandled(event, "input")) {
       scheduleClear();
     } else {
+      if (readerMode) scheduleClear(); // the paragraph must come back; outside the mode the browser text is left alone
       return; // Leave browser-managed text in the textarea when no delegate is installed.
     }
     if (mapped) scheduleClear();
@@ -495,6 +507,7 @@ export function attachTextInput({
     }
     nativeComposing = false;
     disposed = true;
+    readerListeners.clear();
     clearTimeout(clearTimer);
     clearTimeout(compositionSuppressTimer);
     clearTimeout(pasteSuppressTimer);
@@ -522,5 +535,5 @@ export function attachTextInput({
 
   if (screenReaderMode) setScreenReaderMode(true);
 
-  return Object.freeze({ element: textarea, focus, updateCaret, setScreenReaderMode, setScreenReaderContent, screenReaderMode: () => readerMode, dispose });
+  return Object.freeze({ element: textarea, focus, updateCaret, setScreenReaderMode, setScreenReaderContent, onScreenReaderModeChange, screenReaderMode: () => readerMode, dispose });
 }
