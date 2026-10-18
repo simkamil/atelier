@@ -55,6 +55,10 @@ Réservés à l'intégrateur : `core-wasm/src/lib.rs`, routage de `editor.rs`, `
 
 Le lot 1 et R2 n'implémentent pas la mise en page des tableaux ni des en-têtes et pieds de page. Les paragraphes de cellule sont mis en page comme des paragraphes de corps pleine largeur (mode dégradé documenté) et les en-têtes et pieds ne sont pas dessinés. Les accesseurs de tableaux, de cellules et d'en-têtes et pieds seront ajoutés par la story qui les traitera, pas par US-203.
 
+### Prérequis ajouté le 2026-10-18 : liste d'affichage compacte
+
+La relecture de R3a a mesuré environ 500 octets par glyphe dans les pages ATDL de l'éditeur riche : une page de texte dense dépasse 4 Mio, et chaque frappe transporterait plusieurs mégaoctets du Worker au fil principal. La cible de 16 ms par frappe (R7) est hors d'atteinte sans une liste d'affichage qui référence les glyphes par (police, glyphe) et n'envoie chaque contour qu'une fois, mis en cache côté Canvas en `Path2D` (critère d'US-101). Cette tranche (R2b, liée à US-080 et US-101) doit précéder R7 ; R3a borne seulement les réponses en attendant.
+
 ## Risques et parades
 
 - **Régression TXT** (11 fichiers de test liés au protocole, 35 suites navigateur) : v1 gelée jusqu'à R7, suites exécutées en v1 et v2, aller-retour TXT octet pour octet bloquant.
