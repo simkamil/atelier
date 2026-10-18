@@ -700,6 +700,16 @@ impl GlyphCache {
         self.atlas_sent = 0;
     }
 
+    /// Remembers the slot of a glyph. `Entry` slots are bounded by the atlas
+    /// (`atlas_limit`); the `Empty` and `Inline` ones are only remembered while
+    /// fewer than `MAX_CACHED_GLYPHS` slots are held (the others are recomputed
+    /// from `index`, which has the same bound).
+    fn memo(&mut self, key: (u64, u16, i64), slot: AtlasSlot) {
+        if matches!(slot, AtlasSlot::Entry(_)) || self.slots.len() < MAX_CACHED_GLYPHS {
+            self.slots.insert(key, slot);
+        }
+    }
+
     fn slot(
         &mut self,
         fonts: &FontManager<'_>,
@@ -717,7 +727,7 @@ impl GlyphCache {
         }
         let proto = self.lookup(fonts, glyph, style, source_char)?;
         let Some(proto_index) = proto else {
-            self.slots.insert(key, AtlasSlot::Empty);
+            self.memo(key, AtlasSlot::Empty);
             return Ok((AtlasSlot::Empty, None));
         };
         let entry = {
@@ -742,7 +752,7 @@ impl GlyphCache {
             }
             None => AtlasSlot::Inline,
         };
-        self.slots.insert(key, slot);
+        self.memo(key, slot);
         Ok((slot, (slot == AtlasSlot::Inline).then_some(proto_index)))
     }
 }
@@ -995,4 +1005,24 @@ pub(crate) fn paint_line_fast(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remembered_empty_and_inline_slots_are_bounded() {
+        let mut glyphs = GlyphCache::default();
+        for i in 0..(MAX_CACHED_GLYPHS as u64 + 100) {
+            glyphs.memo((i, 0, 0), AtlasSlot::Empty);
+            glyphs.memo((i, 1, 0), AtlasSlot::Inline);
+        }
+        assert_eq!(glyphs.slots.len(), MAX_CACHED_GLYPHS);
+        // An atlas entry is always remembered (it is bounded by the atlas).
+        glyphs.memo((u64::MAX, 0, 0), AtlasSlot::Entry(0));
+        assert_eq!(glyphs.slots.len(), MAX_CACHED_GLYPHS + 1);
+        glyphs.reset_atlas();
+        assert!(glyphs.slots.is_empty());
+    }
 }
