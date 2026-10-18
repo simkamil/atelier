@@ -59,6 +59,8 @@ Le lot 1 et R2 n'implémentent pas la mise en page des tableaux ni des en-têtes
 
 La relecture de R3a a mesuré environ 500 octets par glyphe dans les pages ATDL de l'éditeur riche : une page de texte dense dépasse 4 Mio, et chaque frappe transporterait plusieurs mégaoctets du Worker au fil principal. La cible de 16 ms par frappe (R7) est hors d'atteinte sans une liste d'affichage qui référence les glyphes par (police, glyphe) et n'envoie chaque contour qu'une fois, mis en cache côté Canvas en `Path2D` (critère d'US-101). Cette tranche (R2b, liée à US-080 et US-101) doit précéder R7 ; R3a borne seulement les réponses en attendant.
 
+Avancement du 2026-10-18 (R2b) : livré sur la branche `r2b-glyph-atlas`. Les pages de l'éditeur sont peintes en `DrawGlyphRun` (police 0, indice d'atlas) et un atlas par session de document est transmis une seule fois, dans une section des réponses State et Pages ([format et bornes](us-203-rich-editor-protocol.md), « Glyph atlas »). Page dense de lignes de 100 colonnes (`tests/rich-editor-abi.mjs`, vrai WASM) : 1 561 octets par glyphe avant, 36 en régime établi, première réponse 120 648 octets atlas compris (4 215 269 octets de page avant). Rendu identique au pixel près à l'ancien dessin dans Edge (`tests/run-rich-atlas-render-browser.mjs`, 24 comparaisons, tolérance zéro). Réserve : un atlas désynchronisé par une réponse abandonnée côté client ne se rétablit qu'à l'`Open` suivant tant qu'aucune requête ne permet au client de relancer l'époque (voir la spec) ; à trancher avant R7.
+
 ## Risques et parades
 
 - **Régression TXT** (11 fichiers de test liés au protocole, 35 suites navigateur) : v1 gelée jusqu'à R7, suites exécutées en v1 et v2, aller-retour TXT octet pour octet bloquant.
