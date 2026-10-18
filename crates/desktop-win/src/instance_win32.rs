@@ -159,10 +159,8 @@ pub enum Acquire {
     Unreachable,
 }
 
-/// Schéma standard : `CreateMutexW` puis `GetLastError() == ERROR_ALREADY_EXISTS`, sans course.
-pub fn acquire(root: &Path, paths: &[PathBuf]) -> io::Result<Acquire> {
-    let key = instance::instance_key(root);
-    let name = wide(&instance::mutex_name(&key));
+/// `CreateMutexW` : (handle, le mutex existait déjà). Schéma standard sans course.
+fn create_mutex(name: &[u16]) -> io::Result<(Handle, bool)> {
     // SAFETY: `name` est un tableau UTF-16 terminé par NUL vivant pendant l'appel ; attributs nuls autorisés.
     let handle = unsafe { CreateMutexW(null_mut(), 0, name.as_ptr()) };
     if handle.is_null() {
@@ -170,6 +168,14 @@ pub fn acquire(root: &Path, paths: &[PathBuf]) -> io::Result<Acquire> {
     }
     // SAFETY: lit l'erreur du thread juste après CreateMutexW (183 si le mutex existait déjà).
     let existed = unsafe { GetLastError() } == ERROR_ALREADY_EXISTS;
+    Ok((handle, existed))
+}
+
+/// Schéma standard : `CreateMutexW` puis `GetLastError() == ERROR_ALREADY_EXISTS`, sans course.
+pub fn acquire(root: &Path, paths: &[PathBuf]) -> io::Result<Acquire> {
+    let key = instance::instance_key(root);
+    let name = wide(&instance::mutex_name(&key));
+    let (handle, existed) = create_mutex(&name)?;
     if !existed {
         return Ok(Acquire::Primary(InstanceGuard(handle)));
     }
@@ -177,17 +183,14 @@ pub fn acquire(root: &Path, paths: &[PathBuf]) -> io::Result<Acquire> {
     unsafe { CloseHandle(handle) };
     let payload = instance::encode_paths(paths)
         .map_err(|error| io::Error::other(format!("invalid launch paths: {error:?}")))?;
-    Ok(if forward(&key, &payload) {
-        Acquire::Forwarded
-    } else {
-        Acquire::Unreachable
-    })
+    forward(&key, &name, &payload)
 }
 
 /// Envoie la charge à la fenêtre principale par `SendMessageTimeoutW(WM_COPYDATA)` (la mémoire de
 /// l'émetteur n'est valide que pendant un envoi synchrone). Réessaie brièvement tant que la fenêtre n'existe
-/// pas ou ne répond pas ; un refus explicite du récepteur n'est jamais réessayé.
-fn forward(key: &str, payload: &[u8]) -> bool {
+/// pas ou ne répond pas ; à chaque tentative sans fenêtre le mutex est repris : si la première instance
+/// a disparu entre-temps, cette instance devient la première. Un refus explicite n'est jamais réessayé.
+fn forward(key: &str, mutex: &[u16], payload: &[u8]) -> io::Result<Acquire> {
     let class = wide(&instance::window_class_name(key));
     // SAFETY: pointer-free query.
     let own_pid = unsafe { GetCurrentProcessId() };
@@ -199,6 +202,12 @@ fn forward(key: &str, payload: &[u8]) -> bool {
         // SAFETY: `class` est terminé par NUL ; un titre nul accepte tout titre.
         let hwnd = unsafe { FindWindowW(class.as_ptr(), null()) };
         if hwnd.is_null() {
+            let (handle, existed) = create_mutex(mutex)?;
+            if !existed {
+                return Ok(Acquire::Primary(InstanceGuard(handle)));
+            }
+            // SAFETY: handle valide, non utilisé ensuite.
+            unsafe { CloseHandle(handle) };
             continue;
         }
         let mut target = 0u32;
@@ -231,10 +240,14 @@ fn forward(key: &str, payload: &[u8]) -> bool {
             )
         };
         if sent != 0 {
-            return result == 1;
+            return Ok(if result == 1 {
+                Acquire::Forwarded
+            } else {
+                Acquire::Unreachable
+            });
         }
     }
-    false
+    Ok(Acquire::Unreachable)
 }
 
 /// Le processus `pid` exécute-t-il le même exécutable que celui-ci ?
@@ -433,4 +446,18 @@ pub fn probe_secondary(root: &Path, paths: &[PathBuf]) -> io::Result<String> {
         Acquire::Forwarded => "forwarded".into(),
         Acquire::Unreachable => "unreachable".into(),
     })
+}
+
+/// Diagnostic `--instance-probe-hold` : prend le mutex sans jamais créer de fenêtre pendant `milliseconds`
+/// (première instance bloquée au démarrage), puis le libère.
+pub fn probe_hold(root: &Path, milliseconds: u32) -> io::Result<String> {
+    let guard = match acquire(root, &[])? {
+        Acquire::Primary(guard) => guard,
+        _ => return Err(io::Error::other("an instance already owns this data root")),
+    };
+    println!("primary-ready");
+    // SAFETY: simple attente du thread appelant.
+    unsafe { Sleep(milliseconds) };
+    drop(guard);
+    Ok("hold-released".into())
 }

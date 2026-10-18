@@ -551,12 +551,12 @@ try {
   launchReplies.push({ status: "ok", payload: `txt;2;${launchBase64("lancé par argument")}` });
   notifyLaunch();
   await waitFor(() => app.getState()?.text === "lancé par argument", "a launched .txt opens in the editor");
-  assert(status().includes("2 autres fichiers n’ont pas été ouverts") && document.querySelector("#editor-status").classList.contains("error"),
-    "extra launched files are reported with the plural i18n message");
+  assert(status().startsWith("Document ouvert.") && status().includes("2 autres fichiers n’ont pas été ouverts"),
+    "opening and the plural skipped count are announced in a single message");
   launchReplies.push({ status: "error", payload: "files.error.unsupported_type" }, { status: "ok", payload: `txt;1;${launchBase64("deuxième")}` });
   notifyLaunch();
   await waitFor(() => app.getState()?.text === "deuxième", "an unsupported launched file does not hide the next one");
-  assert(status().includes("1 autre fichier n’a pas été ouvert"), "singular skipped message");
+  assert(status().startsWith("Document ouvert.") && status().includes("1 autre fichier n’a pas été ouvert"), "singular skipped message");
   launchReplies.push({ status: "error", payload: "files.error.unsupported_type" });
   notifyLaunch();
   await waitFor(() => status().includes(".txt ou .docx"), "an unsupported launched file is explained");

@@ -22,6 +22,16 @@ fn isolated(name: &str) -> PathBuf {
     root
 }
 
+/// Tue le processus de sonde en cas d'échec d'assertion, pour ne laisser aucun orphelin.
+struct Probe(Child);
+
+impl Drop for Probe {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 fn wait_exit(child: &mut Child, limit: Duration) -> std::process::ExitStatus {
     let start = Instant::now();
     loop {
@@ -36,15 +46,17 @@ fn wait_exit(child: &mut Child, limit: Duration) -> std::process::ExitStatus {
     }
 }
 
-fn start_primary(root: &Path, output: &Path) -> Child {
-    let mut child = Command::new(exe())
-        .arg("--instance-probe-primary")
-        .arg(root)
-        .arg(output)
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let stdout = child.stdout.take().unwrap();
+fn start_primary(root: &Path, output: &Path) -> Probe {
+    let mut child = Probe(
+        Command::new(exe())
+            .arg("--instance-probe-primary")
+            .arg(root)
+            .arg(output)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let stdout = child.0.stdout.take().unwrap();
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
         // Garde le tube ouvert jusqu'à la sortie de la sonde (elle écrit encore son résultat).
@@ -57,10 +69,7 @@ fn start_primary(root: &Path, output: &Path) -> Child {
     });
     let line = receiver
         .recv_timeout(Duration::from_secs(15))
-        .unwrap_or_else(|_| {
-            let _ = child.kill();
-            panic!("primary probe never became ready");
-        });
+        .expect("primary probe never became ready");
     assert_eq!(line.trim(), "primary-ready");
     child
 }
@@ -101,7 +110,7 @@ fn second_instance_forwards_absolute_paths_and_exits_while_first_receives_them()
     assert_eq!(text, "forwarded");
     assert!(elapsed < Duration::from_secs(10), "took {elapsed:?}");
 
-    let primary_status = wait_exit(&mut primary, Duration::from_secs(15));
+    let primary_status = wait_exit(&mut primary.0, Duration::from_secs(15));
     assert!(primary_status.success(), "primary: {primary_status:?}");
     let received = std::fs::read_to_string(&output).unwrap();
     let lines: Vec<&str> = received.lines().collect();
@@ -125,10 +134,35 @@ fn different_data_roots_do_not_see_each_other_and_mutex_is_released_on_exit() {
     assert!(status.success());
     assert_eq!(text, "forwarded");
     // Le premier processus a reçu une charge vide valide (simple mise au premier plan) puis s'arrête.
-    assert!(wait_exit(&mut primary, Duration::from_secs(15)).success());
+    assert!(wait_exit(&mut primary.0, Duration::from_secs(15)).success());
     // Mutex libéré à la sortie : la racine est de nouveau disponible.
     let (_, text, _) = secondary(&first, &first, &[]);
     assert_eq!(text, "became-primary");
     let _ = std::fs::remove_dir_all(&first);
     let _ = std::fs::remove_dir_all(&second);
+}
+
+#[test]
+fn second_instance_takes_over_when_the_first_disappears_before_creating_its_window() {
+    let root = isolated("takeover");
+    let mut holder = Probe(
+        Command::new(exe())
+            .arg("--instance-probe-hold")
+            .arg(&root)
+            .arg("1500")
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let mut line = String::new();
+    let mut reader = BufReader::new(holder.0.stdout.take().unwrap());
+    reader.read_line(&mut line).unwrap();
+    assert_eq!(line.trim(), "primary-ready");
+    // Le mutex existe mais aucune fenêtre : la seconde instance réessaie, puis devient la première.
+    let (status, text, elapsed) = secondary(&root, &root, &[]);
+    assert!(status.success());
+    assert_eq!(text, "became-primary");
+    assert!(elapsed >= Duration::from_millis(500), "took {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(10), "took {elapsed:?}");
+    let _ = std::fs::remove_dir_all(&root);
 }

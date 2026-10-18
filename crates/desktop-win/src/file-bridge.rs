@@ -340,43 +340,42 @@ pub(crate) fn process_selection(
     }
 }
 
-/// US-115 : sert le prochain chemin en attente (argument de ligne de commande ou seconde instance).
-/// Le premier fichier valide est livré (`ok|<txt|docx>;<ignorés>;<base64>`) et les suivants sont
-/// écartés et comptés ; file vide : `ok|`. Un fichier refusé laisse les suivants en attente.
-pub(crate) fn process_launch(
-    id: &str,
-    pending: &mut VecDeque<PathBuf>,
-    broker: &crate::files::FileBroker,
-) -> String {
-    let Some(path) = pending.pop_front() else {
-        return format!("us120-file|1|{id}|ok|");
-    };
+/// Résultat de la lecture d'un fichier d'ouverture : (type, octets) ou clé d'erreur.
+pub(crate) type LaunchRead = Result<(&'static str, Vec<u8>), &'static str>;
+
+/// US-115 : lit un fichier d'ouverture (`.txt` ou `.docx`). Peut bloquer (partage réseau lent) :
+/// à appeler hors du fil UI.
+pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
     let extension = path
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase());
     let (kind, limit) = match extension.as_deref() {
         Some("txt") => ("txt", MAX_FILE_BYTES),
         Some("docx") => ("docx", MAX_DOCX_PREVIEW_BYTES),
-        _ => return format!("us120-file|1|{id}|error|files.error.unsupported_type"),
+        _ => return Err("files.error.unsupported_type"),
     };
-    let result = match broker.grant_read(&path, limit as u64) {
-        Err(error) => Err(error.message_key),
-        Ok(ticket) => {
-            let result = broker.read(ticket);
-            broker.revoke_read(ticket);
-            match result {
-                Ok(bytes) if kind == "txt" => match text_error(&bytes) {
-                    Some(key) => Err(key),
-                    None => Ok(bytes),
-                },
-                Ok(bytes) if bytes.len() <= limit => Ok(bytes),
-                Ok(_) => Err("files.error.too_large"),
-                Err(error) => Err(error.message_key),
-            }
-        }
-    };
+    let broker = crate::files::FileBroker::new();
+    let ticket = broker
+        .grant_read(path, limit as u64)
+        .map_err(|error| error.message_key)?;
+    let result = broker.read(ticket);
+    broker.revoke_read(ticket);
     match result {
-        Ok(bytes) => {
+        Ok(bytes) if kind == "txt" => match text_error(&bytes) {
+            Some(key) => Err(key),
+            None => Ok((kind, bytes)),
+        },
+        Ok(bytes) if bytes.len() <= limit => Ok((kind, bytes)),
+        Ok(_) => Err("files.error.too_large"),
+        Err(error) => Err(error.message_key),
+    }
+}
+
+/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<ignorés>;<base64>` ; en cas de
+/// succès les chemins restants sont écartés et comptés, en cas d'erreur ils restent en attente.
+pub(crate) fn launch_reply(id: &str, read: LaunchRead, pending: &mut VecDeque<PathBuf>) -> String {
+    match read {
+        Ok((kind, bytes)) => {
             let skipped = pending.len();
             pending.clear();
             let reply = format!(
@@ -391,6 +390,15 @@ pub(crate) fn process_launch(
         }
         Err(key) => format!("us120-file|1|{id}|error|{key}"),
     }
+}
+
+/// Version synchrone (tests) : sert le prochain chemin en attente ; file vide : `ok|`.
+#[cfg(test)]
+pub(crate) fn process_launch(id: &str, pending: &mut VecDeque<PathBuf>) -> String {
+    let Some(path) = pending.pop_front() else {
+        return format!("us120-file|1|{id}|ok|");
+    };
+    launch_reply(id, read_launch_file(&path), pending)
 }
 
 fn text_length(bytes: &[u8]) -> Option<usize> {
@@ -672,18 +680,14 @@ mod tests {
         let b = dir.join("b.txt");
         std::fs::write(&a, "bonjour").unwrap();
         std::fs::write(&b, "autre").unwrap();
-        let broker = crate::files::FileBroker::new();
         let mut pending: VecDeque<PathBuf> = [a, b].into();
-        let reply = process_launch("7", &mut pending, &broker);
+        let reply = process_launch("7", &mut pending);
         assert_eq!(
             reply,
             format!("us120-file|1|7|ok|txt;1;{}", encode_base64(b"bonjour"))
         );
         assert!(pending.is_empty());
-        assert_eq!(
-            process_launch("8", &mut pending, &broker),
-            "us120-file|1|8|ok|"
-        );
+        assert_eq!(process_launch("8", &mut pending), "us120-file|1|8|ok|");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -697,22 +701,18 @@ mod tests {
         std::fs::write(&image, "x").unwrap();
         std::fs::write(&bad, [0xff, 0xfe, 0xfd]).unwrap();
         std::fs::write(&good, "PK").unwrap();
-        let broker = crate::files::FileBroker::new();
         let mut pending: VecDeque<PathBuf> = [image, missing, bad, good].into();
         assert_eq!(
-            process_launch("1", &mut pending, &broker),
+            process_launch("1", &mut pending),
             "us120-file|1|1|error|files.error.unsupported_type"
         );
-        assert!(
-            process_launch("2", &mut pending, &broker)
-                .starts_with("us120-file|1|2|error|files.error.")
-        );
+        assert!(process_launch("2", &mut pending).starts_with("us120-file|1|2|error|files.error."));
         assert_eq!(
-            process_launch("3", &mut pending, &broker),
+            process_launch("3", &mut pending),
             "us120-file|1|3|error|files.error.invalid_text"
         );
         assert_eq!(
-            process_launch("4", &mut pending, &broker),
+            process_launch("4", &mut pending),
             format!("us120-file|1|4|ok|docx;0;{}", encode_base64(b"PK"))
         );
         let _ = std::fs::remove_dir_all(dir);

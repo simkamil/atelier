@@ -71,7 +71,7 @@ document.addEventListener("securitypolicyviolation", event => {
   if (message.length <= 768) globalThis.chrome?.webview?.postMessage(message);
 });
 
-const FILE_ERROR_KEYS = ["files.error.invalid_text", "files.error.too_large", "files.error.queue_full", "files.error.unsupported_type"];
+const FILE_ERROR_KEYS = ["files.error.invalid_text", "files.error.too_large", "files.error.queue_full", "files.error.unsupported_type", "files.error.timeout"];
 const MAX_TEXT_FILE_BYTES = 128 * 1024;
 
 /** Loads the catalogue and returns the translator plus `messages`, the reader used to build module labels. */
@@ -482,7 +482,11 @@ async function start() {
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get("status-open-error"), true);
       }
-      if (launched.skipped > 0) showEditorMessage(i18n.t("status-launch-skipped", { count: launched.skipped }), true);
+      // Un seul message : le résultat de l'ouverture suivi du nombre de fichiers ignorés.
+      if (launched.skipped > 0) {
+        const failed = nodes.editorStatus.classList.contains("error");
+        showEditorMessage(`${nodes.editorStatus.textContent} ${i18n.t("status-launch-skipped", { count: launched.skipped })}`, failed);
+      }
     }
     async function claimLaunch() {
       if (disposed) return;

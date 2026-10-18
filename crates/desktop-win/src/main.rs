@@ -9,6 +9,9 @@ fn main() {
         if matches!(
             std::env::args_os().nth(1).as_deref(),
             Some(arg) if arg == "--self-check" || arg == "--webview-self-check" || arg == "--resources-self-check"
+                || arg == "--instance-probe-primary"
+                || arg == "--instance-probe-hold"
+                || arg == "--instance-probe-secondary"
         ) {
             eprintln!("{error}");
         } else {
@@ -79,6 +82,18 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
             .map(PathBuf::from)
             .ok_or("--instance-probe-primary requires a data root and an output file")?;
         println!("{}", instance_win32::probe_primary(&root, &output)?);
+        return Ok(());
+    }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--instance-probe-hold")) {
+        let root = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--instance-probe-hold requires a data root and a duration")?;
+        let milliseconds: u32 = arguments
+            .next()
+            .and_then(|value| value.to_str().and_then(|text| text.parse().ok()))
+            .ok_or("--instance-probe-hold requires a duration in milliseconds")?;
+        println!("{}", instance_win32::probe_hold(&root, milliseconds)?);
         return Ok(());
     }
     if first.as_deref() == Some(std::ffi::OsStr::new("--instance-probe-secondary")) {

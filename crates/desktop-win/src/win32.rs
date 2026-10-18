@@ -15,6 +15,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 type Hwnd = *mut c_void;
 type Hinstance = *mut c_void;
@@ -37,10 +38,15 @@ const WM_TIMER: u32 = 0x0113;
 const WM_COPYDATA: u32 = 0x004a;
 /// Message privé (plage WM_APP) : traiter hors du WM_COPYDATA envoyé les chemins reçus.
 const WM_ATELIER_LAUNCH: u32 = 0x8000 + 0x115;
+/// Lecture d'un fichier d'ouverture terminée sur le thread de travail.
+const WM_ATELIER_LAUNCH_DONE: u32 = 0x8000 + 0x116;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const GWLP_USERDATA: i32 = -21;
 const TIMER_WEBVIEW_INIT: usize = 0x1110;
 const TIMER_WEBVIEW_CLOSE: usize = 0x1111;
+const TIMER_LAUNCH_READ: usize = 0x1112;
+/// Délai maximal de lecture d'un fichier d'ouverture (partage réseau injoignable).
+const LAUNCH_READ_TIMEOUT_MS: u32 = 30_000;
 const SIZE_MINIMIZED: usize = 1;
 const MONITOR_DEFAULTTONEAREST: u32 = 2;
 const SW_SHOWNORMAL: i32 = 1;
@@ -249,6 +255,10 @@ struct FileRuntime {
     dirty: bool,
     /// Chemins demandés (ligne de commande, seconde instance) pas encore réclamés par le front.
     launch: std::collections::VecDeque<PathBuf>,
+    /// Lecture en cours hors du fil UI : (génération, id de la requête).
+    launch_inflight: Option<(u64, String)>,
+    launch_generation: u64,
+    launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead)>>>,
 }
 
 impl FileRuntime {
@@ -258,6 +268,9 @@ impl FileRuntime {
             dialogs: StaFileDialogs::initialize_current_thread()?,
             dirty: false,
             launch: std::collections::VecDeque::new(),
+            launch_inflight: None,
+            launch_generation: 0,
+            launch_slot: Arc::new(Mutex::new(None)),
         })
     }
 }
@@ -331,6 +344,59 @@ fn with_file_dialog_options(
     show(title, std::slice::from_ref(&filter), 0, suggested_name)
 }
 
+/// US-115 : démarre la lecture du prochain fichier d'ouverture sur un thread de travail (un chemin UNC
+/// lent ne doit pas figer l'interface). Renvoie une réponse immédiate si rien n'attend ou si une lecture
+/// est déjà en cours ; sinon `None` et la réponse part à `WM_ATELIER_LAUNCH_DONE` ou à l'expiration.
+fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<String> {
+    if runtime.launch_inflight.is_some() {
+        return Some(format!("us120-file|1|{id}|error|files.error.queue_full"));
+    }
+    let Some(path) = runtime.launch.pop_front() else {
+        return Some(format!("us120-file|1|{id}|ok|"));
+    };
+    runtime.launch_generation += 1;
+    let generation = runtime.launch_generation;
+    let slot = Arc::clone(&runtime.launch_slot);
+    let target = hwnd as usize;
+    let spawned = std::thread::Builder::new()
+        .name("atelier-launch-read".into())
+        .spawn(move || {
+            let read = file_bridge::read_launch_file(&path);
+            *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some((generation, read));
+            // SAFETY: PostMessageW est sûr sur tout thread ; un HWND détruit fait seulement échouer l'appel.
+            unsafe { PostMessageW(target as Hwnd, WM_ATELIER_LAUNCH_DONE, 0, 0) };
+        });
+    if spawned.is_err() {
+        return Some(format!("us120-file|1|{id}|error|files.error.io"));
+    }
+    runtime.launch_inflight = Some((generation, id.to_owned()));
+    // SAFETY: hwnd est la fenêtre vivante du fil UI ; sans minuterie la lecture reste simplement sans délai.
+    unsafe { SetTimer(hwnd, TIMER_LAUNCH_READ, LAUNCH_READ_TIMEOUT_MS, null_mut()) };
+    None
+}
+
+/// Réponse due à la lecture terminée (`expired = false`) ou expirée ; `None` si rien n'est attendu.
+/// Un résultat tardif d'une génération abandonnée est ignoré.
+fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<String> {
+    let (generation, id) = runtime.launch_inflight.clone()?;
+    let ready = runtime
+        .launch_slot
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    match ready {
+        Some((done, read)) if done == generation => {
+            runtime.launch_inflight = None;
+            Some(file_bridge::launch_reply(&id, read, &mut runtime.launch))
+        }
+        _ if expired => {
+            runtime.launch_inflight = None;
+            Some(format!("us120-file|1|{id}|error|files.error.timeout"))
+        }
+        _ => None,
+    }
+}
+
 fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request) -> String {
     let id = request.id().to_owned();
     if let Request::Dirty { dirty, .. } = request {
@@ -338,7 +404,7 @@ fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request)
         return format!("us120-file|1|{id}|ok|");
     }
     if let Request::Launch { .. } = request {
-        return file_bridge::process_launch(&id, &mut runtime.launch, &runtime.broker);
+        unreachable!("launch requests are started by begin_launch");
     }
     // SAFETY: this handler runs on the UI STA while hwnd is the live owner window.
     let owner = unsafe { DialogOwner::from_raw(hwnd) };
@@ -804,10 +870,13 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                         .map(|view| std::iter::from_fn(|| view.take_file_message()).collect())
                         .unwrap_or_default();
                     for request in requests {
-                        let reply = (*context)
-                            .file_runtime
-                            .as_mut()
-                            .map(|runtime| process_file_request(hwnd, runtime, request));
+                        let reply = (*context).file_runtime.as_mut().and_then(|runtime| {
+                            if let Request::Launch { id } = &request {
+                                begin_launch(hwnd, runtime, id)
+                            } else {
+                                Some(process_file_request(hwnd, runtime, request))
+                            }
+                        });
                         if let (Some(reply), Some(view)) = (reply, (*context).webview.as_ref()) {
                             if let Err(error) = view.post_web_message_as_string(&reply) {
                                 (*context).record(Err(error));
@@ -840,9 +909,11 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     // SAFETY (bloc unsafe englobant) : l est le lParam de ce WM_COPYDATA.
                     return match instance_win32::decode_copydata(w, l) {
                         Some(paths) => {
+                            let mut dropped = false;
                             if let Some(runtime) = (*context).file_runtime.as_mut() {
                                 for path in paths {
                                     if runtime.launch.len() >= crate::instance::MAX_PATHS {
+                                        dropped = true;
                                         break;
                                     }
                                     runtime.launch.push_back(path);
@@ -850,10 +921,24 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                             }
                             // SAFETY: hwnd est la fenêtre vivante ; message privé sans pointeur.
                             PostMessageW(hwnd, WM_ATELIER_LAUNCH, 0, 0);
-                            1
+                            // File pleine : les chemins acceptés restent, l'émetteur apprend le refus.
+                            if dropped { 0 } else { 1 }
                         }
                         None => 0,
                     };
+                }
+                WM_ATELIER_LAUNCH_DONE => {
+                    let reply = (*context)
+                        .file_runtime
+                        .as_mut()
+                        .and_then(|runtime| finish_launch(runtime, false));
+                    if let Some(reply) = reply {
+                        let _ = KillTimer(hwnd, TIMER_LAUNCH_READ);
+                        if let Some(view) = (*context).webview.as_ref() {
+                            let _ = view.post_web_message_as_string(&reply);
+                        }
+                    }
+                    return 0;
                 }
                 WM_ATELIER_LAUNCH => {
                     instance_win32::bring_to_front(hwnd);
@@ -864,6 +949,17 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                     return 0;
                 }
                 WM_TIMER => {
+                    if w == TIMER_LAUNCH_READ {
+                        let _ = KillTimer(hwnd, TIMER_LAUNCH_READ);
+                        let reply = (*context)
+                            .file_runtime
+                            .as_mut()
+                            .and_then(|runtime| finish_launch(runtime, true));
+                        if let (Some(reply), Some(view)) = (reply, (*context).webview.as_ref()) {
+                            let _ = view.post_web_message_as_string(&reply);
+                        }
+                        return 0;
+                    }
                     if w == TIMER_WEBVIEW_INIT {
                         let _ = KillTimer(hwnd, TIMER_WEBVIEW_INIT);
                         (*context).record(Err(io::Error::new(
