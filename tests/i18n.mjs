@@ -726,6 +726,46 @@ try {
     ]);
   });
 
+  test("repository: native keys read from the Rust shell (missing, unused, parameters, comments, i18n.rs)", () => {
+    const base = repo({
+      "web/i18n/fr-FR.txt": "native.a=Bonjour {nom}\nnative.b=Deux\nnative.unused=Jamais\nnative.op=Opération\nnative.p={x} {y}\n",
+      "web/app.mjs": "",
+      "crates/desktop-win/src/main.rs": [
+        'let a = t("native.a", &[("nom", &x)]);',
+        'let b = t("native.b", &[]);',
+        'let c = t("native.gone", &[]);',
+        '// t("native.in-comment", &[]);',
+        'let e = Error { operation: "native.op" };',
+        'let p = t("native.p", &[("x", &t(op, &[])), ("z", &y)]);',
+      ].join("\n"),
+      "crates/desktop-win/src/i18n.rs": 'assert_eq!(t("native.only-in-tests", &[]), "x");',
+    });
+    assert.deepEqual(summarize(checkRepository({ root: base })), [
+      "missing-key|crates/desktop-win/src/main.rs:3|native.gone",
+      "param-extra|crates/desktop-win/src/main.rs:6|native.p:z",
+      "param-missing|crates/desktop-win/src/main.rs:6|native.p:y",
+      "unused-key|web/i18n/fr-FR.txt:3|native.unused",
+    ]);
+  });
+
+  test("shared message vectors: web parser agrees with tests/i18n-vectors.txt (the Rust module reads the same file)", () => {
+    const unescape = text => text.replace(/\\(.)/g, (_, char) => (char === "n" ? "\n" : char));
+    let checked = 0;
+    for (const line of readFileSync(join(root, "tests/i18n-vectors.txt"), "utf8").split(/\r?\n/)) {
+      if (!line || line.startsWith("#")) continue;
+      const fields = line.split("\t");
+      if (fields[0] === "!") {
+        assert.throws(() => compileMessage(fields[1]), I18nError, `should be invalid: ${line}`);
+      } else {
+        const params = Object.fromEntries(fields[1].split(";").filter(pair => pair.includes("=")).map(pair => [pair.slice(0, pair.indexOf("=")), pair.slice(pair.indexOf("=") + 1)]));
+        const i18n = createI18n({ catalog: `k=${fields[0]}`, onIssue: () => {} });
+        assert.equal(i18n.t("k", params), unescape(fields[2]), `vector: ${line}`);
+      }
+      checked += 1;
+    }
+    assert.ok(checked >= 10);
+  });
+
   test("repository: hardcoded strings in modules and in index.html", () => {
     const base = repo({
       "web/i18n/fr-FR.txt": "",

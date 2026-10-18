@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::i18n::t;
+
 #[path = "data_win32.rs"]
 mod win32;
 
@@ -42,41 +44,39 @@ pub enum DataError {
 
 impl fmt::Display for DataError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ExecutableNotAbsolute { path } => write!(
-                f,
-                "Le chemin de l’exécutable doit être absolu : {}",
-                path.display()
+        let path_text = |path: &Path| path.display().to_string();
+        let text = match self {
+            Self::ExecutableNotAbsolute { path } => t(
+                "native.data.error.executable_not_absolute",
+                &[("path", &path_text(path))],
             ),
-            Self::ExecutableParentUnavailable { path } => write!(
-                f,
-                "Impossible de trouver le dossier de l’exécutable : {}",
-                path.display()
+            Self::ExecutableParentUnavailable { path } => t(
+                "native.data.error.executable_parent_unavailable",
+                &[("path", &path_text(path))],
             ),
-            Self::LocalAppDataUnavailable => write!(
-                f,
-                "Le dossier LOCALAPPDATA est indisponible. Le démarrage est interrompu."
+            Self::LocalAppDataUnavailable => t("native.data.error.local_app_data_unavailable", &[]),
+            Self::LocalAppDataNotAbsolute { path } => t(
+                "native.data.error.local_app_data_not_absolute",
+                &[("path", &path_text(path))],
             ),
-            Self::LocalAppDataNotAbsolute { path } => write!(
-                f,
-                "Le chemin LOCALAPPDATA doit être absolu : {}",
-                path.display()
-            ),
-            Self::UnsafeStoragePath { path } => write!(
-                f,
-                "Le chemin de données n’est pas un dossier sûr : {}",
-                path.display()
+            Self::UnsafeStoragePath { path } => t(
+                "native.data.error.unsafe_storage_path",
+                &[("path", &path_text(path))],
             ),
             Self::StorageUnavailable {
                 path,
                 operation,
                 detail,
-            } => write!(
-                f,
-                "Impossible de {operation} dans {} : {detail}",
-                path.display()
+            } => t(
+                "native.data.error.storage_unavailable",
+                &[
+                    ("operation", &t(operation, &[])),
+                    ("path", &path_text(path)),
+                    ("detail", detail),
+                ],
             ),
-        }
+        };
+        f.write_str(&text)
     }
 }
 
@@ -129,11 +129,11 @@ impl DataPaths {
         self.root.join("webview")
     }
 
-    /// Short French label suitable for a visible window title.
-    pub fn mode_label(&self) -> &'static str {
+    /// Short label suitable for a visible window title (catalogue `native.mode.*`).
+    pub fn mode_label(&self) -> String {
         match self.mode {
-            DataMode::Portable => "Portable",
-            DataMode::Local => "Mode local",
+            DataMode::Portable => t("native.mode.portable", &[]),
+            DataMode::Local => t("native.mode.local", &[]),
         }
     }
 }
@@ -200,9 +200,9 @@ fn portable_root(executable: &Path) -> Result<PathBuf, DataError> {
 
 fn prepare_root(root: &Path) -> Result<(), DataError> {
     fs::create_dir_all(root)
-        .map_err(|error| io_error(root, "créer le dossier de données", error))?;
+        .map_err(|error| io_error(root, "native.data.op.create_root", error))?;
     let metadata = fs::symlink_metadata(root)
-        .map_err(|error| io_error(root, "inspecter le dossier de données", error))?;
+        .map_err(|error| io_error(root, "native.data.op.inspect_root", error))?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(DataError::UnsafeStoragePath {
             path: root.to_path_buf(),
@@ -224,7 +224,7 @@ fn probe_writable_with(
         let mut file = match open_probe_exclusive(&probe) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(io_error(root, "vérifier l’écriture", error)),
+            Err(error) => return Err(io_error(root, "native.data.op.check_write", error)),
         };
 
         let write_result = file
@@ -235,26 +235,22 @@ fn probe_writable_with(
         let cleanup_result = fs::remove_file(&probe);
         if let Err(write_error) = write_result {
             return match cleanup_result {
-                Ok(()) => Err(io_error(
-                    root,
-                    "écrire ou synchroniser la sonde",
-                    write_error,
-                )),
+                Ok(()) => Err(io_error(root, "native.data.op.write_probe", write_error)),
                 Err(cleanup_error) => Err(io_error(
                     root,
-                    "nettoyer la sonde d’écriture après un échec",
+                    "native.data.op.clean_probe_after_failure",
                     cleanup_error,
                 )),
             };
         }
-        cleanup_result.map_err(|error| io_error(root, "supprimer la sonde d’écriture", error))?;
+        cleanup_result.map_err(|error| io_error(root, "native.data.op.remove_probe", error))?;
         return Ok(());
     }
 
     Err(DataError::StorageUnavailable {
         path: root.to_path_buf(),
-        operation: "trouver un nom sûr pour la sonde d’écriture",
-        detail: "trop de collisions successives".to_owned(),
+        operation: "native.data.op.probe_name",
+        detail: t("native.data.detail.probe_collisions", &[]),
     })
 }
 

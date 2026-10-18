@@ -4,6 +4,8 @@
 #[cfg(windows)]
 use super::DataError;
 use super::StartupChoice;
+#[cfg(windows)]
+use crate::i18n::t;
 
 #[cfg(windows)]
 use std::ffi::OsStr;
@@ -40,13 +42,13 @@ unsafe extern "system" {
 /// Ask the user to choose Local, Move, or Quit after portable storage fails.
 #[cfg(windows)]
 pub fn choose_data_mode(error: &DataError) -> StartupChoice {
-    let text = format!(
-        "Le stockage portable est inaccessible.\n\n{}\n\nOui : choisir explicitement le mode local.\nNon : déplacer l’exécutable vers un dossier inscriptible, puis relancer.\nAnnuler : quitter.",
-        error
+    let text = t(
+        "native.startup.storage.prompt",
+        &[("error", &error.to_string())],
     );
     let response = message_box(
         &text,
-        "Stockage des données",
+        &t("native.startup.storage.caption", &[]),
         MB_YESNOCANCEL | MB_ICONWARNING,
     );
     choice_from_message_box(response)
@@ -55,15 +57,20 @@ pub fn choose_data_mode(error: &DataError) -> StartupChoice {
 /// Display a final startup error after the selected storage location also fails.
 #[cfg(windows)]
 pub fn show_startup_error(error: &DataError) {
-    let text = format!("Atelier ne peut pas démarrer.\n\n{error}");
-    let _ = message_box(&text, "Erreur de démarrage", MB_OK | MB_ICONERROR);
+    let text = t(
+        "native.startup.error.text",
+        &[("error", &error.to_string())],
+    );
+    let caption = t("native.startup.error.caption", &[]);
+    let _ = message_box(&text, &caption, MB_OK | MB_ICONERROR);
 }
 
 /// Explain that moving the executable is a manual action, then exit the current launch.
 #[cfg(windows)]
 pub fn show_move_instructions() {
-    let text = "Déplacez atelier.exe vers un dossier où vous pouvez créer des fichiers, puis relancez l’application. Aucun fichier n’a été déplacé.";
-    let _ = message_box(text, "Déplacer Atelier", MB_OK | MB_ICONWARNING);
+    let text = t("native.startup.move.text", &[]);
+    let caption = t("native.startup.move.caption", &[]);
+    let _ = message_box(&text, &caption, MB_OK | MB_ICONWARNING);
 }
 
 #[cfg(windows)]

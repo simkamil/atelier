@@ -4,6 +4,7 @@
 pub mod data;
 pub mod files;
 pub mod fonts;
+pub mod i18n;
 pub mod instance;
 pub mod resources;
 pub mod url_open;
