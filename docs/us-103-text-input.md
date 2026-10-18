@@ -51,3 +51,7 @@ le rapport conserve séparément l'échec strict des handles et US-111 reste ouv
 La [revue indépendante](../_bmad-output/implementation-artifacts/frontend-host-review.md)
 conserve un point IME natif de gravité moyenne non vérifiée à trancher sur matériel.
 Les tests musl sont compilés localement ; leur exécution appartient à la CI Linux.
+
+## Mode lecteur d’écran (US-209)
+
+`attachTextInput` accepte `screenReaderMode` et `onScreenReaderMode`, et expose `setScreenReaderMode(on)`, `setScreenReaderContent({ text, start, end, backward })` et `screenReaderMode()`. Ctrl+Alt+Z (touche `z` réelle, pas AltGr) bascule le mode. Dans le mode, la zone contient le paragraphe courant et sa sélection au lieu de rester vide ; la saisie, la composition et le presse-papiers passent par les mêmes commandes. Hors mode, rien ne change. Voir [le miroir DOM](us-209-document-mirror.md).
