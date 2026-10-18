@@ -1312,3 +1312,223 @@ fn a_dense_page_is_sent_within_the_response_bounds() {
         }
     }
 }
+
+/// What a client keeps of the atlas: the epoch and the number of entries.
+#[derive(Default)]
+struct AtlasView {
+    epoch: Option<u32>,
+    len: u32,
+}
+
+impl AtlasView {
+    /// Applies a delta by the client rules; `true` when the epoch changed.
+    fn apply(&mut self, atlas: &proto::AtlasDelta) -> bool {
+        let fresh = self.epoch != Some(atlas.epoch);
+        if fresh {
+            self.epoch = Some(atlas.epoch);
+            self.len = 0;
+        }
+        assert_eq!(atlas.first, self.len, "atlas_first follows the known index");
+        self.len += atlas.entries.len() as u32;
+        fresh
+    }
+
+    /// Every glyph of the pages refers to a known entry.
+    fn covers(&self, pages: &[PageDisplay]) {
+        for page in pages {
+            let list = atelier_render::DisplayList::decode(&page.display).unwrap();
+            for command in list.commands {
+                if let atelier_render::Command::DrawGlyphRun {
+                    font_id, glyphs, ..
+                } = command
+                {
+                    assert_eq!(font_id, 0);
+                    assert!(glyphs.iter().all(|g| g.glyph_id < self.len));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn atlas_entries_arrive_once_in_order_and_cover_the_pages() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt("Hello world, hello atlas.");
+    assert!(view.apply(&opened.atlas), "the first reply starts an epoch");
+    assert!(!opened.atlas.entries.is_empty());
+    assert!(
+        opened
+            .atlas
+            .entries
+            .iter()
+            .all(|e| e.starts_with(b"ATDL") && e.len() < proto::MAX_ATLAS_ENTRY_BYTES)
+    );
+    view.covers(&opened.pages);
+    let known = view.len;
+    // A page already painted brings nothing new.
+    match h.send(1, Command::Pages { first: 0, count: 1 }) {
+        Response::Pages { atlas, pages, .. } => {
+            assert!(!view.apply(&atlas));
+            assert_eq!((atlas.first, atlas.entries.len()), (known, 0));
+            view.covers(&pages);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Only the glyphs of a new letter are added by an edit.
+    let state = h.insert("Q");
+    assert!(!view.apply(&state.atlas));
+    assert_eq!(state.atlas.first, known);
+    assert!(!state.atlas.entries.is_empty() && state.atlas.entries.len() <= 3);
+    view.covers(&state.pages);
+    let known = view.len;
+    let state = h.insert("Q");
+    assert!(!view.apply(&state.atlas));
+    assert_eq!(
+        state.atlas.entries.len(),
+        0,
+        "a known glyph is not sent again"
+    );
+    assert_eq!(view.len, known);
+    view.covers(&state.pages);
+}
+
+#[test]
+fn the_atlas_epoch_changes_at_open_and_at_resync() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let first = h.txt(&"mot ".repeat(2000));
+    assert!(view.apply(&first.atlas));
+    h.finish_layout();
+    // Open again: a new epoch and numbering from 0.
+    let second = h.txt("autre texte");
+    assert_ne!(second.atlas.epoch, first.atlas.epoch);
+    assert_eq!(second.atlas.first, 0);
+    assert!(view.apply(&second.atlas));
+    view.covers(&second.pages);
+    // A lost reply: the next State starts a new atlas, with every entry the
+    // pages it sends use, and the pages painted before are painted again.
+    h.editor.mark_resync();
+    let state = h.state(Command::Layout { budget: 1 });
+    assert_ne!(state.atlas.epoch, second.atlas.epoch);
+    assert_eq!(state.atlas.first, 0);
+    assert!(view.apply(&state.atlas));
+    assert_eq!(state.invalidated.len(), usize::from(state.page_count > 0));
+    match h.send(1, Command::Pages { first: 0, count: 1 }) {
+        Response::Pages { atlas, pages, .. } => {
+            assert_eq!(atlas.epoch, state.atlas.epoch);
+            assert!(!view.apply(&atlas));
+            view.covers(&pages);
+        }
+        other => panic!("{other:?}"),
+    }
+    // Closed and opened again: never the epoch of the closed document.
+    let last = view.epoch;
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    let third = h.txt("encore");
+    assert_ne!(Some(third.atlas.epoch), last);
+}
+
+#[test]
+fn a_lost_pages_reply_is_recovered_by_the_epoch() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt(&"Zéro ".repeat(300));
+    view.apply(&opened.atlas);
+    // The reply to this edit never reaches the client: the host calls
+    // mark_resync, the client's atlas (already complete for the old pages)
+    // is dropped with the new epoch.
+    h.insert("W");
+    h.editor.mark_resync();
+    let state = h.state(Command::Layout { budget: 1 });
+    assert!(view.apply(&state.atlas), "the epoch changed");
+    assert_eq!(view.len, state.atlas.entries.len() as u32);
+    for index in 0..state.page_count.min(2) {
+        if let Response::Pages { atlas, pages, .. } = h.send(
+            1,
+            Command::Pages {
+                first: index,
+                count: 1,
+            },
+        ) {
+            assert!(!view.apply(&atlas));
+            view.covers(&pages);
+        }
+    }
+}
+
+#[test]
+fn resync_recovers_replies_the_client_abandoned() {
+    let mut h = Harness::new();
+    let mut view = AtlasView::default();
+    let opened = h.txt(&format!("{}b", "a\n".repeat(400)));
+    view.apply(&opened.atlas);
+    let last = h.finish_layout().page_count - 1;
+    assert!(last >= 1);
+    // A Pages reply the engine produced and the client dropped (cancelled
+    // request, stopPump): its entries are never applied to the view.
+    match h.send(
+        1,
+        Command::Pages {
+            first: last,
+            count: 1,
+        },
+    ) {
+        Response::Pages { .. } => {}
+        other => panic!("{other:?}"),
+    }
+    // The next reply no longer follows what the client holds.
+    let gap = h.state(Command::Layout { budget: 1 });
+    assert_ne!(gap.atlas.first, view.len, "the gap exists");
+    // Resync: new epoch, atlas from 0, everything invalidated, text window.
+    let resynced = h.state(Command::Resync);
+    assert_ne!(Some(resynced.atlas.epoch), view.epoch);
+    assert_eq!(resynced.atlas.first, 0);
+    assert_eq!(resynced.invalidated, vec![(0, resynced.page_count)]);
+    assert!(resynced.window.is_some());
+    assert!(view.apply(&resynced.atlas));
+    view.covers(&resynced.pages);
+    // Pages and later States follow the new epoch.
+    for index in 0..resynced.page_count.min(3) {
+        match h.send(
+            1,
+            Command::Pages {
+                first: index,
+                count: 1,
+            },
+        ) {
+            Response::Pages { atlas, pages, .. } => {
+                assert_eq!(atlas.epoch, resynced.atlas.epoch);
+                assert!(!view.apply(&atlas));
+                view.covers(&pages);
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    let after = h.state(Command::Layout { budget: 1 });
+    assert!(!view.apply(&after.atlas));
+    view.covers(&after.pages);
+    // A Resync whose reply is lost is replayed: idempotent.
+    let _lost = h.state(Command::Resync);
+    let replay = h.state(Command::Resync);
+    assert_ne!(replay.atlas.epoch, resynced.atlas.epoch);
+    assert_eq!(replay.atlas.first, 0);
+    assert_eq!(replay.invalidated, vec![(0, replay.page_count)]);
+    assert!(view.apply(&replay.atlas));
+    view.covers(&replay.pages);
+    assert_eq!(replay.doc_len, resynced.doc_len);
+    assert_eq!(replay.revision, resynced.revision);
+}
+
+#[test]
+fn resync_needs_a_document() {
+    let mut h = Harness::new();
+    assert_eq!(h.error(Command::Resync), ErrorCode::UnknownDocument);
+    h.txt("abc");
+    assert!(matches!(
+        h.send(2, Command::Resync),
+        Response::Error(ErrorCode::UnknownDocument)
+    ));
+    assert!(matches!(h.send(1, Command::Close), Response::Closed));
+    assert_eq!(h.error(Command::Resync), ErrorCode::UnknownDocument);
+}

@@ -780,6 +780,8 @@ Réf : §6.3, §6.4 · Taille : M · Dépend de : US-200, US-203
 
 Validation US-216 (2026-10-18) : tranche R2 développée sur la branche `us-216-incremental-layout` (lot 1 : cellules de tableau en pleine largeur, ni en-têtes ni pieds ; sauts de ligne, de page et symboles pris en charge par l'éditeur et l'aperçu ; [contrat, mesures et limites](docs/us-216-incremental-layout.md)). Banc release sur 304 pages : frappe au milieu 2,42 ms en moyenne, 2,87 ms au 95e centile, 4,39 ms au maximum ; relecture indépendante faite (corrections appliquées), vérification après fusion de R1 à refaire.
 
+Avancement US-216 / R2b (2026-10-18, branche `r2b-glyph-atlas`) : pages de l'éditeur riche peintes par atlas de glyphes par document (`DrawGlyphRun` police 0, atlas transmis une fois dans les réponses State et Pages, `Path2D` mis en cache côté client ; [format](docs/us-203-rich-editor-protocol.md)). Page dense de 100 colonnes sur le vrai WASM : 1 561 → 36 octets par glyphe en régime établi, première réponse 120 648 octets (< 1 Mio) ; rendu identique à l'ancien dessin au pixel près dans Edge (24 comparaisons, tolérance zéro). La case de latence reste décochée : elle se mesure de bout en bout dans US-219.
+
 Réf : §6.5, §6.16 · Taille : M · Dépend de : US-203, US-214
 
 #### US-217 — Édition riche dans le moteur

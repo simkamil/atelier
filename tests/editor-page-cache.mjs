@@ -3,14 +3,19 @@
 // decoded with the R0 codec, so the cache only ever sees what the product decoder produces.
 import assert from "node:assert/strict";
 import { RichProtocolError, decodeRichReply, encodeRichReply } from "../web/rich-editor-protocol.mjs";
-import { EditorPageCache, RichClientError } from "../web/editor-page-cache.mjs";
+import { EditorPageCache, MAX_ATLAS_CLIENT_BYTES, RichClientError } from "../web/editor-page-cache.mjs";
+
+// Path2D double: the cache builds each glyph path once.
+let paths = 0;
+globalThis.Path2D ??= class { constructor() { paths += 1; this.ops = []; } moveTo(x, y) { this.ops.push(["m", x, y]); } lineTo(x, y) { this.ops.push(["l", x, y]); } quadraticCurveTo() {} bezierCurveTo() {} closePath() { this.ops.push(["z"]); } };
 
 const atdl = (tag, size = 44) => { const b = new Uint8Array(size); b.set([0x41, 0x54, 0x44, 0x4c]); b[4] = tag & 0xff; b[5] = tag >> 8; return b; };
 const tagOf = (bytes) => bytes[4] | (bytes[5] << 8);
 const state = (o = {}) => ({
   type: "state", revision: 0n, anchor: 0n, focus: 0n, focusUpstream: false, docLen: 1000n, modified: false, canUndo: false,
-  canRedo: false, layoutComplete: true, pageCount: 0, caret: null, invalidated: [], pages: [], window: null, ...o,
+  canRedo: false, layoutComplete: true, pageCount: 0, caret: null, invalidated: [], atlas: { epoch: 1, first: 0, entries: [] }, pages: [], window: null, ...o,
 });
+const NOATLAS = { epoch: 1, first: 0, entries: [] };
 const pagesOf = (...indices) => indices.map((index) => ({ index, display: atdl(index + 1000) }));
 const frameOf = (response, requestId = 1) => encodeRichReply({ docId: 1, requestId, response });
 const decoded = (response) => decodeRichReply(frameOf(response)).response;
@@ -58,29 +63,29 @@ test("Pages replies out of order fill the cache; a stale revision is ignored", (
   cache.apply(decoded(state({ revision: 7n, pageCount: 12 })));
   assert.deepEqual(cache.missing(0, 12), [{ first: 0, count: 12 }]);
   for (const index of [9, 2, 5]) {
-    const change = cache.apply(decoded({ type: "pages", revision: 7n, pageCount: 12, pages: pagesOf(index) }));
+    const change = cache.apply(decoded({ type: "pages", revision: 7n, pageCount: 12, atlas: NOATLAS, pages: pagesOf(index) }));
     assert.equal(change.ignored, false);
   }
   assert.deepEqual(known(cache), [2, 5, 9]);
   assert.deepEqual(cache.missing(0, 12), [{ first: 0, count: 2 }, { first: 3, count: 2 }, { first: 6, count: 3 }, { first: 10, count: 2 }]);
   const before = cache.version;
-  const stale = cache.apply(decoded({ type: "pages", revision: 6n, pageCount: 12, pages: pagesOf(0, 1) }));
+  const stale = cache.apply(decoded({ type: "pages", revision: 6n, pageCount: 12, atlas: NOATLAS, pages: pagesOf(0, 1) }));
   assert.equal(stale.ignored, true);
   assert.deepEqual(known(cache), [2, 5, 9]);
   assert.equal(cache.version, before, "an ignored reply is not a change");
-  assert.equal(cache.apply(decoded({ type: "pages", revision: 8n, pageCount: 12, pages: pagesOf(0) })).ignored, true);
+  assert.equal(cache.apply(decoded({ type: "pages", revision: 8n, pageCount: 12, atlas: NOATLAS, pages: pagesOf(0) })).ignored, true);
 });
 
 test("a Pages reply before any State is ignored", () => {
   const cache = new EditorPageCache();
-  assert.equal(cache.apply(decoded({ type: "pages", revision: 0n, pageCount: 3, pages: pagesOf(0) })).ignored, true);
+  assert.equal(cache.apply(decoded({ type: "pages", revision: 0n, pageCount: 3, atlas: NOATLAS, pages: pagesOf(0) })).ignored, true);
   assert.equal(cache.size, 0);
 });
 
 test("page_count decrease drops pages at or beyond it, increase keeps the others", () => {
   const cache = new EditorPageCache();
   cache.apply(decoded(state({ revision: 1n, pageCount: 20, pages: pagesOf(...Array.from({ length: 16 }, (_, i) => i)) })));
-  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 20, pages: pagesOf(16, 17, 18, 19) }));
+  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 20, atlas: NOATLAS, pages: pagesOf(16, 17, 18, 19) }));
   assert.equal(cache.size, 20);
   const change = cache.apply(decoded(state({ revision: 2n, pageCount: 5, invalidated: [[1, 2]], pages: pagesOf(1) })));
   assert.equal(change.dropped, 1 + 15, "one invalidated, fifteen beyond the count (page 1 reloaded after)");
@@ -96,8 +101,8 @@ test("page_count decrease drops pages at or beyond it, increase keeps the others
 test("16 pages and several invalidations: invalidate first, then store, then count", () => {
   const cache = new EditorPageCache();
   cache.apply(decoded(state({ revision: 1n, pageCount: 40, pages: pagesOf(...Array.from({ length: 16 }, (_, i) => i)) })));
-  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 40, pages: pagesOf(...Array.from({ length: 16 }, (_, i) => 16 + i)) }));
-  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 40, pages: pagesOf(32, 33, 34, 35, 36, 37, 38, 39) }));
+  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 40, atlas: NOATLAS, pages: pagesOf(...Array.from({ length: 16 }, (_, i) => 16 + i)) }));
+  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 40, atlas: NOATLAS, pages: pagesOf(32, 33, 34, 35, 36, 37, 38, 39) }));
   assert.equal(cache.size, 40);
   // Edit: pages 4..9 and 20..23 and 30 changed; only 4 and 20 and 21 arrive with the reply.
   const change = cache.apply(decoded(state({
@@ -187,7 +192,7 @@ test("onChange fires for applied replies only, and a throwing listener is isolat
   const seen = [];
   const cache = new EditorPageCache({ onChange: (change) => { seen.push(change.updated.length); throw new Error("listener"); } });
   cache.apply(decoded(state({ revision: 1n, pageCount: 2, pages: pagesOf(0, 1) })));
-  cache.apply(decoded({ type: "pages", revision: 0n, pageCount: 2, pages: pagesOf(0) }));
+  cache.apply(decoded({ type: "pages", revision: 0n, pageCount: 2, atlas: NOATLAS, pages: pagesOf(0) }));
   assert.deepEqual(seen, [2]);
   assert.throws(() => new EditorPageCache({ onChange: 1 }), TypeError);
 });
@@ -198,7 +203,7 @@ test("load: 300 pages, 400 updates, no leaked page or retained frame", () => {
   const first = [];
   for (let i = 0; i < total; i += 16) first.push(pagesOf(...Array.from({ length: Math.min(16, total - i) }, (_, k) => i + k)));
   cache.apply(decoded(state({ revision: 1n, pageCount: total, pages: first[0] })));
-  for (const batch of first.slice(1)) cache.apply(decoded({ type: "pages", revision: 1n, pageCount: total, pages: batch }));
+  for (const batch of first.slice(1)) cache.apply(decoded({ type: "pages", revision: 1n, pageCount: total, atlas: NOATLAS, pages: batch }));
   assert.equal(cache.size, total);
   let pageCount = total;
   const frames = [];
@@ -233,7 +238,7 @@ test("eviction keeps the visible window plus margin and drops the farthest pages
   cache.setVisible(10, 14);
   cache.apply(decoded(state({ revision: 1n, pageCount: 100, pages: pagesOf(...Array.from({ length: 16 }, (_, i) => i)) })));
   assert.equal(cache.size, 16);
-  const change = cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 100, pages: pagesOf(40, 41, 42, 43, 44, 45, 46, 47) }));
+  const change = cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 100, atlas: NOATLAS, pages: pagesOf(40, 41, 42, 43, 44, 45, 46, 47) }));
   assert.equal(cache.size, 20);
   assert.equal(change.dropped, 4);
   for (let i = 8; i < 16; i += 1) assert.equal(cache.has(i), true, "window " + i);
@@ -242,7 +247,7 @@ test("eviction keeps the visible window plus margin and drops the farthest pages
   assert.equal(cache.missing(10, 14).length, 0);
   assert.equal(cache.missing(44, 45).length, 1, "evicted pages are asked again");
   cache.setVisible(0, 40); // window larger than the bound: it is never evicted
-  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 100, pages: pagesOf(60) }));
+  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 100, atlas: NOATLAS, pages: pagesOf(60) }));
   assert.equal(cache.has(8), true);
   assert.throws(() => new EditorPageCache({ maxCachedPages: 0 }), TypeError);
 });
@@ -261,6 +266,196 @@ test("a State with a lower revision is ignored except after reset or dropPages; 
   assert.equal(cache.apply(decoded(state({ revision: 0n }))).ignored, false);
   const bad = { ...decoded(state({ revision: 3n })), focus: 2000n };
   assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
+});
+
+// One glyph atlas entry: ATDL, a black nonzero FillPath of a triangle of size `size`.
+function entry(size) {
+  const out = new Uint8Array(44 + 22 + 3 * 17 + 1);
+  const view = new DataView(out.buffer);
+  out.set([0x41, 0x54, 0x44, 0x4c, 1, 0, 0, 0]);
+  view.setFloat64(24, 595.276, true); view.setFloat64(32, 841.89, true);
+  view.setUint32(40, 1, true);
+  let at = 44;
+  out[at++] = 1; out[at++] = 0;
+  for (const v of [0, 0, 0, 1]) { view.setFloat32(at, v, true); at += 4; }
+  view.setUint32(at, 4, true); at += 4;
+  for (const [op, x, y] of [[0, 0, 0], [1, size, 0], [1, size, -size]]) {
+    out[at++] = op; view.setFloat64(at, x, true); view.setFloat64(at + 8, y, true); at += 16;
+  }
+  out[at++] = 4;
+  return out;
+}
+const withAtlas = (epoch, first, sizes) => ({ epoch, first, entries: sizes.map(entry) });
+
+test("atlas: entries stored in order, kept across pages and dropPages, one Path2D per glyph", () => {
+  const cache = new EditorPageCache();
+  cache.apply(decoded(state({ revision: 1n, pageCount: 2, atlas: withAtlas(5, 0, [1, 2, 3]), pages: pagesOf(0) })));
+  assert.equal(cache.atlasEpoch, 5);
+  assert.equal(cache.atlasSize, 3);
+  cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 2, atlas: withAtlas(5, 3, [4]), pages: pagesOf(1) }));
+  assert.equal(cache.atlasSize, 4);
+  cache.dropPages();
+  assert.equal(cache.atlasSize, 4, "dropPages keeps the atlas");
+  assert.equal(cache.size, 0);
+  const before = paths;
+  const a = cache.glyphResolver(0n, 2);
+  assert.ok(a.path instanceof Path2D);
+  assert.equal(cache.glyphResolver(0n, 2), a, "the same entry again");
+  assert.equal(cache.glyphResolver(0, 2), a, "fontId 0 as a number too");
+  assert.equal(paths, before + 1, "Path2D built once");
+  assert.equal(cache.glyphResolver(1n, 0), null, "only font 0 is the atlas");
+  assert.equal(cache.glyphResolver(0n, 4), null, "unknown index");
+  assert.equal(cache.glyphResolver(0n, -1), null);
+  cache.apply(decoded(state({ revision: 2n, pageCount: 2, atlas: withAtlas(5, 4, []) })));
+  assert.equal(cache.atlasSize, 4, "a reply with nothing new keeps everything");
+});
+
+test("atlas: a new epoch empties the atlas and the pages before storing the reply", () => {
+  const changes = [];
+  const cache = new EditorPageCache({ onChange: (c) => changes.push(c) });
+  cache.apply(decoded(state({ revision: 1n, pageCount: 3, atlas: withAtlas(1, 0, [1, 2]), pages: pagesOf(0, 1, 2) })));
+  const old = cache.glyphResolver(0n, 1);
+  const change = cache.apply(decoded(state({ revision: 2n, pageCount: 3, atlas: withAtlas(2, 0, [7]), pages: pagesOf(1) })));
+  assert.equal(change.atlasReset, true);
+  assert.equal(change.dropped, 3);
+  assert.deepEqual(known(cache), [1], "only the page of the reply survives");
+  assert.equal(cache.atlasSize, 1);
+  assert.equal(cache.atlasEpoch, 2);
+  assert.notEqual(cache.glyphResolver(0n, 0), old);
+  assert.equal(cache.glyphResolver(0n, 1), null);
+  // Pages replies change the epoch too.
+  const pageChange = cache.apply(decoded({ type: "pages", revision: 2n, pageCount: 3, atlas: withAtlas(3, 0, [1]), pages: pagesOf(2) }));
+  assert.equal(pageChange.atlasReset, true);
+  assert.deepEqual(known(cache), [2]);
+  assert.equal(changes.length, 3);
+  // The epoch of a reply that is otherwise ignored (stale revision) still applies.
+  const stale = cache.apply(decoded({ type: "pages", revision: 1n, pageCount: 3, atlas: withAtlas(4, 0, [9, 9]), pages: pagesOf(0) }));
+  assert.equal(stale.ignored, true);
+  assert.equal(stale.atlasReset, true);
+  assert.equal(cache.atlasSize, 2);
+  assert.equal(changes.length, 4, "listeners hear of the reset");
+  cache.reset();
+  assert.equal(cache.atlasSize, 0);
+  assert.equal(cache.atlasEpoch, null);
+  assert.equal(cache.glyphResolver(0n, 0), null);
+});
+
+test("atlas: a first index that does not follow is CLIENT_BAD_REPLY and changes nothing", () => {
+  const cache = new EditorPageCache();
+  cache.apply(decoded(state({ revision: 1n, pageCount: 1, atlas: withAtlas(1, 0, [1, 2]), pages: pagesOf(0) })));
+  for (const first of [0, 1, 3, 4000]) {
+    assert.throws(
+      () => cache.apply(decoded(state({ revision: 2n, pageCount: 1, atlas: withAtlas(1, first, [3]), pages: pagesOf(0) }))),
+      (e) => e instanceof RichClientError && e.code === "CLIENT_BAD_REPLY" && e.cause?.atlas === true,
+    );
+    assert.equal(cache.atlasSize, 2);
+    assert.equal(cache.revision, 1n);
+  }
+  // A new epoch must start at 0.
+  assert.throws(() => cache.apply(decoded(state({ revision: 2n, pageCount: 1, atlas: withAtlas(2, 2, [3]) }))), (e) => e.code === "CLIENT_BAD_REPLY");
+  assert.equal(cache.atlasEpoch, 1);
+  assert.equal(cache.atlasSize, 2);
+  assert.equal(cache.size, 1);
+});
+
+test("atlas: bounded, and entries must be one black nonzero contour", () => {
+  const cache = new EditorPageCache();
+  const one = entry(1);
+  const big = { epoch: 1, first: 0, entries: Array.from({ length: 4096 }, () => one) };
+  cache.apply(decoded(state({ revision: 1n, atlas: big })));
+  assert.equal(cache.atlasSize, 4096);
+  assert.throws(() => cache.apply({ ...decoded(state({ revision: 2n })), atlas: { epoch: 1, first: 4096, entries: [one] } }), (e) => e.code === "CLIENT_BAD_REPLY");
+  const fresh = new EditorPageCache();
+  const white = entry(1); new DataView(white.buffer).setFloat32(46, 1, true);
+  const evenOdd = entry(1); evenOdd[45] = 1;
+  const rect = entry(1); rect[44] = 5; // not a fillPath
+  for (const bad of [white, evenOdd, rect, atdl(1), entry(1).subarray(0, 60)]) {
+    assert.throws(() => fresh.apply({ ...decoded(state({ revision: 1n })), atlas: { epoch: 1, first: 0, entries: [bad] } }), (e) => e.code === "CLIENT_BAD_REPLY");
+    assert.equal(fresh.atlasSize, 0);
+  }
+  assert.throws(() => fresh.apply({ ...decoded(state({ revision: 1n })), atlas: undefined }), (e) => e.code === "CLIENT_BAD_REPLY");
+});
+
+test("atlas: a reply invalid after a valid atlas section changes nothing (atomic application)", () => {
+  const cache = new EditorPageCache();
+  cache.apply(decoded(state({ revision: 1n, pageCount: 2, atlas: withAtlas(1, 0, [1, 2]), pages: pagesOf(0, 1) })));
+  const snapshot = () => JSON.stringify([cache.atlasEpoch, cache.atlasSize, cache.atlasBytes, known(cache), String(cache.revision), cache.pageCount]);
+  const before = snapshot();
+  const good = decoded(state({ revision: 2n, pageCount: 2, atlas: withAtlas(2, 0, [5]), pages: pagesOf(0) }));
+  // Same epoch change (which empties atlas and pages) followed by an invalid State, then an invalid Pages reply.
+  const badState = [
+    { ...good, anchor: 5000n },
+    { ...good, pageCount: 1, pages: pagesOf(0, 1) },
+    { ...good, invalidated: [[3, 3]] },
+    { ...good, revision: 2 },
+  ];
+  for (const bad of badState) {
+    assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
+    assert.equal(snapshot(), before);
+  }
+  const goodPages = decoded({ type: "pages", revision: 1n, pageCount: 2, atlas: withAtlas(3, 0, [5, 6]), pages: pagesOf(1) });
+  for (const bad of [{ ...goodPages, pageCount: 1 }, { ...goodPages, pages: [{ index: 1, display: new Uint8Array(3) }] }, { ...goodPages, pageCount: -1 }]) {
+    assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
+    assert.equal(snapshot(), before);
+  }
+  assert.equal(cache.glyphResolver(0n, 1) !== null, true, "the old atlas still resolves");
+  // The valid reply then applies as a whole.
+  const change = cache.apply(good);
+  assert.equal(change.atlasReset, true);
+  assert.equal(cache.atlasEpoch, 2);
+});
+
+test("atlas: the bytes of the client atlas are bounded (MAX_ATLAS_CLIENT_BYTES)", () => {
+  const cache = new EditorPageCache();
+  const entryOf = (points) => {
+    const out = new Uint8Array(44 + 22 + (points + 1) * 17 + 1);
+    const view = new DataView(out.buffer);
+    out.set([0x41, 0x54, 0x44, 0x4c, 1, 0, 0, 0]);
+    view.setFloat64(24, 595.276, true); view.setFloat64(32, 841.89, true);
+    view.setUint32(40, 1, true);
+    let at = 44;
+    out[at++] = 1; out[at++] = 0;
+    for (const v of [0, 0, 0, 1]) { view.setFloat32(at, v, true); at += 4; }
+    view.setUint32(at, points + 2, true); at += 4;
+    out[at] = 0; at += 17;
+    for (let i = 0; i < points; i += 1) { out[at] = 1; view.setFloat64(at + 1, i, true); at += 17; }
+    out[at] = 4;
+    return out;
+  };
+  const big = entryOf(3800);
+  assert.equal(big.length < 64 * 1024, true);
+  const fit = Math.floor(MAX_ATLAS_CLIENT_BYTES / big.length);
+  const reply = (entries, first, rev) => ({ ...decoded(state({ revision: rev })), atlas: { epoch: 1, first, entries } });
+  cache.apply(reply(Array.from({ length: fit }, () => big), 0, 1n));
+  assert.equal(cache.atlasSize, fit);
+  assert.equal(cache.atlasBytes, fit * big.length);
+  assert.throws(() => cache.apply(reply(Array.from({ length: 2 }, () => big), fit, 2n)), (e) => e.code === "CLIENT_BAD_REPLY" && e.cause?.atlas !== true);
+  assert.equal(cache.atlasSize, fit);
+  assert.equal(cache.revision, 1n);
+  // A new epoch counts from zero again.
+  cache.apply({ ...decoded(state({ revision: 3n })), atlas: { epoch: 2, first: 0, entries: [big] } });
+  assert.equal(cache.atlasBytes, big.length);
+});
+
+test("state: a malformed caret or text window is refused without touching the cache", () => {
+  const cache = new EditorPageCache();
+  cache.apply(decoded(state({ revision: 1n, pageCount: 2, atlas: withAtlas(1, 0, [1]), pages: pagesOf(0) })));
+  const good = decoded(state({ revision: 2n, pageCount: 2, atlas: withAtlas(1, 1, [2]), pages: pagesOf(1) }));
+  const before = JSON.stringify([cache.atlasSize, known(cache), String(cache.revision)]);
+  const bads = [
+    { ...good, caret: { page: 2, x: 0, y: 0, height: 1 } },
+    { ...good, caret: { page: 0, x: Number.NaN, y: 0, height: 1 } },
+    { ...good, caret: { page: 0, x: 0, y: 0, height: -1 } },
+    { ...good, caret: { page: 1.5, x: 0, y: 0, height: 1 } },
+    { ...good, window: { start: 1, text: "a" } },
+    { ...good, window: { start: 1n, text: 5 } },
+  ];
+  for (const bad of bads) {
+    assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
+    assert.equal(JSON.stringify([cache.atlasSize, known(cache), String(cache.revision)]), before);
+  }
+  cache.apply({ ...good, caret: { page: 1, x: 1, y: 2, height: 3 }, window: { start: 0n, text: "ok" } });
+  assert.equal(cache.revision, 2n);
 });
 
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }

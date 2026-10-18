@@ -6,34 +6,61 @@ import { getEventListeners } from "node:events";
 import { decodeRichRequest, encodeRichReply } from "../web/rich-editor-protocol.mjs";
 import { EditorPageCache, RichClientError, createRichEditorClient } from "../web/rich-editor-client.mjs";
 
+globalThis.Path2D ??= class { moveTo() {} lineTo() {} quadraticCurveTo() {} bezierCurveTo() {} closePath() {} };
 const atdl = (tag) => { const b = new Uint8Array(44); b.set([0x41, 0x54, 0x44, 0x4c]); b[4] = tag & 0xff; b[5] = (tag >> 8) & 0xff; return b; };
 const tagOf = (bytes) => bytes[4] | (bytes[5] << 8);
 const abortError = () => new DOMException("The operation was aborted.", "AbortError");
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 const OPEN = { kind: "blank", profile: "document", data: new Uint8Array(0) };
 
+// One glyph atlas entry: ATDL, a black nonzero FillPath of a triangle of size `size`.
+function atlasEntry(size) {
+  const out = new Uint8Array(44 + 22 + 3 * 17 + 1);
+  const view = new DataView(out.buffer);
+  out.set([0x41, 0x54, 0x44, 0x4c, 1, 0, 0, 0]);
+  view.setFloat64(24, 595.276, true); view.setFloat64(32, 841.89, true);
+  view.setUint32(40, 1, true);
+  let at = 44;
+  out[at++] = 1; out[at++] = 0;
+  for (const v of [0, 0, 0, 1]) { view.setFloat32(at, v, true); at += 4; }
+  view.setUint32(at, 4, true); at += 4;
+  for (const [op, x, y] of [[0, 0, 0], [1, size, 0], [1, size, -size]]) {
+    out[at++] = op; view.setFloat64(at, x, true); view.setFloat64(at + 8, y, true); at += 16;
+  }
+  out[at++] = 4;
+  return out;
+}
+
 /** Engine double: `total` pages, `computed` of them laid out so far, `Layout` computes `budget` more. */
 function makeEngine({ docId = 1, total = 100, firstComputed = 10 } = {}) {
-  const e = { total, computed: firstComputed, rev: 0n, open: false, anchor: 0n, edits: 0 };
+  const e = { total, computed: firstComputed, rev: 0n, open: false, anchor: 0n, edits: 0,
+    atlas: { epoch: 1, sent: 0, fresh: 0 } };
+  // Entries made since the last reply: `atlas.fresh` of them, numbered from `atlas.sent`.
+  const atlasDelta = () => {
+    const a = e.atlas;
+    const delta = { epoch: a.epoch, first: a.sent, entries: Array.from({ length: a.fresh }, (_, i) => atlasEntry(a.sent + i + 1)) };
+    a.sent += a.fresh; a.fresh = 0;
+    return delta;
+  };
   const done = () => e.computed >= e.total;
   // While layout is unfinished the engine already announces a few pages that are not computed yet.
   const count = () => (done() ? e.total : Math.min(e.total, e.computed + 4));
   const pageList = (index) => ({ index, display: atdl(Number(e.rev) * 7 + index) });
   e.state = (extra = {}) => ({
     type: "state", revision: e.rev, anchor: e.anchor, focus: e.anchor, focusUpstream: false, docLen: 100000n, modified: e.rev > 0n,
-    canUndo: e.rev > 0n, canRedo: false, layoutComplete: done(), pageCount: count(), caret: null, invalidated: [], pages: [], window: null, ...extra,
+    canUndo: e.rev > 0n, canRedo: false, layoutComplete: done(), pageCount: count(), caret: null, invalidated: [], atlas: atlasDelta(), pages: [], window: null, ...extra,
   });
   e.handle = (req) => {
     const { command: c } = req;
     if (req.docId !== docId && c.type !== "open") return { type: "error", code: "RICH_UNKNOWN_DOCUMENT" };
     switch (c.type) {
       case "open": e.open = true; e.rev = 0n; return e.state({ pages: Array.from({ length: Math.min(16, e.computed) }, (_, i) => pageList(i)) });
-      case "close": e.open = false; return { type: "closed" };
+      case "close": if (!e.open) return { type: "error", code: "RICH_UNKNOWN_DOCUMENT" }; e.open = false; return { type: "closed" };
       case "layout": e.computed = Math.min(e.total, e.computed + c.budget); return e.state();
       case "pages": {
         if (c.first >= count()) return { type: "error", code: "RICH_PAGE_RANGE" };
         if (c.first + c.count > e.computed) return { type: "error", code: "RICH_NOT_READY" };
-        return { type: "pages", revision: e.rev, pageCount: count(), pages: Array.from({ length: c.count }, (_, i) => pageList(c.first + i)) };
+        return { type: "pages", revision: e.rev, pageCount: count(), atlas: atlasDelta(), pages: Array.from({ length: c.count }, (_, i) => pageList(c.first + i)) };
       }
       case "insertText": {
         e.rev += 1n; e.edits += 1;
@@ -42,6 +69,12 @@ function makeEngine({ docId = 1, total = 100, firstComputed = 10 } = {}) {
         return e.state({ invalidated: [[at, Math.min(at + 3, count())]], pages: [pageList(at)] });
       }
       case "replaceRange": return { type: "error", code: "RICH_POSITION_OUT_OF_RANGE" };
+      case "resync":
+        // Like the engine: a new epoch, the atlas of the pages sent again from 0, everything invalidated.
+        if (!e.open) return { type: "error", code: "RICH_UNKNOWN_DOCUMENT" };
+        e.resyncs = (e.resyncs ?? 0) + 1;
+        e.atlas.epoch += 1; e.atlas.sent = 0; e.atlas.fresh = e.resyncAtlas ?? 2;
+        return e.state({ invalidated: [[0, count()]] });
       case "shrink": return e.state();
       default: return e.state();
     }
@@ -163,7 +196,7 @@ await test("stopPump aborts the Layout in flight; startPump resynchronises and r
   client.startPump();
   await client.whenLayoutComplete();
   await client.idle();
-  assert.equal(transport.log[layoutsBefore], "layout", "resync Layout of one paragraph");
+  assert.equal(transport.log[layoutsBefore], "resync", "the resync follows the stop");
   assert.equal(client.cache.pageCount, engine.total);
   client.dispose();
 });
@@ -198,7 +231,7 @@ await test("a caller signal cancels one command and leaves no listener behind", 
   assert.equal(getEventListeners(controller.signal, "abort").length, 0);
   const next = await client.command({ type: "undo" });
   assert.equal(next.response.type, "state", "the queue keeps working and resynchronises first");
-  assert.equal(transport.log.at(-2), "layout");
+  assert.equal(transport.log.at(-2), "resync");
   const already = new AbortController();
   already.abort();
   await assert.rejects(client.command({ type: "undo" }, { signal: already.signal }), (e) => e.name === "AbortError");
@@ -253,8 +286,8 @@ await test("truncated, corrupted, mismatched and failing replies are rejected wi
     transport.override = (req, bytes, response) => (req.command.type === "insertText" ? override(req, bytes, response) : undefined);
     await rejects(client.command({ type: "insertText", text: "z" }), code);
     assert.equal(client.cache.size, 0, "the engine may have applied it: pages dropped");
-    await client.command({ type: "setSelection", anchor: 0n, focus: 0n, upstream: false }); // resync Layout first
-    assert.equal(transport.log.at(-2), "layout");
+    await client.command({ type: "setSelection", anchor: 0n, focus: 0n, upstream: false }); // resync first
+    assert.equal(transport.log.at(-2), "resync");
     await client.ensurePages(0, 10);
     assert.equal(client.cache.size, 10);
   }
@@ -303,7 +336,7 @@ await test("visible pages are fetched in the background, again after an invalida
   await client.idle();
   assert.deepEqual([0, 1, 2].map((i) => client.cache.has(i)), [true, true, true]);
   assert.equal(transport.log.filter((x) => x === "pages").length, 1, "one Pages request for the three-page run");
-  client.cache.apply({ type: "state", revision: 5n, anchor: 0n, focus: 0n, focusUpstream: false, docLen: 5n, modified: true, canUndo: true, canRedo: false, layoutComplete: true, pageCount: 30, caret: null, invalidated: [[1, 2]], pages: [], window: null });
+  client.cache.apply({ type: "state", revision: 5n, anchor: 0n, focus: 0n, focusUpstream: false, docLen: 5n, modified: true, canUndo: true, canRedo: false, layoutComplete: true, pageCount: 30, caret: null, invalidated: [[1, 2]], atlas: { epoch: 1, first: 0, entries: [] }, pages: [], window: null });
   client.setVisibleRange(0, 3);
   await client.idle();
   assert.equal(client.cache.has(1), false, "stale revision: the client does not fetch for a revision the engine never reached");
@@ -321,6 +354,208 @@ await test("a visible page that is not ready waits for the pump instead of faili
   assert.deepEqual(errors, []);
   assert.equal([30, 31, 32, 33].every((i) => client.cache.has(i)), true);
   assert.equal(transport.log.includes("layout"), true);
+  client.dispose();
+});
+
+await test("the atlas epoch and entries are relayed; an index gap is CLIENT_BAD_REPLY and requests the resync", async () => {
+  const { client, transport, engine } = setup({}, { total: 30, firstComputed: 30 });
+  engine.atlas.fresh = 3;
+  await client.open(OPEN);
+  assert.equal(client.atlasEpoch, 1);
+  assert.equal(client.cache.atlasSize, 3);
+  assert.ok(client.glyphResolver(0n, 2));
+  engine.atlas.fresh = 2;
+  await client.command({ type: "insertText", text: "a" });
+  assert.equal(client.cache.atlasSize, 5);
+  // A reply to a request that was cancelled after the engine answered: entries 5..6 are lost.
+  engine.atlas.sent += 2;
+  engine.atlas.fresh = 1;
+  transport.log.length = 0;
+  await rejects(client.command({ type: "insertText", text: "b" }), "CLIENT_BAD_REPLY");
+  assert.equal(client.cache.size, 0, "pages were dropped");
+  // The resync runs by itself (idle step): a new epoch, the atlas starts again at 0.
+  await client.idle();
+  assert.equal(transport.log.includes("resync"), true, "Resync, not Layout");
+  assert.equal(engine.resyncs, 1);
+  assert.equal(client.atlasEpoch, 2);
+  assert.equal(client.cache.atlasSize, 2);
+  client.dispose();
+});
+
+/** Opens a client on a finished 30-page document with 3 atlas entries, as in the tests above. */
+async function opened(options = {}, engineOptions = {}) {
+  const ctx = setup(options, { total: 30, firstComputed: 30, ...engineOptions });
+  ctx.engine.atlas.fresh = 3;
+  await ctx.client.open(OPEN);
+  await ctx.client.idle();
+  return ctx;
+}
+const consistent = (ctx) => {
+  const { client, engine } = ctx;
+  assert.equal(client.atlasEpoch, engine.atlas.epoch, "same epoch");
+  assert.equal(client.cache.atlasSize, engine.atlas.sent, "the client holds every entry the engine counted");
+};
+
+await test("Resync after an abandoned State reply: the atlas and the pages converge", async () => {
+  const ctx = await opened();
+  const { client, transport, engine } = ctx;
+  engine.atlas.fresh = 2;
+  transport.override = (req) => (req.command.type === "insertText" ? new Error("transport down") : null);
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_TRANSPORT");
+  transport.override = null;
+  await client.idle(); // the idle step sends the resync
+  assert.equal(transport.log.filter((t) => t === "resync").length, 1);
+  consistent(ctx);
+  assert.equal(client.cache.size, 0, "everything was invalidated");
+  await client.ensurePages(0, 4);
+  consistent(ctx);
+  assert.equal(client.cache.missing(0, 4).length, 0);
+  assert.equal(ctx.errors.length, 0);
+  client.dispose();
+});
+
+await test("Resync after an abandoned Pages reply (cancelled request): no CLIENT_BAD_REPLY loop", async () => {
+  const ctx = await opened();
+  const { client, transport, engine } = ctx;
+  engine.atlas.fresh = 2; // entries of the pages that are about to be lost
+  const controller = new AbortController();
+  transport.gate = { when: (c) => c.type === "pages" };
+  const pending = client.ensurePages(20, 23, { signal: controller.signal });
+  while (!transport.gate.hit) await turn();
+  controller.abort(); // the engine already answered
+  await assert.rejects(pending, (e) => e.name === "AbortError");
+  transport.gate = null;
+  await client.idle();
+  assert.equal(transport.log.includes("resync"), true, "the abandoned Pages reply requests a resync");
+  await client.ensurePages(20, 23);
+  consistent(ctx);
+  assert.equal(client.cache.missing(20, 23).length, 0);
+  assert.equal(ctx.errors.length, 0);
+  // A later reply still follows.
+  engine.atlas.fresh = 1;
+  await client.command({ type: "insertText", text: "z" });
+  consistent(ctx);
+  client.dispose();
+});
+
+await test("a lost Resync reply is replayed until it succeeds", async () => {
+  const ctx = await opened();
+  const { client, transport, engine } = ctx;
+  engine.atlas.fresh = 1;
+  // The reply to the edit and the replies to the Resync are lost (the engine ran them all).
+  transport.override = (req) => (["insertText", "resync"].includes(req.command.type) ? new Error("transport down") : null);
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_TRANSPORT");
+  await client.idle();
+  assert.equal(engine.resyncs, 1, "the idle step tried, and the resync stays requested");
+  await rejects(client.command({ type: "undo" }), "CLIENT_TRANSPORT");
+  assert.ok(engine.resyncs >= 2, "needsResync stays set while the exchange fails");
+  transport.override = null;
+  const state = await client.command({ type: "undo" });
+  assert.equal(state.response.type, "state");
+  assert.ok(engine.resyncs >= 3);
+  consistent(ctx);
+  await client.ensurePages(0, 3);
+  consistent(ctx);
+  client.dispose();
+});
+
+await test("Resync without a document is refused and the next Open recovers", async () => {
+  const ctx = await opened();
+  const { client, transport, engine } = ctx;
+  engine.atlas.fresh = 1;
+  transport.override = (req) => {
+    if (req.command.type !== "insertText") return null;
+    engine.open = false; // the engine lost the document after answering
+    return new Error("transport down");
+  };
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_TRANSPORT");
+  transport.override = null;
+  await client.idle();
+  assert.equal(ctx.errors.at(-1)?.code, "RICH_UNKNOWN_DOCUMENT", "the refused Resync is reported");
+  await rejects(client.command({ type: "undo" }), "RICH_UNKNOWN_DOCUMENT");
+  assert.equal(engine.resyncs ?? 0, 0);
+  engine.atlas.epoch = 7; engine.atlas.sent = 0; engine.atlas.fresh = 2;
+  await client.open(OPEN);
+  consistent(ctx);
+  client.dispose();
+});
+
+await test("RICH_FRAME_TOO_LARGE is not a refusal: the engine applied the command and lost the reply, so a Resync follows", async () => {
+  const ctx = await opened();
+  const { client, transport, engine, errors } = ctx;
+  engine.atlas.fresh = 2;
+  transport.override = (req) => (req.command.type === "insertText"
+    ? encodeRichReply({ docId: 1, requestId: req.requestId, response: { type: "error", code: "RICH_FRAME_TOO_LARGE" } }) : null);
+  await rejects(client.command({ type: "insertText", text: "a" }), "RICH_FRAME_TOO_LARGE");
+  transport.override = null;
+  await client.idle();
+  assert.equal(engine.resyncs, 1);
+  assert.equal(engine.edits, 1, "the engine applied the edit");
+  consistent(ctx);
+  assert.equal(errors.length, 0);
+  client.dispose();
+});
+
+await test("Close needs no resync before it, and a Close on a document the engine already closed leaves nothing stuck", async () => {
+  const ctx = await opened();
+  const { client, transport, engine } = ctx;
+  transport.override = (req) => (["insertText", "resync"].includes(req.command.type) ? new Error("transport down") : null);
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_TRANSPORT");
+  await client.idle();
+  const resyncs = engine.resyncs;
+  assert.ok(resyncs >= 1);
+  transport.override = null;
+  transport.log.length = 0;
+  await client.closeDocument();
+  assert.deepEqual(transport.log, ["close"], "no Resync before Close");
+  // The engine lost the document (closed behind the client's back) while a resync is pending.
+  engine.atlas.epoch += 1; engine.atlas.sent = 0; engine.atlas.fresh = 1;
+  await client.open(OPEN);
+  await client.idle();
+  transport.override = (req) => {
+    if (req.command.type !== "insertText") return null;
+    engine.open = false;
+    return new Error("transport down");
+  };
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_TRANSPORT");
+  await client.idle(); // the Resync is refused: needsResync stays set
+  transport.override = null;
+  await rejects(client.closeDocument(), "RICH_UNKNOWN_DOCUMENT");
+  assert.equal(client.opened, false);
+  const before = engine.resyncs ?? 0;
+  engine.atlas.epoch += 1; engine.atlas.sent = 0; engine.atlas.fresh = 1;
+  await client.open(OPEN);
+  await client.command({ type: "undo" });
+  await client.idle();
+  assert.equal(engine.resyncs ?? 0, before, "no stale resync after the reopen");
+  client.dispose();
+});
+
+await test("two resyncs in a row caused by the client atlas byte bound stop the pump with a typed fatal error", async () => {
+  const engine = makeEngine({ total: 30, firstComputed: 30 });
+  const transport = makeTransport(engine);
+  const cache = new EditorPageCache();
+  const errors = [];
+  const client = createRichEditorClient({ transport, docId: 1, cache, yieldTurn: turn, onError: (e) => errors.push(e) });
+  await client.open(OPEN);
+  await client.idle();
+  const real = cache.apply.bind(cache);
+  // Every reply that is not the answer to a Resync overflows the byte bound.
+  cache.apply = (r) => {
+    if (r.type !== "state" || !r.invalidated.some(([a, b]) => a === 0 && b === r.pageCount)) throw new RichClientError("CLIENT_BAD_REPLY", "bytes", { atlasBytes: true });
+    return real(r);
+  };
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_BAD_REPLY");
+  await client.idle();
+  assert.equal(engine.resyncs, 1, "the first overflow is recovered by a resync");
+  await rejects(client.command({ type: "insertText", text: "b" }), "CLIENT_ATLAS_FULL");
+  await client.idle();
+  assert.equal(engine.resyncs, 1, "no third resync: the loop is cut");
+  const fatal = errors.find((e) => e.code === "CLIENT_ATLAS_FULL");
+  assert.ok(fatal instanceof RichClientError);
+  const calls = transport.calls;
+  await turn(); await turn();
+  assert.equal(transport.calls, calls, "the pump does not spin");
   client.dispose();
 });
 
@@ -392,7 +627,7 @@ await test("a failing cache.apply on a State reply also drops pages and resynchr
   await rejects(client.command({ type: "insertText", text: "q" }), "CLIENT_BAD_REPLY");
   assert.equal(cache.size, 0);
   await client.command({ type: "undo" });
-  assert.equal(transport.log.at(-2), "layout");
+  assert.equal(transport.log.at(-2), "resync");
   client.dispose();
 });
 

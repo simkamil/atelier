@@ -29,6 +29,12 @@ pub const MAX_PAGE_DISPLAY_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_RESPONSE_PAGE_BYTES: usize = 8 * 1024 * 1024;
 /// Smallest valid display list (an empty `ATDL` page).
 pub const MIN_PAGE_DISPLAY_BYTES: usize = 44;
+/// Largest number of glyph atlas entries of a document session (indices are below it).
+pub const MAX_ATLAS_ENTRIES: u32 = 4096;
+/// Largest display list of one atlas entry.
+pub const MAX_ATLAS_ENTRY_BYTES: usize = 64 * 1024;
+/// Largest sum of the entries of one response (the whole atlas fits).
+pub const MAX_ATLAS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 /// Largest number of invalidation ranges in one state.
 pub const MAX_INVALIDATIONS: usize = 1024;
 /// Largest page count and exclusive bound of page indices.
@@ -66,6 +72,7 @@ pub mod opcode {
     pub const MARK_SAVED: u16 = 0x010D;
     pub const LAYOUT: u16 = 0x010E;
     pub const ACCESSIBLE_WINDOW: u16 = 0x010F;
+    pub const RESYNC: u16 = 0x0118;
     pub const R_ERROR: u16 = 0x8000;
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
@@ -299,6 +306,9 @@ pub enum Command {
         start: u64,
         end: u64,
     },
+    /// Restarts the atlas epoch and invalidates every page after a reply the
+    /// client abandoned; empty body, answered by `State`, idempotent.
+    Resync,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -329,6 +339,18 @@ pub struct TextWindowData {
     pub text: String,
 }
 
+/// Glyph atlas section of a `State` or `Pages` reply: the entries
+/// `first .. first + entries.len()` of the atlas of `epoch`, new since the
+/// previous reply. Each entry is the `ATDL` display list of one contour (a
+/// black `FillPath` at the origin) that `DrawGlyphRun` commands of font 0
+/// reference by index.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct AtlasDelta {
+    pub epoch: u32,
+    pub first: u32,
+    pub entries: Vec<Vec<u8>>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct State {
     pub revision: u64,
@@ -346,6 +368,8 @@ pub struct State {
     /// Half-open page ranges `[first, end)`, sorted, disjoint, to drop from
     /// the client cache.
     pub invalidated: Vec<(u32, u32)>,
+    /// New glyph atlas entries, sent before the pages that use them.
+    pub atlas: AtlasDelta,
     /// Re-rendered pages, strictly increasing indices.
     pub pages: Vec<PageDisplay>,
     pub window: Option<TextWindowData>,
@@ -401,6 +425,7 @@ pub enum Response {
     Pages {
         revision: u64,
         page_count: u32,
+        atlas: AtlasDelta,
         pages: Vec<PageDisplay>,
     },
     HitResult {
@@ -724,6 +749,7 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
             }
             Command::AccessibleWindow { start, end }
         }
+        opcode::RESYNC => Command::Resync,
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -816,6 +842,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
             put_u32(&mut b, *budget);
             opcode::LAYOUT
         }
+        Command::Resync => opcode::RESYNC,
         Command::HitTest { page, mode, x, y } => {
             put_u32(&mut b, *page);
             b.extend_from_slice(&[*mode as u8, 0, 0, 0]);
@@ -880,6 +907,59 @@ fn put_pages(out: &mut Vec<u8>, pages: &[PageDisplay]) -> Result<(), Fail> {
         out.extend_from_slice(&page.display);
     }
     Ok(())
+}
+
+fn put_atlas(out: &mut Vec<u8>, atlas: &AtlasDelta) -> Result<(), Fail> {
+    let count = atlas.entries.len();
+    let mut total = 0usize;
+    for entry in &atlas.entries {
+        total = total.saturating_add(entry.len());
+        if !(MIN_PAGE_DISPLAY_BYTES..=MAX_ATLAS_ENTRY_BYTES).contains(&entry.len()) {
+            return Err(Fail::InvalidBody);
+        }
+    }
+    if u64::from(atlas.first) + count as u64 > u64::from(MAX_ATLAS_ENTRIES)
+        || total > MAX_ATLAS_RESPONSE_BYTES
+    {
+        return Err(Fail::InvalidBody);
+    }
+    put_u32(out, atlas.epoch);
+    put_u32(out, atlas.first);
+    put_u32(out, count as u32);
+    for entry in &atlas.entries {
+        put_u32(out, entry.len() as u32);
+        out.extend_from_slice(entry);
+    }
+    Ok(())
+}
+
+fn read_atlas(r: &mut Reader<'_>) -> Result<AtlasDelta, Fail> {
+    let (epoch, first, count) = (r.u32()?, r.u32()?, r.u32()? as usize);
+    if u64::from(first) + count as u64 > u64::from(MAX_ATLAS_ENTRIES) {
+        return Err(Fail::InvalidBody);
+    }
+    let mut entries = Vec::with_capacity(count);
+    let mut total = 0usize;
+    for _ in 0..count {
+        let len = r.u32()? as usize;
+        if !(MIN_PAGE_DISPLAY_BYTES..=MAX_ATLAS_ENTRY_BYTES).contains(&len) {
+            return Err(Fail::InvalidBody);
+        }
+        total += len;
+        if total > MAX_ATLAS_RESPONSE_BYTES {
+            return Err(Fail::FrameTooLarge);
+        }
+        let entry = r.take(len)?.to_vec();
+        if entry[..4] != *b"ATDL" {
+            return Err(Fail::InvalidBody);
+        }
+        entries.push(entry);
+    }
+    Ok(AtlasDelta {
+        epoch,
+        first,
+        entries,
+    })
 }
 
 fn read_pages(r: &mut Reader<'_>, page_count: u32) -> Result<Vec<PageDisplay>, Fail> {
@@ -1054,6 +1134,7 @@ fn encode_state(s: &State, b: &mut Vec<u8>) -> Result<(), Fail> {
         put_u32(b, *first);
         put_u32(b, *end);
     }
+    put_atlas(b, &s.atlas)?;
     put_pages(b, &s.pages)?;
     if let Some(w) = &s.window {
         put_u64(b, w.start);
@@ -1101,6 +1182,7 @@ fn parse_state(r: &mut Reader<'_>) -> Result<State, Fail> {
         }
         invalidated.push((first, end));
     }
+    let atlas = read_atlas(r)?;
     let pages = read_pages(r, page_count)?;
     let window = if flags & 0x10 != 0 {
         let start = r.u64()?;
@@ -1128,6 +1210,7 @@ fn parse_state(r: &mut Reader<'_>) -> Result<State, Fail> {
         page_count,
         caret,
         invalidated,
+        atlas,
         pages,
         window,
     })
@@ -1163,10 +1246,12 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
         Response::Pages {
             revision,
             page_count,
+            atlas,
             pages,
         } => {
             put_u64(&mut b, *revision);
             put_u32(&mut b, *page_count);
+            put_atlas(&mut b, atlas)?;
             put_pages(&mut b, pages)?;
             opcode::R_PAGES
         }
@@ -1234,9 +1319,11 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
                 if page_count > MAX_PAGES {
                     return Err(Fail::TooManyPages);
                 }
+                let atlas = read_atlas(&mut r)?;
                 Response::Pages {
                     revision,
                     page_count,
+                    atlas,
                     pages: read_pages(&mut r, page_count)?,
                 }
             }

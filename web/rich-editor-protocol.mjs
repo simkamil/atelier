@@ -19,6 +19,9 @@ export const RICH_LIMITS = Object.freeze({
   maxPageDisplayBytes: 16 * 1024 * 1024,
   maxResponsePageBytes: 8 * 1024 * 1024,
   minPageDisplayBytes: 44,
+  maxAtlasEntries: 4096,
+  maxAtlasEntryBytes: 64 * 1024,
+  maxAtlasResponseBytes: 4 * 1024 * 1024,
   maxInvalidations: 1024,
   maxPages: 1 << 20,
   maxLayoutBudget: 4096,
@@ -30,7 +33,7 @@ export const NO_CARET = 0xffffffff;
 export const RichOpcode = Object.freeze({
   Open: 0x0101, Close: 0x0102, InsertText: 0x0103, ReplaceRange: 0x0104, Delete: 0x0105,
   Move: 0x0106, SetSelection: 0x0107, HitTest: 0x0108, Undo: 0x0109, Redo: 0x010a,
-  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e, AccessibleWindow: 0x010f,
+  TextWindow: 0x010b, Pages: 0x010c, MarkSaved: 0x010d, Layout: 0x010e, AccessibleWindow: 0x010f, Resync: 0x0118,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
@@ -256,6 +259,7 @@ function parseCommand(opcode, body) {
       command = { type: "layout", budget };
       break;
     }
+    case RichOpcode.Resync: command = { type: "resync" }; break;
     case RichOpcode.AccessibleWindow: {
       const start = r.u64();
       const end = r.u64();
@@ -324,6 +328,7 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "pages": w.u32(u32(command.first)); w.u32(u32(command.count)); opcode = RichOpcode.Pages; break;
     case "markSaved": w.u64(u64(command.revision)); opcode = RichOpcode.MarkSaved; break;
     case "layout": w.u32(u32(command.budget)); opcode = RichOpcode.Layout; break;
+    case "resync": opcode = RichOpcode.Resync; break;
     case "accessibleWindow": w.u64(u64(command.start)); w.u64(u64(command.end)); opcode = RichOpcode.AccessibleWindow; break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
@@ -349,6 +354,39 @@ function readPages(r, pageCount) {
     pages.push({ index, display });
   }
   return pages;
+}
+
+// Glyph atlas section of State and Pages replies (just before the pages):
+// epoch u32, first u32, count u32, then count x (len u32 + ATDL of one contour).
+// The entries are views into the frame, like the page display lists.
+function readAtlas(r) {
+  const epoch = r.u32(); const first = r.u32(); const count = r.u32();
+  if (first + count > RICH_LIMITS.maxAtlasEntries) fail("RICH_INVALID_BODY");
+  const entries = [];
+  let total = 0;
+  for (let i = 0; i < count; i += 1) {
+    const len = r.u32();
+    if (len < RICH_LIMITS.minPageDisplayBytes || len > RICH_LIMITS.maxAtlasEntryBytes) fail("RICH_INVALID_BODY");
+    total += len;
+    if (total > RICH_LIMITS.maxAtlasResponseBytes) fail("RICH_FRAME_TOO_LARGE");
+    const entry = r.take(len);
+    if (String.fromCharCode(...entry.subarray(0, 4)) !== "ATDL") fail("RICH_INVALID_BODY");
+    entries.push(entry);
+  }
+  return { epoch, first, entries };
+}
+
+function writeAtlas(w, atlas) {
+  if (!atlas || !Array.isArray(atlas.entries)) fail("RICH_INVALID_BODY");
+  const epoch = u32(atlas.epoch); const first = u32(atlas.first);
+  let total = 0;
+  for (const entry of atlas.entries) {
+    if (!(entry instanceof Uint8Array) || entry.length < RICH_LIMITS.minPageDisplayBytes || entry.length > RICH_LIMITS.maxAtlasEntryBytes) fail("RICH_INVALID_BODY");
+    total += entry.length;
+  }
+  if (first + atlas.entries.length > RICH_LIMITS.maxAtlasEntries || total > RICH_LIMITS.maxAtlasResponseBytes) fail("RICH_INVALID_BODY");
+  w.u32(epoch); w.u32(first); w.u32(atlas.entries.length);
+  for (const entry of atlas.entries) { w.u32(entry.length); w.raw(entry); }
 }
 
 function writePages(w, pages) {
@@ -385,6 +423,7 @@ function parseState(r) {
     if (first >= end || end > RICH_LIMITS.maxPages || (invalidated.length && invalidated[invalidated.length - 1][1] >= first)) fail("RICH_PAGE_RANGE");
     invalidated.push([first, end]);
   }
+  const atlas = readAtlas(r);
   const pages = readPages(r, pageCount);
   let window = null;
   if (flags & 0x10) {
@@ -396,7 +435,7 @@ function parseState(r) {
   return {
     revision, anchor, focus, focusUpstream: (flags & 0x20) !== 0, docLen,
     modified: (flags & 1) !== 0, canUndo: (flags & 2) !== 0, canRedo: (flags & 4) !== 0, layoutComplete: (flags & 8) !== 0,
-    pageCount, caret, invalidated, pages, window,
+    pageCount, caret, invalidated, atlas, pages, window,
   };
 }
 
@@ -408,6 +447,7 @@ function writeState(w, s) {
   w.u32(c.page); w.f64(c.x); w.f64(c.y); w.f64(c.height);
   w.u32(s.invalidated.length);
   for (const [first, end] of s.invalidated) { w.u32(u32(first)); w.u32(u32(end)); }
+  writeAtlas(w, s.atlas);
   writePages(w, s.pages);
   if (s.window) { w.u64(u64(s.window.start)); w.text(s.window.text); }
 }
@@ -514,7 +554,8 @@ export function decodeRichReply(bytes) {
       case RichReplyOpcode.Pages: {
         const revision = r.u64(); const pageCount = r.u32();
         if (pageCount > RICH_LIMITS.maxPages) fail("RICH_TOO_MANY_PAGES");
-        response = { type: "pages", revision, pageCount, pages: readPages(r, pageCount) };
+        const atlas = readAtlas(r);
+        response = { type: "pages", revision, pageCount, atlas, pages: readPages(r, pageCount) };
         break;
       }
       case RichReplyOpcode.HitResult: {
@@ -548,7 +589,7 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     }
     case "state": writeState(w, response); opcode = RichReplyOpcode.State; break;
     case "textWindow": w.u64(u64(response.revision)); w.u64(u64(response.start)); w.u64(u64(response.docLen)); w.text(response.text); opcode = RichReplyOpcode.TextWindow; break;
-    case "pages": w.u64(u64(response.revision)); w.u32(u32(response.pageCount)); writePages(w, response.pages); opcode = RichReplyOpcode.Pages; break;
+    case "pages": w.u64(u64(response.revision)); w.u32(u32(response.pageCount)); writeAtlas(w, response.atlas); writePages(w, response.pages); opcode = RichReplyOpcode.Pages; break;
     case "hitResult": w.u64(u64(response.revision)); w.u32(u32(response.page)); w.u64(u64(response.position)); w.u8(response.upstream ? 1 : 0, 0, 0, 0); opcode = RichReplyOpcode.HitResult; break;
     case "closed": opcode = RichReplyOpcode.Closed; break;
     case "accessibleWindow": w.u64(u64(response.revision)); writeAccessible(w, response.items); opcode = RichReplyOpcode.AccessibleWindow; break;
