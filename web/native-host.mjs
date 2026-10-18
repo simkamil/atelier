@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { RICH_LIMITS } from "./rich-editor-protocol.mjs";
+
 const MAX_U64 = (1n << 64n) - 1n;
+/** Limite des opérations historiques `open`/`save` (octets dans le message, v1). Sans lien avec l'ouverture v2. */
 const MAX_FILE_BYTES = 131075;
+/** Fichier d'ouverture (US-115) : la limite du moteur v2, source unique `RICH_LIMITS.maxOpenBytes`. */
+const MAX_LAUNCH_BYTES = RICH_LIMITS.maxOpenBytes;
 const MAX_DOCX_BYTES = 8 * 1024 * 1024;
 const MAX_QUEUE = 4;
 const MAX_QUEUED_BYTES = MAX_DOCX_BYTES + MAX_FILE_BYTES * MAX_QUEUE;
@@ -191,7 +196,7 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
       const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*)$/.exec(payload);
       try {
         if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED) throw new NativeHostError("HOST_INVALID_RESPONSE");
-        settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes: fromBase64(match[3], match[1] === "docx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) } });
+        settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes: fromBase64(match[3], MAX_DOCX_BYTES) } });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "pickOpen") {
       const match = /^(r[1-9][0-9]{0,19});([a-z]{2,5});([0-9]{1,10});([A-Za-z0-9+/=]*)$/.exec(payload);
@@ -228,7 +233,7 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     const { id, payload } = parsed;
     if (entry.operation === "launch") {
       const match = /^(txt|docx);([0-9]{1,2});@sb$/.exec(payload);
-      if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED || buffer.byteLength > MAX_DOCX_BYTES) {
+      if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED || buffer.byteLength > MAX_LAUNCH_BYTES) {
         drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return;
       }
       // Le document d'ouverture est copié : les appelants le conservent, le tampon est libéré aussitôt.
