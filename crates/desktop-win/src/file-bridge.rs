@@ -15,10 +15,25 @@ const ORIGIN: &str = "https://app.atelier/";
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Request {
-    Open { id: String },
-    OpenDocx { id: String },
-    Save { id: String, bytes: Vec<u8> },
-    Dirty { id: String, dirty: bool },
+    Open {
+        id: String,
+    },
+    OpenDocx {
+        id: String,
+    },
+    Save {
+        id: String,
+        bytes: Vec<u8>,
+    },
+    /// US-115 : le front réclame le prochain document demandé par la ligne de commande
+    /// ou par une seconde instance. Aucun chemin ne vient de JavaScript.
+    Launch {
+        id: String,
+    },
+    Dirty {
+        id: String,
+        dirty: bool,
+    },
 }
 
 impl Request {
@@ -27,6 +42,7 @@ impl Request {
             Self::Open { id }
             | Self::OpenDocx { id }
             | Self::Save { id, .. }
+            | Self::Launch { id }
             | Self::Dirty { id, .. } => id,
         }
     }
@@ -88,6 +104,7 @@ impl Queue {
         let request = match operation {
             "open" if tail.is_empty() => Request::Open { id: id.to_owned() },
             "openDocx" if tail.is_empty() => Request::OpenDocx { id: id.to_owned() },
+            "launch" if tail.is_empty() => Request::Launch { id: id.to_owned() },
             "dirty" if tail == "0" || tail == "1" => Request::Dirty {
                 id: id.to_owned(),
                 dirty: tail == "1",
@@ -307,7 +324,9 @@ pub(crate) fn process_selection(
                 }
             }
         }
-        Request::Dirty { .. } => unreachable!("dirty messages do not select a file"),
+        Request::Dirty { .. } | Request::Launch { .. } => {
+            unreachable!("dirty and launch messages do not select a file")
+        }
     };
     let reply = match result {
         Ok(Some(bytes)) => format!("us120-file|1|{id}|ok|{}", encode_base64(&bytes)),
@@ -319,6 +338,67 @@ pub(crate) fn process_selection(
     } else {
         format!("us120-file|1|{id}|error|files.error.too_large")
     }
+}
+
+/// Résultat de la lecture d'un fichier d'ouverture : (type, octets) ou clé d'erreur.
+pub(crate) type LaunchRead = Result<(&'static str, Vec<u8>), &'static str>;
+
+/// US-115 : lit un fichier d'ouverture (`.txt` ou `.docx`). Peut bloquer (partage réseau lent) :
+/// à appeler hors du fil UI.
+pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
+    let extension = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_lowercase());
+    let (kind, limit) = match extension.as_deref() {
+        Some("txt") => ("txt", MAX_FILE_BYTES),
+        Some("docx") => ("docx", MAX_DOCX_PREVIEW_BYTES),
+        _ => return Err("files.error.unsupported_type"),
+    };
+    let broker = crate::files::FileBroker::new();
+    let ticket = broker
+        .grant_read(path, limit as u64)
+        .map_err(|error| error.message_key)?;
+    let result = broker.read(ticket);
+    broker.revoke_read(ticket);
+    match result {
+        Ok(bytes) if kind == "txt" => match text_error(&bytes) {
+            Some(key) => Err(key),
+            None => Ok((kind, bytes)),
+        },
+        Ok(bytes) if bytes.len() <= limit => Ok((kind, bytes)),
+        Ok(_) => Err("files.error.too_large"),
+        Err(error) => Err(error.message_key),
+    }
+}
+
+/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<ignorés>;<base64>` ; en cas de
+/// succès les chemins restants sont écartés et comptés, en cas d'erreur ils restent en attente.
+pub(crate) fn launch_reply(id: &str, read: LaunchRead, pending: &mut VecDeque<PathBuf>) -> String {
+    match read {
+        Ok((kind, bytes)) => {
+            let skipped = pending.len();
+            pending.clear();
+            let reply = format!(
+                "us120-file|1|{id}|ok|{kind};{skipped};{}",
+                encode_base64(&bytes)
+            );
+            if reply.len() <= MAX_DOCX_REPLY_BYTES {
+                reply
+            } else {
+                format!("us120-file|1|{id}|error|files.error.too_large")
+            }
+        }
+        Err(key) => format!("us120-file|1|{id}|error|{key}"),
+    }
+}
+
+/// Version synchrone (tests) : sert le prochain chemin en attente ; file vide : `ok|`.
+#[cfg(test)]
+pub(crate) fn process_launch(id: &str, pending: &mut VecDeque<PathBuf>) -> String {
+    let Some(path) = pending.pop_front() else {
+        return format!("us120-file|1|{id}|ok|");
+    };
+    launch_reply(id, read_launch_file(&path), pending)
 }
 
 fn text_length(bytes: &[u8]) -> Option<usize> {
@@ -568,5 +648,73 @@ mod tests {
             "files.error.unknown_ticket"
         );
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn launch_is_an_id_checked_operation_without_payload() {
+        let mut queue = Queue::default();
+        assert!(queue.begin_page_navigation(false));
+        queue.accept(ORIGIN, "us120-file|1|1|launch|").unwrap();
+        assert_eq!(queue.pop(), Some(Request::Launch { id: "1".into() }));
+        assert_eq!(
+            queue.accept(ORIGIN, "us120-file|1|2|launch|C:%5Ca.txt"),
+            Err(Reject::Malformed)
+        );
+        assert_eq!(
+            queue.accept(ORIGIN, "us120-file|1|1|launch|"),
+            Err(Reject::Replay)
+        );
+    }
+
+    fn launch_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("atelier-us115-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn launch_serves_first_file_and_counts_the_skipped_ones() {
+        let dir = launch_dir("serve");
+        let a = dir.join("a.TXT");
+        let b = dir.join("b.txt");
+        std::fs::write(&a, "bonjour").unwrap();
+        std::fs::write(&b, "autre").unwrap();
+        let mut pending: VecDeque<PathBuf> = [a, b].into();
+        let reply = process_launch("7", &mut pending);
+        assert_eq!(
+            reply,
+            format!("us120-file|1|7|ok|txt;1;{}", encode_base64(b"bonjour"))
+        );
+        assert!(pending.is_empty());
+        assert_eq!(process_launch("8", &mut pending), "us120-file|1|8|ok|");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn launch_errors_keep_the_following_files_pending() {
+        let dir = launch_dir("errors");
+        let image = dir.join("x.png");
+        let missing = dir.join("absent.txt");
+        let bad = dir.join("bad.txt");
+        let good = dir.join("good.docx");
+        std::fs::write(&image, "x").unwrap();
+        std::fs::write(&bad, [0xff, 0xfe, 0xfd]).unwrap();
+        std::fs::write(&good, "PK").unwrap();
+        let mut pending: VecDeque<PathBuf> = [image, missing, bad, good].into();
+        assert_eq!(
+            process_launch("1", &mut pending),
+            "us120-file|1|1|error|files.error.unsupported_type"
+        );
+        assert!(process_launch("2", &mut pending).starts_with("us120-file|1|2|error|files.error."));
+        assert_eq!(
+            process_launch("3", &mut pending),
+            "us120-file|1|3|error|files.error.invalid_text"
+        );
+        assert_eq!(
+            process_launch("4", &mut pending),
+            format!("us120-file|1|4|ok|docx;0;{}", encode_base64(b"PK"))
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

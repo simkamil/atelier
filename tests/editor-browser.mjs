@@ -455,13 +455,15 @@ try {
   let nextAppOpen = { status: "cancelled", payload: "" };
   let nextDocxOpen = { status: "cancelled", payload: "" };
   let holdDocxReply;
+  const launchReplies = [];
   const fakeWebview = {
     postMessage(message) {
       nativeCalls.push(message);
-      const match = /^us120-file\|1\|([1-9][0-9]*)\|(open|openDocx|save|dirty)\|(.*)$/.exec(message);
+      const match = /^us120-file\|1\|([1-9][0-9]*)\|(open|openDocx|save|dirty|launch)\|(.*)$/.exec(message);
       if (!match || match[2] === "dirty") return;
       const [, id, operation, payload] = match;
-      const response = operation === "openDocx" ? `us120-file|1|${id}|${nextDocxOpen.status}|${nextDocxOpen.payload}` : operation === "open"
+      const launchReply = operation === "launch" ? launchReplies.shift() ?? { status: "ok", payload: "" } : null;
+      const response = launchReply ? `us120-file|1|${id}|${launchReply.status}|${launchReply.payload}` : operation === "openDocx" ? `us120-file|1|${id}|${nextDocxOpen.status}|${nextDocxOpen.payload}` : operation === "open"
         ? `us120-file|1|${id}|${nextAppOpen.status}|${nextAppOpen.payload}`
         : `us120-file|1|${id}|ok|`;
       const reply = () => { for (const listener of webviewListeners) listener({ data: response }); };
@@ -542,6 +544,31 @@ try {
   assert(nativeCalls.some(message => message.includes("|open|"))
     && document.querySelector("#editor-status").textContent.includes("annul"), "Ctrl+O uses the native open path and surfaces cancellation");
   assert(app.getState().text === appLargeText && !app.getState().dirty, "Ctrl+O cancellation preserves the current clean document");
+  // US-115 : documents demandés par argument ou seconde instance (notification native puis réclamation).
+  const status = () => document.querySelector("#editor-status").textContent;
+  const launchBase64 = text => { const bytes = new TextEncoder().encode(text); let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte); return btoa(binary); };
+  const notifyLaunch = () => { for (const listener of webviewListeners) listener({ data: "us115-launch|1" }); };
+  launchReplies.push({ status: "ok", payload: `txt;2;${launchBase64("lancé par argument")}` });
+  notifyLaunch();
+  await waitFor(() => app.getState()?.text === "lancé par argument", "a launched .txt opens in the editor");
+  assert(status().startsWith("Document ouvert.") && status().includes("2 autres fichiers n’ont pas été ouverts"),
+    "opening and the plural skipped count are announced in a single message");
+  launchReplies.push({ status: "error", payload: "files.error.unsupported_type" }, { status: "ok", payload: `txt;1;${launchBase64("deuxième")}` });
+  notifyLaunch();
+  await waitFor(() => app.getState()?.text === "deuxième", "an unsupported launched file does not hide the next one");
+  assert(status().startsWith("Document ouvert.") && status().includes("1 autre fichier n’a pas été ouvert"), "singular skipped message");
+  launchReplies.push({ status: "error", payload: "files.error.unsupported_type" });
+  notifyLaunch();
+  await waitFor(() => status().includes(".txt ou .docx"), "an unsupported launched file is explained");
+  assert(app.getState().text === "deuxième", "a refused launched file leaves the document unchanged");
+  launchReplies.push({ status: "ok", payload: "txt;0;***" });
+  notifyLaunch();
+  await new Promise(done => setTimeout(done, 50));
+  assert(app.getState().text === "deuxième", "a malformed launch reply is ignored");
+  nextAppOpen = { status: "ok", payload: btoa(appLargeText) };
+  await app.editor.openDocument();
+  assert(app.getState().text === appLargeText, "document restored after the launch checks");
+  nextAppOpen = { status: "cancelled", payload: "" };
   await checkAppZoom({ app, scrollport: productScrollport, assert, waitFor });
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "n", ctrlKey: true, bubbles: true, cancelable: true }));
   await waitFor(() => app.getState()?.text === "", "Ctrl+N clears the opened document before save shortcut check");

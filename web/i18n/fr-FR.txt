@@ -269,3 +269,8 @@ image-error-limit=Le document contient déjà le nombre maximal d’images.
 image-error-read=Le fichier image n’a pas pu être lu.
 image-inserted={count, plural, one {# image insérée.} other {# images insérées.}}
 image-alt-default=Image {number}
+
+# US-115 : ouverture par argument de ligne de commande ou seconde instance
+files.error.unsupported_type=Ce type de fichier ne peut pas être ouvert. Utilisez un fichier .txt ou .docx.
+files.error.timeout=Le fichier n’a pas répondu à temps (partage réseau injoignable ou lent). Réessayez plus tard.
+status-launch-skipped={count, plural, one {# autre fichier n’a pas été ouvert : un seul document peut être ouvert à la fois.} other {# autres fichiers n’ont pas été ouverts : un seul document peut être ouvert à la fois.}}

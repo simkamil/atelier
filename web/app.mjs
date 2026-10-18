@@ -71,7 +71,7 @@ document.addEventListener("securitypolicyviolation", event => {
   if (message.length <= 768) globalThis.chrome?.webview?.postMessage(message);
 });
 
-const FILE_ERROR_KEYS = ["files.error.invalid_text", "files.error.too_large", "files.error.queue_full"];
+const FILE_ERROR_KEYS = ["files.error.invalid_text", "files.error.too_large", "files.error.queue_full", "files.error.unsupported_type", "files.error.timeout"];
 const MAX_TEXT_FILE_BYTES = 128 * 1024;
 
 /** Loads the catalogue and returns the translator plus `messages`, the reader used to build module labels. */
@@ -298,6 +298,8 @@ async function start() {
       host = {
         open: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
         openDocx: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
+        takeLaunch: async () => ({ kind: "ok" }),
+        onLaunch: () => () => {},
         save: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
         notifyDirty: async () => ({ kind: "ok" }),
         close() {},
@@ -330,7 +332,7 @@ async function start() {
       onZoom: () => { if (previewActive) updateZoom(); }, onViewport: () => { if (previewActive) updateStatus(); } });
     if (toolsAvailable) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
-    async function openDocx() {
+    async function openDocx(source = () => host.openDocx()) {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
       const generation = ++previewGeneration;
       previewAbort = new AbortController();
@@ -340,7 +342,7 @@ async function start() {
       showEditorMessage(messages.get("status-preview-loading"));
       const current = () => !disposed && generation === previewGeneration;
       try {
-        const result = await host.openDocx();
+        const result = await source();
         if (!current()) return { kind: "cancelled" };
         if (result.kind !== "ok") {
           closePreview();
@@ -467,6 +469,46 @@ async function start() {
       if (!button.disabled) button.click();
     }, { signal: listeners.signal });
     updateControls(editor.state);
+    // US-115 : documents demandés par la ligne de commande ou par une seconde instance. Le premier
+    // s'ouvre ; les suivants sont signalés (un seul document à la fois, pas encore d'onglets).
+    let claiming = false;
+    let claimAgain = false;
+    async function openLaunched(launched) {
+      const source = async () => ({ kind: "ok", bytes: launched.bytes });
+      if (launched.type === "docx") await openDocx(source);
+      else {
+        const result = await editor.openDocument(source);
+        if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
+        else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
+        else showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get("status-open-error"), true);
+      }
+      // Un seul message : le résultat de l'ouverture suivi du nombre de fichiers ignorés.
+      if (launched.skipped > 0) {
+        const failed = nodes.editorStatus.classList.contains("error");
+        showEditorMessage(`${nodes.editorStatus.textContent} ${i18n.t("status-launch-skipped", { count: launched.skipped })}`, failed);
+      }
+    }
+    async function claimLaunch() {
+      if (disposed) return;
+      if (claiming) { claimAgain = true; return; }
+      claiming = true;
+      try {
+        do {
+          claimAgain = false;
+          for (let attempt = 0; attempt < 16 && !disposed; attempt += 1) {
+            const result = await host.takeLaunch();
+            if (result.kind === "ok" && !result.document) break;
+            if (result.kind === "ok") { await openLaunched(result.document); break; }
+            if (result.kind !== "error" || !result.key.startsWith("files.error.")) break;
+            showEditorMessage(fileErrorMessage(result.key, i18n, messages) ?? messages.get("status-open-error"), true);
+          }
+        } while (claimAgain && !disposed);
+      } catch (error) { if (!disposed) onError(error); }
+      finally { claiming = false; }
+    }
+    const stopLaunch = host.onLaunch(() => { void claimLaunch(); });
+    listeners.signal.addEventListener("abort", stopLaunch, { once: true });
+    void claimLaunch();
     editor.focus();
     return Object.freeze({
       status: "ready",
@@ -478,7 +520,7 @@ async function start() {
       navigation,
       documentStatus,
       symbols, about, properties, contextMenu,
-      openDocx, closePreview, dispose,
+      openDocx, closePreview, dispose, claimLaunch,
       get previewActive() { return previewActive; },
     });
   } catch (error) {

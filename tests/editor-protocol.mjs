@@ -222,6 +222,44 @@ const afterDirtyStorm = host.open();
 const stormOpen = fake.posted.at(-1).split("|");
 fake.reply(`us120-file|1|${stormOpen[2]}|cancelled|`);
 assert.deepEqual(await afterDirtyStorm, { kind: "cancelled" }, "coalesced dirty notifications do not occupy file request slots");
+
+// US-115 : réclamation des documents d'ouverture et notification native.
+let notices = 0;
+const stopNotices = host.onLaunch(() => { notices += 1; });
+fake.reply("us115-launch|1");
+fake.reply("us115-launch|2");
+fake.reply("us120-file|1|1|launch|");
+assert.equal(notices, 1, "only the exact launch notice reaches subscribers");
+const emptyClaim = host.takeLaunch();
+const emptyRequest = fake.posted.at(-1).split("|");
+assert.deepEqual(emptyRequest.slice(0, 2).concat(emptyRequest[3], emptyRequest[4]), ["us120-file", "1", "launch", ""]);
+fake.reply(`us120-file|1|${emptyRequest[2]}|ok|`);
+assert.deepEqual(await emptyClaim, { kind: "ok" });
+const claim = host.takeLaunch();
+const claimId = fake.posted.at(-1).split("|")[2];
+fake.reply(`us120-file|1|${claimId}|ok|txt;3;${Buffer.from("héllo").toString("base64")}`);
+const claimed = await claim;
+assert.equal(claimed.kind, "ok");
+assert.equal(claimed.document.type, "txt");
+assert.equal(claimed.document.skipped, 3);
+assert.equal(Buffer.from(claimed.document.bytes).toString("utf8"), "héllo");
+for (const bad of ["txt;3", "pdf;0;AA==", "txt;100;AA==", "txt;x;AA==", "txt;0;A", "txt;0;AA==;x", "txt;0;Zh=="]) {
+  const pendingClaim = host.takeLaunch();
+  const badId = fake.posted.at(-1).split("|")[2];
+  fake.reply(`us120-file|1|${badId}|ok|${bad}`);
+  assert.deepEqual(await pendingClaim, { kind: "error", key: "HOST_INVALID_RESPONSE" }, bad);
+}
+const tooBig = host.takeLaunch();
+const tooBigId = fake.posted.at(-1).split("|")[2];
+fake.reply(`us120-file|1|${tooBigId}|ok|txt;0;${Buffer.alloc(131076).toString("base64")}`);
+assert.deepEqual(await tooBig, { kind: "error", key: "HOST_FILE_TOO_LARGE" });
+const refused = host.takeLaunch();
+const refusedId = fake.posted.at(-1).split("|")[2];
+fake.reply(`us120-file|1|${refusedId}|error|files.error.unsupported_type`);
+assert.deepEqual(await refused, { kind: "error", key: "files.error.unsupported_type" });
+stopNotices();
+fake.reply("us115-launch|1");
+assert.equal(notices, 1, "unsubscribed callbacks are not called");
 host.close();
 assert.equal(fake.listeners.size, 0);
 

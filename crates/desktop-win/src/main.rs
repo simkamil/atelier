@@ -9,6 +9,9 @@ fn main() {
         if matches!(
             std::env::args_os().nth(1).as_deref(),
             Some(arg) if arg == "--self-check" || arg == "--webview-self-check" || arg == "--resources-self-check"
+                || arg == "--instance-probe-primary"
+                || arg == "--instance-probe-hold"
+                || arg == "--instance-probe-secondary"
         ) {
             eprintln!("{error}");
         } else {
@@ -20,7 +23,7 @@ fn main() {
 
 #[cfg(windows)]
 fn start() -> Result<(), Box<dyn std::error::Error>> {
-    use atelier_desktop_win::{data, window};
+    use atelier_desktop_win::{data, instance_win32, window};
     use std::path::PathBuf;
 
     window::initialize_dpi()?;
@@ -69,14 +72,102 @@ fn start() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--instance-probe-primary")) {
+        let root = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--instance-probe-primary requires a data root and an output file")?;
+        let output = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--instance-probe-primary requires a data root and an output file")?;
+        println!("{}", instance_win32::probe_primary(&root, &output)?);
+        return Ok(());
+    }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--instance-probe-hold")) {
+        let root = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--instance-probe-hold requires a data root and a duration")?;
+        let milliseconds: u32 = arguments
+            .next()
+            .and_then(|value| value.to_str().and_then(|text| text.parse().ok()))
+            .ok_or("--instance-probe-hold requires a duration in milliseconds")?;
+        println!("{}", instance_win32::probe_hold(&root, milliseconds)?);
+        return Ok(());
+    }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--instance-probe-secondary")) {
+        let root = arguments
+            .next()
+            .map(PathBuf::from)
+            .ok_or("--instance-probe-secondary requires a data root")?;
+        let rest: Vec<std::ffi::OsString> = arguments.collect();
+        let paths = launch_paths(&rest)?;
+        println!("{}", instance_win32::probe_secondary(&root, &paths)?);
+        return Ok(());
+    }
     let executable = std::env::current_exe()?;
     let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    let arguments: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    let launch = launch_paths(&arguments)?;
     finish_startup(
         data::resolve_data_paths(&executable, local.as_deref(), data::choose_data_mode)?,
-        window::run,
+        move |state, title, webview| open_main_window(state, title, webview, launch),
         data::show_move_instructions,
     )?;
     Ok(())
+}
+
+/// US-115 : chemins absolus des arguments (options `--…` ignorées), au plus `MAX_PATHS`.
+#[cfg(windows)]
+fn launch_paths(
+    arguments: &[std::ffi::OsString],
+) -> Result<Vec<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    use atelier_desktop_win::instance;
+    let cwd = std::env::current_dir()?;
+    let mut paths = Vec::new();
+    for argument in instance::launch_arguments(arguments)
+        .into_iter()
+        .take(instance::MAX_PATHS)
+    {
+        paths.push(instance::normalize(argument, &cwd).map_err(|error| {
+            format!(
+                "argument invalide « {} » : {error:?}",
+                argument.to_string_lossy()
+            )
+        })?);
+    }
+    Ok(paths)
+}
+
+/// US-115 : mutex nommé par racine de données ; une instance déjà ouverte reçoit les chemins et
+/// celle-ci se termine. Si la première instance ne répond pas (5 s de tentatives), on n'ouvre pas
+/// une seconde fenêtre sur le même dossier de données : message d'erreur.
+#[cfg(windows)]
+fn open_main_window(
+    state_file: &std::path::Path,
+    title: &str,
+    webview_data: &std::path::Path,
+    launch: Vec<std::path::PathBuf>,
+) -> std::io::Result<()> {
+    use atelier_desktop_win::instance_win32::{Acquire, acquire};
+    use atelier_desktop_win::{instance, window};
+    let root = state_file
+        .parent()
+        .ok_or_else(|| std::io::Error::other("data root unavailable"))?;
+    match acquire(root, &launch)? {
+        Acquire::Primary(_guard) => window::run_with_launch(
+            state_file,
+            title,
+            webview_data,
+            Some(&instance::instance_key(root)),
+            launch,
+        ),
+        Acquire::Forwarded => Ok(()),
+        Acquire::Unreachable => Err(std::io::Error::other(
+            "Atelier est déjà ouvert mais ne répond pas. Fermez la fenêtre existante ou terminez le processus, puis relancez.",
+        )),
+    }
 }
 
 #[cfg(windows)]

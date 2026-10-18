@@ -607,11 +607,12 @@ export function createEditor({ client, host, canvas, scrollport, spacer, textRep
       try { return await enqueue(EditorOpcode.Load, { bytes: new Uint8Array() }); }
       finally { setBusy(false); input.focus(); }
     },
-    async openDocument() {
+    /** `source` fournit les octets (boîte de dialogue par défaut ; ouverture par argument pour US-115). */
+    async openDocument(source = () => host.open()) {
       if (busy || !await this.confirmReplace()) return { kind: "cancelled" };
       setBusy(true);
       try {
-        const result = await host.open();
+        const result = await source();
         if (result.kind !== "ok") return result;
         return { kind: "ok", state: await enqueue(EditorOpcode.Load, { bytes: result.bytes }) };
       } finally { setBusy(false); input.focus(); }
