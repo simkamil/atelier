@@ -6,7 +6,13 @@ use std::path::PathBuf;
 
 use crate::bridge_ops::{self, DialogSpec, Outcome};
 
+/// Limite des opérations historiques « octets dans le message » (`open`, `save`) : ancien éditeur v1.
+/// Plus atteintes par l'interface v2 (dialogue + tickets) ; ne pas s'en servir pour l'ouverture.
 pub(crate) const MAX_FILE_BYTES: usize = 131_075;
+/// Taille maximale d'un fichier d'ouverture (US-115) : `MAX_OPEN_BYTES` du moteur v2
+/// (`MAX_FRAME_BYTES - HEADER_BYTES - 8`, `rich_protocol.rs`), valeur recopiée ici car ce crate
+/// n'a aucune dépendance ; un test la compare au source. Côté JS : `RICH_LIMITS.maxOpenBytes`.
+pub(crate) const MAX_LAUNCH_BYTES: usize = 32 * 1024 * 1024 - 20 - 8;
 pub(crate) const MAX_TEXT_BYTES: usize = 131_072;
 pub(crate) const MAX_DOCX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
 // Base64 expansion plus the longest accepted request id and response envelope.
@@ -413,8 +419,8 @@ pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase());
     let (kind, limit) = match extension.as_deref() {
-        Some("txt") => ("txt", MAX_FILE_BYTES),
-        Some("docx") => ("docx", MAX_DOCX_PREVIEW_BYTES),
+        Some("txt") => ("txt", MAX_LAUNCH_BYTES),
+        Some("docx") => ("docx", MAX_LAUNCH_BYTES),
         _ => return Err("files.error.unsupported_type"),
     };
     let broker = crate::files::FileBroker::new();
@@ -424,9 +430,11 @@ pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
     let result = broker.read(ticket);
     broker.revoke_read(ticket);
     match result {
-        Ok(bytes) if kind == "txt" => match text_error(&bytes) {
-            Some(key) => Err(key),
-            None => Ok((kind, bytes)),
+        // Seule la validité UTF-8 est vérifiée : la taille est déjà bornée par le courtier.
+        Ok(bytes) if kind == "txt" => match text_length(&bytes) {
+            None => Err("files.error.invalid_text"),
+            Some(_) if bytes.len() > limit => Err("files.error.too_large"),
+            Some(_) => Ok((kind, bytes)),
         },
         Ok(bytes) if bytes.len() <= limit => Ok((kind, bytes)),
         Ok(_) => Err("files.error.too_large"),
@@ -614,7 +622,10 @@ mod tests {
             .accept(ORIGIN, "us120-file|1|1|openDocx|")
             .expect("openDocx carries no file bytes from JavaScript");
         assert_eq!(queue.pop(), Some(Request::OpenDocx { id: "1".into() }));
-        assert_eq!(MAX_FILE_BYTES, 131_075, "TXT request limit remains frozen");
+        assert_eq!(
+            MAX_FILE_BYTES, 131_075,
+            "legacy v1 request limit remains frozen"
+        );
         assert_eq!(MAX_TEXT_BYTES, 131_072, "TXT content limit remains frozen");
         assert_eq!(MAX_DOCX_PREVIEW_BYTES, 8 * 1024 * 1024);
     }
@@ -848,6 +859,60 @@ mod tests {
         assert_eq!(
             process_launch("4", &mut pending),
             format!("us120-file|1|4|ok|docx;0;{}", encode_base64(b"PK"))
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn launch_limit_is_the_v2_engine_open_limit() {
+        let source = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../core-wasm/src/rich_protocol.rs"),
+        )
+        .unwrap();
+        assert!(source.contains("pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;"));
+        assert!(source.contains("pub const HEADER_BYTES: usize = 20;"));
+        assert!(
+            source
+                .contains("pub const MAX_OPEN_BYTES: usize = MAX_FRAME_BYTES - HEADER_BYTES - 8;")
+        );
+        assert_eq!(MAX_LAUNCH_BYTES, 32 * 1024 * 1024 - 20 - 8);
+    }
+
+    #[test]
+    fn launch_delivers_a_one_mebibyte_file_whole_and_refuses_one_past_the_limit() {
+        let dir = launch_dir("large");
+        let big = dir.join("big.txt");
+        let content = vec![b'x'; 1024 * 1024];
+        std::fs::write(&big, &content).unwrap();
+        let mut pending: VecDeque<PathBuf> = [big].into();
+        match launch_reply(
+            "1",
+            read_launch_file(&pending.pop_front().unwrap()),
+            &mut pending,
+        ) {
+            Outcome::Shared { reply, bytes, .. } => {
+                assert_eq!(reply, "us120-file|1|1|ok|txt;0;@sb");
+                assert_eq!(bytes, content);
+            }
+            _ => panic!("a 1 MiB file must travel by SharedBuffer"),
+        }
+        let at_limit = dir.join("limit.txt");
+        std::fs::write(&at_limit, vec![b'y'; MAX_LAUNCH_BYTES]).unwrap();
+        assert!(
+            matches!(read_launch_file(&at_limit), Ok(("txt", b)) if b.len() == MAX_LAUNCH_BYTES)
+        );
+        let over = dir.join("over.txt");
+        std::fs::write(&over, vec![b'y'; MAX_LAUNCH_BYTES + 1]).unwrap();
+        assert_eq!(
+            read_launch_file(&over).unwrap_err(),
+            "files.error.too_large"
+        );
+        let over_docx = dir.join("over.docx");
+        std::fs::write(&over_docx, vec![b'y'; MAX_LAUNCH_BYTES + 1]).unwrap();
+        assert_eq!(
+            read_launch_file(&over_docx).unwrap_err(),
+            "files.error.too_large"
         );
         let _ = std::fs::remove_dir_all(dir);
     }

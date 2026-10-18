@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { BRIDGE_ERROR_KEYS, DIALOG_FORMATS, WRITE_CHUNK_BYTES, buildDialogSpec, createNativeHost, validateUrl } from "../web/native-host.mjs";
 import { readFileSync } from "node:fs";
+import { RICH_LIMITS } from "../web/rich-editor-protocol.mjs";
 
 const encoder = new TextEncoder();
 const b64 = text => Buffer.from(typeof text === "string" ? encoder.encode(text) : text).toString("base64");
@@ -275,6 +276,25 @@ for (const [bad, key] of [
   const legacy = host.takeLaunch();
   fake.reply(fake.last().id, "ok", `txt;0;${b64("bonjour")}`);
   assert.equal(new TextDecoder().decode((await legacy).document.bytes), "bonjour");
+  host.close();
+}
+
+// --- ouverture (US-115) : la limite est celle du moteur v2, pas l'ancien plafond de 128 Kio -------------
+{
+  const fake = fakeWebview();
+  const host = createNativeHost({ webview: fake.webview, timeoutMs: 1000 });
+  const text = new Uint8Array(1024 * 1024).fill(0x78);
+  const first = host.takeLaunch();
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;@sb`, text);
+  const opened = await first;
+  assert.equal(opened.document.type, "txt");
+  assert.equal(opened.document.bytes.byteLength, 1024 * 1024, "a 1 MiB launched TXT is delivered whole");
+  const atLimit = host.takeLaunch();
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes));
+  assert.equal((await atLimit).document.bytes.byteLength, RICH_LIMITS.maxOpenBytes);
+  const over = host.takeLaunch();
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes + 1));
+  assert.deepEqual(await over, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   host.close();
 }
 
