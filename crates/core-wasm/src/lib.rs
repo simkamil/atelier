@@ -9,11 +9,7 @@ use std::collections::BTreeMap;
 #[cfg(target_arch = "wasm32")]
 use std::sync::{Mutex, OnceLock};
 
-mod docx_export;
 pub mod editor;
-#[path = "editor-layout.rs"]
-mod editor_layout;
-mod editor_queries;
 mod images;
 /// Maximum size of one allocation or dispatch payload (64 MiB).
 pub mod properties;
@@ -225,17 +221,11 @@ fn staged_engine() -> &'static Mutex<staged::StagedEngine> {
 }
 
 /// The rich editor (ATED v2) of this instance: one active document, edited
-/// in place, never cloned per command like the v1 session.
+/// in place.
 #[cfg(target_arch = "wasm32")]
 fn rich_editor_session() -> &'static Mutex<rich_editor::RichEditor> {
     static RICH: OnceLock<Mutex<rich_editor::RichEditor>> = OnceLock::new();
     RICH.get_or_init(|| Mutex::new(rich_editor::RichEditor::default()))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn editor_session() -> &'static Mutex<editor::EditorSession> {
-    static SESSION: OnceLock<Mutex<editor::EditorSession>> = OnceLock::new();
-    SESSION.get_or_init(|| Mutex::new(editor::EditorSession::default()))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -341,27 +331,28 @@ fn dispatch_editor(
     input_charge: usize,
     message: &protocol::Message,
 ) -> u32 {
-    let mut state = editor_session()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let was_rich = rich_editor::is_rich(&message.payload);
-    let (mut candidate, response) = if rich_editor::is_rich(&message.payload) {
+    let response = if rich_editor::is_rich(&message.payload) {
         let mut rich = rich_editor_session()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        (None, rich.respond(message))
+        rich.respond(message)
     } else if staged::is_staged(&message.payload) {
         let mut staged = staged_engine()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        (None, staged.respond(message))
+        staged.respond(message)
     } else {
-        state.prepare_message(message)
+        // The plain-text editor (v1) is gone: only rich and staged commands remain.
+        protocol::Message {
+            kind: protocol::MessageType::Failed,
+            request_id: message.request_id,
+            payload: b"EDITOR_INVALID_COMMAND".to_vec(),
+        }
     };
     let frame = match protocol::encode(&response) {
         Ok(frame) => frame,
         Err(_) => {
-            candidate = None;
             let failed = protocol::Message {
                 kind: protocol::MessageType::Failed,
                 request_id: message.request_id,
@@ -389,11 +380,6 @@ fn dispatch_editor(
     match registry.replace_in_flight(input_charge, payload) {
         Ok(payload_ptr) => {
             let descriptor = register_descriptor(registry, payload_ptr);
-            if descriptor != 0 {
-                if let Some(candidate) = candidate {
-                    *state = candidate;
-                }
-            }
             descriptor
         }
         Err(_) => {

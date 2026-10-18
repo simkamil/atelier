@@ -87,7 +87,7 @@ impl Session {
         let image =
             InlineImage::from_object_data(&object.data).map_err(|_| ErrorCode::UnknownObject)?;
         let bitmap = images::render_bitmap(&image).map_err(|error| match error {
-            ImageInsertError::TooLarge | ImageInsertError::StoreFull => ErrorCode::Limit,
+            ImageInsertError::TooLarge => ErrorCode::Limit,
             ImageInsertError::Unsupported | ImageInsertError::Corrupt => ErrorCode::ImageInvalid,
         })?;
         Ok(Response::ImageBitmap {

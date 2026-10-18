@@ -1201,16 +1201,33 @@ fn every_direction_with_and_without_extension() {
     }
 }
 
-/// A DOCX of `n` one-line paragraphs, written by the engine's own exporter.
+/// A DOCX of `n` one-line paragraphs.
 fn docx_of_paragraphs(n: usize) -> Vec<u8> {
-    let text: String = (0..n)
-        .map(|i| format!("Paragraphe numero {i}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    crate::docx_export::export_docx(&text, &crate::images::ImageStore::default())
-        .map_err(|e| e.0)
-        .unwrap()
-        .bytes
+    use atelier_fmt_ooxml::{Package, PartUri, TargetMode};
+    let body: String = (0..n)
+        .map(|i| format!("<w:p><w:r><w:t>Paragraphe numero {i}</w:t></w:r></w:p>"))
+        .collect();
+    let mut package = Package::new();
+    package
+        .insert_part(
+            PartUri::parse("word/document.xml").unwrap(),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>"#
+            )
+            .into_bytes(),
+        )
+        .unwrap();
+    package
+        .add_relationship(
+            None,
+            "doc",
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
+            "word/document.xml",
+            TargetMode::Internal,
+        )
+        .unwrap();
+    package.write().unwrap()
 }
 
 #[test]
