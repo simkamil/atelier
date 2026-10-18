@@ -78,8 +78,23 @@ test("the mirror takes role and inline kind numbers, the codec names them", () =
   assert.equal(window.revision, 3n);
 });
 
-test("capabilities are frozen and list every disabled function", () => {
+test("capabilities are frozen and list what v2 offers", () => {
   assert.ok(Object.isFrozen(RICH_CAPABILITIES));
   assert.deepEqual(Object.keys(RICH_CAPABILITIES).sort(), ["preview", "properties", "replace", "search", "statistics", "textDragDrop", "wordSelect"]);
-  assert.ok(Object.values(RICH_CAPABILITIES).every(value => value === false));
+  // R7b-2: search, replace, statistics and properties work in v2; the rest is still absent.
+  for (const name of ["search", "replace", "statistics", "properties"]) assert.equal(RICH_CAPABILITIES[name], true, name);
+  for (const name of ["textDragDrop", "preview"]) assert.equal(RICH_CAPABILITIES[name], false, name);
+});
+
+test("R7b-2: the codes of queries and replacements keep the names of the plain editor", () => {
+  const code = (error, context) => toEditorError(error, context).code;
+  assert.equal(code({ code: "RICH_STALE_REVISION" }, "query"), "EDITOR_STALE_QUERY");
+  assert.equal(code({ code: "RICH_STALE_REVISION" }, "save"), "EDITOR_STALE_SAVE");
+  assert.equal(code({ code: "RICH_STALE_REVISION" }), "EDITOR_STALE_EDIT");
+  assert.equal(code({ code: "RICH_STALE_MATCH" }), "EDITOR_STALE_MATCH");
+  assert.equal(code({ code: "RICH_EMPTY_QUERY" }), "EDITOR_EMPTY_QUERY");
+  assert.equal(code({ code: "RICH_TOO_MANY_MATCHES" }), "EDITOR_TOO_MANY_MATCHES");
+  assert.equal(code({ code: "RICH_READ_ONLY" }), "EDITOR_READ_ONLY");
+  assert.equal(code(new RichProtocolError("RICH_QUERY_TOO_LARGE")), "MESSAGE_TOO_LARGE", "the codec refuses before sending");
+  assert.equal(code({ code: "RICH_PROPERTIES_FAILED" }), "RICH_PROPERTIES_FAILED");
 });

@@ -149,7 +149,7 @@ impl Find {
 
     fn properties(&mut self) -> PropertiesSnapshot {
         match self.send(Command::PropertiesRead) {
-            Response::Properties { snapshot, .. } => snapshot,
+            Response::Properties { snapshot, .. } => *snapshot,
             other => panic!("expected properties, got {other:?}"),
         }
     }
@@ -453,7 +453,7 @@ fn a_read_only_document_is_searched_and_counted_but_not_replaced() {
         ErrorCode::ReadOnly
     );
     // Reading the properties and the statistics is allowed.
-    assert!(!f.properties().limits.iter().any(|l| *l == 0));
+    assert!(!f.properties().limits.contains(&0));
     assert!(matches!(
         f.send(Command::Statistics),
         Response::Statistics { .. }

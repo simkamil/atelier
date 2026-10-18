@@ -40,6 +40,7 @@ const files = new Map([
   ["/tests/editor-browser.mjs", ["tests/editor-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser-entry.mjs", ["tests/editor-browser-entry.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-browser-v2.mjs", ["tests/editor-browser-v2.mjs", "text/javascript; charset=utf-8"]],
+  ["/tests/editor-find-browser.mjs", ["tests/editor-find-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/editor-test-adapter.mjs", ["tests/editor-test-adapter.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/zoom-browser.mjs", ["tests/zoom-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/tests/navigation-browser.mjs", ["tests/navigation-browser.mjs", "text/javascript; charset=utf-8"]],

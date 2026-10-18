@@ -39,8 +39,10 @@ use crate::rich_protocol::{
 
 /// Graphemes of context kept on each side of an occurrence (as in the plain editor).
 const CONTEXT_GRAPHEMES: usize = 30;
-/// Paragraphs of layout `Statistics` may run to give final line and page counts.
-const STATISTICS_LAYOUT_BUDGET: u32 = 65_536;
+/// Paragraphs of layout `Statistics` may run before it answers (a short document
+/// is complete then; the layout of a long one goes on in the background, and
+/// the reply says whether its line and page counts are final).
+const STATISTICS_LAYOUT_BUDGET: u32 = 1024;
 /// Bytes of paragraph text a `ReplaceAll` may rewrite: each replacement clones
 /// its paragraph twice into the undo history.
 const MAX_REPLACE_WORK_BYTES: usize = 64 * 1024 * 1024;
@@ -271,8 +273,8 @@ impl Session {
         })
     }
 
-    /// Lays the document out to its end (within a budget) so that the line and
-    /// page counts are final.
+    /// Lays the document out further (within a budget), toward final line and
+    /// page counts.
     fn complete_layout(&mut self) {
         let mut spent = 0;
         while !self.cache.layout_complete() && spent < STATISTICS_LAYOUT_BUDGET {
@@ -573,7 +575,7 @@ impl Session {
     pub(super) fn properties_read(&mut self) -> Result<Response, ErrorCode> {
         Ok(Response::Properties {
             revision: self.revision(),
-            snapshot: self.properties_snapshot()?,
+            snapshot: Box::new(self.properties_snapshot()?),
         })
     }
 

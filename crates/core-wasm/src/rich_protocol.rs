@@ -592,7 +592,7 @@ pub enum Response {
     },
     Properties {
         revision: u64,
-        snapshot: PropertiesSnapshot,
+        snapshot: Box<PropertiesSnapshot>,
     },
     PropertiesApplied(PropertiesOutcome),
 }

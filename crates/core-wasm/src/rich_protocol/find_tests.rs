@@ -395,7 +395,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                 1,
                 Response::SearchResult {
                     revision: 4,
-                    total: 12_000_u32.min(10_000),
+                    total: 10_000,
                     truncated: true,
                     total_capped: true,
                     items: vec![
@@ -507,7 +507,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                 7,
                 Response::Properties {
                     revision: 4,
-                    snapshot: snapshot(),
+                    snapshot: Box::new(snapshot()),
                 },
             ),
         ),
@@ -777,7 +777,10 @@ fn bad_requests() -> Vec<(&'static str, Vec<u8>, ErrorCode)> {
     ]
 }
 
-fn result_body(total: u32, flags: u8, items: &[(u64, u64, &[u8], u32, u32, u8)]) -> Vec<u8> {
+/// `(start, end, excerpt, excerpt start, excerpt end, excerpt flags)`.
+type RawItem<'a> = (u64, u64, &'a [u8], u32, u32, u8);
+
+fn result_body(total: u32, flags: u8, items: &[RawItem<'_>]) -> Vec<u8> {
     let mut b = cat(&[
         &u64le(1),
         &u32le(total),

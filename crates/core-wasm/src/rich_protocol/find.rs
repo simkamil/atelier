@@ -664,7 +664,7 @@ pub(super) fn parse_reply(opcode: u16, r: &mut Reader<'_>) -> Result<Response, E
         },
         op::R_PROPERTIES => Response::Properties {
             revision: r.u64()?,
-            snapshot: read_snapshot(r)?,
+            snapshot: Box::new(read_snapshot(r)?),
         },
         op::R_PROPERTIES_APPLIED => {
             let status = match r.u8()? {
