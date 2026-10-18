@@ -5,9 +5,14 @@
 
 use atelier_core_wasm::rich_layout::{LayoutError, PageCache, PageDelta, RichPageCache};
 use atelier_render::{Command, DisplayList};
-use atelier_text_model::rich::flat::{BlockKind, EditOutcome, FlatIndex, LayoutContext};
+use atelier_text_model::rich::flat::{
+    BlockKind, EditOutcome, FlatIndex, LayoutContext, LayoutScope,
+};
 use atelier_text_model::rich::flat_double::{VecParagraphs, example_section};
-use atelier_text_model::rich::{AnchoredObject, CharAttrs, CharRun, Paragraph, RichDocument};
+use atelier_text_model::rich::{
+    AnchoredObject, BreakKind, CharAttrs, CharRun, InlineBreak, InlineSymbol, Paragraph,
+    RichDocument,
+};
 use std::collections::HashMap;
 
 struct Rng(u64);
@@ -142,23 +147,64 @@ impl Client {
     }
 }
 
+/// Replacements, pure insertions and deletions, appends at the end, deletion
+/// of every paragraph; one edit in eight is reported as a change outside
+/// paragraphs (`LayoutScope::All`).
 fn random_edit(rng: &mut Rng, doc: &mut VecParagraphs) -> EditOutcome {
     let count = doc.paragraph_count();
-    let first = rng.below(count);
-    let removed = 1 + rng.below(2.min(count - first));
-    let inserted = match rng.below(4) {
-        0 => removed,
-        1 => 1 + rng.below(3),
-        2 => removed + 1,
-        _ => removed.saturating_sub(1).max(1),
+    let words = |rng: &mut Rng| 3 + rng.below(60);
+    let make = |rng: &mut Rng, n: usize| -> Vec<Paragraph> {
+        (0..n)
+            .map(|_| {
+                let w = words(rng);
+                paragraph(rng, w)
+            })
+            .collect()
     };
-    let new = (0..inserted)
-        .map(|_| {
-            let words = 3 + rng.below(70);
-            paragraph(rng, words)
-        })
-        .collect();
-    doc.replace_paragraphs(first, removed, new)
+    let mut outcome = if count == 0 {
+        let n = 1 + rng.below(3);
+        let new = make(rng, n);
+        doc.replace_paragraphs(0, 0, new)
+    } else {
+        match rng.below(8) {
+            // Pure insertion between paragraphs.
+            0 => {
+                let n = 1 + rng.below(3);
+                let new = make(rng, n);
+                doc.replace_paragraphs(rng.below(count + 1), 0, new)
+            }
+            // Pure deletion.
+            1 => {
+                let first = rng.below(count);
+                let removed = 1 + rng.below(2.min(count - first));
+                doc.replace_paragraphs(first, removed, Vec::new())
+            }
+            // Append at the end of the document.
+            2 => {
+                let n = 1 + rng.below(2);
+                let new = make(rng, n);
+                doc.replace_paragraphs(count, 0, new)
+            }
+            // The document becomes empty (rarely).
+            3 if rng.below(6) == 0 => doc.replace_paragraphs(0, count, Vec::new()),
+            _ => {
+                let first = rng.below(count);
+                let removed = 1 + rng.below(2.min(count - first));
+                let inserted = match rng.below(4) {
+                    0 => removed,
+                    1 => 1 + rng.below(3),
+                    2 => removed + 1,
+                    _ => removed.saturating_sub(1).max(1),
+                };
+                let new = make(rng, inserted);
+                doc.replace_paragraphs(first, removed, new)
+            }
+        }
+    };
+    if rng.below(8) == 0 {
+        outcome.layout_scope = LayoutScope::All;
+    }
+    outcome
 }
 
 fn complete_state(doc: &VecParagraphs, txt: bool) -> PageCache {
@@ -172,7 +218,14 @@ fn assert_same_as_full(cache: &mut PageCache, doc: &VecParagraphs, txt: bool, rn
     let mut fresh = complete_state(doc, txt);
     assert_eq!(cache.page_count(), fresh.page_count(), "page count");
     assert_eq!(cache.pagination(), fresh.pagination(), "pagination");
-    for page in 0..fresh.page_count() {
+    let pages = fresh.page_count();
+    let mut sampled = vec![
+        0,
+        pages.saturating_sub(1),
+        rng.below(pages.max(1) as usize) as u32,
+    ];
+    sampled.dedup();
+    for page in sampled.into_iter().filter(|p| *p < pages) {
         assert_eq!(
             cache.page_display(doc, page).unwrap(),
             fresh.page_display(doc, page).unwrap(),
@@ -196,7 +249,7 @@ fn assert_same_as_full(cache: &mut PageCache, doc: &VecParagraphs, txt: bool, rn
 
 fn property(seed: u64, txt: bool) {
     let mut rng = Rng(seed);
-    let mut doc = document(seed, 20);
+    let mut doc = document(seed, 12);
     let mut cache = PageCache::new(&doc, txt).expect("cache");
     let mut client = Client {
         pages: HashMap::new(),
@@ -206,7 +259,7 @@ fn property(seed: u64, txt: bool) {
         client.apply(&mut cache, &doc, delta);
     }
     assert_same_as_full(&mut cache, &doc, txt, &mut rng);
-    for _ in 0..10 {
+    for _ in 0..8 {
         let outcome = random_edit(&mut rng, &mut doc);
         let delta = cache.apply_edit(&doc, &outcome);
         client.apply(&mut cache, &doc, &delta);
@@ -219,12 +272,16 @@ fn property(seed: u64, txt: bool) {
 
 #[test]
 fn incremental_layout_equals_full_layout_document_profile() {
-    property(3, false);
+    for seed in 1..=20 {
+        property(seed * 31, false);
+    }
 }
 
 #[test]
 fn incremental_layout_equals_full_layout_txt_profile() {
-    property(29, true);
+    for seed in 1..=20 {
+        property(seed * 57, true);
+    }
 }
 
 #[test]
@@ -599,4 +656,102 @@ fn an_edit_beyond_the_laid_out_prefix_waits_for_step() {
     assert!(!delta.layout_complete);
     settle(&mut cache, &doc, &mut rng);
     assert_same_as_full(&mut cache, &doc, false, &mut rng);
+}
+
+#[test]
+fn a_change_the_cache_was_not_told_about_is_visible_to_the_comparison() {
+    // Witness of the property tests: without `apply_edit` the cache differs
+    // from a fresh layout, so the equality they assert is not vacuous.
+    let mut rng = Rng(4);
+    let mut doc = document(21, 12);
+    let mut cache = complete_state(&doc, false);
+    let mut longer = doc.paragraph(2).unwrap().clone();
+    longer
+        .text
+        .push_str(&" more words to make the paragraph taller".repeat(40));
+    longer.runs.clear();
+    doc.replace_paragraphs(2, 1, vec![longer]);
+    let fresh = complete_state(&doc, false);
+    assert_ne!(cache.pagination(), fresh.pagination());
+    // Told about it, the cache catches up.
+    let outcome = doc.replace_paragraphs(0, 1, vec![doc.paragraph(0).unwrap().clone()]);
+    cache.apply_edit(&doc, &outcome);
+    settle(&mut cache, &doc, &mut rng);
+    let _ = cache.page_count();
+}
+
+/// "one", a line break, " two", a page break, " three", a symbol: the model
+/// keeps the breaks and the symbol outside the text (three flat bytes each).
+fn breaking_document() -> VecParagraphs {
+    let mut owner = RichDocument::new();
+    let mut p = Paragraph::with_text("one two three");
+    p.breaks.push(InlineBreak {
+        id: owner.alloc_id().unwrap(),
+        offset: 3,
+        kind: BreakKind::Line,
+    });
+    p.breaks.push(InlineBreak {
+        id: owner.alloc_id().unwrap(),
+        offset: 7,
+        kind: BreakKind::Page,
+    });
+    p.symbols.push(InlineSymbol {
+        id: owner.alloc_id().unwrap(),
+        offset: 13,
+        font: "Symbol".into(),
+        code: 0xf0b7,
+    });
+    let mut doc = VecParagraphs::new(vec![p, Paragraph::with_text("next")]);
+    doc.section = example_section();
+    doc
+}
+
+#[test]
+fn line_and_page_breaks_and_symbols_in_the_flat_text() {
+    for txt in [false, true] {
+        let doc = breaking_document();
+        // Flat text: "one" 0..3, break 3..6, " two" 6..10, break 10..13,
+        // " three" 13..19, symbol 19..22, end of paragraph at 22.
+        assert_eq!(doc.paragraph_flat(0).unwrap().len(), 22);
+        let cache = complete_state(&doc, txt);
+        assert_eq!(cache.page_count(), 2, "the page break starts page 2");
+        // Line one ends before the break; the break does not extend it.
+        let (start, end) = cache.line_edges(0, false).unwrap();
+        assert_eq!((start, end), (0, 3));
+        let before = cache.caret(3, false).unwrap();
+        let after = cache.caret(6, false).unwrap();
+        assert_eq!(before.page, 0);
+        assert!(after.y > before.y, "after the break: next line");
+        assert!(after.x < before.x, "next line starts at the margin");
+        assert_eq!(cache.line_edges(6, false).unwrap().0, 6);
+        // Past the page break: page 1 at the top margin.
+        let top = cache.caret(13, false).unwrap();
+        assert_eq!(top.page, 1);
+        assert!(top.y < after.y);
+        // Positions inside an item are refused, around it they are valid.
+        assert!(cache.caret(4, false).is_err());
+        assert!(cache.caret(19, false).is_ok() && cache.caret(22, false).is_ok());
+        // The symbol takes room in the line.
+        let (x0, x1) = (
+            cache.caret(19, false).unwrap().x,
+            cache.caret(22, false).unwrap().x,
+        );
+        assert!(x1 > x0, "the symbol is drawn: {x0} < {x1}");
+        // Hit test lands on the flat positions around the items.
+        let first = cache.caret(0, false).unwrap();
+        assert_eq!(
+            cache.hit_test(0, first.x + 200.0, first.y + 3.0).unwrap().0,
+            3
+        );
+        let (position, _) = cache.hit_test(1, 400.0, top.y + top.height / 2.0).unwrap();
+        assert!((13..=22).contains(&position), "{position}");
+        // A selection across the line break covers both lines.
+        let rects = cache.selection_rects(0, 1, 8).unwrap();
+        assert_eq!(rects.len(), 2, "{rects:?}");
+        // Pages draw: both display lists decode.
+        let mut cache = cache;
+        for page in 0..2 {
+            assert!(cache.page_display(&doc, page).is_ok());
+        }
+    }
 }

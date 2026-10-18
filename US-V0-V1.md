@@ -769,9 +769,10 @@ Réf : §6.3, §6.4 · Taille : M · Dépend de : US-200, US-203
 *En tant que* développeur, *je veux* brancher la mise en page incrémentale et la géométrie du curseur dans le moteur *afin de* ne recalculer et n'émettre que les pages modifiées.
 - [x] `rich_layout.rs` et `rich_paint.rs` : incrémental identique au calcul complet, cache par page, profils TXT et document.
 - [x] Curseur, test de position et rectangles de sélection testés ; l'aperçu DOCX utilise le même dessin.
-- [x] Plus aucune prévalidation globale : la pagination incrémentale ne parcourt que les pages touchées et s'arrête à la première page stabilisée ; mise à jour mise en page + liste d'affichage < 4 ms pour une frappe au milieu d'un document de 300 pages (banc release, compteurs de pages parcourues joints).
+- [x] Plus aucune prévalidation globale : la pagination incrémentale ne parcourt que les pages touchées et s'arrête à la première page stabilisée (compteurs de pages parcourues joints : 2,02 en moyenne sur 304 pages).
+- [ ] Frappe au milieu de 300 pages, mise en page + liste d'affichage : moyenne 2,4 ms, p95 2,87 ms, max 4,39 ms (2 frappes sur 400 au-dessus de 4 ms, ajout de ligne) ; objectif < 4 ms au p95, mesuré de bout en bout dans US-219 et US-362.
 
-Validation US-216 (2026-10-18) : tranche R2 développée sur la branche `us-216-incremental-layout` (lot 1 : cellules de tableau en pleine largeur, ni en-têtes ni pieds ; [contrat, mesures et limites](docs/us-216-incremental-layout.md)). Banc release sur 304 pages : frappe au milieu 2,48 ms en moyenne, 3,05 ms au 95e centile, 4,97 ms au maximum (les frappes qui ajoutent une ligne, 2 sur 400, dépassent 4 ms) ; 2,02 pages parcourues par frappe en moyenne. Relecture indépendante et critère de latence de bout en bout (US-219, US-362) encore à faire.
+Validation US-216 (2026-10-18) : tranche R2 développée sur la branche `us-216-incremental-layout` (lot 1 : cellules de tableau en pleine largeur, ni en-têtes ni pieds ; sauts de ligne, de page et symboles pris en charge par l'éditeur et l'aperçu ; [contrat, mesures et limites](docs/us-216-incremental-layout.md)). Banc release sur 304 pages : frappe au milieu 2,42 ms en moyenne, 2,87 ms au 95e centile, 4,39 ms au maximum ; relecture indépendante faite (corrections appliquées), vérification après fusion de R1 à refaire.
 
 Réf : §6.5, §6.16 · Taille : M · Dépend de : US-203, US-214
 
