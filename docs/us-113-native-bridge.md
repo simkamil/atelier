@@ -90,7 +90,22 @@ touchent qu'au courtier partagé et à leurs propres données. Le fil poste
 réponse, différée par minuterie de 50 ms tant qu'un dialogue modal détient l'état du pont.
 Un ticket de lecture est retiré de l'état dès la requête, un ticket d'écriture dès le dernier
 morceau. Une écriture abandonnée en cours de morceaux est libérée (ticket révoqué) par la
-demande `pickSave` suivante.
+demande `pickSave` suivante, ou, au plus tard, par la première requête du pont arrivant
+60 s après son dernier morceau (`STAGING_IDLE_LIMIT`, vérifié dans `begin_bridge_request`).
+Limite : sans requête, il n'y a pas de minuterie, donc le ticket et les octets déjà reçus
+(au plus `MAX_WRITE_BYTES`) restent tenus jusqu'à la requête suivante ou la fermeture.
+
+### Fermeture différée
+
+`WM_CLOSE` ne ferme pas la fenêtre tant que `bridge_inflight > 0` : une écriture atomique ou
+une lecture en cours n'est jamais interrompue par la fin du processus. La première demande
+note l'instant (`close_wait_since`) et arme une minuterie de 250 ms ; la fin du dernier
+travail (`WM_ATELIER_BRIDGE_DONE`, après livraison) reposte `WM_CLOSE`. La décision est la
+fonction pure `close_gate` : `Proceed` (aucun travail), `Wait` (moins de 30 s), `AskTimeout`.
+Au-delà de 30 s, une boîte demande « Quitter quand même ? » : non annule la fermeture,
+oui quitte en connaissance de cause (une écriture interrompue peut laisser un fichier
+temporaire). Le blocage du travail du fichier de l'ancien mécanisme (`file_work_active`) reste
+inchangé.
 
 ## Mesure : fichier de 100 Mio
 
