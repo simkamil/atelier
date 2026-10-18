@@ -802,6 +802,8 @@ Réf : §5 · Taille : M · Dépend de : US-217, écrivain DOCX livré par US-30
 - [ ] `web/document-mirror.mjs` : portion visible (paragraphes, titres, listes, texte alternatif) synchronisée avec le curseur et la sélection.
 - [ ] Essai consigné avec NVDA et Narrateur : lecture de la ligne et de la sélection. (campagne US-354)
 
+Validation du 2026-10-18 : `web/document-mirror.mjs` livré et testé sur une fausse source (13 tests Node ; 35 contrôles Edge headless en affichage normal et en contraste forcé : structure, niveaux, alt, sélection DOM, focus conservé), voir [miroir DOM](docs/us-209-document-mirror.md). Premier critère laissé décoché : la donnée réelle (opcode `AccessibleWindow` du moteur) et le branchement dans l'éditeur ne sont pas faits, donc l'utilisateur n'a encore aucun miroir. Essai NVDA/Narrateur : procédure préparée dans la doc, campagne US-354 non faite.
+
 Réf : D13, §6.14 · Taille : M · Dépend de : US-203, US-217
 
 #### US-219 — Bascule et retrait de l'éditeur texte brut
