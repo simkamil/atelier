@@ -437,5 +437,26 @@ test("atlas: the bytes of the client atlas are bounded (MAX_ATLAS_CLIENT_BYTES)"
   assert.equal(cache.atlasBytes, big.length);
 });
 
+test("state: a malformed caret or text window is refused without touching the cache", () => {
+  const cache = new EditorPageCache();
+  cache.apply(decoded(state({ revision: 1n, pageCount: 2, atlas: withAtlas(1, 0, [1]), pages: pagesOf(0) })));
+  const good = decoded(state({ revision: 2n, pageCount: 2, atlas: withAtlas(1, 1, [2]), pages: pagesOf(1) }));
+  const before = JSON.stringify([cache.atlasSize, known(cache), String(cache.revision)]);
+  const bads = [
+    { ...good, caret: { page: 2, x: 0, y: 0, height: 1 } },
+    { ...good, caret: { page: 0, x: Number.NaN, y: 0, height: 1 } },
+    { ...good, caret: { page: 0, x: 0, y: 0, height: -1 } },
+    { ...good, caret: { page: 1.5, x: 0, y: 0, height: 1 } },
+    { ...good, window: { start: 1, text: "a" } },
+    { ...good, window: { start: 1n, text: 5 } },
+  ];
+  for (const bad of bads) {
+    assert.throws(() => cache.apply(bad), (e) => e.code === "CLIENT_BAD_REPLY");
+    assert.equal(JSON.stringify([cache.atlasSize, known(cache), String(cache.revision)]), before);
+  }
+  cache.apply({ ...good, caret: { page: 1, x: 1, y: 2, height: 3 }, window: { start: 0n, text: "ok" } });
+  assert.equal(cache.revision, 2n);
+});
+
 if (failed) { console.error(`${failed} test(s) failed`); process.exit(1); }
 console.log("editor-page-cache: all tests passed");

@@ -58,6 +58,7 @@ export function createRichEditorClient({
   let draining = false;
   let wake = false;
   let needsResync = false;
+  let overflows = 0; // consecutive resyncs caused by the client atlas byte bound
   let pumpHalt = null; // null | "stopped" | "error"
   let visible = null;
   let fillBlockedVersion = -1;
@@ -117,8 +118,20 @@ export function createRichEditorClient({
       // Glyph atlas entries were lost (an abandoned reply the engine counted as sent): the pages that
       // refer to them cannot be trusted, so a `Resync` (new atlas epoch) is requested.
       if (error?.cause?.atlas === true && !disposed) { cache.dropPages(); needsResync = true; }
+      if (error?.cause?.atlasBytes === true && !disposed) {
+        cache.dropPages(); needsResync = true;
+        overflows += 1;
+        if (overflows >= 2) {
+          // The atlas filled the client bound right after a resync: another resync would loop.
+          needsResync = false; pumpHalt = "error";
+          const fatal = new RichClientError("CLIENT_ATLAS_FULL", "Glyph atlas exceeds the client byte bound after a resynchronisation.", error);
+          settleLayoutWaiters(fatal); report(fatal);
+          throw fatal;
+        }
+      }
       throw error;
     }
+    if (command.type !== "resync") overflows = 0;
     settleLayoutWaiters();
     return { response, change };
   }
@@ -130,9 +143,10 @@ export function createRichEditorClient({
   async function guarded(command, callerSignal) {
     try { return await exchange(command, callerSignal); } catch (error) {
       // The engine may have applied the command whatever went wrong, except for its own RICH_* refusals.
-      const refused = typeof error?.code === "string" && error.code.startsWith("RICH_");
+      // RICH_FRAME_TOO_LARGE is not a refusal: the engine applied the command, then lost the reply (mark_resync).
+      const refused = typeof error?.code === "string" && error.code.startsWith("RICH_") && error.code !== "RICH_FRAME_TOO_LARGE";
       const type = REPLY_TYPE[command.type];
-      if (!refused && (type === "state" || type === "pages") && !disposed && error?.code !== "CLIENT_CLOSED") {
+      if (!refused && (type === "state" || type === "pages") && !disposed && error?.code !== "CLIENT_CLOSED" && error?.code !== "CLIENT_ATLAS_FULL") {
         if (type === "state") cache.dropPages();
         needsResync = true;
       }
@@ -155,6 +169,17 @@ export function createRichEditorClient({
       }
     }
     throw new RichClientError("CLIENT_RETRY_LIMIT", "Pages stayed unavailable.");
+  }
+
+  /** Close: no resync before it; a document the engine no longer has counts as closed, whatever the resync state. */
+  async function closeExchange(callerSignal) {
+    try { return await exchange({ type: "close" }, callerSignal); } catch (error) {
+      if (error?.code === "RICH_UNKNOWN_DOCUMENT") {
+        opened = false; cache.reset(); pumpHalt = "stopped"; needsResync = false;
+        settleLayoutWaiters(closedError());
+      }
+      throw error;
+    }
   }
 
   function pumpWanted() { return opened && !pumpHalt && !cache.layoutComplete; }
@@ -299,7 +324,7 @@ export function createRichEditorClient({
     /** Send one command; resolves `{response, change}`, rejects with RichClientError for RICH_* refusals. */
     command(command, { signal: callerSignal } = {}) {
       if (command?.type === "open") return Promise.reject(new TypeError("Use open() to open a document."));
-      return enqueue(() => guarded(command, callerSignal), callerSignal);
+      return enqueue(() => (command?.type === "close" ? closeExchange(callerSignal) : guarded(command, callerSignal)), callerSignal, command?.type === "close");
     },
     /** Fetch the unknown pages of [first, end), retrying after Layout on RICH_NOT_READY. */
     ensurePages(first, end, { signal: callerSignal } = {}) {
@@ -314,7 +339,7 @@ export function createRichEditorClient({
       fillBlockedVersion = -1;
       kick();
     },
-    closeDocument({ signal: callerSignal } = {}) { return enqueue(() => exchange({ type: "close" }, callerSignal), callerSignal); },
+    closeDocument({ signal: callerSignal } = {}) { return enqueue(() => closeExchange(callerSignal), callerSignal, true); },
     /** Stops the pump; a Layout in flight is cancelled, which empties the cached pages (asked again later). whenLayoutComplete() then waits for startPump(). */
     stopPump() { pumpHalt = "stopped"; pumpController.abort(); },
     startPump() { if (pumpHalt) { pumpHalt = null; pumpController = new AbortController(); } kick(); },

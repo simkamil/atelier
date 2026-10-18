@@ -119,7 +119,7 @@ export class EditorPageCache {
       bytes += entry.length;
       return { elements: command.path, path: null };
     });
-    if (bytes > MAX_ATLAS_CLIENT_BYTES) invalid("Atlas is over the client byte bound.");
+    if (bytes > MAX_ATLAS_CLIENT_BYTES) throw new RichClientError("CLIENT_BAD_REPLY", "Atlas is over the client byte bound.", { atlasBytes: true });
     return { fresh, epoch: atlas.epoch, decoded, bytes };
   }
 
@@ -253,6 +253,9 @@ export class EditorPageCache {
       if (!Array.isArray(range) || !Number.isInteger(range[0]) || !Number.isInteger(range[1]) || range[0] < 0 || range[0] >= range[1]) invalid("Invalidation range is malformed.");
     }
     if (s.anchor > s.docLen || s.focus > s.docLen) invalid("Selection lies outside the document.");
+    const c = s.caret;
+    if (c && (!Number.isInteger(c.page) || c.page < 0 || c.page >= s.pageCount || ![c.x, c.y, c.height].every(Number.isFinite) || c.height < 0)) invalid("Caret is malformed.");
+    if (s.window && (typeof s.window.start !== "bigint" || typeof s.window.text !== "string")) invalid("State text window is malformed.");
     this.#checkPages(s.pages, s.pageCount);
     return false;
   }

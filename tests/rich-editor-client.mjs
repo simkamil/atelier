@@ -55,7 +55,7 @@ function makeEngine({ docId = 1, total = 100, firstComputed = 10 } = {}) {
     if (req.docId !== docId && c.type !== "open") return { type: "error", code: "RICH_UNKNOWN_DOCUMENT" };
     switch (c.type) {
       case "open": e.open = true; e.rev = 0n; return e.state({ pages: Array.from({ length: Math.min(16, e.computed) }, (_, i) => pageList(i)) });
-      case "close": e.open = false; return { type: "closed" };
+      case "close": if (!e.open) return { type: "error", code: "RICH_UNKNOWN_DOCUMENT" }; e.open = false; return { type: "closed" };
       case "layout": e.computed = Math.min(e.total, e.computed + c.budget); return e.state();
       case "pages": {
         if (c.first >= count()) return { type: "error", code: "RICH_PAGE_RANGE" };
@@ -477,6 +477,85 @@ await test("Resync without a document is refused and the next Open recovers", as
   engine.atlas.epoch = 7; engine.atlas.sent = 0; engine.atlas.fresh = 2;
   await client.open(OPEN);
   consistent(ctx);
+  client.dispose();
+});
+
+await test("RICH_FRAME_TOO_LARGE is not a refusal: the engine applied the command and lost the reply, so a Resync follows", async () => {
+  const ctx = await opened();
+  const { client, transport, engine, errors } = ctx;
+  engine.atlas.fresh = 2;
+  transport.override = (req) => (req.command.type === "insertText"
+    ? encodeRichReply({ docId: 1, requestId: req.requestId, response: { type: "error", code: "RICH_FRAME_TOO_LARGE" } }) : null);
+  await rejects(client.command({ type: "insertText", text: "a" }), "RICH_FRAME_TOO_LARGE");
+  transport.override = null;
+  await client.idle();
+  assert.equal(engine.resyncs, 1);
+  assert.equal(engine.edits, 1, "the engine applied the edit");
+  consistent(ctx);
+  assert.equal(errors.length, 0);
+  client.dispose();
+});
+
+await test("Close needs no resync before it, and a Close on a document the engine already closed leaves nothing stuck", async () => {
+  const ctx = await opened();
+  const { client, transport, engine } = ctx;
+  transport.override = (req) => (["insertText", "resync"].includes(req.command.type) ? new Error("transport down") : null);
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_TRANSPORT");
+  await client.idle();
+  const resyncs = engine.resyncs;
+  assert.ok(resyncs >= 1);
+  transport.override = null;
+  transport.log.length = 0;
+  await client.closeDocument();
+  assert.deepEqual(transport.log, ["close"], "no Resync before Close");
+  // The engine lost the document (closed behind the client's back) while a resync is pending.
+  engine.atlas.epoch += 1; engine.atlas.sent = 0; engine.atlas.fresh = 1;
+  await client.open(OPEN);
+  await client.idle();
+  transport.override = (req) => {
+    if (req.command.type !== "insertText") return null;
+    engine.open = false;
+    return new Error("transport down");
+  };
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_TRANSPORT");
+  await client.idle(); // the Resync is refused: needsResync stays set
+  transport.override = null;
+  await rejects(client.closeDocument(), "RICH_UNKNOWN_DOCUMENT");
+  assert.equal(client.opened, false);
+  const before = engine.resyncs ?? 0;
+  engine.atlas.epoch += 1; engine.atlas.sent = 0; engine.atlas.fresh = 1;
+  await client.open(OPEN);
+  await client.command({ type: "undo" });
+  await client.idle();
+  assert.equal(engine.resyncs ?? 0, before, "no stale resync after the reopen");
+  client.dispose();
+});
+
+await test("two resyncs in a row caused by the client atlas byte bound stop the pump with a typed fatal error", async () => {
+  const engine = makeEngine({ total: 30, firstComputed: 30 });
+  const transport = makeTransport(engine);
+  const cache = new EditorPageCache();
+  const errors = [];
+  const client = createRichEditorClient({ transport, docId: 1, cache, yieldTurn: turn, onError: (e) => errors.push(e) });
+  await client.open(OPEN);
+  await client.idle();
+  const real = cache.apply.bind(cache);
+  // Every reply that is not the answer to a Resync overflows the byte bound.
+  cache.apply = (r) => {
+    if (r.type !== "state" || !r.invalidated.some(([a, b]) => a === 0 && b === r.pageCount)) throw new RichClientError("CLIENT_BAD_REPLY", "bytes", { atlasBytes: true });
+    return real(r);
+  };
+  await rejects(client.command({ type: "insertText", text: "a" }), "CLIENT_BAD_REPLY");
+  await client.idle();
+  assert.equal(engine.resyncs, 1, "the first overflow is recovered by a resync");
+  await rejects(client.command({ type: "insertText", text: "b" }), "CLIENT_ATLAS_FULL");
+  await client.idle();
+  assert.equal(engine.resyncs, 1, "no third resync: the loop is cut");
+  const fatal = errors.find((e) => e.code === "CLIENT_ATLAS_FULL");
+  assert.ok(fatal instanceof RichClientError);
+  const calls = transport.calls;
+  await turn(); await turn();
+  assert.equal(transport.calls, calls, "the pump does not spin");
   client.dispose();
 });
 
