@@ -13,11 +13,14 @@
 mod attrs;
 mod defaults;
 mod document;
+mod edit;
 mod error;
 pub mod flat;
 /// Test double of the flat contract; absent from the wasm32 product build.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod flat_double;
+mod flat_impl;
+mod flat_tree;
 mod node;
 mod ops;
 mod paragraph;

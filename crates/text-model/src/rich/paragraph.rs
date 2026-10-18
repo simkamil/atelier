@@ -2,14 +2,18 @@
 //! The paragraph node: UTF-8 text, character-attribute runs, paragraph
 //! properties, anchored objects and in-text fields, bookmarks and links.
 //!
-//! All offsets are UTF-8 byte offsets into `text` and must fall on extended
-//! grapheme cluster boundaries. The mutators below work on `&mut self` and may
-//! leave it inconsistent when they fail; callers always mutate a clone and
-//! commit it only after `validate_local` succeeds.
+//! All offsets are UTF-8 byte offsets into `text`. Offsets of runs, fields,
+//! links and bookmarks must fall on extended grapheme cluster boundaries of
+//! `text`; the non-text items (anchored objects, breaks, symbols) only need a
+//! scalar boundary, because a combining mark typed right after such an item is
+//! its own cluster in the flat text (`rich::flat`). The mutators below work on
+//! `&mut self` and may leave it inconsistent when they fail; callers always
+//! mutate a clone and commit it only after `validate_local` succeeds.
 
 use super::NodeId;
 use super::attrs::{CharAttrs, ParaProps};
 use super::error::RichError;
+use super::flat::{FlatError, OBJECT_LEN};
 use atelier_unicode::segmentation::{BoundaryIndex, grapheme_boundaries};
 use std::collections::BTreeSet;
 
@@ -43,10 +47,9 @@ pub enum BreakKind {
 /// A line, page or column break at a text offset. It is zero-width in `text`
 /// and counts as one U+FFFC (3 bytes) in flat text (`rich::flat`).
 ///
-/// US-203 freezes the field only; keeping `offset` in step with text edits,
-/// the DOCX import and `validate_local` are R1's (US-204). Items of
-/// `anchored`, `breaks` and `symbols` at one offset are ordered by `id`
-/// across the three lists.
+/// Kept in step with text edits, validated by `validate_local` and produced by
+/// the DOCX import (US-204). Items of `anchored`, `breaks` and `symbols` at one
+/// offset are ordered by `id` across the three lists.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InlineBreak {
     pub id: NodeId,
@@ -153,6 +156,21 @@ fn check_offset(index: &BoundaryIndex<'_>, offset: usize, len: usize) -> Result<
     match index.is_boundary(offset) {
         Ok(true) => Ok(()),
         _ => Err(RichError::NotGraphemeBoundary { offset }),
+    }
+}
+
+/// Offset of a non-text item: a scalar boundary inside the text.
+fn check_item_offset(text: &str, offset: usize) -> Result<(), RichError> {
+    if offset > text.len() {
+        return Err(RichError::OffsetOutOfBounds {
+            offset,
+            len: text.len(),
+        });
+    }
+    if text.is_char_boundary(offset) {
+        Ok(())
+    } else {
+        Err(RichError::NotGraphemeBoundary { offset })
     }
 }
 
@@ -280,7 +298,29 @@ impl Paragraph {
             }
         }
         for x in &self.anchored {
-            check_offset(&index, x.offset, len)?;
+            check_item_offset(&self.text, x.offset)?;
+        }
+        for pair in self.breaks.windows(2) {
+            if (pair[0].offset, pair[0].id) >= (pair[1].offset, pair[1].id) {
+                return Err(RichError::Invariant("breaks unsorted"));
+            }
+        }
+        for x in &self.breaks {
+            check_item_offset(&self.text, x.offset)?;
+        }
+        for pair in self.symbols.windows(2) {
+            if (pair[0].offset, pair[0].id) >= (pair[1].offset, pair[1].id) {
+                return Err(RichError::Invariant("symbols unsorted"));
+            }
+        }
+        for x in &self.symbols {
+            check_item_offset(&self.text, x.offset)?;
+            if x.font.is_empty() {
+                return Err(RichError::InvalidAttribute("symbol without a font"));
+            }
+            if char::from_u32(x.code).is_none() {
+                return Err(RichError::InvalidAttribute("symbol code is not a scalar"));
+            }
         }
         for x in &self.fields {
             if x.start > x.end {
@@ -350,14 +390,38 @@ impl Paragraph {
     }
 
     /// Inserts `text` at `offset`. The new text inherits the attributes of the
-    /// character before it; markers located at or after `offset` move right.
+    /// character before it; markers and items located at or after `offset`
+    /// move right.
     pub fn insert_text(&mut self, offset: usize, text: &str) -> Result<(), RichError> {
         let len = self.text.len();
-        check_offset(&grapheme_boundaries(&self.text), offset, len)?;
+        if self.has_item_at(offset) {
+            check_item_offset(&self.text, offset)?;
+        } else {
+            check_offset(&grapheme_boundaries(&self.text), offset, len)?;
+        }
         if text.is_empty() {
             return Ok(());
         }
+        self.insert_text_core(offset, text, &[]);
+        let index = grapheme_boundaries(&self.text);
+        check_offset(&index, offset, self.text.len())?;
+        check_offset(&index, offset + text.len(), self.text.len())
+    }
+
+    fn has_item_at(&self, offset: usize) -> bool {
+        self.anchored.iter().any(|x| x.offset == offset)
+            || self.breaks.iter().any(|x| x.offset == offset)
+            || self.symbols.iter().any(|x| x.offset == offset)
+    }
+
+    /// Inserts `text` at the scalar boundary `offset`; the items listed in
+    /// `stay` (all located at `offset`) do not move, the other items at or
+    /// after `offset` do. No grapheme check, no normalization.
+    fn insert_text_core(&mut self, offset: usize, text: &str, stay: &[NodeId]) {
         let n = text.len();
+        if n == 0 {
+            return;
+        }
         for run in &mut self.runs {
             if run.start >= offset {
                 run.start += n;
@@ -367,7 +431,17 @@ impl Paragraph {
             }
         }
         for x in &mut self.anchored {
-            if x.offset >= offset {
+            if x.offset >= offset && !stay.contains(&x.id) {
+                x.offset += n;
+            }
+        }
+        for x in &mut self.breaks {
+            if x.offset >= offset && !stay.contains(&x.id) {
+                x.offset += n;
+            }
+        }
+        for x in &mut self.symbols {
+            if x.offset >= offset && !stay.contains(&x.id) {
                 x.offset += n;
             }
         }
@@ -390,13 +464,12 @@ impl Paragraph {
             shift(&mut x.start, &mut x.end, offset, n);
         }
         self.text.insert_str(offset, text);
-        let index = grapheme_boundaries(&self.text);
-        check_offset(&index, offset, self.text.len())?;
-        check_offset(&index, offset + n, self.text.len())
+        self.sort_inline();
     }
 
     /// Deletes `start..end`. Markers inside collapse to `start`; anchored
-    /// objects inside are removed; links and fields left empty are removed.
+    /// objects, breaks and symbols inside are removed; links and fields left
+    /// empty are removed.
     pub fn delete_text(&mut self, start: usize, end: usize) -> Result<(), RichError> {
         let len = self.text.len();
         if start > end {
@@ -408,6 +481,14 @@ impl Paragraph {
         if start == end {
             return Ok(());
         }
+        self.delete_text_core(start, end, true);
+        Ok(())
+    }
+
+    /// Deletes the scalar range `start..end` (`start < end`); items inside
+    /// are removed only when `drop_items`. No grapheme check, no
+    /// normalization.
+    fn delete_text_core(&mut self, start: usize, end: usize, drop_items: bool) {
         let n = end - start;
         let map = |p: usize| {
             if p <= start {
@@ -422,9 +503,21 @@ impl Paragraph {
             run.start = map(run.start);
             run.end = map(run.end);
         }
-        self.anchored
-            .retain(|x| !(start <= x.offset && x.offset < end));
+        if drop_items {
+            self.anchored
+                .retain(|x| !(start <= x.offset && x.offset < end));
+            self.breaks
+                .retain(|x| !(start <= x.offset && x.offset < end));
+            self.symbols
+                .retain(|x| !(start <= x.offset && x.offset < end));
+        }
         for x in &mut self.anchored {
+            x.offset = map(x.offset);
+        }
+        for x in &mut self.breaks {
+            x.offset = map(x.offset);
+        }
+        for x in &mut self.symbols {
             x.offset = map(x.offset);
         }
         self.fields.retain_mut(|x| {
@@ -445,7 +538,263 @@ impl Paragraph {
         self.text.replace_range(start..end, "");
         self.runs = normalize(std::mem::take(&mut self.runs));
         self.sort_inline();
+    }
+
+    /// Moves every run, field, link and bookmark boundary that an edit left
+    /// inside a grapheme cluster to the cluster edge, keeping the covered
+    /// text covered (starts go back, ends go forward) and the sequences
+    /// sorted and disjoint. Links and fields that end up empty are removed.
+    fn normalize_markers(&mut self) {
+        let index = grapheme_boundaries(&self.text);
+        let floor = |p: usize| index.floor_boundary(p).unwrap_or(p);
+        let ceil = |p: usize| index.ceil_boundary(p).unwrap_or(p);
+        let mut prev_end = 0;
+        for run in &mut self.runs {
+            run.start = floor(run.start).max(prev_end);
+            run.end = ceil(run.end).max(run.start);
+            prev_end = run.end;
+        }
+        self.runs = normalize(std::mem::take(&mut self.runs));
+        let mut prev_end = 0;
+        self.fields.retain_mut(|x| {
+            x.start = floor(x.start).max(prev_end);
+            x.end = ceil(x.end).max(x.start);
+            prev_end = x.end;
+            x.start != x.end
+        });
+        let mut prev_end = 0;
+        self.links.retain_mut(|x| {
+            x.start = floor(x.start).max(prev_end);
+            x.end = ceil(x.end).max(x.start);
+            prev_end = x.end;
+            x.start != x.end
+        });
+        for x in &mut self.bookmarks {
+            x.start = floor(x.start);
+            x.end = ceil(x.end).max(x.start);
+        }
+        self.sort_inline();
+    }
+
+    /// Items (anchored objects, breaks, symbols) as `(offset, id)` in flat
+    /// order: by offset, then by id across the three lists.
+    pub(crate) fn items(&self) -> Vec<(usize, NodeId)> {
+        let mut items: Vec<(usize, NodeId)> =
+            Vec::with_capacity(self.anchored.len() + self.breaks.len() + self.symbols.len());
+        items.extend(self.anchored.iter().map(|x| (x.offset, x.id)));
+        items.extend(self.breaks.iter().map(|x| (x.offset, x.id)));
+        items.extend(self.symbols.iter().map(|x| (x.offset, x.id)));
+        items.sort();
+        items
+    }
+
+    /// Text offset and number of items entirely before the flat offset
+    /// `flat` of the paragraph's flat text (`rich::flat`): a position inside
+    /// an item is `NotBoundary`, one past the end `OutOfRange`.
+    pub(crate) fn cut(&self, flat: usize) -> Result<(usize, usize), FlatError> {
+        let items = self.items();
+        let mut before = 0;
+        for (j, (offset, _)) in items.iter().enumerate() {
+            let start = offset + OBJECT_LEN * j;
+            if flat < start {
+                break;
+            }
+            if flat < start + OBJECT_LEN {
+                return if flat == start {
+                    Ok((*offset, j))
+                } else {
+                    Err(FlatError::NotBoundary)
+                };
+            }
+            before = j + 1;
+        }
+        if flat > self.text.len() + OBJECT_LEN * items.len() {
+            return Err(FlatError::OutOfRange);
+        }
+        let offset = flat - OBJECT_LEN * before;
+        if self.text.is_char_boundary(offset) {
+            Ok((offset, before))
+        } else {
+            Err(FlatError::NotBoundary)
+        }
+    }
+
+    /// Ids of the items located at the text offset `offset` among the first
+    /// `before` items in flat order.
+    fn staying(&self, offset: usize, before: usize) -> Vec<NodeId> {
+        self.items()
+            .into_iter()
+            .take(before)
+            .filter(|(o, _)| *o == offset)
+            .map(|(_, id)| id)
+            .collect()
+    }
+
+    /// Deletes the flat range `start..end` of the paragraph's flat text:
+    /// the text, and the items whose U+FFFC lies inside. Both ends must be
+    /// scalar boundaries outside any item.
+    pub(crate) fn delete_flat(&mut self, start: usize, end: usize) -> Result<(), FlatError> {
+        if start > end {
+            return Err(FlatError::InvalidRange);
+        }
+        if start == end {
+            return Ok(());
+        }
+        let (ts, ks) = self.cut(start)?;
+        let (te, ke) = self.cut(end)?;
+        let doomed: Vec<NodeId> = self
+            .items()
+            .get(ks..ke)
+            .unwrap_or(&[])
+            .iter()
+            .map(|(_, id)| *id)
+            .collect();
+        self.anchored.retain(|x| !doomed.contains(&x.id));
+        self.breaks.retain(|x| !doomed.contains(&x.id));
+        self.symbols.retain(|x| !doomed.contains(&x.id));
+        if ts < te {
+            self.delete_text_core(ts, te, false);
+        }
+        self.normalize_markers();
         Ok(())
+    }
+
+    /// Inserts `text` (no U+FFFC) at the flat offset `at`; the items before
+    /// `at` stay before the new text, the others move after it.
+    pub(crate) fn insert_flat(&mut self, at: usize, text: &str) -> Result<(), FlatError> {
+        let (offset, before) = self.cut(at)?;
+        let stay = self.staying(offset, before);
+        self.insert_text_core(offset, text, &stay);
+        self.normalize_markers();
+        Ok(())
+    }
+
+    /// Cuts the paragraph at the flat offset `at`: `self` keeps the head, the
+    /// tail (same paragraph properties) is returned. A field, link or
+    /// bookmark straddling the cut ends at it in the head.
+    pub(crate) fn split_flat(&mut self, at: usize) -> Result<Paragraph, FlatError> {
+        let (offset, before) = self.cut(at)?;
+        let stay = self.staying(offset, before);
+        Ok(self.split_core(offset, &stay))
+    }
+
+    fn split_core(&mut self, offset: usize, stay: &[NodeId]) -> Paragraph {
+        let mut tail = Paragraph {
+            text: self.text.split_off(offset),
+            props: self.props.clone(),
+            ..Paragraph::default()
+        };
+        let mut head_runs = Vec::new();
+        for run in std::mem::take(&mut self.runs) {
+            if run.end <= offset {
+                head_runs.push(run);
+            } else if run.start >= offset {
+                tail.runs.push(CharRun {
+                    start: run.start - offset,
+                    end: run.end - offset,
+                    attrs: run.attrs,
+                });
+            } else {
+                tail.runs.push(CharRun {
+                    start: 0,
+                    end: run.end - offset,
+                    attrs: run.attrs.clone(),
+                });
+                head_runs.push(CharRun { end: offset, ..run });
+            }
+        }
+        self.runs = head_runs;
+        let goes_tail = |o: usize, id: NodeId| o > offset || (o == offset && !stay.contains(&id));
+        for x in std::mem::take(&mut self.anchored) {
+            if goes_tail(x.offset, x.id) {
+                tail.anchored.push(AnchoredObject {
+                    offset: x.offset - offset,
+                    ..x
+                });
+            } else {
+                self.anchored.push(x);
+            }
+        }
+        for x in std::mem::take(&mut self.breaks) {
+            if goes_tail(x.offset, x.id) {
+                tail.breaks.push(InlineBreak {
+                    offset: x.offset - offset,
+                    ..x
+                });
+            } else {
+                self.breaks.push(x);
+            }
+        }
+        for x in std::mem::take(&mut self.symbols) {
+            if goes_tail(x.offset, x.id) {
+                tail.symbols.push(InlineSymbol {
+                    offset: x.offset - offset,
+                    ..x
+                });
+            } else {
+                self.symbols.push(x);
+            }
+        }
+        for x in std::mem::take(&mut self.fields) {
+            if x.start >= offset {
+                tail.fields.push(Field {
+                    start: x.start - offset,
+                    end: x.end - offset,
+                    ..x
+                });
+            } else {
+                self.fields.push(Field {
+                    end: x.end.min(offset),
+                    ..x
+                });
+            }
+        }
+        for x in std::mem::take(&mut self.links) {
+            if x.start >= offset {
+                tail.links.push(Link {
+                    start: x.start - offset,
+                    end: x.end - offset,
+                    ..x
+                });
+            } else {
+                self.links.push(Link {
+                    end: x.end.min(offset),
+                    ..x
+                });
+            }
+        }
+        for x in std::mem::take(&mut self.bookmarks) {
+            if x.start >= offset {
+                tail.bookmarks.push(Bookmark {
+                    start: x.start - offset,
+                    end: x.end - offset,
+                    ..x
+                });
+            } else {
+                self.bookmarks.push(Bookmark {
+                    end: x.end.min(offset),
+                    ..x
+                });
+            }
+        }
+        self.normalize_markers();
+        tail.normalize_markers();
+        tail
+    }
+
+    /// The direct attributes of the character just before the flat offset
+    /// `at` (none at the start of the text).
+    pub(crate) fn attrs_before_flat(&self, at: usize) -> CharAttrs {
+        match self.cut(at) {
+            Ok((offset, _)) if offset > 0 => {
+                let prev = self.text[..offset]
+                    .char_indices()
+                    .next_back()
+                    .map_or(0, |(i, _)| i);
+                self.attrs_at(prev)
+            }
+            _ => CharAttrs::default(),
+        }
     }
 
     /// Defines (`set`) then un-defines (`clear`) character properties on a
@@ -527,81 +876,7 @@ impl Paragraph {
         {
             return Err(RichError::SplitInsideField);
         }
-        let mut tail = Paragraph {
-            text: self.text.split_off(offset),
-            props: self.props.clone(),
-            ..Paragraph::default()
-        };
-        let mut head_runs = Vec::new();
-        for run in std::mem::take(&mut self.runs) {
-            if run.end <= offset {
-                head_runs.push(run);
-            } else if run.start >= offset {
-                tail.runs.push(CharRun {
-                    start: run.start - offset,
-                    end: run.end - offset,
-                    attrs: run.attrs,
-                });
-            } else {
-                tail.runs.push(CharRun {
-                    start: 0,
-                    end: run.end - offset,
-                    attrs: run.attrs.clone(),
-                });
-                head_runs.push(CharRun { end: offset, ..run });
-            }
-        }
-        self.runs = head_runs;
-        for x in std::mem::take(&mut self.anchored) {
-            if x.offset < offset {
-                self.anchored.push(x);
-            } else {
-                tail.anchored.push(AnchoredObject {
-                    offset: x.offset - offset,
-                    ..x
-                });
-            }
-        }
-        for x in std::mem::take(&mut self.fields) {
-            if x.start >= offset {
-                tail.fields.push(Field {
-                    start: x.start - offset,
-                    end: x.end - offset,
-                    ..x
-                });
-            } else {
-                self.fields.push(x);
-            }
-        }
-        for x in std::mem::take(&mut self.links) {
-            if x.start >= offset {
-                tail.links.push(Link {
-                    start: x.start - offset,
-                    end: x.end - offset,
-                    ..x
-                });
-            } else {
-                self.links.push(Link {
-                    end: x.end.min(offset),
-                    ..x
-                });
-            }
-        }
-        for x in std::mem::take(&mut self.bookmarks) {
-            if x.start >= offset {
-                tail.bookmarks.push(Bookmark {
-                    start: x.start - offset,
-                    end: x.end - offset,
-                    ..x
-                });
-            } else {
-                self.bookmarks.push(Bookmark {
-                    end: x.end.min(offset),
-                    ..x
-                });
-            }
-        }
-        Ok(tail)
+        Ok(self.split_core(offset, &[]))
     }
 
     /// Appends `other` after the text of `self`; `self` keeps its properties.
@@ -616,6 +891,16 @@ impl Paragraph {
         self.runs = normalize(std::mem::take(&mut self.runs));
         self.anchored
             .extend(other.anchored.into_iter().map(|x| AnchoredObject {
+                offset: x.offset + base,
+                ..x
+            }));
+        self.breaks
+            .extend(other.breaks.into_iter().map(|x| InlineBreak {
+                offset: x.offset + base,
+                ..x
+            }));
+        self.symbols
+            .extend(other.symbols.into_iter().map(|x| InlineSymbol {
                 offset: x.offset + base,
                 ..x
             }));
@@ -636,6 +921,8 @@ impl Paragraph {
                 ..x
             }));
         self.sort_inline();
+        // The join can merge the clusters on both sides of it.
+        self.normalize_markers();
     }
 
     /// Adds an inline item (its id must be unused in the paragraph).

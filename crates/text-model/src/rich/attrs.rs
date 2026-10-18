@@ -84,7 +84,8 @@ pub struct CharAttrs {
     pub color: Option<Color>,
     pub highlight: Option<Color>,
     /// Character style id (Word `w:rStyle`); a run attribute that counts 0
-    /// bytes in flat text. Resolution and DOCX mapping are R1's (US-204).
+    /// bytes in flat text. Resolved by the style engine (`resolve_detached`),
+    /// fed by the DOCX import and written back by the DOCX writer (US-204).
     pub char_style: Option<String>,
     /// Uninterpreted attributes, sorted by `(namespace, name)`.
     pub opaque: Vec<OpaqueAttr>,
@@ -132,7 +133,8 @@ impl CharAttrs {
             font,
             size_half_points,
             color,
-            highlight
+            highlight,
+            char_style
         );
         opaque_clear(&mut self.opaque, &mask.opaque);
     }
@@ -143,6 +145,11 @@ impl CharAttrs {
         }
         if self.size_half_points == Some(0) {
             return Err(RichError::InvalidAttribute("zero font size"));
+        }
+        if self.char_style.as_deref() == Some("") {
+            return Err(RichError::InvalidAttribute(
+                "empty character style reference",
+            ));
         }
         opaque_valid(&self.opaque)
     }
