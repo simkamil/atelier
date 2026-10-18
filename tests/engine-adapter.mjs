@@ -13,12 +13,12 @@
 // pixels d'images...) : elle les liste dans `skipped` de son rapport avec la raison (docs/r7-ui-parity.md §7).
 // La bascule du défaut (`DEFAULT_ENGINE`) est R7b.
 
-export const DEFAULT_ENGINE = "v1";
+export const DEFAULT_ENGINE = "v2";
 export const V2_PENDING_EXIT_CODE = 75;
 export const V2_PENDING_MESSAGE = "v2 en attente de R7b (suite non portée)";
 /** Suites qui passent réellement en v2 (R7a). */
 export const V2_READY_SUITES = Object.freeze(["run-ui-browser", "run-image-insert-browser", "run-editor-browser",
-  "run-editor-utilities-browser", "run-frontend-browser", "mouse-selection"]);
+  "run-editor-utilities-browser", "run-frontend-browser", "mouse-selection", "run-latency-browser"]);
 /**
  * Suites ready in v2 because the code they check is shared by v1 and v2 and drives no editor (R7c): same checks, same
  * result under both engines. What is specific to v2 is verified where it lives (the second column).

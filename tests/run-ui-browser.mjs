@@ -13,7 +13,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const { engine, rest: args } = selectEngine("run-ui-browser", "node tests/run-ui-browser.mjs [--forced-colors] [--screenshots] [--engine v1|v2]",
   rest => rest.every(arg => ["--forced-colors", "--screenshots"].includes(arg)));
 const v2 = engine === "v2";
-const engineQuery = v2 ? "engine=v2" : "";
+const engineQuery = `engine=${engine}`;
 const skipped = [];
 const forcedColors = args.includes("--forced-colors");
 const screenshots = args.includes("--screenshots");
@@ -99,7 +99,7 @@ async function captureShell() {
   const output = join(root, "target/ui-screenshots");
   if (screenshots) await mkdir(output, { recursive: true });
   try {
-    await send("Page.navigate", { url: `${origin}/index.html${v2 ? "?engine=v2" : ""}` });
+    await send("Page.navigate", { url: `${origin}/index.html?engine=${engine}` });
     for (let tries = 0; tries < 100; tries++) {
       try { if (await evaluate("document.readyState === 'complete' && !!document.getElementById('ribbon')")) break; } catch { /* navigation context */ }
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -179,9 +179,9 @@ async function captureShell() {
     }
     for (const catalogFailure of ["unavailable", "partial"]) {
     unavailableCatalog = catalogFailure;
-    await send("Page.navigate", { url: `${origin}/index.html?catalog-${catalogFailure}${v2 ? "&engine=v2" : ""}` });
+    await send("Page.navigate", { url: `${origin}/index.html?catalog-${catalogFailure}&engine=${engine}` });
     for (let tries=0;tries<100;tries++) {
-      try { if (await evaluate(`location.search==='?catalog-${catalogFailure}${v2 ? "&engine=v2" : ""}' && document.readyState==='complete' && !!document.getElementById('ribbon')`)) break; } catch { /* navigation context */ }
+      try { if (await evaluate(`location.search==='?catalog-${catalogFailure}&engine=${engine}' && document.readyState==='complete' && !!document.getElementById('ribbon')`)) break; } catch { /* navigation context */ }
       await new Promise(resolve=>setTimeout(resolve,50));
     }
     assert(await evaluate("(async()=>{const app=await (await import('/app.mjs')).editorReady;if(app.status!=='ready'||app.navigation||document.querySelector('#search-command,#statistics-command,.search-pane,[data-statistics-status]'))return false;app.editor.element.dispatchEvent(new InputEvent('beforeinput',{inputType:'insertText',data:'secours',bubbles:true,cancelable:true}));await app.exportDocument();return "+(v2 ? "(await app.editor.readText())==='secours'" : "app.getState().text==='secours'")+";})()"),
