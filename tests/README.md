@@ -92,10 +92,7 @@ Le benchmark software n’est pas une validation de fluidité matérielle ; les
 
 `node tests/mouse-selection.mjs` vérifie capture, coalescence asynchrone, zoom, pages, scroll, annulation et erreurs de callbacks avec une horloge contrôlée. `run-frontend-browser.mjs input` ajoute les cas copy/cut du modèle (UTF-8, U+FEFF de contenu, sélection inversée et échec d’écriture). `run-editor-browser.mjs` couvre les raccourcis Ctrl par mot/paragraphe, F8/Ctrl+A/Échap, suppression par mot et undo, double/triple-clic et glisser via le vrai Worker/WASM. Les événements synthétiques et captures simulées ne remplacent pas les essais natifs. `editor-abi.mjs` injecte onze commandes SelectPoint invalides directement dans le vrai WASM et vérifie l’absence de mutation.
 
-Le premier éditeur intégré se vérifie avec `node tests/editor-protocol.mjs`,
-`node tests/editor-abi.mjs` et `node tests/run-editor-browser.mjs` après un build
-WASM optimisé. Le test ABI exerce la limite réelle de 128 Mio d’allocations et
-vérifie qu’un candidat refusé conserve document, révision, sélection et historique.
+L'éditeur intégré se vérifie avec `node tests/rich-editor-protocol.mjs`, `node tests/rich-editor-abi.mjs` et `node tests/run-editor-browser.mjs` après un build WASM optimisé (l'éditeur texte brut v1 et ses suites ont été retirés en R8).
 Le navigateur utilise le vrai Worker/WASM/Canvas, avec Host factice et événements
 synthétiques. Le diagnostic natif des ressources vérifie aussi saisie accentuée,
 pixels de glyphes et undo/redo dans le WebView2 réel ; il n’ouvre pas de dialogue.
@@ -125,7 +122,7 @@ HarfBuzz existantes ne remplacent pas cet oracle indépendant de mise en page.
 
 # Éditeur v2 dans l'interface (R7a) — 2026-10-18
 
-`?engine=v2` (ou l'option persistée `localStorage["atelier.engine"] = "v2"`) fait créer à `web/app.mjs` l'éditeur de `web/rich-editor.mjs` ; depuis R7c v2 est le défaut et `?engine=v1` (ou `localStorage["atelier.engine"] = "v1"`) ramène à v1. Parité d'API : [docs/r7-ui-parity.md](../docs/r7-ui-parity.md).
+`?engine=v2` (ou l'option persistée `localStorage["atelier.engine"] = "v2"`) fait créer à `web/app.mjs` l'éditeur de `web/rich-editor.mjs` ; depuis R7c v2 est le défaut, et depuis R8 le seul éditeur : `?engine=` et l'option persistée sont ignorés, `--engine` n'existe plus dans les lanceurs. Parité d'API : [docs/r7-ui-parity.md](../docs/r7-ui-parity.md).
 
 - `node tests/run-rich-editor-ui-browser.mjs` : le produit réel en v2 (Edge, Worker, WASM de `data/engine/`), pont natif simulé (tickets `pickOpen`/`readTicket`/`pickSave`/`writeTicket`) : frappe, sélection, annuler/rétablir, TXT et DOCX (dont révisions et commentaires : bandeau, refus d'édition, copie modifiable), enregistrement (succès, échec, annulation, fermeture pendant le dialogue), images (sélecteur, collage, dépôt), espaces françaises, souris, presse-papiers (fenêtre de l'État, sélection plus longue que la fenêtre, plus longue que 256 Kio), longue pagination, défilement et barre d'état, zoom, mode lecteur d'écran persistant, fonctions désactivées, réponses perdues (resynchronisation) et Open refusé.
 - `node --test tests/rich-editor-unit.mjs` : choix du moteur, assainissement du texte, correspondance des erreurs, comptage des images d'un DOCX, conversion du miroir.
