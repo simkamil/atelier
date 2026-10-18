@@ -134,6 +134,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/check-wasm-size.mjs target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test tests/check-wasm-size.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build native protocol oracle
         run: cargo build -p atelier-core-wasm --example protocol_oracle --locked --offline
