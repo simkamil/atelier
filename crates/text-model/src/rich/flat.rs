@@ -25,6 +25,11 @@
 //! in `0..=len()`. Items at one text offset appear in `id` order across the
 //! three lists. Headers and footers are not part of the flat text.
 //!
+//! Scope of the first layout (US-216): table cell paragraphs are laid out as
+//! full-width body paragraphs (documented degraded mode) and headers and
+//! footers are not drawn; accessors for tables, cells and headers and footers
+//! arrive with the stories that handle them, not here.
+//!
 //! Clusters. Boundaries follow UAX #29 with these overrides, whatever the
 //! UAX rules say: there is always a boundary before and after U+FFFC and
 //! before and after every `\n`. A combining mark inserted right after an
@@ -34,8 +39,10 @@
 
 use std::borrow::Cow;
 
+use super::attrs::CharAttrs;
 use super::{
-    AnchoredObject, InlineBreak, InlineSymbol, NodeId, Paragraph, Section, StyleCatalog, Theme,
+    AnchoredObject, InlineBreak, InlineSymbol, NodeId, Paragraph, ResolvedProperties, Section,
+    StyleCatalog, Theme,
 };
 
 /// Bytes of one non-text inline item (object, break, symbol): U+FFFC.
@@ -49,7 +56,7 @@ pub const LIST_LEVELS: usize = 9;
 /// Protocol mapping (`rich_protocol`): `OutOfRange` to
 /// `RICH_POSITION_OUT_OF_RANGE`, `NotBoundary` to `RICH_POSITION_NOT_BOUNDARY`,
 /// `InvalidRange` to `RICH_INVALID_RANGE`, `InvalidText` to
-/// `RICH_INVALID_TEXT`, `Limit` to `RICH_LIMIT`.
+/// `RICH_INVALID_TEXT`, `Limit` to `RICH_LIMIT`, `Style` to `RICH_INTERNAL`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlatError {
     /// A position is greater than `len()`.
@@ -63,6 +70,8 @@ pub enum FlatError {
     InvalidText,
     /// The edit would exceed a model limit.
     Limit,
+    /// A style cascade failed (missing reference, inheritance loop).
+    Style,
 }
 
 /// A position as paragraph index and byte offset inside that paragraph's flat
@@ -128,6 +137,120 @@ pub enum BlockKind {
     Opaque,
 }
 
+/// WordprocessingML main namespace, used for the section attributes below.
+pub const WORD_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+/// Page geometry of a section, in twips (1/1440 inch), already normalized.
+/// It is read from `Section::opaque` attributes in [`WORD_NS`] named
+/// `pgSz.w`, `pgSz.h`, `pgSz.orient` (`portrait` or `landscape`),
+/// `pgMar.top`, `pgMar.right`, `pgMar.bottom`, `pgMar.left`, `pgMar.header`,
+/// `pgMar.footer` and `pgMar.gutter`; the value is the ASCII text of the
+/// corresponding `w:sectPr` attribute (`w:pgSz w:w w:h w:orient`,
+/// `w:pgMar w:top ... w:gutter`). The DOCX import (R1, with US-306) must
+/// store them in that form; until then every section has the defaults.
+///
+/// Defaults: those of the default document of US-202
+/// (`DefaultPresentation`: A4, 25 mm margins), that is 11906 x 16838 twips
+/// with 1417 twip margins; the code does not define header and footer
+/// distances or a gutter, so they are 708 and 0 (Word's own defaults).
+/// Normalization: a value that is absent, not a decimal integer, zero (page
+/// size) or above 31680 (22 inches) takes its default; `landscape` swaps the
+/// size when it is still taller than wide; margins that would leave less than
+/// 720 twips of text width or height are replaced by the default margins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageSetup {
+    pub width: u32,
+    pub height: u32,
+    pub landscape: bool,
+    pub margin_top: u32,
+    pub margin_right: u32,
+    pub margin_bottom: u32,
+    pub margin_left: u32,
+    pub header: u32,
+    pub footer: u32,
+    pub gutter: u32,
+}
+
+impl PageSetup {
+    pub const DEFAULT_WIDTH: u32 = 11906;
+    pub const DEFAULT_HEIGHT: u32 = 16838;
+    pub const DEFAULT_MARGIN: u32 = 1417;
+    pub const DEFAULT_HEADER_FOOTER: u32 = 708;
+    const MAX: u32 = 31680;
+    const MIN_TEXT: u32 = 720;
+
+    /// The defaults.
+    pub fn standard() -> Self {
+        Self {
+            width: Self::DEFAULT_WIDTH,
+            height: Self::DEFAULT_HEIGHT,
+            landscape: false,
+            margin_top: Self::DEFAULT_MARGIN,
+            margin_right: Self::DEFAULT_MARGIN,
+            margin_bottom: Self::DEFAULT_MARGIN,
+            margin_left: Self::DEFAULT_MARGIN,
+            header: Self::DEFAULT_HEADER_FOOTER,
+            footer: Self::DEFAULT_HEADER_FOOTER,
+            gutter: 0,
+        }
+    }
+
+    /// Reads and normalizes the attributes of a section.
+    pub fn from_section(section: &Section) -> Self {
+        let read = |name: &str| -> Option<u32> {
+            let attr = section
+                .opaque
+                .iter()
+                .find(|a| a.namespace == WORD_NS && a.name == name)?;
+            let value: u32 = core::str::from_utf8(&attr.value)
+                .ok()?
+                .trim()
+                .parse()
+                .ok()?;
+            (value <= Self::MAX).then_some(value)
+        };
+        let d = Self::standard();
+        let size = |name: &str, default: u32| read(name).filter(|v| *v > 0).unwrap_or(default);
+        let (mut width, mut height) = (size("pgSz.w", d.width), size("pgSz.h", d.height));
+        let landscape = section
+            .opaque
+            .iter()
+            .any(|a| a.namespace == WORD_NS && a.name == "pgSz.orient" && a.value == b"landscape");
+        if landscape && width < height {
+            core::mem::swap(&mut width, &mut height);
+        }
+        let mut out = Self {
+            width,
+            height,
+            landscape,
+            margin_top: read("pgMar.top").unwrap_or(d.margin_top),
+            margin_right: read("pgMar.right").unwrap_or(d.margin_right),
+            margin_bottom: read("pgMar.bottom").unwrap_or(d.margin_bottom),
+            margin_left: read("pgMar.left").unwrap_or(d.margin_left),
+            header: read("pgMar.header").unwrap_or(d.header),
+            footer: read("pgMar.footer").unwrap_or(d.footer),
+            gutter: read("pgMar.gutter").unwrap_or(d.gutter),
+        };
+        let text_width = out
+            .width
+            .saturating_sub(out.margin_left)
+            .saturating_sub(out.margin_right)
+            .saturating_sub(out.gutter);
+        let text_height = out
+            .height
+            .saturating_sub(out.margin_top)
+            .saturating_sub(out.margin_bottom);
+        if text_width < Self::MIN_TEXT || text_height < Self::MIN_TEXT {
+            out.margin_top = d.margin_top;
+            out.margin_right = d.margin_right;
+            out.margin_bottom = d.margin_bottom;
+            out.margin_left = d.margin_left;
+            out.gutter = 0;
+        }
+        out
+    }
+}
+
 /// Counters of one list before a paragraph, per level, from which a layout
 /// computes the label of that paragraph (the paragraph itself not counted).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +277,21 @@ pub trait LayoutContext: FlatIndex {
     /// properties are the section's opaque attributes, headers and footers
     /// are opaque nodes of their own.
     fn section_of(&self, index: usize) -> Result<(usize, &Section), FlatError>;
+    /// Effective properties of the paragraph after document defaults, table
+    /// style, paragraph style and direct paragraph formatting; the character
+    /// part is the paragraph's base (no run character style or direct run
+    /// formatting). Font, size, bold, italic, spacing, indents, line spacing,
+    /// alignment are filled from the cascade. Opaque blocks give defaults.
+    /// For a cell paragraph the table style of the real table applies (R1);
+    /// the test double uses the catalog default table style.
+    fn resolved(&self, index: usize) -> Result<ResolvedProperties, FlatError>;
+    /// Effective character attributes of one run of the paragraph: `direct`
+    /// are the direct attributes of the run (its `char_style` selects the
+    /// character style); the result overlays them on [`LayoutContext::resolved`].
+    fn resolved_run(&self, index: usize, direct: &CharAttrs) -> Result<CharAttrs, FlatError>;
+    /// Page geometry of section `section` (the index returned by
+    /// [`LayoutContext::section_of`]), in twips, normalized.
+    fn page_setup(&self, section: usize) -> Result<PageSetup, FlatError>;
     /// Resource bytes (image data...) of an anchored object.
     fn object_resource(&self, object: NodeId) -> Option<&[u8]>;
     /// List state before the paragraph; `None` when it is not in a list.

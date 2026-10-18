@@ -409,6 +409,27 @@ impl StyleEngine {
         Ok(resolved)
     }
 
+    /// Same cascade as [`StyleEngine::resolve`] without a document or a node
+    /// id (US-203, for layout): the caller supplies the paragraph style, the
+    /// run character style, the table style containing the paragraph (or
+    /// `None`; the catalog default table style applies only when the caller
+    /// passes it) and the direct formatting. Not cached.
+    pub fn resolve_detached(
+        &self,
+        paragraph_style: Option<&str>,
+        character_style: Option<&str>,
+        table_style: Option<&str>,
+        direct_paragraph: &ParaProps,
+        direct_character: &CharAttrs,
+    ) -> Result<ResolvedProperties, StyleError> {
+        let (mut resolved, _) = self.resolve_base(paragraph_style, character_style, table_style)?;
+        let mut direct = direct_paragraph.clone();
+        direct.style = None;
+        resolved.paragraph.overlay(&direct);
+        resolved.character.overlay(direct_character);
+        Ok(resolved)
+    }
+
     /// Applies a rich operation transaction and invalidates only entries it
     /// could affect. Cache changes happen after successful application only.
     pub fn apply(

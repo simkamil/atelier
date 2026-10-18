@@ -9,11 +9,14 @@ use std::borrow::Cow;
 
 use atelier_unicode::segmentation::{grapheme_boundaries, word_boundaries};
 
+use super::attrs::CharAttrs;
 use super::flat::{
     BlockKind, EditOutcome, FlatError, FlatIndex, LayoutContext, LayoutScope, ListCounters,
-    OBJECT_LEN, ParagraphPosition, SEPARATOR_LEN, paragraph_flat,
+    OBJECT_LEN, PageSetup, ParagraphPosition, SEPARATOR_LEN, WORD_NS, paragraph_flat,
 };
-use super::{NodeId, Paragraph, Section, StyleCatalog, Theme};
+use super::{
+    NodeId, OpaqueAttr, Paragraph, ResolvedProperties, Section, StyleCatalog, StyleEngine, Theme,
+};
 
 /// Paragraphs in document order; `None` is an opaque block.
 #[derive(Debug, Clone, Default)]
@@ -28,7 +31,43 @@ pub struct VecParagraphs {
     revision: u64,
 }
 
+/// A section with explicit page attributes (A4 portrait, 1417 twip margins,
+/// header and footer at 708, no gutter), in the form `PageSetup` reads.
+pub fn example_section() -> Section {
+    let attr = |name: &str, value: &str| OpaqueAttr {
+        namespace: WORD_NS.into(),
+        name: name.into(),
+        value: value.as_bytes().to_vec(),
+    };
+    Section {
+        opaque: vec![
+            attr("pgMar.bottom", "1417"),
+            attr("pgMar.footer", "708"),
+            attr("pgMar.gutter", "0"),
+            attr("pgMar.header", "708"),
+            attr("pgMar.left", "1417"),
+            attr("pgMar.right", "1417"),
+            attr("pgMar.top", "1417"),
+            attr("pgSz.h", "16838"),
+            attr("pgSz.orient", "portrait"),
+            attr("pgSz.w", "11906"),
+        ],
+        ..Section::default()
+    }
+}
+
 impl VecParagraphs {
+    fn engine(&self) -> StyleEngine {
+        StyleEngine::new(self.catalog.clone(), self.theme.clone(), 0)
+    }
+
+    fn table_style(&self, index: usize) -> Option<&str> {
+        match self.kinds.get(index) {
+            Some(BlockKind::TableCell { .. }) => self.catalog.defaults().table_style.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Body paragraphs, one section.
     pub fn new(paragraphs: Vec<Paragraph>) -> Self {
         let mut this = Self {
@@ -342,6 +381,48 @@ impl LayoutContext for VecParagraphs {
         Ok(None)
     }
 
+    fn resolved(&self, index: usize) -> Result<ResolvedProperties, FlatError> {
+        self.check_index(index)?;
+        let Some(p) = self.paragraph(index) else {
+            return Ok(ResolvedProperties::default());
+        };
+        self.engine()
+            .resolve_detached(
+                p.props.style.as_deref(),
+                None,
+                self.table_style(index),
+                &p.props,
+                &CharAttrs::default(),
+            )
+            .map_err(|_| FlatError::Style)
+    }
+
+    fn resolved_run(&self, index: usize, direct: &CharAttrs) -> Result<CharAttrs, FlatError> {
+        self.check_index(index)?;
+        let (style, para) = match self.paragraph(index) {
+            Some(p) => (p.props.style.as_deref(), p.props.clone()),
+            None => (None, Default::default()),
+        };
+        self.engine()
+            .resolve_detached(
+                style,
+                direct.char_style.as_deref(),
+                self.table_style(index),
+                &para,
+                direct,
+            )
+            .map(|r| r.character)
+            .map_err(|_| FlatError::Style)
+    }
+
+    fn page_setup(&self, section: usize) -> Result<PageSetup, FlatError> {
+        if section == 0 {
+            Ok(PageSetup::from_section(&self.section))
+        } else {
+            Err(FlatError::OutOfRange)
+        }
+    }
+
     fn paragraph_start(&self, index: usize) -> Result<usize, FlatError> {
         self.starts.get(index).copied().ok_or(FlatError::OutOfRange)
     }
@@ -449,6 +530,77 @@ mod tests {
         assert_eq!(doc.word_at(8), Ok(Some((7, 12))));
         assert_eq!(doc.word_at(doc.len()), Ok(Some((13, 14))));
         assert_eq!(VecParagraphs::new(vec![]).word_at(0), Ok(None));
+    }
+
+    #[test]
+    fn page_setup_defaults_reads_attributes_and_normalizes() {
+        let mut doc = VecParagraphs::new(vec![para("a")]);
+        assert_eq!(doc.page_setup(0), Ok(PageSetup::standard()));
+        assert_eq!(doc.page_setup(1), Err(FlatError::OutOfRange));
+        doc.section = example_section();
+        assert_eq!(doc.page_setup(0), Ok(PageSetup::standard()));
+        let attr = |name: &str, value: &str| OpaqueAttr {
+            namespace: WORD_NS.into(),
+            name: name.into(),
+            value: value.as_bytes().to_vec(),
+        };
+        doc.section.opaque = vec![
+            attr("pgMar.left", "2000"),
+            attr("pgMar.top", "-5"),
+            attr("pgSz.h", "16838"),
+            attr("pgSz.orient", "landscape"),
+            attr("pgSz.w", "11906"),
+        ];
+        let setup = doc.page_setup(0).unwrap();
+        assert_eq!(
+            (setup.width, setup.height, setup.landscape),
+            (16838, 11906, true)
+        );
+        assert_eq!((setup.margin_left, setup.margin_top), (2000, 1417));
+        doc.section.opaque = vec![
+            attr("pgSz.w", "0"),
+            attr("pgMar.left", "99999"),
+            attr("pgMar.right", "x"),
+        ];
+        assert_eq!(doc.page_setup(0), Ok(PageSetup::standard()));
+        doc.section.opaque = vec![attr("pgMar.left", "6000"), attr("pgMar.right", "6000")];
+        assert_eq!(doc.page_setup(0), Ok(PageSetup::standard()));
+    }
+
+    #[test]
+    fn resolved_applies_defaults_styles_and_direct_formatting() {
+        let mut doc = VecParagraphs::new(vec![para("a"), para("b")]);
+        let mut defaults = super::super::DocumentStyleDefaults::default();
+        defaults.character.values.font = Some("Carlito".into());
+        defaults.character.values.size_half_points = Some(22);
+        defaults.paragraph.space_after = Some(160);
+        doc.catalog = StyleCatalog::new(defaults);
+        let mut direct = Paragraph {
+            text: "b".into(),
+            ..Paragraph::default()
+        };
+        direct.props.space_after = Some(0);
+        doc.replace_paragraphs(1, 1, vec![direct]);
+        let first = doc.resolved(0).unwrap();
+        assert_eq!(first.character.font.as_deref(), Some("Carlito"));
+        assert_eq!(first.character.size_half_points, Some(22));
+        assert_eq!(first.paragraph.space_after, Some(160));
+        assert_eq!(doc.resolved(1).unwrap().paragraph.space_after, Some(0));
+        let run = CharAttrs {
+            bold: Some(true),
+            ..CharAttrs::default()
+        };
+        let resolved = doc.resolved_run(0, &run).unwrap();
+        assert_eq!(
+            (resolved.bold, resolved.size_half_points),
+            (Some(true), Some(22))
+        );
+        assert_eq!(doc.resolved(2), Err(FlatError::OutOfRange));
+        let unknown = CharAttrs {
+            char_style: Some("missing".into()),
+            ..CharAttrs::default()
+        };
+        assert_eq!(doc.resolved_run(0, &unknown), Err(FlatError::Style));
     }
 
     #[test]
