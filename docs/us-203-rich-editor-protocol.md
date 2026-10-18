@@ -27,13 +27,13 @@ Every request gets exactly one reply: the success reply of its command or an `Er
 
 Flat positions are an **interchange representation of this protocol only**. The model and the recovery journal keep node id + offset (SPEC §6.3) and never store flat positions; the model converts flat position <-> (node id, offset) on demand (`FlatIndex`), and side tables are remapped through `position_map`.
 
-The flat text of a document is the body paragraphs in order, joined by one `\n` byte, with no trailing `\n`. Every inline item that is not text counts as U+FFFC, **3 bytes** (`EF BF BC`) each: images and anchored objects, line, page and column breaks (`breaks`) and symbols (`symbols`), the last two being inline items of the model from R1 on. `run_styles` is a run attribute (a character style in `CharAttrs`), not an inline item: it counts **0 bytes**. All positions, ranges and lengths are **byte offsets into that text**, `u64` on the wire (BigInt in JS), valid in `0..=doc_len`; the engine converts them with `usize::try_from` (`rich_protocol::to_position`), a value that does not fit is out of range.
+The flat text of a document covers **every paragraph in document order**, table cell paragraphs included (table by table, row by row, cell by cell), joined by one `\n` byte, with no trailing `\n`; headers and footers are not part of it. An opaque block counts as one paragraph made of a single U+FFFC. Inside a paragraph, every inline item that is not text counts as U+FFFC, **3 bytes** (`EF BF BC`) each: anchored objects (images...), line, page and column breaks and symbols. `run_styles` is a run attribute (`CharAttrs::char_style`), not an inline item: it counts **0 bytes**. Items at one text offset appear in `id` order across anchored objects, breaks and symbols. All positions, ranges and lengths are **byte offsets into that text**, `u64` on the wire (BigInt in JS), valid in `0..=doc_len`; the engine converts them with `usize::try_from` (`rich_protocol::to_position`), a value that does not fit is out of range.
 
 Rules, checked by the engine (`RICH_*` code in parentheses):
 
 - A position greater than `doc_len` is refused (`POSITION_OUT_OF_RANGE`). A range with `start > end` is refused (`INVALID_RANGE`), checked in the codec.
 - **Clusters.** Boundaries follow UAX #29 with two overrides, whatever the UAX rules say: there is always a boundary before and after U+FFFC, and before and after every `\n`. A combining mark inserted right after an object therefore forms its own cluster. A **valid position** is such a boundary (hence a scalar boundary, never inside U+FFFC); any other position is refused with `POSITION_NOT_BOUNDARY`.
-- `ReplaceRange` needs both ends to be valid positions (`POSITION_NOT_BOUNDARY` otherwise). `SetSelection` snaps both ends backwards to the previous valid position instead of failing. A selection reported by the engine always lies on valid positions.
+- `ReplaceRange` needs both ends to be valid positions (`POSITION_NOT_BOUNDARY` otherwise). `SetSelection` snaps both ends backwards to the previous valid position instead of failing. A selection reported by the engine always lies on valid positions. The affinity (`upstream`) of the focus says, at a soft line wrap, whether the caret is drawn at the end of the previous line (true) or the start of the next one.
 - Deletions by unit (`Delete`) are computed by the engine on cluster or word boundaries (R1 provides `prev/next_grapheme`, `prev/next_word`, `word_at`, `snap_back` on `FlatIndex`), never by the caller. A non-collapsed selection is deleted whole whatever the unit. Deleting at a `\n` removes the whole separator and merges the two paragraphs.
 - Text sent by the caller (`InsertText`, `ReplaceRange`): valid UTF-8 (`INVALID_UTF8`); no U+FFFC, no `\r`, no control character except `\n` and `\t` (`INVALID_TEXT`). `\n` splits paragraphs. An object enters the document only through its own command (US-218).
 - A selection is `(anchor, focus)`, not ordered; the caret is `anchor == focus`.
@@ -51,13 +51,16 @@ Body layouts; reserved bytes must be zero, flags are `0` or `1`, floats must be 
 | `0x0104` | ReplaceRange | `start u64`, `end u64`, `len u32`, UTF-8 (may be empty = delete) | State |
 | `0x0105` | Delete | `forward u8`, `unit u8` (0 grapheme, 1 word), `0 u16` | State |
 | `0x0106` | Move | `direction u8` (v1 numbering 0-13), `extend u8`, `0 u16` | State |
-| `0x0107` | SetSelection | `anchor u64`, `focus u64` | State |
-| `0x0108` | HitTest | `page u32`, `mode u8` (0 probe, 1 set caret, 2 extend), `0 u8[3]`, `x f64`, `y f64` (page points) | probe: HitResult; else State |
+| `0x0107` | SetSelection | `anchor u64`, `focus u64`, `upstream u8` (flag), `0 u8[3]` | State |
+| `0x0108` | HitTest | `page u32`, `mode u8` (0 probe, 1 set caret, 2 extend), `0 u8[3]`, `x f64`, `y f64` (page points) | probe: HitResult; else State (affinity computed by the engine) |
 | `0x0109` | Undo | empty | State (unchanged state when nothing to undo) |
 | `0x010A` | Redo | empty | State |
 | `0x010B` | TextWindow | `start u64`, `len u32` (1 to 256 KiB) | TextWindow |
-| `0x010C` | Pages | `first u32`, `count u32` (1 to 16) | Pages |
+| `0x010C` | Pages | `first u32`, `count u32` (1 to 16) | Pages (`NOT_READY` if a requested page is not computed yet) |
 | `0x010D` | MarkSaved | `revision u64` | State (`modified` cleared if the revision is current, else `STALE_REVISION`) |
+| `0x010E` | Layout | `budget u32` (1 to 4096 paragraphs) | State |
+
+**Background layout.** The tail of a long document paginates incrementally. Every edit, move and selection command also runs `DEFAULT_LAYOUT_BUDGET` (16) paragraphs of pending layout, then answers. `Layout { budget }` runs up to `budget` paragraphs more and answers a State, so the client repeats it until the State carries the layout-complete flag; `page_count` grows meanwhile. `Pages` for a page that is not computed yet answers `RICH_NOT_READY` and the client retries after another `Layout`.
 
 `Open` consistency: a blank document carries no data; TXT requires profile TXT; DOCX requires profile document. A source the engine rejects is `OPEN_FAILED`. `data` is at most `MAX_OPEN_BYTES` (frame limit minus header and fields). Direction numbers: 0 left, 1 right, 2 up, 3 down, 4 home, 5 end, 6 document start, 7 document end, 8 page up, 9 page down, 10 word left, 11 word right, 12 paragraph up, 13 paragraph down.
 
@@ -76,7 +79,7 @@ Reply opcodes: `0x8000` Error, `0x8100` State, `0x8101` TextWindow, `0x8102` Pag
 | revision | u64 | after the command |
 | anchor, focus | u64, u64 | selection, `<= doc_len` |
 | doc_len | u64 | flat bytes |
-| flags | u32 | bit 0 modified, 1 can undo, 2 can redo, 3 layout complete, 4 text window present; other bits 0 |
+| flags | u32 | bit 0 modified, 1 can undo, 2 can redo, 3 layout complete, 4 text window present, 5 focus is upstream; other bits 0 |
 | page_count | u32 | pages so far (grows while `layout_complete` is 0) |
 | caret | u32 page (`0xFFFFFFFF` none), `x f64`, `y f64`, `height f64` | geometry of the focus; zeros when none |
 | invalidated | `n u32` (at most 1024), `n` x (`first u32`, `end u32`) | half-open page ranges the client must drop; sorted and disjoint; ranges that overlap or **touch** (`end == next first`) are merged by the sender (`split_page_delta`) and refused by the decoder (`PAGE_RANGE`) |
@@ -87,8 +90,10 @@ When more than 16 pages change, the first 16 are sent and the others appear in `
 
 **TextWindow** (`0x8101`): `revision u64`, `start u64`, `doc_len u64`, `len u32`, UTF-8, with `start + len <= doc_len`.
 **Pages** (`0x8102`): `revision u64`, `page_count u32`, then the page list as above.
-**HitResult** (`0x8103`): `revision u64`, `page u32`, `position u64` (a grapheme boundary).
+**HitResult** (`0x8103`): `revision u64`, `page u32`, `position u64` (a valid position), `upstream u8` (flag), `0 u8[3]`.
 **Closed** (`0x8104`): empty.
+
+**Client rules (R4).** The client applies `invalidated` first, then stores `pages`. It drops its cached pages with index `>= page_count` whenever the page count decreases (the sender clamps its own ranges to `page_count`). It ignores a `Pages` reply whose `revision` is not the current revision (an edit happened since the request) and requests again. Cache entries are keyed by page index and are valid until invalidated, replaced or dropped.
 
 ## Errors
 
@@ -137,8 +142,8 @@ Encoders check the size limits themselves; in tests every encoded reply is also 
 
 ## Interfaces left to the other slices
 
-- R1 (US-204): `atelier_text_model::rich::flat::{FlatIndex, ParagraphAccess, FlatEdit, EditOutcome, FlatError, ParagraphPosition}` in `crates/text-model/src/rich/flat.rs`, declarations only except `EditOutcome::map_position`. `FlatIndex` carries conversions and the cluster and word boundary functions (implemented with `crates/unicode`); `EditOutcome` reports `start`, `removed_bytes`, `inserted_bytes`, `doc_len`, paragraph span (before/after indices, same meaning for undo and redo) and `can_undo`/`can_redo`.
-- R2 (US-216): `crate::rich_layout::{RichPageCache, PageDelta, CaretGeometry, LayoutError}` in `crates/core-wasm/src/rich_layout.rs`, declarations only. The cache owns no document: `new`, `apply_edit`, `step` and `page_display` receive a `&dyn ParagraphAccess`. `step` takes a budget in paragraphs, never a clock (`Instant::now()` panics on wasm32-unknown-unknown). Target under 4 ms per keystroke on 300 pages, no global pagination pre-validation. `rich_protocol::split_page_delta` turns a `PageDelta` into the pages to send (at most 16) and the merged invalidation ranges (at most 1024).
+- R1 (US-204): implements on `RichDocument`, in `atelier_text_model::rich::flat`, `FlatIndex` (prefix sums, locate/position, `snap_back`, `prev/next_grapheme`, `prev/next_word`, `word_at`, implemented with `crates/unicode` plus the cluster overrides), `LayoutContext` and `FlatEdit`; `EditOutcome` reports `start`, `removed_bytes`, `inserted_bytes`, `doc_len`, the paragraph span (before/after indices, same meaning for undo and redo), `layout_scope` (`Paragraphs` or `All` for style or section changes) and `can_undo`/`can_redo`. `prev_word` is the start of the word strictly before the position (skipping the blanks in between), `next_word` the start of the word strictly after (skipping the blanks that follow the current word), as Ctrl+Left and Ctrl+Right in Word (US-221). `EditOutcome::map_position` can land inside a cluster merged by the edit: pass its result through `snap_back`. The conversions between a flat offset in a paragraph and an offset in `Paragraph::text`, both ways and aware of objects, breaks and symbols, are implemented (`paragraph_flat`, `flat_to_text_offset`, `text_to_flat_offset` and the matching `LayoutContext` methods). **Model fields frozen by US-203, behaviour left to R1** (`paragraph.rs`, `attrs.rs`): `Inline::Break(InlineBreak)` and `Inline::Symbol(InlineSymbol)` with `Paragraph::breaks` and `Paragraph::symbols` (3 bytes each in flat text), and `CharAttrs::char_style` (0 bytes). R1 feeds them from the DOCX import (`crates/fmt-ooxml/src/docx.rs:234-236` tables), shifts them with text edits and validates them (`paragraph.rs`, `ops.rs`, `validate.rs`). `VecParagraphs` (`rich/flat_double.rs`) is a test double implementing `FlatIndex` and `LayoutContext` so that R2 does not wait for R1.
+- R2 (US-216): `crate::rich_layout::{RichPageCache, PageDelta, CaretGeometry, LayoutError}` in `crates/core-wasm/src/rich_layout.rs`, declarations only. The cache owns no document: `new`, `apply_edit`, `step` and `page_display` receive a `&dyn LayoutContext`, which gives the style catalog and theme, the paragraphs (none for an opaque block), the block kind (body, table cell with table, row and cell ids, or opaque), the section (opaque page properties, header and footer nodes), object resources and the list counters before each paragraph. `step` takes a budget in paragraphs, never a clock (`Instant::now()` panics on wasm32-unknown-unknown). Queries: `caret(position, upstream)`, `line_edges(position, upstream)`, `hit_test` (position and affinity), `move_vertical`, `move_page(position, pages, preferred_x)`. Target under 4 ms per keystroke on 300 pages, no global pagination pre-validation. `rich_protocol::split_page_delta` turns a `PageDelta` into the pages to send (at most 16, all `< page_count`) and the merged invalidation ranges (at most 1024).
 - R3a (US-217): maps `Command` to `FlatEdit` and `RichPageCache` and builds `State` (`rich_protocol::State`).
 - R4: page cache and integration on top of `web/rich-editor-protocol.mjs`.
 - Integrator: routing by version byte in `editor.rs`, and `node tests/rich-editor-protocol.mjs` in CI next to `tests/editor-protocol.mjs`.
