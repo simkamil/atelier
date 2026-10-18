@@ -32,10 +32,15 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 /// Unicode Character Database version represented by these tables.
 pub const UNICODE_VERSION: &str = "17.0.0";
 
-fn lookup(c: char, pages: &[u16], data: &[[u8; 256]], values: &[&'static str]) -> &'static str {
+fn lookup<P: Copy + Into<usize>>(
+    c: char,
+    pages: &[P],
+    data: &[[u8; BLOCK_SIZE]],
+    values: &[&'static str],
+) -> &'static str {
     let n = c as usize;
-    let page = pages[n >> 8] as usize;
-    values[data[page][n & 255] as usize]
+    let block: usize = pages[page_slot(n)].into();
+    values[data[block][n & (BLOCK_SIZE - 1)] as usize]
 }
 fn mapped(c: char, table: &'static [(u32, &'static [u32])]) -> Option<&'static [u32]> {
     table
