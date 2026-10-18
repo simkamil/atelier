@@ -248,7 +248,8 @@ mod win32;
 
 #[cfg(windows)]
 pub use win32::{
-    initialize_dpi, resources_self_check, run, self_check, show_error, webview_self_check,
+    initialize_dpi, resources_self_check, run, run_with_launch, self_check, show_error,
+    webview_self_check,
 };
 
 #[cfg(not(windows))]

@@ -7,6 +7,7 @@ use super::{
 use crate::file_bridge::{self, Request};
 use crate::file_dialog::{DialogOwner, FileFilter, StaFileDialogs};
 use crate::files::{FileBroker, FileError};
+use crate::instance_win32;
 use crate::webview::{self, WebView};
 use std::ffi::c_void;
 use std::io;
@@ -33,6 +34,9 @@ const WM_DPICHANGED: u32 = 0x02e0;
 const WM_SETTINGCHANGE: u32 = 0x001a;
 const WM_THEMECHANGED: u32 = 0x031a;
 const WM_TIMER: u32 = 0x0113;
+const WM_COPYDATA: u32 = 0x004a;
+/// Message privé (plage WM_APP) : traiter hors du WM_COPYDATA envoyé les chemins reçus.
+const WM_ATELIER_LAUNCH: u32 = 0x8000 + 0x115;
 const WM_GETMINMAXINFO: u32 = 0x0024;
 const GWLP_USERDATA: i32 = -21;
 const TIMER_WEBVIEW_INIT: usize = 0x1110;
@@ -181,6 +185,7 @@ unsafe extern "system" {
     fn SetTimer(hwnd: Hwnd, id: usize, milliseconds: u32, callback: *mut c_void) -> usize;
     fn KillTimer(hwnd: Hwnd, id: usize) -> i32;
     fn ShowWindow(hwnd: Hwnd, command: i32) -> i32;
+    fn PostMessageW(hwnd: Hwnd, message: u32, w: Wparam, l: Lparam) -> i32;
     fn IsWindowVisible(hwnd: Hwnd) -> i32;
     fn UpdateWindow(hwnd: Hwnd) -> i32;
     fn GetClientRect(hwnd: Hwnd, rect: *mut NativeRect) -> i32;
@@ -242,6 +247,8 @@ struct FileRuntime {
     broker: FileBroker,
     dialogs: StaFileDialogs,
     dirty: bool,
+    /// Chemins demandés (ligne de commande, seconde instance) pas encore réclamés par le front.
+    launch: std::collections::VecDeque<PathBuf>,
 }
 
 impl FileRuntime {
@@ -250,6 +257,7 @@ impl FileRuntime {
             broker: FileBroker::new(),
             dialogs: StaFileDialogs::initialize_current_thread()?,
             dirty: false,
+            launch: std::collections::VecDeque::new(),
         })
     }
 }
@@ -296,7 +304,9 @@ fn route_file_request(
             }
             Err(key) => file_reply(&id, Err(key)),
         },
-        Request::Dirty { .. } => unreachable!("dirty messages are handled before dialog routing"),
+        Request::Dirty { .. } | Request::Launch { .. } => {
+            unreachable!("dirty and launch messages are handled before dialog routing")
+        }
     }
 }
 
@@ -326,6 +336,9 @@ fn process_file_request(hwnd: Hwnd, runtime: &mut FileRuntime, request: Request)
     if let Request::Dirty { dirty, .. } = request {
         runtime.dirty = dirty;
         return format!("us120-file|1|{id}|ok|");
+    }
+    if let Request::Launch { .. } = request {
+        return file_bridge::process_launch(&id, &mut runtime.launch, &runtime.broker);
     }
     // SAFETY: this handler runs on the UI STA while hwnd is the live owner window.
     let owner = unsafe { DialogOwner::from_raw(hwnd) };
@@ -820,6 +833,36 @@ unsafe extern "system" fn window_proc(hwnd: Hwnd, message: u32, w: Wparam, l: Lp
                         return 0;
                     }
                 }
+                WM_COPYDATA => {
+                    // US-115 : chemins d'une seconde instance. Le décodage valide provenance, protocole,
+                    // taille et UTF-16 ; une charge invalide est refusée (0) sans effet. Le travail
+                    // réel est reporté à WM_ATELIER_LAUNCH car ce message est envoyé par un autre thread.
+                    // SAFETY (bloc unsafe englobant) : l est le lParam de ce WM_COPYDATA.
+                    return match instance_win32::decode_copydata(w, l) {
+                        Some(paths) => {
+                            if let Some(runtime) = (*context).file_runtime.as_mut() {
+                                for path in paths {
+                                    if runtime.launch.len() >= crate::instance::MAX_PATHS {
+                                        break;
+                                    }
+                                    runtime.launch.push_back(path);
+                                }
+                            }
+                            // SAFETY: hwnd est la fenêtre vivante ; message privé sans pointeur.
+                            PostMessageW(hwnd, WM_ATELIER_LAUNCH, 0, 0);
+                            1
+                        }
+                        None => 0,
+                    };
+                }
+                WM_ATELIER_LAUNCH => {
+                    instance_win32::bring_to_front(hwnd);
+                    // Échec ignoré : le front réclame aussi les chemins à son démarrage.
+                    if let Some(view) = (*context).webview.as_ref() {
+                        let _ = view.post_web_message_as_string("us115-launch|1");
+                    }
+                    return 0;
+                }
                 WM_TIMER => {
                     if w == TIMER_WEBVIEW_INIT {
                         let _ = KillTimer(hwnd, TIMER_WEBVIEW_INIT);
@@ -1007,10 +1050,14 @@ struct RegisteredClass {
 }
 impl RegisteredClass {
     fn new() -> io::Result<Self> {
-        // SAFETY: GetCurrentProcessId is a pointer-free query for a process-unique class name.
-        let name = wide(std::ffi::OsStr::new(&format!("AtelierWindow-{}", unsafe {
-            GetCurrentProcessId()
-        })));
+        // Classe propre à la racine de données pour la fenêtre principale (US-115, retrouvée par
+        // FindWindowW) ; sinon nom unique par processus pour les auto-vérifications.
+        let name = wide(std::ffi::OsStr::new(
+            &instance_win32::window_class_name().unwrap_or_else(|| {
+                // SAFETY: GetCurrentProcessId is a pointer-free query for a process-unique class name.
+                format!("AtelierWindow-{}", unsafe { GetCurrentProcessId() })
+            }),
+        ));
         // SAFETY: null requests the current process module handle.
         let instance = unsafe { GetModuleHandleW(null()) };
         if instance.is_null() {
@@ -1199,6 +1246,21 @@ fn create_context(
 }
 
 pub fn run(state_file: &Path, title: &str, webview_data: &Path) -> io::Result<()> {
+    run_with_launch(state_file, title, webview_data, None, Vec::new())
+}
+
+/// Fenêtre principale avec instance unique : `instance_key` nomme la classe retrouvée par les
+/// secondes instances ; `launch` sont les chemins d'ouverture de la ligne de commande.
+pub fn run_with_launch(
+    state_file: &Path,
+    title: &str,
+    webview_data: &Path,
+    instance_key: Option<&str>,
+    launch: Vec<PathBuf>,
+) -> io::Result<()> {
+    if let Some(key) = instance_key {
+        instance_win32::set_window_key(key);
+    }
     match webview::probe_runtime()? {
         Some(_) => {}
         None => {
@@ -1211,8 +1273,11 @@ pub fn run(state_file: &Path, title: &str, webview_data: &Path) -> io::Result<()
     let _apartment = webview::ComApartment::initialize_sta()?;
     let saved = load_state(state_file)?;
     let mut context = create_context(state_file, title, saved)?;
-    context.file_runtime =
-        Some(FileRuntime::new().map_err(|error| io::Error::other(error.message_key))?);
+    let mut runtime = FileRuntime::new().map_err(|error| io::Error::other(error.message_key))?;
+    runtime
+        .launch
+        .extend(launch.into_iter().take(crate::instance::MAX_PATHS));
+    context.file_runtime = Some(runtime);
     let initial = restore_state(saved, &monitors()?, context.dpi);
     let window = create_window(&mut context, initial)?;
     let hwnd = window.hwnd;
