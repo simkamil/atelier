@@ -58,6 +58,7 @@ impl Entry {
 struct TNode {
     left: u32,
     right: u32,
+    parent: u32,
     prio: u32,
     count: usize,
     /// Bytes of the subtree: each entry counts its length plus one separator.
@@ -73,6 +74,8 @@ pub(crate) struct FlatTree {
     free: Vec<u32>,
     root: u32,
     seed: u64,
+    /// Node id of an entry -> its node, for [`FlatTree::index_of`].
+    slots: BTreeMap<NodeId, u32>,
     /// `(index, state)`: list counters before paragraph `index`, kept for the
     /// indices computed so far; truncated by any change at a lower index.
     pub lists: Vec<(usize, ListState)>,
@@ -85,6 +88,7 @@ impl FlatTree {
             free: Vec::new(),
             root: NIL,
             seed: 0x9e37_79b9_7f4a_7c15,
+            slots: BTreeMap::new(),
             lists: Vec::new(),
         }
     }
@@ -96,7 +100,14 @@ impl FlatTree {
             let node = tree.alloc(entry);
             tree.root = tree.merge(tree.root, node);
         }
+        tree.fix_root();
         tree
+    }
+
+    fn fix_root(&mut self) {
+        if self.root != NIL {
+            self.nodes[self.root as usize].parent = NIL;
+        }
     }
 
     fn next_priority(&mut self) -> u32 {
@@ -110,15 +121,17 @@ impl FlatTree {
 
     fn alloc(&mut self, entry: Entry) -> u32 {
         let prio = self.next_priority();
+        let id = entry.id;
         let node = TNode {
             left: NIL,
             right: NIL,
+            parent: NIL,
             prio,
             count: 1,
             sum: entry.len + 1,
             entry,
         };
-        match self.free.pop() {
+        let slot = match self.free.pop() {
             Some(slot) => {
                 self.nodes[slot as usize] = node;
                 slot
@@ -127,7 +140,9 @@ impl FlatTree {
                 self.nodes.push(node);
                 (self.nodes.len() - 1) as u32
             }
-        }
+        };
+        self.slots.insert(id, slot);
+        slot
     }
 
     fn count_of(&self, n: u32) -> usize {
@@ -153,6 +168,11 @@ impl FlatTree {
         let node = &mut self.nodes[n as usize];
         node.count = count;
         node.sum = sum;
+        for child in [l, r] {
+            if child != NIL {
+                self.nodes[child as usize].parent = n;
+            }
+        }
     }
 
     /// Splits into the first `k` entries and the rest.
@@ -206,6 +226,10 @@ impl FlatTree {
             }
             stack.push(self.nodes[n as usize].left);
             stack.push(self.nodes[n as usize].right);
+            let id = self.nodes[n as usize].entry.id;
+            if self.slots.get(&id) == Some(&n) {
+                self.slots.remove(&id);
+            }
             self.free.push(n);
         }
     }
@@ -267,6 +291,23 @@ impl FlatTree {
 
     pub fn entry(&self, index: usize) -> Option<&Entry> {
         self.node_at(index).map(|n| &self.nodes[n as usize].entry)
+    }
+
+    /// Index of the entry whose node id is `id`.
+    pub fn index_of(&self, id: NodeId) -> Option<usize> {
+        let slot = *self.slots.get(&id)?;
+        let mut index = self.count_of(self.nodes[slot as usize].left);
+        let mut current = slot;
+        loop {
+            let parent = self.nodes[current as usize].parent;
+            if parent == NIL {
+                return Some(index);
+            }
+            if self.nodes[parent as usize].right == current {
+                index += self.count_of(self.nodes[parent as usize].left) + 1;
+            }
+            current = parent;
+        }
     }
 
     /// Flat position of the first byte of paragraph `index`.
@@ -333,6 +374,7 @@ impl FlatTree {
         }
         let left = self.merge(a, inserted);
         self.root = self.merge(left, c);
+        self.fix_root();
         self.lists.retain(|(k, _)| *k <= first);
     }
 }
@@ -342,16 +384,15 @@ mod tests {
     use super::*;
     use crate::rich::RichDocument;
 
-    fn entries(lens: &[usize]) -> Vec<Entry> {
-        let mut doc = RichDocument::new();
-        let id = doc.alloc_id().unwrap();
+    fn entries(doc: &mut RichDocument, lens: &[usize]) -> Vec<Entry> {
+        let parent = doc.alloc_id().unwrap();
         lens.iter()
             .map(|len| Entry {
-                id,
+                id: doc.alloc_id().unwrap(),
                 opaque: false,
                 cell: None,
-                parent: id,
-                section: id,
+                parent,
+                section: parent,
                 len: *len,
             })
             .collect()
@@ -360,7 +401,8 @@ mod tests {
     #[test]
     fn prefix_sums_find_and_splice_agree_with_a_vector() {
         let mut lens: Vec<usize> = (0..200).map(|i| (i * 7) % 11).collect();
-        let mut tree = FlatTree::from_entries(entries(&lens));
+        let mut doc = RichDocument::new();
+        let mut tree = FlatTree::from_entries(entries(&mut doc, &lens));
         let check = |tree: &FlatTree, lens: &[usize]| {
             assert_eq!(tree.count(), lens.len());
             let total: usize = lens.iter().sum::<usize>() + lens.len() - 1;
@@ -379,6 +421,9 @@ mod tests {
             }
             assert_eq!(tree.find(total + 1), None);
             assert_eq!(tree.entries().len(), lens.len());
+            for (i, entry) in tree.entries().iter().enumerate() {
+                assert_eq!(tree.index_of(entry.id), Some(i));
+            }
         };
         check(&tree, &lens);
         let mut seed = 12345u64;
@@ -393,7 +438,7 @@ mod tests {
             if lens.len() - remove + new.len() == 0 {
                 continue;
             }
-            tree.splice(first, remove, &entries(&new));
+            tree.splice(first, remove, &entries(&mut doc, &new));
             lens.splice(first..first + remove, new);
             check(&tree, &lens);
         }

@@ -18,7 +18,7 @@ use super::attrs::CharAttrs;
 use super::document::RichDocument;
 use super::flat::{
     BlockKind, FlatError, FlatIndex, LayoutContext, ListCounters, OBJECT_LEN, PageSetup,
-    ParagraphPosition, paragraph_flat,
+    ParagraphPosition, paragraph_flat, text_to_flat_offset,
 };
 use super::flat_tree::{CellContext, Entry, FlatTree, ListState};
 use super::node::{BlockList, Node};
@@ -118,6 +118,53 @@ impl RichDocument {
 
     pub(crate) fn put_flat(&mut self, tree: FlatTree) {
         *self.flat.get_mut().unwrap_or_else(PoisonError::into_inner) = Some(tree);
+    }
+
+    /// Node id of the paragraph that holds a flat position, and the offset of
+    /// the position in `Paragraph::text` (0 for an opaque block): the form in
+    /// which the model and the recovery journal keep a position (SPEC 6.3).
+    /// The positions before and after the items (objects, breaks, symbols)
+    /// located at one text offset give the same pair;
+    /// [`RichDocument::flat_position`] chooses the side when it comes back.
+    pub fn node_position(&self, position: usize) -> Result<(NodeId, usize), FlatError> {
+        self.with_flat(|t| {
+            let (i, o) = t.find(position).ok_or(FlatError::OutOfRange)?;
+            let entry = t.entry(i).ok_or(FlatError::OutOfRange)?;
+            if entry.opaque {
+                return match o {
+                    0 | OBJECT_LEN => Ok((entry.id, 0)),
+                    _ => Err(FlatError::NotBoundary),
+                };
+            }
+            let p = self.paragraph_of(t, i).ok_or(FlatError::OutOfRange)?;
+            Ok((entry.id, p.cut(o)?.0))
+        })
+    }
+
+    /// Flat position of the offset `offset` of `Paragraph::text` in the
+    /// paragraph `node`; the items located at exactly that offset count
+    /// before the position when `after_items` is true, after it otherwise.
+    /// `OutOfRange` for an unknown node or an offset beyond the text,
+    /// `NotBoundary` inside a UTF-8 scalar.
+    pub fn flat_position(
+        &self,
+        node: NodeId,
+        offset: usize,
+        after_items: bool,
+    ) -> Result<usize, FlatError> {
+        self.with_flat(|t| {
+            let i = t.index_of(node).ok_or(FlatError::OutOfRange)?;
+            let start = t.start(i).ok_or(FlatError::OutOfRange)?;
+            let entry = t.entry(i).ok_or(FlatError::OutOfRange)?;
+            if entry.opaque {
+                return match offset {
+                    0 => Ok(start + if after_items { OBJECT_LEN } else { 0 }),
+                    _ => Err(FlatError::OutOfRange),
+                };
+            }
+            let p = self.paragraph_of(t, i).ok_or(FlatError::OutOfRange)?;
+            Ok(start + text_to_flat_offset(p, offset, after_items)?)
+        })
     }
 
     /// Flat text of the paragraph an entry stands for.

@@ -249,3 +249,122 @@ fn the_index_follows_old_style_operations_and_clones() {
     compare(&doc);
     compare(&copy);
 }
+
+/// Conversions are consistent in every direction (property test, fixed seeds).
+#[test]
+fn conversions_are_consistent_in_every_direction() {
+    for seed in 0..150 {
+        let mut rng = Rng::new(7000 + seed);
+        let count = 1 + rng.below(4);
+        let doc = if seed % 2 == 0 {
+            random_structured(&mut rng, count.min(3))
+        } else {
+            random_body(&mut rng, count, true)
+        };
+        let len = doc.len();
+        // flat <-> (paragraph, offset)
+        for p in 0..=len {
+            let at = doc.locate(p).unwrap();
+            assert_eq!(doc.position(at), Ok(p));
+            assert_eq!(doc.locate(doc.position(at).unwrap()), Ok(at));
+            assert!(at.offset <= doc.paragraph_flat(at.paragraph).unwrap().len());
+        }
+        // paragraph starts are the prefix sums of the lengths plus separators
+        let mut sum = 0;
+        for i in 0..doc.paragraph_count() {
+            assert_eq!(doc.paragraph_start(i), Ok(sum));
+            sum += doc.paragraph_flat(i).unwrap().len() + 1;
+        }
+        assert_eq!(sum - 1, len);
+        let valid: Vec<usize> = (0..=len)
+            .filter(|p| doc.check_position(*p).is_ok())
+            .collect();
+        for p in &valid {
+            // snap_back is the identity on valid positions and goes backwards
+            assert_eq!(doc.snap_back(*p), Ok(*p));
+            if let Ok(Some(next)) = doc.next_grapheme(*p) {
+                assert!(next > *p && doc.check_position(next).is_ok());
+                assert_eq!(doc.prev_grapheme(next), Ok(Some(*p)));
+            }
+            // flat <-> (node id, offset in the text)
+            let (node, offset) = doc.node_position(*p).unwrap();
+            let before = doc.flat_position(node, offset, false).unwrap();
+            let after = doc.flat_position(node, offset, true).unwrap();
+            assert!(before <= *p && *p <= after, "{before} <= {p} <= {after}");
+            assert_eq!(doc.node_position(before), Ok((node, offset)));
+            assert_eq!(doc.node_position(after), Ok((node, offset)));
+            if before == after {
+                assert_eq!(before, *p);
+            }
+        }
+        for p in 0..=len + 1 {
+            let snapped = doc.snap_back(p.min(len)).unwrap();
+            assert!(snapped <= p && doc.check_position(snapped).is_ok());
+        }
+        // The other direction, from every (node, offset) of every paragraph.
+        for i in 0..doc.paragraph_count() {
+            let Some(paragraph) = para_at(&doc, i) else {
+                continue;
+            };
+            let start = doc.paragraph_start(i).unwrap();
+            let node = doc.node_position(start).unwrap().0;
+            for offset in 0..=paragraph.text.len() {
+                for after in [false, true] {
+                    match doc.flat_position(node, offset, after) {
+                        Ok(flat) => {
+                            assert_eq!(doc.node_position(flat), Ok((node, offset)));
+                            assert!(
+                                (start..=start + doc.paragraph_flat(i).unwrap().len())
+                                    .contains(&flat)
+                            );
+                        }
+                        Err(error) => {
+                            assert_eq!(error, FlatError::NotBoundary);
+                            assert!(!paragraph.text.is_char_boundary(offset));
+                        }
+                    }
+                }
+            }
+            assert_eq!(
+                doc.flat_position(node, paragraph.text.len() + 1, false),
+                Err(FlatError::OutOfRange)
+            );
+        }
+        assert_eq!(doc.node_position(len + 1), Err(FlatError::OutOfRange));
+    }
+}
+
+#[test]
+fn node_positions_follow_edits_and_structure() {
+    use atelier_text_model::rich::flat::FlatEdit;
+    let mut rng = Rng::new(31);
+    let mut doc = random_structured(&mut rng, 3);
+    let mut nodes = Vec::new();
+    for i in 0..doc.paragraph_count() {
+        let start = doc.paragraph_start(i).unwrap();
+        nodes.push(doc.node_position(start).unwrap().0);
+    }
+    // Split and merge: the node of a surviving paragraph keeps its place.
+    let target = (0..doc.paragraph_count())
+        .find(|i| para_at(&doc, *i).is_some())
+        .unwrap();
+    let start = doc.paragraph_start(target).unwrap();
+    doc.replace_range(start, start, "x\ny").unwrap();
+    let after: Vec<_> = (0..doc.paragraph_count())
+        .map(|i| {
+            doc.node_position(doc.paragraph_start(i).unwrap())
+                .unwrap()
+                .0
+        })
+        .collect();
+    assert_eq!(after.len(), nodes.len() + 1);
+    for (i, node) in after.iter().enumerate() {
+        let start = doc.paragraph_start(i).unwrap();
+        assert_eq!(doc.flat_position(*node, 0, false), Ok(start));
+    }
+    doc.undo().unwrap();
+    for (i, node) in nodes.iter().enumerate() {
+        let start = doc.paragraph_start(i).unwrap();
+        assert_eq!(doc.flat_position(*node, 0, false), Ok(start));
+    }
+}
