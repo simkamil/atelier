@@ -165,6 +165,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-format-styles.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/format-key-router.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-save.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-selection.mjs

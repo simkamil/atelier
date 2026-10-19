@@ -658,6 +658,8 @@ Validation US-201 (2026-10-12) : [contrat et preuves](docs/us-201-style-engine.m
 
 Fabrique Rust validée : [profil par défaut](docs/us-202-default-document.md), 25 styles, métadonnées A4/marges/langue et interligne exact 108/100. Auto259/240 est l’arrondi du modèle. **US partielle** : géométrie dans DefaultPresentation, bouton Nouveau riche non raccordé; critères utilisateur conservés ouverts.
 
+Raccordement (2026-10-19, branche `format-prep`) : « Nouveau » et le document du démarrage ouvrent le profil document de la fabrique (texte riche, Enregistrer sous propose `Document.docx`) ; la mise en page applique A4 et marges 2,5 cm (caret mesuré à 70,9 pt). Critère 1 non coché : la langue fr-FR n'est portée par aucun attribut du modèle d'édition (reste dans la présentation de la fabrique). Critère 2 non vérifié dans l'interface (galerie de styles : US-250).
+
 Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-incremental-borders-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-incremental-borders-matrix.json).
 
 Réf : F-TXT-021 · Taille : S · Dépend de : US-201
