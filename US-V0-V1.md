@@ -963,12 +963,14 @@ Réf : F-COM-020 · Taille : M · Dépend de : US-106
 
 #### US-240 — Mettre en forme les caractères depuis le ruban
 *En tant qu'*utilisateur, *je veux* changer l'apparence du texte *afin de* mettre en valeur certains passages.
-- [ ] Police (liste avec aperçu, polices récentes, polices du thème), taille (liste + saisie libre, Ctrl+Maj+> / <), gras, italique, souligné (simple, double, épais, pointillé, tirets, ondulé), barré, exposant, indice, couleur de police, surlignage.
-- [ ] Sans sélection, la mise en forme s'applique au mot sous le curseur, comme dans Word.
-- [ ] L'état des boutons reflète la sélection (état mixte affiché).
-- [ ] Si la police demandée est absente, la police de remplacement est indiquée (info-bulle).
+- [x] Police (liste avec aperçu, polices récentes, polices du thème), taille (liste + saisie libre, Ctrl+Maj+> / <), gras, italique, souligné (simple, double, épais, pointillé, tirets, ondulé), barré, exposant, indice, couleur de police, surlignage.
+- [x] Sans sélection, la mise en forme s'applique au mot sous le curseur, comme dans Word.
+- [x] L'état des boutons reflète la sélection (état mixte affiché).
+- [x] Si la police demandée est absente, la police de remplacement est indiquée (info-bulle).
 
 Réf : F-TXT-010 · Taille : M · Dépend de : US-106, US-201, US-219
+
+Validation US-240 (2026-10-19) : groupe Police du ruban (`web/format-char.mjs`, handler `rich_editor/format_char.rs`, contrat [F0](docs/us-240-format-protocol.md)). Soulignés (6), barré, exposant/indice et surlignage désormais dessinés (les deux peintres identiques, 48 comparaisons) ; polices Liberation et Caladea chargées à la demande (`LoadFonts` 0x016F, 16 faces / 6 Mio au plus) depuis les ressources de l'exe, Carlito seule dans le WASM ; mot sous le curseur et attributs de saisie dans la même étape d'historique ; `aria-pressed="mixed"` ; remplacement indiqué (info-bulle, liste). Aller-retour DOCX de tous les attributs vérifié. Réserves : comparaison à Word par US-308 ; l'aperçu de la liste des polices utilise la police du système de même nom ; variantes `w:u` non gérées (dashLong, wavyHeavy…) et `dstrike` lues comme simple / barré ; 16 couleurs de surlignage (celles de `w:highlight`). Relecture indépendante : fusionnable, retouches intégrées (lot de polices tout ou rien, face refusée signalée, surlignage inconnu ignoré à l'ouverture).
 
 #### US-241 — Dialogue Police
 *En tant qu'*utilisateur, *je veux* un dialogue Police complet *afin d'accéder* aux options avancées.

@@ -208,6 +208,8 @@ jobs:
           node tests/run-file-tab-ui-browser.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-rich-editor-format-para-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/run-format-char-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests
