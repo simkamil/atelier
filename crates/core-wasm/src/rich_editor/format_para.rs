@@ -24,8 +24,8 @@ impl Session {
     }
 
     /// `ApplyParaFormat`. Stub of US-243: documented error until written.
-    pub(super) fn apply_para_format(&mut self, _format: ParaFormat) -> Result<Response, ErrorCode> {
-        self.deny_formatting()?;
+    pub(super) fn apply_para_format(&mut self, format: ParaFormat) -> Result<Response, ErrorCode> {
+        self.begin_format(format.base_revision, format.command_id)?;
         Err(ErrorCode::FormatNotImplemented)
     }
 }

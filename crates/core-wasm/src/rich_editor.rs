@@ -32,13 +32,19 @@ mod find_tests;
 // Formatting (F0): `format_state` is written; the three others are the
 // extension modules of US-240, US-243 and US-250.
 mod format_char;
+#[cfg(test)]
+mod format_char_tests;
 mod format_para;
+#[cfg(test)]
+mod format_para_tests;
 mod format_state;
 #[cfg(test)]
 mod format_tests;
 mod io;
 mod sel;
 mod styles;
+#[cfg(test)]
+mod styles_tests;
 #[cfg(test)]
 mod tests;
 
@@ -103,6 +109,10 @@ struct Session {
     typing: format_char::Typing,
     /// Style preview in progress (US-250).
     preview: styles::Preview,
+    /// `command_id` of the last formatting command accepted (`begin_format`).
+    last_command_id: u32,
+    /// `ListFonts` answer and the revision it was computed at.
+    fonts_memo: Option<(u64, crate::rich_protocol::FontListData)>,
 }
 
 /// Paragraphs of layout a move, a hit test or a caret may run to reach its
@@ -310,6 +320,8 @@ impl Session {
             epoch: 0,
             typing: format_char::Typing::default(),
             preview: styles::Preview::default(),
+            last_command_id: 0,
+            fonts_memo: None,
         })
     }
 
@@ -569,9 +581,10 @@ impl Session {
             Command::ListStyles { filter, used_only } => self.list_styles(filter, used_only),
             Command::ApplyStyle {
                 base_revision,
+                command_id,
                 target,
                 id,
-            } => self.apply_style(base_revision, target, &id),
+            } => self.apply_style(base_revision, command_id, target, &id),
             Command::PreviewStyle { target, show, id } => self.preview_style(target, show, &id),
             Command::ListFonts => self.list_fonts(),
             Command::FormatMarks { first, count } => self.format_marks(first, count),

@@ -69,11 +69,12 @@ impl Session {
     /// `ApplyStyle`. Stub of US-250: documented error until written.
     pub(super) fn apply_style(
         &mut self,
-        _base_revision: u64,
+        base_revision: u64,
+        command_id: u32,
         _target: StyleTarget,
         _id: &str,
     ) -> Result<Response, ErrorCode> {
-        self.deny_formatting()?;
+        self.begin_format(base_revision, command_id)?;
         Err(ErrorCode::FormatNotImplemented)
     }
 

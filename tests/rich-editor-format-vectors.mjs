@@ -49,11 +49,11 @@ function describeRequest(c) {
   switch (c.type) {
     case "formatState": return "FormatState";
     case "applyCharFormat":
-      return `ApplyCharFormat guard=${guard(c.baseRevision)} scope=${FORMAT_SCOPES.indexOf(c.scope)} edits=${c.edits.map((e) => `${CHAR_ATTRS[e.attr]}:${EDIT_OPS[e.op]}:${charValue(e.attr, e.value)}`).join(";")}`;
+      return `ApplyCharFormat guard=${guard(c.baseRevision)} cid=${c.commandId} scope=${FORMAT_SCOPES.indexOf(c.scope)} edits=${c.edits.map((e) => `${CHAR_ATTRS[e.attr]}:${EDIT_OPS[e.op]}:${charValue(e.attr, e.value)}`).join(";")}`;
     case "applyParaFormat":
-      return `ApplyParaFormat guard=${guard(c.baseRevision)} edits=${c.edits.map((e) => `${PARA_ATTRS[e.attr]}:${EDIT_OPS[e.op]}:${paraValue(e.attr, e.value)}`).join(";")}`;
+      return `ApplyParaFormat guard=${guard(c.baseRevision)} cid=${c.commandId} edits=${c.edits.map((e) => `${PARA_ATTRS[e.attr]}:${EDIT_OPS[e.op]}:${paraValue(e.attr, e.value)}`).join(";")}`;
     case "listStyles": return `ListStyles filter=${STYLE_FILTERS.indexOf(c.filter)} used=${bool(c.usedOnly)}`;
-    case "applyStyle": return `ApplyStyle guard=${guard(c.baseRevision)} target=${STYLE_TARGETS.indexOf(c.target)} id=${text(c.id)}`;
+    case "applyStyle": return `ApplyStyle guard=${guard(c.baseRevision)} cid=${c.commandId} target=${STYLE_TARGETS.indexOf(c.target)} id=${text(c.id)}`;
     case "listFonts": return "ListFonts";
     case "formatMarks": return `FormatMarks first=${c.first} count=${c.count}`;
     case "previewStyle": return `PreviewStyle target=${STYLE_TARGETS.indexOf(c.target)} show=${bool(c.show)} id=${text(c.id)}`;
@@ -68,7 +68,7 @@ function describeReply(r) {
     case "error": return `Error code=${r.code}`;
     case "formatState": {
       const c = r.chars; const p = r.paragraph;
-      return `FormatState revision=${r.revision} anchor=${r.anchor} focus=${r.focus} flags=${bool(r.collapsed) | (bool(r.readOnly) << 1) | (bool(r.partial) << 2) | (bool(r.typing) << 3) | (bool(r.plain) << 4)} `
+      return `FormatState revision=${r.revision} anchor=${r.anchor} focus=${r.focus} last=${r.lastCommandId} flags=${bool(r.collapsed) | (bool(r.readOnly) << 1) | (bool(r.partial) << 2) | (bool(r.typing) << 3) | (bool(r.plain) << 4)} `
         + `font=${tri(c.font, (f) => `${text(f.requested)}/${text(f.used)}/${bool(f.substituted)}`)} size=${tri(c.size, String)} bold=${tri(c.bold, (v) => bool(v))} italic=${tri(c.italic, (v) => bool(v))} `
         + `underline=${tri(c.underline, (v) => UNDERLINES.indexOf(v))} strike=${tri(c.strike, (v) => bool(v))} valign=${tri(c.verticalAlign, (v) => VERTICAL_ALIGNS.indexOf(v))} `
         + `color=${tri(c.color, rgb)} highlight=${tri(c.highlight, rgb)} cstyle=${tri(c.style, text)} | `
@@ -120,7 +120,7 @@ export function verifyFormatVectors() {
   // Limits written by the encoders and refused by them (never a frame the decoder would reject).
   const request = (command) => encodeRichRequest({ docId: 1, requestId: 1, command });
   const refused = (command, code = "RICH_INVALID_BODY") => assert.throws(() => request(command), (e) => e instanceof RichProtocolError && e.code === code, String(command.type));
-  const char = (edits, extra = {}) => ({ type: "applyCharFormat", baseRevision: 0n, scope: "wordOrTyping", edits, ...extra });
+  const char = (edits, extra = {}) => ({ type: "applyCharFormat", baseRevision: 0n, commandId: 1, scope: "wordOrTyping", edits, ...extra });
   const bold = { attr: "bold", op: "toggle" };
   assert.ok(request(char([bold])));
   refused(char([]));
@@ -139,12 +139,12 @@ export function verifyFormatVectors() {
   refused(char([{ attr: "nope", op: "set", value: 1 }]));
   refused(char([bold], { scope: "everything" }));
   refused(char([bold], { baseRevision: 0 }));
-  refused({ type: "applyParaFormat", baseRevision: 0n, edits: [{ attr: "indentLeft", op: "set", value: FORMAT_LIMITS.maxTwips + 1 }] });
-  refused({ type: "applyParaFormat", baseRevision: 0n, edits: [{ attr: "spaceAfter", op: "set", value: -1 }] });
-  refused({ type: "applyParaFormat", baseRevision: 0n, edits: [{ attr: "lineSpacing", op: "set", value: { rule: "auto", value: 14 } }] });
-  refused({ type: "applyParaFormat", baseRevision: 0n, edits: [{ attr: "borders", op: "set", value: { top: "none" } }] });
-  refused({ type: "applyStyle", baseRevision: 0n, target: "paragraph", id: "" });
-  assert.ok(request({ type: "applyStyle", baseRevision: 0n, target: "character", id: "" }));
+  refused({ type: "applyParaFormat", baseRevision: 0n, commandId: 1, edits: [{ attr: "indentLeft", op: "set", value: FORMAT_LIMITS.maxTwips + 1 }] });
+  refused({ type: "applyParaFormat", baseRevision: 0n, commandId: 1, edits: [{ attr: "spaceAfter", op: "set", value: -1 }] });
+  refused({ type: "applyParaFormat", baseRevision: 0n, commandId: 1, edits: [{ attr: "lineSpacing", op: "set", value: { rule: "auto", value: 14 } }] });
+  refused({ type: "applyParaFormat", baseRevision: 0n, commandId: 1, edits: [{ attr: "borders", op: "set", value: { top: "none" } }] });
+  refused({ type: "applyStyle", baseRevision: 0n, commandId: 1, target: "paragraph", id: "" });
+  assert.ok(request({ type: "applyStyle", baseRevision: 0n, commandId: 1, target: "character", id: "" }));
   refused({ type: "previewStyle", target: "paragraph", show: false, id: "x" });
   refused({ type: "listStyles", filter: "tables", usedOnly: false });
   const manyStyles = Array.from({ length: FORMAT_LIMITS.maxStyleList + 1 }, (_, i) => ({

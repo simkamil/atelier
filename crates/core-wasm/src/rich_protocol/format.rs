@@ -226,6 +226,11 @@ pub struct CharFormat {
     /// Revision the caller believes it applies to; `NO_REVISION_GUARD` skips
     /// the check. A mismatch is `RICH_STALE_REVISION` and nothing changes.
     pub base_revision: u64,
+    /// Identifier chosen by the caller (non-zero, one per command): the engine
+    /// refuses a second command with the identifier of the last one it
+    /// accepted (`RICH_DUPLICATE_COMMAND`) and reports it in `FormatState`, so
+    /// the outcome of a command whose reply was lost is certain. 0: none.
+    pub command_id: u32,
     pub scope: FormatScope,
     pub edits: Vec<CharEdit>,
 }
@@ -276,6 +281,7 @@ pub struct ParaEdit {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParaFormat {
     pub base_revision: u64,
+    pub command_id: u32,
     pub edits: Vec<ParaEdit>,
 }
 
@@ -374,6 +380,9 @@ pub struct FormatStateData {
     /// The selection the state describes (the client checks it is still the current one).
     pub anchor: u64,
     pub focus: u64,
+    /// `command_id` of the last formatting command the engine accepted
+    /// (applied or found to change nothing); 0 when none.
+    pub last_command_id: u32,
     /// The selection is a caret.
     pub collapsed: bool,
     pub read_only: bool,
@@ -561,6 +570,7 @@ fn put_char_value(b: &mut Vec<u8>, value: &CharValue) -> Result<(), Fail> {
 
 fn parse_char_format(r: &mut Reader<'_>) -> Result<CharFormat, Fail> {
     let base_revision = guard(r)?;
+    let command_id = r.u32()?;
     let scope = match r.u8()? {
         0 => FormatScope::WordOrTyping,
         1 => FormatScope::SelectionOnly,
@@ -587,6 +597,7 @@ fn parse_char_format(r: &mut Reader<'_>) -> Result<CharFormat, Fail> {
     }
     Ok(CharFormat {
         base_revision,
+        command_id,
         scope,
         edits,
     })
@@ -611,6 +622,7 @@ fn char_value_matches(attr: CharAttr, value: &CharValue) -> bool {
 
 fn put_char_format(b: &mut Vec<u8>, f: &CharFormat) -> Result<(), Fail> {
     put_u64(b, f.base_revision);
+    put_u32(b, f.command_id);
     b.extend_from_slice(&[f.scope as u8, 0]);
     b.extend_from_slice(
         &u16::try_from(f.edits.len())
@@ -777,6 +789,7 @@ fn para_value_matches(attr: ParaAttr, value: &ParaValue) -> bool {
 
 fn parse_para_format(r: &mut Reader<'_>) -> Result<ParaFormat, Fail> {
     let base_revision = guard(r)?;
+    let command_id = r.u32()?;
     let count = usize::from(r.u16()?);
     r.zero(2)?;
     if count == 0 || count > MAX_FORMAT_EDITS {
@@ -798,12 +811,14 @@ fn parse_para_format(r: &mut Reader<'_>) -> Result<ParaFormat, Fail> {
     }
     Ok(ParaFormat {
         base_revision,
+        command_id,
         edits,
     })
 }
 
 fn put_para_format(b: &mut Vec<u8>, f: &ParaFormat) -> Result<(), Fail> {
     put_u64(b, f.base_revision);
+    put_u32(b, f.command_id);
     b.extend_from_slice(
         &u16::try_from(f.edits.len())
             .map_err(|_| Fail::InvalidBody)?
@@ -841,6 +856,7 @@ pub(super) fn parse_command(opcode: u16, r: &mut Reader<'_>) -> Result<Command, 
         }
         super::opcode::APPLY_STYLE => {
             let base_revision = guard(r)?;
+            let command_id = r.u32()?;
             let target = read_target(r)?;
             r.zero(3)?;
             // A paragraph style is always named; an empty character style
@@ -848,6 +864,7 @@ pub(super) fn parse_command(opcode: u16, r: &mut Reader<'_>) -> Result<Command, 
             let id = name(r, target == StyleTarget::Character)?;
             Command::ApplyStyle {
                 base_revision,
+                command_id,
                 target,
                 id,
             }
@@ -910,10 +927,12 @@ pub(super) fn encode_command(command: &Command, b: &mut Vec<u8>) -> Result<u16, 
         }
         Command::ApplyStyle {
             base_revision,
+            command_id,
             target,
             id,
         } => {
             put_u64(b, *base_revision);
+            put_u32(b, *command_id);
             b.extend_from_slice(&[*target as u8, 0, 0, 0]);
             put_name(b, id)?;
             op::APPLY_STYLE
@@ -1188,6 +1207,7 @@ pub(super) fn encode_reply(response: &Response, b: &mut Vec<u8>) -> Result<u16, 
             put_u64(b, s.revision);
             put_u64(b, s.anchor);
             put_u64(b, s.focus);
+            put_u32(b, s.last_command_id);
             b.push(
                 u8::from(s.collapsed)
                     | u8::from(s.read_only) << 1
@@ -1250,6 +1270,7 @@ pub(super) fn parse_reply(opcode: u16, r: &mut Reader<'_>) -> Result<Response, F
         super::opcode::R_FORMAT_STATE => {
             let revision = r.u64()?;
             let (anchor, focus) = (r.u64()?, r.u64()?);
+            let last_command_id = r.u32()?;
             let flags = r.u8()?;
             if flags & !0x1f != 0 {
                 return Err(Fail::InvalidBody);
@@ -1261,6 +1282,7 @@ pub(super) fn parse_reply(opcode: u16, r: &mut Reader<'_>) -> Result<Response, F
                 revision,
                 anchor,
                 focus,
+                last_command_id,
                 collapsed: flags & 1 != 0,
                 read_only: flags & 2 != 0,
                 partial: flags & 4 != 0,

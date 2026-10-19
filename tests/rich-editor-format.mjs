@@ -3,34 +3,32 @@
 //   1. the frozen vectors (tests/rich-editor-format-vectors.txt) against the JS codec;
 //   2. the format client (web/rich-editor-format.mjs) on a simulated engine: revision guard read when the command's
 //      turn comes, lost reply, cancellation, refusals, stubs;
-//   3. the real WASM engine: FormatState end to end through the real client, and the documented error of the stubs.
+//   3. the real WASM engine: FormatState and ListFonts end to end through the real client. The stubs of each story are
+//      tested in that story's own file (rich-editor-format-char.mjs, -para.mjs, -styles.mjs).
 // `node tests/rich-editor-format.mjs [engine.wasm]` (default: the wasm-release build, see tools/package-engine.py).
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { decodeMessage, encodeMessage, MessageType } from "../web/wasm-protocol.mjs";
 import { decodeRichRequest, encodeRichReply } from "../web/rich-editor-protocol.mjs";
 import { createRichEditorClient } from "../web/rich-editor-client.mjs";
 import { createFormatClient, NO_REVISION_GUARD } from "../web/rich-editor-format.mjs";
 import { verifyFormatVectors } from "./rich-editor-format-vectors.mjs";
+import { bold, loadEngine, scenarios, turn } from "./rich-editor-format-support.mjs";
 
-globalThis.Path2D ??= class { moveTo() {} lineTo() {} quadraticCurveTo() {} bezierCurveTo() {} closePath() {} };
-const turn = () => new Promise((resolve) => setImmediate(resolve));
 const abortError = () => new DOMException("The operation was aborted.", "AbortError");
-let checks = 0;
-const scenario = async (name, work) => { await work(); checks += 1; console.log(`ok - ${name}`); };
+const suite = scenarios();
+const scenario = suite.run;
 
 // ------------------------------------------------------------------ 1. vectors
 
 const rows = verifyFormatVectors();
 console.log(`ok - ${rows} frozen vectors of the formatting family`);
-checks += 1;
+suite.checks += 1;
 
 // ------------------------------------------------------------------ 2. simulated engine
 
 const unset = { state: "unset" };
 const value = (v) => ({ state: "value", value: v });
 const formatStateReply = (revision, over = {}) => ({
-  type: "formatState", revision, anchor: 0n, focus: 0n, collapsed: true, readOnly: false, partial: false, typing: false, plain: false,
+  type: "formatState", revision, anchor: 0n, focus: 0n, lastCommandId: 0, collapsed: true, readOnly: false, partial: false, typing: false, plain: false,
   chars: { font: unset, size: value(22), bold: value(false), italic: value(false), underline: value("none"), strike: value(false), verticalAlign: value("baseline"), color: unset, highlight: unset, style: unset },
   paragraph: { alignment: value("left"), indentLeft: value(0), indentRight: value(0), firstLine: value(0), spaceBefore: value(0), spaceAfter: value(160), lineSpacing: value({ rule: "auto", value: 259 }), shading: unset, borders: { top: unset, left: unset, bottom: unset, right: unset, between: unset, bar: unset }, style: unset },
   ...over,
@@ -38,7 +36,7 @@ const formatStateReply = (revision, over = {}) => ({
 
 /** Engine double with the revision rules of the contract: guard, read-only, one revision per applied command. */
 function makeEngine() {
-  const e = { rev: 0n, readOnly: false, notImplemented: false, applied: [], log: [] };
+  const e = { rev: 0n, last: 0, readOnly: false, notImplemented: false, typingOnly: false, applied: [], log: [] };
   const state = () => ({
     type: "state", revision: e.rev, anchor: 0n, focus: 0n, focusUpstream: false, docLen: 10n, modified: e.rev > 0n, canUndo: e.rev > 0n, canRedo: false,
     layoutComplete: true, pageCount: 1, caret: null, invalidated: [], atlas: { epoch: 1, first: 0, entries: [] }, pages: [], window: null,
@@ -49,13 +47,16 @@ function makeEngine() {
       case "open": e.rev = 0n; return state();
       case "layout": case "resync": return state();
       case "insertText": e.rev += 1n; return state();
-      case "formatState": return formatStateReply(e.rev, { readOnly: e.readOnly });
+      case "formatState": return formatStateReply(e.rev, { readOnly: e.readOnly, lastCommandId: e.last });
       case "applyCharFormat": case "applyParaFormat": case "applyStyle":
         if (e.readOnly) return { type: "error", code: "RICH_READ_ONLY" };
         if (e.notImplemented) return { type: "error", code: "RICH_FORMAT_NOT_IMPLEMENTED" };
+        if (c.commandId !== 0 && c.commandId === e.last) return { type: "error", code: "RICH_DUPLICATE_COMMAND" };
         if (c.baseRevision !== NO_REVISION_GUARD && c.baseRevision !== e.rev) return { type: "error", code: "RICH_STALE_REVISION" };
-        e.applied.push({ type: c.type, at: e.rev });
-        e.rev += 1n;
+        e.applied.push({ type: c.type, at: e.rev, id: c.commandId });
+        e.last = c.commandId;
+        // Typing attributes only: accepted, nothing changes, no revision.
+        if (!e.typingOnly) e.rev += 1n;
         return state();
       case "previewStyle":
         if (c.show && c.id === "Missing") return { type: "error", code: "RICH_UNKNOWN_STYLE" };
@@ -95,7 +96,6 @@ async function setup() {
   return { engine, transport, client, format: createFormatClient(client) };
 }
 
-const bold = { attr: "bold", op: "toggle" };
 
 await scenario("FormatState never reaches the page cache and never changes the revision", async () => {
   const { engine, client, format } = await setup();
@@ -119,20 +119,50 @@ await scenario("a changing command carries the revision of its turn, not the one
   await typed;
   const result = await applying;
   assert.equal(result.outcome, "applied");
-  assert.deepEqual(engine.applied, [{ type: "applyCharFormat", at: 1n }]);
+  assert.deepEqual(engine.applied, [{ type: "applyCharFormat", at: 1n, id: 1 }]);
 });
 
-await scenario("a lost reply: the outcome is read back from the revision, and a repeat is never applied twice", async () => {
+await scenario("a lost reply: the outcome is the engine's last accepted identifier, and a repeat is refused", async () => {
   const { engine, transport, client, format } = await setup();
   transport.loseReply = (c) => c.type === "applyCharFormat";
-  await assert.rejects(format.applyCharFormat({ edits: [bold] }), (e) => e.code === "CLIENT_TRANSPORT" && e.outcome === "applied");
+  let id;
+  await assert.rejects(format.applyCharFormat({ edits: [bold] }), (e) => { id = e.commandId; return e.code === "CLIENT_TRANSPORT" && e.outcome === "applied"; });
   transport.loseReply = null;
   assert.equal(engine.rev, 1n);
   // The client resynchronised before the read-back; its revision is the engine's.
   assert.equal(client.cache.revision, 1n);
-  // A blind repeat of the same guarded command is refused as stale, so a toggle cannot flip twice.
-  await assert.rejects(client.command({ type: "applyCharFormat", baseRevision: 0n, scope: "wordOrTyping", edits: [bold] }), (e) => e.code === "RICH_STALE_REVISION");
+  // A blind repeat with the same identifier is refused whatever its guard says, so a toggle cannot flip twice.
+  const repeat = { type: "applyCharFormat", baseRevision: NO_REVISION_GUARD, commandId: id, scope: "wordOrTyping", edits: [bold] };
+  await assert.rejects(client.command(repeat), (e) => e.code === "RICH_DUPLICATE_COMMAND");
+  await assert.rejects(client.command({ ...repeat, baseRevision: 0n }), (e) => e.code === "RICH_DUPLICATE_COMMAND");
   assert.equal(engine.rev, 1n);
+  assert.equal(engine.applied.length, 1);
+});
+
+await scenario("a keystroke between a lost reply and its read-back does not fool the outcome", async () => {
+  const { engine, transport, client, format } = await setup();
+  // The command is lost before the engine sees it; a keystroke raises the revision meanwhile.
+  transport.loseRequest = (c) => c.type === "applyCharFormat";
+  const failing = format.applyCharFormat({ edits: [bold] });
+  const typed = client.command({ type: "insertText", text: "a" });
+  await assert.rejects(failing, (e) => e.outcome === "not-applied");
+  await typed;
+  transport.loseRequest = null;
+  assert.ok(engine.rev > 0n && engine.applied.length === 0);
+  // The reply is lost after the engine applied it; a keystroke follows.
+  transport.loseReply = (c) => c.type === "applyCharFormat";
+  await assert.rejects(format.applyCharFormat({ edits: [bold] }), (e) => e.outcome === "applied");
+  transport.loseReply = null;
+  assert.equal(engine.applied.length, 1);
+});
+
+await scenario("a command that only sets typing attributes (no revision) is still settled", async () => {
+  const { engine, transport, format } = await setup();
+  engine.typingOnly = true;
+  transport.loseReply = (c) => c.type === "applyCharFormat";
+  await assert.rejects(format.applyCharFormat({ edits: [bold] }), (e) => e.outcome === "applied");
+  assert.equal(engine.rev, 0n);
+  assert.equal(engine.applied.length, 1);
 });
 
 await scenario("a lost request: not applied, and the caller may repeat", async () => {
@@ -181,46 +211,8 @@ await scenario("a preview is a State and is cancelled by an explicit command", a
 
 // ------------------------------------------------------------------ 3. real WASM
 
-const wasmPath = process.argv[2] ?? "target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm";
-const bytes = await readFile(wasmPath);
-const module = await WebAssembly.compile(bytes);
-const { memory, alloc, dispatch, free } = new WebAssembly.Instance(module).exports;
-let outerId = 1n;
-
-function invoke(frame) {
-  const ptr = alloc(frame.length) >>> 0;
-  assert.notEqual(ptr, 0, "input allocation");
-  new Uint8Array(memory.buffer).set(frame, ptr);
-  const descriptorPtr = dispatch(ptr, frame.length) >>> 0;
-  assert.notEqual(descriptorPtr, 0, "response descriptor");
-  const descriptor = new DataView(memory.buffer, descriptorPtr, 8);
-  const bodyPtr = descriptor.getUint32(0, true);
-  const bodyLen = descriptor.getUint32(4, true);
-  try {
-    const body = new Uint8Array(memory.buffer, bodyPtr, bodyLen).slice();
-    return { status: new DataView(body.buffer).getUint32(0, true), frame: body.slice(4) };
-  } finally {
-    assert.equal(free(bodyPtr, bodyLen), 0);
-    assert.equal(free(descriptorPtr, 8), 0);
-  }
-}
-
-const wasmTransport = {
-  async request(frame) {
-    const result = invoke(encodeMessage({ type: MessageType.Editor, requestId: outerId++, payload: frame }));
-    assert.equal(result.status, 0);
-    const message = decodeMessage(result.frame, "event");
-    assert.equal(message.type, MessageType.EditorResult);
-    return message.payload;
-  },
-};
-
-async function realClient() {
-  const client = createRichEditorClient({ transport: wasmTransport, docId: 1, yieldTurn: turn });
-  await client.open({ kind: "blank", profile: "document", data: new Uint8Array(0) });
-  await client.whenLayoutComplete();
-  return { client, format: createFormatClient(client) };
-}
+const engineHost = await loadEngine();
+const realClient = () => engineHost.open();
 
 await scenario("real WASM: FormatState of a caret, of a selection and of a paragraph range", async () => {
   const { client, format } = await realClient();
@@ -233,6 +225,7 @@ await scenario("real WASM: FormatState of a caret, of a selection and of a parag
   assert.equal(s.plain, false);
   assert.equal(s.partial, false);
   assert.equal(s.typing, false);
+  assert.equal(s.lastCommandId, 0);
   assert.equal(s.chars.font.state, "value");
   assert.equal(typeof s.chars.font.value.requested, "string");
   assert.equal(typeof s.chars.font.value.substituted, "boolean");
@@ -268,29 +261,11 @@ await scenario("real WASM: ListFonts answers what the editor draws, the Word ali
   client.dispose();
 });
 
-await scenario("real WASM: the stubs answer RICH_FORMAT_NOT_IMPLEMENTED and leave the document alone", async () => {
-  const { client, format } = await realClient();
-  await client.command({ type: "insertText", text: "abc" });
-  const revision = client.cache.revision;
-  await assert.rejects(format.applyCharFormat({ edits: [bold] }), (e) => e.code === "RICH_FORMAT_NOT_IMPLEMENTED" && e.outcome === undefined);
-  await assert.rejects(format.applyParaFormat({ edits: [{ attr: "alignment", op: "set", value: "center" }] }), (e) => e.code === "RICH_FORMAT_NOT_IMPLEMENTED");
-  await assert.rejects(format.applyStyle({ target: "paragraph", id: "Heading1" }), (e) => e.code === "RICH_FORMAT_NOT_IMPLEMENTED");
-  await assert.rejects(format.listStyles({}), (e) => e.code === "RICH_FORMAT_NOT_IMPLEMENTED");
-  await assert.rejects(format.formatMarks({ first: 0, count: 1 }), (e) => e.code === "RICH_FORMAT_NOT_IMPLEMENTED");
-  await assert.rejects(format.previewStyle({ target: "paragraph", id: "Heading1" }), (e) => e.code === "RICH_FORMAT_NOT_IMPLEMENTED");
-  assert.equal(client.cache.revision, revision);
-  client.dispose();
-});
-
 await scenario("real WASM: a plain-text document reports it and refuses formatting", async () => {
-  const client = createRichEditorClient({ transport: wasmTransport, docId: 1, yieldTurn: turn });
-  await client.open({ kind: "txt", profile: "txt", data: new TextEncoder().encode("plain text") });
-  await client.whenLayoutComplete();
-  const format = createFormatClient(client);
+  const { client, format } = await engineHost.open({ kind: "txt", profile: "txt", data: new TextEncoder().encode("plain text") });
   assert.equal((await format.formatState()).plain, true);
   await assert.rejects(format.applyCharFormat({ edits: [bold] }), (e) => e.code === "RICH_FORMAT_PLAIN_TEXT" && e.outcome === undefined);
   client.dispose();
 });
 
-console.log(`rich-editor-format: ${checks} checks passed`);
-assert.ok(checks >= 12, "fewer scenarios ran than expected");
+suite.finish("rich-editor-format", 12);

@@ -15,15 +15,16 @@ Tranche **F0** : le contrat du protocole ATED v2 pour la mise en forme des carac
 | `ApplyParaFormat`, `FormatMarks` | **stub** dans `rich_editor/format_para.rs` | **US-243** |
 | `ListStyles`, `ApplyStyle`, `PreviewStyle` | **stub** dans `rich_editor/styles.rs` | **US-250** |
 
-Fichiers que les agents suivants touchent, et **eux seuls** : US-240 : `rich_editor/format_char.rs` et `web/format-char.mjs` ; US-243 : `rich_editor/format_para.rs` et `web/format-para.mjs` ; US-250 : `rich_editor/styles.rs` et `web/styles-pane.mjs`. Aucun ne modifie `rich_protocol.rs`, `rich_protocol/format.rs`, `rich_editor.rs`, `rich-editor-protocol.mjs`, `rich-editor-client.mjs`, `rich-editor-format.mjs` : le contrat est figé par les vecteurs. Les fichiers centraux de **rendu, de modèle et de format** que les tâches de l'audit (section 9) obligent malgré tout à toucher sont listés en section 10, avec l'ordre conseillé.
+Fichiers que les agents suivants touchent, et **eux seuls** : US-240 : `rich_editor/format_char.rs` et `web/format-char.mjs` ; US-243 : `rich_editor/format_para.rs` et `web/format-para.mjs` ; US-250 : `rich_editor/styles.rs` et `web/styles-pane.mjs`. Chacun ajoute aussi son fichier de tests de famille (`format_char_tests.rs`, `format_para_tests.rs`, `styles_tests.rs`, `tests/rich-editor-format-char.mjs`, `-para.mjs`, `-styles.mjs`). Aucun ne modifie `rich_protocol.rs`, `rich_protocol/format.rs`, `rich-editor-protocol.mjs`, `rich-editor-client.mjs`, `rich-editor-format.mjs` : le contrat est figé par les vecteurs ; seul US-250 touche `rich_editor.rs` (aperçu, section 5.6). Les fichiers centraux de **rendu, de modèle et de format** que les tâches de l'audit (section 9) obligent malgré tout à toucher sont listés en section 10, avec l'ordre conseillé.
 
 ## 2. Principes
 
 - **Une commande qui change le document répond un `State`** (0x8100) : pages changées, entrées d'atlas nouvelles, sélection, indicateurs. Même mécanique que `InsertText` : `cache.apply_edit` puis `finish`.
 - **Une commande de lecture répond un message sans page ni atlas** (`FormatState` 0x8130, `StyleList` 0x8131, `FontList` 0x8132, `FormatMarks` 0x8133) : elle ne consomme pas l'atlas (`atlas_first` n'avance pas), ne change ni la révision ni la sélection, et sa réponse perdue **n'impose aucune resynchronisation**.
 - **Une transaction = un Ctrl+Z.** Les commandes qui changent le document appellent `RichDocument::apply_format(ops, sélection, portée, joindre_précédent)` : toutes les opérations (`SetCharAttrs`, `SetParaProps`) sont une seule étape d'historique, la révision monte de 1, tout ou rien (une opération invalide restaure le document et l'historique), la redo est vidée, l'annulation restaure la sélection d'origine. Une commande qui ne change rien (déjà appliqué) ne crée ni révision ni étape et répond le même `State`.
-- **Garde de révision.** Les commandes qui changent le document portent `base_revision u64` : la révision que l'appelant croit modifier. Une autre valeur est `RICH_STALE_REVISION` et rien ne change ; `0xFFFFFFFFFFFFFFFF` (`NO_REVISION_GUARD`, `NO_REVISION_GUARD` en JS) désactive le contrôle. Le garde rend la **répétition après réponse perdue sûre** : une commande déjà appliquée est refusée comme périmée, jamais appliquée deux fois (un `Toggle` ne bascule pas deux fois). Le client JS (`createFormatClient`) lit la révision **au tour de la commande** dans la file (une frappe mise en file avant elle est prise en compte), donc ne se heurte jamais à son propre garde.
-- **Ordre des contrôles** : enveloppe, id de document, opcode, corps (champs dans l'ordre : `RICH_INVALID_BODY`, `RICH_INVALID_UTF8`, `RICH_PAGE_RANGE`, `RICH_TOO_MANY_PAGES`), puis le moteur : document actif (`RICH_UNKNOWN_DOCUMENT`) → lecture seule (`RICH_READ_ONLY`) → texte brut (`RICH_FORMAT_PLAIN_TEXT`) → garde (`RICH_STALE_REVISION`) → style connu (`RICH_UNKNOWN_STYLE`) → effets (`RICH_LIMIT` si une limite du modèle est atteinte). Les handlers appellent `Session::deny_formatting()` en premier.
+- **Identifiant de commande : exactement une fois.** Les commandes qui changent le document (`ApplyCharFormat`, `ApplyParaFormat`, `ApplyStyle`) portent `command_id u32`, choisi par l'appelant (non nul, un par commande ; 0 = aucun). Le moteur retient l'identifiant de la **dernière commande qu'il a acceptée** (appliquée **ou** reconnue sans effet, attributs de saisie compris ; jamais une commande refusée ni non implémentée) et le publie dans `FormatState.last_command_id`. Une commande qui porte cet identifiant est refusée `RICH_DUPLICATE_COMMAND` (63) sans rien changer : une répétition aveugle après réponse perdue ne peut donc pas rebasculer un `toggle`. Après une réponse perdue, l'appelant lit `FormatState` : `last_command_id == id` veut dire appliquée, sinon non appliquée ; **la comparaison des révisions n'est pas fiable** (une frappe intercalée ou une commande qui ne pose que des attributs de saisie ne la respectent pas) et n'est pas utilisée. L'identifiant ne protège que contre la répétition de la dernière commande : une autre commande acceptée entre-temps l'efface, ce qui suffit parce que le client n'a qu'une commande en vol (file ordonnée).
+- **Garde de révision.** Les mêmes commandes portent aussi `base_revision u64` : la révision que l'appelant croit modifier. Une autre valeur est `RICH_STALE_REVISION` et rien ne change ; `0xFFFFFFFFFFFFFFFF` (`NO_REVISION_GUARD`) désactive le contrôle. Le client JS (`createFormatClient`) lit la révision **au tour de la commande** dans la file (une frappe mise en file avant elle est prise en compte), donc ne se heurte jamais à son propre garde.
+- **Ordre des contrôles** : enveloppe, id de document, opcode, corps (champs dans l'ordre : `RICH_INVALID_BODY`, `RICH_INVALID_UTF8`, `RICH_PAGE_RANGE`, `RICH_TOO_MANY_PAGES`), puis le moteur : document actif (`RICH_UNKNOWN_DOCUMENT`) → lecture seule (`RICH_READ_ONLY`) → texte brut (`RICH_FORMAT_PLAIN_TEXT`) → **répétition** (`RICH_DUPLICATE_COMMAND`) → garde (`RICH_STALE_REVISION`) → style connu (`RICH_UNKNOWN_STYLE`) → effets (`RICH_LIMIT` si une limite du modèle est atteinte). Les handlers appellent `Session::begin_format(base_revision, command_id)?` en premier (il enchaîne ces contrôles dans cet ordre) et `Session::note_command(command_id)` quand la commande est acceptée.
 - **Lecture seule.** DOCX à révisions ou commentaires : `ApplyCharFormat`, `ApplyParaFormat`, `ApplyStyle`, `PreviewStyle` répondent `RICH_READ_ONLY` ; `FormatState`, `ListStyles`, `ListFonts`, `FormatMarks` répondent normalement (`FormatState.read_only` vaut vrai pour griser le ruban).
 - **Texte brut.** Un document ouvert avec le profil TXT ne porte aucune mise en forme (le moteur ignore les propriétés de paragraphe en profil TXT) : `FormatState.plain` vaut vrai et les commandes qui changent répondent `RICH_FORMAT_PLAIN_TEXT`.
 - **Valeurs résolues.** `FormatState` donne les valeurs **effectives** (défauts du document, styles, mise en forme directe), comme Word les affiche. Un style absent du catalogue (un import peut en référencer un) retombe sur les valeurs directes au lieu de cacher le paragraphe.
@@ -46,13 +47,14 @@ Commandes (corps après l'en-tête de 20 octets de l'enveloppe) :
 
 `0x0158` à `0x016F` et `0x8134` à `0x813F` sont **réservés** à la suite de la famille (US-241 dialogue Police, US-242 casse, US-247 reproduire la mise en forme, US-248 effacer la mise en forme) : ces stories ajoutent leurs opcodes dans ces plages et leurs attributs dans les plages réservées ci-dessous, sans toucher aux existants.
 
-Erreurs nouvelles (plage 60 à 69, jamais renumérotées) :
+Erreurs nouvelles (plage 60 à 69, jamais renumérotées ; 64 à 69 libres) :
 
 | Code | Nom | Quand |
 |---:|---|---|
 | 60 | `RICH_FORMAT_NOT_IMPLEMENTED` | la commande est définie mais son handler est un stub (jusqu'à US-240, US-243, US-250) |
 | 61 | `RICH_UNKNOWN_STYLE` | `ApplyStyle` ou `PreviewStyle` nomme un style absent du catalogue ou d'un autre genre |
 | 62 | `RICH_FORMAT_PLAIN_TEXT` | commande de mise en forme sur un document texte brut |
+| 63 | `RICH_DUPLICATE_COMMAND` | `command_id` égal à celui de la dernière commande acceptée : répétition après réponse perdue |
 
 Erreurs existantes utilisées : 4 `INVALID_BODY` (valeur hors borne, octet réservé non nul, énumération inconnue, doublon, valeur absente ou en trop), 10 `INVALID_UTF8`, 14 `PAGE_RANGE`, 15 `TOO_MANY_PAGES`, 16 `STALE_REVISION`, 6 `UNKNOWN_DOCUMENT`, 21 `READ_ONLY`, 19 `LIMIT`, 18 `INTERNAL`.
 
@@ -90,13 +92,15 @@ Chaque modification est `attr u8`, `op u8`, puis **une valeur seulement si l'op�
 | `toggle` | underline, verticalAlign | `u8` cible, jamais 0 | `"single"` ; `"superscript"` |
 | `stepUp`, `stepDown`, `stepUpPoint`, `stepDownPoint` | size | aucune | |
 
-**Cible** (`scope`). `wordOrTyping` (règle de Word) : sélection non vide, la sélection ; sinon, si le curseur est **dans un mot** (début du mot inclus, fin exclue : `FlatIndex::word_at`, l'espace de fin n'en fait pas partie), ce mot ; sinon les **attributs de saisie** (les attributs du prochain texte tapé, `Typing`). `selectionOnly` : la sélection exactement ; vide, seulement les attributs de saisie. La validation de cette règle contre Word reste à US-308.
+**Cible** (`scope`). `wordOrTyping` (règle de Word) : sélection non vide, la sélection ; sinon, si le curseur est **sur un mot**, ce mot ; sinon les **attributs de saisie** (les attributs du prochain texte tapé, `Typing`). **Mot sous le curseur** (`format_state::word_under_caret`, partagé par `FormatState` et le handler) : le segment UAX #29 qui **commence à la position ou la contient** (`FlatIndex::word_at`), à condition qu'il contienne au moins une lettre ou un chiffre. Les blancs, la ponctuation, les objets et la marque de paragraphe ne sont **pas** des mots, que `word_at` renvoie pourtant (il rend aussi le blanc ou le `\n` sous la position) ; la fin d'un mot n'en fait pas partie. Exemples sur `foo, bar  baz¶qux` : position 0 (début) et 1 : « foo » ; 3 (après « foo », sur la virgule) : saisie ; 4 (entre la virgule et le blanc) : saisie ; 5 : « bar » ; 8 (fin de « bar ») et 9 (entre deux blancs) : saisie ; 13 (fin de paragraphe) : saisie ; 14 (début du paragraphe suivant) : « qux » ; 17 (fin du document) : saisie (vecteurs : test `the_word_under_the_caret_is_a_non_blank_segment_start_included_end_excluded`). `selectionOnly` : la sélection exactement ; vide, seulement les attributs de saisie. La validation de cette règle contre Word reste à US-308.
 
 **`toggle` booléen** (règle de Word) : si **tous** les caractères visés ont la valeur résolue vraie, on retire ; sinon on met à vrai pour tous. « Retirer » écrit `Some(false)` seulement si le style résout à vrai, sinon l'attribut direct est supprimé (le document reste propre). `toggle` énuméré : vers la valeur donnée si au moins un caractère diffère, sinon retour à `none` ou `baseline` (même règle d'écriture explicite).
 
+**Taille non définie.** `FormatState.chars.size` n'est `unset` que si le moteur ne résout aucune taille (cas non rencontré : la cascade en fournit toujours une) ; `stepUp` et `stepDown` partent alors de la taille par défaut du document (11 pt, 22 demi-points) pour chaque caractère concerné. **Police de thème.** `font.requested` est le **nom** de famille résolu (le lien vers la police de thème est résolu à l'import) ; `set font` écrit un nom, jamais un lien de thème ; les polices du thème sont proposées par `FontList.themeMajor` et `themeMinor`, comme noms.
+
 **Pas de taille.** `stepUp` / `stepDown` (Ctrl+Maj+> et <) parcourent la liste de la boîte de taille de Word, en demi-points : 8, 9, 10, 10,5, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72 (`SIZE_STEPS` ; fonction `size_step` testée, `a_step_always_moves_or_hits_a_bound`) ; au-dessus de 72 pt, par 10 pt ; en dessous de 8 pt, par 1 pt ; bornés à 1 pt et 1638 pt. Une taille entre deux paliers va au palier suivant (précédent). Pour une sélection de tailles différentes, **chaque** caractère passe à son propre palier (Word). `stepUpPoint` / `stepDownPoint` : ± 1 pt (Ctrl+] et Ctrl+[).
 
-**Attributs de saisie et annulation.** Le texte tapé ensuite prend les attributs de saisie dans la **même étape d'historique** que l'insertion (`apply_format(..., joindre_précédent = true)`, la révision ne monte qu'une fois) : un Ctrl+Z retire le texte et sa mise en forme. Tout changement de sélection oublie les attributs de saisie (`Session::select` → `Typing::forget`).
+**Attributs de saisie et annulation.** Le texte tapé ensuite prend les attributs de saisie dans la **même étape d'historique** que l'insertion : un Ctrl+Z retire le texte et sa mise en forme. Règle pour `after_text_edit` (US-240) : il appelle `apply_format(..., joindre_précédent)` **seulement si l'insertion a changé la révision** (`outcome.revision` différent de celui d'avant) ; sinon il n'applique rien (rien n'a été inséré) et les attributs restent en attente. L'`EditOutcome` rendu à la mise en page est **celui de l'insertion**, étendu pour couvrir le span de celui de `apply_format` (début minimal, fin maximale, paragraphes idem, `layout_scope` le plus large) : la mise en forme ne change pas les longueurs, donc la fusion est l'insertion elle-même ; la révision rendue est celle de l'insertion. Tout changement de sélection oublie les attributs de saisie (`Session::select` → `Typing::forget`).
 
 ### 4.2 Paragraphes
 
@@ -130,6 +134,7 @@ Corps : vide. Réponse `FormatState` `0x8130` :
 |---|---|---|
 | `revision` | `u64` | révision courante (celle du `State`) |
 | `anchor`, `focus` | `u64`, `u64` | la sélection décrite : le client vérifie qu'elle est encore la courante |
+| `last_command_id` | `u32` | `command_id` de la dernière commande de mise en forme acceptée (0 : aucune) |
 | `flags` | `u8` | bit 0 `collapsed`, 1 `read_only`, 2 `partial`, 3 `typing`, 4 `plain` |
 | réservé | `u8[3]` | 0 |
 | 10 champs de caractères | tri-états | `font`, `size`, `bold`, `italic`, `underline`, `strike`, `verticalAlign`, `color`, `highlight`, `style` |
@@ -140,7 +145,7 @@ Corps : vide. Réponse `FormatState` `0x8130` :
 JS décodé (exemple, curseur dans du texte Calibri 11 pt gras) :
 
 ```js
-{ type: "formatState", revision: 7n, anchor: 3n, focus: 3n,
+{ type: "formatState", revision: 7n, anchor: 3n, focus: 3n, lastCommandId: 41,
   collapsed: true, readOnly: false, partial: false, typing: false, plain: false,
   chars: {
     font: { state: "value", value: { requested: "Calibri", used: "Carlito", substituted: true } },
@@ -159,27 +164,27 @@ JS décodé (exemple, curseur dans du texte Calibri 11 pt gras) :
     style: { state: "value", value: "atelier.normal" } } }
 ```
 
-Règles. Curseur : le caractère qui précède (celui qui suit en début de paragraphe), avec les attributs de saisie appliqués (`typing` vrai). Sélection : la valeur uniforme de chaque caractère ou « mixte » ; un paragraphe vide compris dans la sélection montre sa marque. Au plus `MAX_STATE_RUNS` = 20 000 morceaux sont examinés : au-delà, `partial` vaut vrai (réponse sur les premiers). `font.used` est la famille que le moteur dessine réellement (substitut métrique ou repli générique) ; `substituted` vaut vrai si elle diffère de la demandée (info-bulle de US-240). Effets : aucune révision, aucune étape d'historique, aucun atlas ; autorisée en lecture seule et en texte brut. Répétée, elle donne la même réponse (testé).
+Règles. Curseur **sur un mot** (règle de 4.1) : l'état **du mot** (valeur uniforme ou « mixte » sur ses caractères), c'est-à-dire ce que `toggle` va modifier ; `collapsed` reste vrai. Curseur ailleurs : le caractère qui précède (celui qui suit en début de paragraphe), avec les attributs de saisie appliqués (`typing` vrai). Les blocs opaques (images en bloc, contenus inconnus) ne sont pas décrits ; les paragraphes de cellules de tableau le sont. Les noms de police et de style d'un document sont nettoyés avant d'être encodés : caractères de contrôle retirés, coupés à 255 octets sur une frontière de caractère UTF-8 (un nom vide après nettoyage est « non défini »). Sélection : la valeur uniforme de chaque caractère ou « mixte » ; un paragraphe vide compris dans la sélection montre sa marque. Au plus `MAX_STATE_RUNS` = 20 000 morceaux sont examinés : au-delà, `partial` vaut vrai (réponse sur les premiers). `font.used` est la famille que le moteur dessine réellement (substitut métrique ou repli générique) ; `substituted` vaut vrai si elle diffère de la demandée (info-bulle de US-240). Effets : aucune révision, aucune étape d'historique, aucun atlas ; autorisée en lecture seule et en texte brut. Répétée, elle donne la même réponse (testé).
 
 ### 5.2 `ApplyCharFormat` `0x0151`
 
-Corps : `base_revision u64`, `scope u8`, `0 u8`, `count u16` (1 à 16), puis `count` × (`attr u8`, `op u8`, valeur éventuelle). Réponse : `State` ; pages changées et atlas comme `InsertText`.
+Corps : `base_revision u64`, `command_id u32`, `scope u8`, `0 u8`, `count u16` (1 à 16), puis `count` × (`attr u8`, `op u8`, valeur éventuelle). Réponse : `State` ; pages changées et atlas comme `InsertText`.
 
 ```js
-{ type: "applyCharFormat", baseRevision: 9n, scope: "wordOrTyping",
+{ type: "applyCharFormat", baseRevision: 9n, commandId: 1, scope: "wordOrTyping",
   edits: [ { attr: "font", op: "set", value: "Calibri" }, { attr: "size", op: "set", value: 24 },
            { attr: "color", op: "set", value: { r: 255, g: 0, b: 0 } }, { attr: "bold", op: "toggle" },
            { attr: "underline", op: "toggle", value: "single" }, { attr: "highlight", op: "clear" } ] }
 ```
 
-Erreurs : celles de la section 3. Révision : +1 si au moins un caractère change, sinon aucune (réponse `State` identique). Annulation : une étape, qui restaure la sélection d'origine ; avec des attributs de saisie, jointe à l'insertion. Pages et atlas : `invalidated` et `pages` couvrent les paragraphes touchés ; de nouvelles tailles ou familles créent des entrées d'atlas, envoyées dans la même réponse. Resynchronisation : réponse perdue = `needsResync` du client (`Resync` 0x0118 avant la commande suivante), comme toute commande qui renvoie un `State`. Lecture seule : `RICH_READ_ONLY`. Handler : **stub US-240** (`apply_char_format`).
+Erreurs : celles de la section 3 (`RICH_DUPLICATE_COMMAND` si `command_id` répète la dernière commande acceptée). Révision : +1 si au moins un caractère change, sinon aucune (réponse `State` identique). Annulation : une étape, qui restaure la sélection d'origine ; avec des attributs de saisie, jointe à l'insertion. Pages et atlas : `invalidated` et `pages` couvrent les paragraphes touchés ; de nouvelles tailles ou familles créent des entrées d'atlas, envoyées dans la même réponse. Resynchronisation : réponse perdue = `needsResync` du client (`Resync` 0x0118 avant la commande suivante), comme toute commande qui renvoie un `State`. Lecture seule : `RICH_READ_ONLY`. Handler : **stub US-240** (`apply_char_format`).
 
 ### 5.3 `ApplyParaFormat` `0x0152`
 
-Corps : `base_revision u64`, `count u16` (1 à 16), `0 u16`, puis les modifications. Réponse : `State`.
+Corps : `base_revision u64`, `command_id u32`, `count u16` (1 à 16), `0 u16`, puis les modifications. Réponse : `State`.
 
 ```js
-{ type: "applyParaFormat", baseRevision: 9n,
+{ type: "applyParaFormat", baseRevision: 9n, commandId: 2,
   edits: [ { attr: "alignment", op: "set", value: "center" }, { attr: "indentLeft", op: "stepUp" },
            { attr: "spaceBefore", op: "toggle" }, { attr: "firstLine", op: "set", value: -360 },
            { attr: "lineSpacing", op: "set", value: { rule: "auto", value: 360 } } ] }
@@ -201,11 +206,11 @@ Effets : lecture seule, aucune révision. Autorisée partout. Handler : **stub U
 
 ### 5.5 `ApplyStyle` `0x0154`
 
-Corps : `base_revision u64`, `target u8`, `0 u8[3]`, `id text16` (obligatoire pour un style de paragraphe ; **vide pour un style de caractère = retirer le style de caractère**). Réponse : `State`.
+Corps : `base_revision u64`, `command_id u32`, `target u8`, `0 u8[3]`, `id text16` (obligatoire pour un style de paragraphe ; **vide pour un style de caractère = retirer le style de caractère**). Réponse : `State`.
 
 ```js
-{ type: "applyStyle", baseRevision: 12n, target: "paragraph", id: "Heading1" }
-{ type: "applyStyle", baseRevision: 12n, target: "character", id: "" }
+{ type: "applyStyle", baseRevision: 12n, commandId: 3, target: "paragraph", id: "Heading1" }
+{ type: "applyStyle", baseRevision: 12n, commandId: 4, target: "character", id: "" }
 ```
 
 Style inconnu ou d'un autre genre : `RICH_UNKNOWN_STYLE`. **Style de paragraphe** : appliqué à tous les paragraphes touchés ; **conserve la mise en forme directe de caractère** (critère de US-250) **et de paragraphe** (comme Word) ; la règle des 50 % de Word n'est pas reprise (écart à valider par US-308) ; portée `LayoutScope::All` (numérotation par style). **Style de caractère** : même cible que `ApplyCharFormat` avec `wordOrTyping`. Révision, annulation, atlas : comme 5.2. Un style déjà appliqué à tout ne change rien. Handler : **stub US-250**.
@@ -219,7 +224,7 @@ Corps : `target u8`, `action u8` (0 montrer, 1 annuler), `0 u16`, `id text16` (v
 { type: "previewStyle", target: "paragraph", show: false, id: "" }
 ```
 
-**Décision** : un aperçu est une **commande à état dans la session**, qui ne touche ni le modèle, ni l'historique, ni la révision, ni `modified` ; le moteur remet en page les paragraphes touchés au travers d'un `LayoutContext` qui les remplace, et `cancel_preview` les remet en page depuis le vrai document. **Rejeté** : appliquer le style puis annuler avec Undo, qui viderait la pile Redo, ferait monter la révision, salirait `modified` et laisserait une étape fantôme en cas de réponse perdue. Règles : (1) `show` remplace l'aperçu en cours ; (2) `cancel` sans aperçu en cours ne fait rien et répond le `State` courant (**idempotente**) : le panneau l'envoie à chaque fin de survol et après toute erreur ; (3) toute commande qui change le document ou la sélection **annule d'abord** l'aperçu (`styles::cancels_preview`) : les pages restaurées sont reportées par `Session::pending` dans le `State` de cette commande ; les lectures et la pompe de mise en page (`Pages`, `Layout`, `TextWindow`, `Resync`, `Save`...) le gardent, leurs pages montrent l'aperçu ; (4) l'enregistrement ne voit jamais l'aperçu ; (5) `ApplyStyle` du même style annule l'aperçu puis applique ; (6) `Open` et `Close` le détruisent avec la session ; (7) `RICH_READ_ONLY` en lecture seule, `RICH_FORMAT_PLAIN_TEXT` en texte brut, `RICH_UNKNOWN_STYLE` pour un id inconnu. La révision du `State` est inchangée ; `can_undo` n'est pas modifié. Handler : **stub US-250** (`Preview`, `cancel_preview`, `cancels_preview` posés).
+**Décision** : un aperçu est une **commande à état dans la session**, qui ne touche ni le modèle, ni l'historique, ni la révision, ni `modified` ; le moteur remet en page les paragraphes touchés au travers d'un `LayoutContext` qui les remplace, et `cancel_preview` les remet en page depuis le vrai document. **Rejeté** : appliquer le style puis annuler avec Undo, qui viderait la pile Redo, ferait monter la révision, salirait `modified` et laisserait une étape fantôme en cas de réponse perdue. Règles : (1) `show` remplace l'aperçu en cours ; (2) `cancel` sans aperçu en cours ne fait rien et répond le `State` courant (**idempotente**) : le panneau l'envoie à chaque fin de survol et après toute erreur ; (3) toute commande qui change le document ou la sélection **annule d'abord** l'aperçu (`styles::cancels_preview`) : les pages restaurées sont reportées par `Session::pending` dans le `State` de cette commande ; les lectures et la pompe de mise en page (`Pages`, `Layout`, `TextWindow`, `Resync`, `Save`...) le gardent, leurs pages montrent l'aperçu ; (4) l'enregistrement ne voit jamais l'aperçu ; (5) `ApplyStyle` du même style annule l'aperçu puis applique ; (6) `Open` et `Close` le détruisent avec la session ; (7) `RICH_READ_ONLY` en lecture seule, `RICH_FORMAT_PLAIN_TEXT` en texte brut, `RICH_UNKNOWN_STYLE` pour un id inconnu. La révision du `State` est inchangée ; `can_undo` n'est pas modifié. Handler : **stub US-250** (`Preview`, `cancel_preview`, `cancels_preview` posés). **US-250 touchera `rich_editor.rs`** (et `rich_editor/sel.rs`, `find.rs`, `io.rs`) : tous les appels de mise en page passent `&self.doc` comme `LayoutContext` (`Session::finish` ligne 813, `reach` 375, `rebuild_cache` 338, `state`, `hit_test`, `move_selection`, les appels `cache.*` de `sel.rs` et `find.rs`, environ vingt-et-un sites) ; un aperçu doit leur donner le contexte substitué. Méthode : introduire dans `Session` un champ `overlay: Option<PreviewDocument>` (un `LayoutContext` qui délègue au document et remplace les paragraphes touchés, défini dans `styles.rs`) et une macro locale `layout_doc!(self)` qui rend `&self.doc` ou le recouvrement, en emprunt de champ (pas de méthode `&self`, qui entrerait en conflit avec `&mut self.cache`) ; remplacer chaque `&self.doc` passé à `self.cache.*` par `layout_doc!(self)`. Ce remplacement est mécanique mais touche des fichiers centraux : il se fait dans la branche de US-250 seule, après la fusion de US-240 et de US-243 (qui ne touchent pas `rich_editor.rs`).
 
 ### 5.7 `ListFonts` `0x0156`
 
@@ -231,7 +236,7 @@ Corps : vide. Réponse `FontList` `0x8132` : `revision u64`, `theme_major text16
   { name: "Carlito", bold: true, italic: true, used: false, substituted: false, substitute: "" } ] }
 ```
 
-Contenu (calculé en interrogeant le gestionnaire de polices de la mise en page, donc fidèle à ce que le moteur dessine) : les familles que l'éditeur enregistre (aujourd'hui Carlito seulement, voir l'audit), les alias Word (Calibri, Cambria, Arial, Times New Roman, Courier New : dessinés avec leur famille métrique ou, à défaut, le repli générique), et les polices que le document nomme. Les polices récentes sont une préférence du client (stockage local), pas du moteur. Lecture seule, aucune révision. **Implémenté par F0** (`format_state.rs`), parce que US-240 (liste de polices) et US-241 (dialogue Police) en dépendent.
+Contenu (calculé en interrogeant le gestionnaire de polices de la mise en page, donc fidèle à ce que le moteur dessine) : les familles que l'éditeur enregistre (aujourd'hui Carlito seulement, voir l'audit), les alias Word (Calibri, Cambria, Arial, Times New Roman, Courier New : dessinés avec leur famille métrique ou, à défaut, le repli générique), et les polices que le document nomme. Les polices récentes sont une préférence du client (stockage local), pas du moteur. Lecture seule, aucune révision. La réponse ne dépend que du document : elle est **mémorisée par révision** (`Session.fonts_memo`, testé : `the_font_list_is_memoised_by_revision`), de sorte qu'une boîte de police qui se rouvre ne relit pas le document ; le premier appel lit au plus 200 000 paragraphes (`FONT_SCAN_PARAGRAPHS`, borne) pour trouver les polices nommées. Les noms sont nettoyés comme ceux de `FormatState`. **Implémenté par F0** (`format_state.rs`), parce que US-240 (liste de polices) et US-241 (dialogue Police) en dépendent.
 
 ### 5.8 `FormatMarks` `0x0157`
 
@@ -241,6 +246,8 @@ Corps : `first u32`, `count u32` (1 à 16 pages ; `RICH_TOO_MANY_PAGES` au-delà
 { type: "formatMarks", revision: 4n, marks: [ { page: 0, kind: "paragraphEnd", x: 120.5, y: 96.25, width: 4.5 }, { page: 1, kind: "tab", x: 72, y: 110, width: 36 } ] }
 ```
 
+**Page non mise en page** : comme `Pages`, la commande répond `RICH_NOT_READY` si une page demandée n'est pas encore calculée (le client attend un `Layout`, comme `ensurePages`, borné), `RICH_PAGE_RANGE` si `first` atteint `page_count`, et borne `count` à `page_count` ; la réponse ne contient donc jamais une liste partielle. **Cache du client** : les marques sont mises en cache par page, avec la révision ; une page dont l'index figure dans `State.invalidated` (ou remplacée dans `State.pages`) perd ses marques ; un changement de révision sans page touchée (attributs de saisie) les garde ; `Resync` et `Open` les vident toutes.
+
 **Décision** : les marques de mise en forme (¶, espaces, tabulations, espaces insécables, sauts) sont une **surcouche dessinée par le client** à partir de cette liste, et non des commandes ajoutées aux listes d'affichage : activer ou désactiver l'option n'invalide aucune page, ne touche pas à l'atlas, et l'option (« Avancé : marques affichées ») reste une préférence du client. Le client redemande les marques des pages visibles quand `State.pages` ou `invalidated` les touchent, et les met en cache par page et révision. Lecture seule, aucune révision. Handler : **stub US-243** (`format_marks`), autorisé en lecture seule et en texte brut.
 
 ## 6. Annulation, révision, atlas, resynchronisation, réouverture
@@ -248,11 +255,12 @@ Corps : `first u32`, `count u32` (1 à 16 pages ; `RICH_TOO_MANY_PAGES` au-delà
 | Situation | Comportement du contrat |
 |---|---|
 | Ctrl+Z après une commande de mise en forme | une étape annulée (sélection d'origine restaurée) ; `LayoutScope::All` conservé pour les styles (testé : `a_whole_document_scope_survives_undo_and_redo`) |
-| Réponse **perdue** d'une commande qui change | `guarded()` du client : `needsResync` et `dropPages` ; `createFormatClient` lit alors `FormatState` (le client envoie `Resync` d'abord) et compare les révisions : l'erreur porte `outcome = "applied"` ou `"not-applied"` ; **aucune répétition automatique**, l'appelant décide ; une répétition aveugle avec le même garde est refusée `STALE_REVISION` (testé) |
+| Réponse **perdue** d'une commande qui change | `guarded()` du client : `needsResync` et `dropPages` ; `createFormatClient` lit alors `FormatState` (le client envoie `Resync` d'abord) et compare `last_command_id` à l'identifiant de la commande : l'erreur porte `outcome = "applied"` ou `"not-applied"` (et `commandId`) ; **aucune répétition automatique**, l'appelant décide ; une répétition aveugle de la même commande est refusée `RICH_DUPLICATE_COMMAND` quel que soit son garde (testé sur moteur simulé avec frappe intercalée et attributs de saisie seuls ; le test du vrai WASM vérifie qu'une commande non acceptée n'est pas enregistrée, et le test Rust `the_command_identifier_is_recorded_on_acceptance_and_a_repeat_is_refused` le refus d'une répétition : le vrai WASM ne peut pas accepter de commande tant que les handlers sont des stubs, US-240 ajoute ce cas à `tests/rich-editor-format-char.mjs`) |
 | Réponse perdue d'une commande de lecture | aucun effet sur l'atlas ni sur le cache : pas de `Resync` |
 | **Annulation** (`AbortError`) | même résolution du résultat que la réponse perdue |
 | **Resync** (0x0118) | les attributs de saisie et l'aperçu sont de l'état de session : ils survivent ; le client redemande `FormatState` |
 | **Réouverture** (`Open`) | nouvelle session : attributs de saisie et aperçu détruits ; la révision repart de 0 : le panneau compte une **génération** incrémentée à chaque `open` et ignore une réponse (`FormatState`, `StyleList`) demandée à une génération précédente, car une révision seule ne distingue pas deux documents |
+| Commande sans changement de révision (attributs de saisie, rien à modifier) | le panneau **redemande `FormatState` après toute réponse d'application réussie**, révision changée ou non (`typing` ou l'état du mot ont pu changer) |
 | Sélection changée entre la demande et la réponse | `FormatState.anchor`/`focus` sont comparés à `cache.selection` ; sinon la réponse est jetée et redemandée |
 | Lecture seule, texte brut | refus 21 et 62 ; boutons grisés d'après `FormatState.read_only` et `plain` |
 
@@ -261,9 +269,9 @@ Corps : `first u32`, `count u32` (1 à 16 pages ; `RICH_TOO_MANY_PAGES` au-delà
 | Fichier | Contenu posé par F0 | Écrit par |
 |---|---|---|
 | `crates/core-wasm/src/rich_protocol/format.rs` | codec Rust de toute la famille, tables, bornes, `size_step` | F0, figé |
-| `crates/core-wasm/src/rich_protocol.rs` | opcodes, erreurs 60 à 62, variantes `Command` et `Response`, aiguillage | F0, figé |
-| `crates/core-wasm/src/rich_editor.rs` | arms de `run()`, champs `typing` et `preview` de `Session`, `Typing::forget` dans `select`, `after_text_edit` dans `edit`, `cancel_preview` au début de `run` | F0, figé |
-| `rich_editor/format_state.rs` | `FormatState`, `ListFonts`, `deny_formatting` | F0, figé |
+| `crates/core-wasm/src/rich_protocol.rs` | opcodes, erreurs 60 à 63, variantes `Command` et `Response`, aiguillage | F0, figé |
+| `crates/core-wasm/src/rich_editor.rs` | arms de `run()`, champs `typing`, `preview`, `last_command_id` et `fonts_memo` de `Session`, `Typing::forget` dans `select`, `after_text_edit` dans `edit`, `cancel_preview` au début de `run` | F0 ; **US-250 seule le modifiera ensuite** (contexte de mise en page de l'aperçu, voir 5.6) |
+| `rich_editor/format_state.rs` | `FormatState`, `ListFonts`, `word_under_caret`, `deny_formatting`, `begin_format`, `note_command` | F0 ; US-243-M1 y ajoute trame et bordures (section 10) |
 | `rich_editor/format_char.rs` | `Typing`, `after_text_edit`, stub `apply_char_format` | **US-240** |
 | `rich_editor/format_para.rs` | stubs `apply_para_format`, `format_marks` | **US-243** |
 | `rich_editor/styles.rs` | `Preview`, `cancels_preview`, `cancel_preview`, stubs `list_styles`, `apply_style`, `preview_style` | **US-250** |
@@ -272,8 +280,10 @@ Corps : `first u32`, `count u32` (1 à 16 pages ; `RICH_TOO_MANY_PAGES` au-delà
 | `web/rich-editor-format.mjs` | codec JS, noms, `createFormatClient` (garde au tour, résultat inconnu) | F0, figé |
 | `web/rich-editor-protocol.mjs`, `web/rich-editor-client.mjs` | tables d'opcodes, aiguillage ; `command()` accepte une fonction construite au tour de la commande | F0, figés |
 | `web/format-char.mjs`, `web/format-para.mjs`, `web/styles-pane.mjs` | à créer | US-240, US-243, US-250 |
+| `rich_editor/format_char_tests.rs`, `format_para_tests.rs`, `styles_tests.rs` ; `tests/rich-editor-format-char.mjs`, `-para.mjs`, `-styles.mjs` | un test de stub par famille | la story de la famille, seule |
+| `rich_editor/format_tests.rs` (`Harness` partagé), `tests/rich-editor-format.mjs`, `tests/rich-editor-format-support.mjs` | tests de F0 | F0, figés |
 
-Recette d'un handler (US-240, US-243, US-250), à suivre telle quelle : `self.deny_formatting()?` ; contrôle du garde (`proto::NO_REVISION_GUARD`, `RICH_STALE_REVISION`) ; construire les `RichOp` par paragraphe ; `self.doc.apply_format(ops, (anchor, focus), portée, joindre)?` ; `let delta = self.cache.apply_edit(&self.doc, &outcome)` si la révision a changé ; `self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)`. Le crochet `after_text_edit` ne peut pas échouer (l'insertion est faite).
+Recette d'un handler (US-240, US-243, US-250), à suivre telle quelle : `self.begin_format(format.base_revision, format.command_id)?` (lecture seule, texte brut, répétition, garde) ; construire les `RichOp` par paragraphe ; `self.doc.apply_format(ops, (anchor, focus), portée, joindre)?` ; `let delta = self.cache.apply_edit(&self.doc, &outcome)` si la révision a changé ; `self.note_command(format.command_id)` ; `self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)`. Une commande qui ne change rien est tout de même acceptée (`note_command`, réponse `State` identique). Le crochet `after_text_edit` ne peut pas échouer (l'insertion est faite).
 
 ## 8. Simulation écrite des consommateurs
 
@@ -284,7 +294,7 @@ Méthode : pour chaque consommateur, l'implémentation simulée méthode par mé
 | Méthode simulée | Donnée du contrat utilisée | Chemins d'erreur et cas limites |
 |---|---|---|
 | `refresh()` (après chaque `State` qui change révision ou sélection, regroupé par image) | `formatState()` : `revision`, `anchor`, `focus` comparés à `client.cache` ; `chars.*` pour les boutons et les boîtes | **jeter** la réponse si la sélection a changé ou si la génération d'ouverture n'est plus la courante ; `RICH_UNKNOWN_DOCUMENT` (document fermé) : ruban grisé ; réponse perdue : rien à resynchroniser, le prochain `State` relance ; réouverture : génération |
-| `boutonGras/Italique/Barré` (Ctrl+B, I) | `applyCharFormat` `toggle` sans valeur ; état du bouton : `chars.bold.state` (`mixed` : `aria-pressed="mixed"`) | `READ_ONLY`/`PLAIN_TEXT` : boutons déjà grisés par `readOnly`/`plain` ; résultat inconnu (`error.outcome`) : le panneau relit `refresh()` et n'affiche rien de plus ; annulation (`AbortError`) : idem |
+| `boutonGras/Italique/Barré` (Ctrl+B, I) | `applyCharFormat` `toggle` sans valeur ; état du bouton : `chars.bold.state` (`mixed` : `aria-pressed="mixed"`) | `READ_ONLY`/`PLAIN_TEXT` : boutons déjà grisés par `readOnly`/`plain` ; résultat inconnu (`error.outcome`, établi par `last_command_id`) : le panneau relit `refresh()` et n'affiche rien de plus ; annulation (`AbortError`) : idem |
 | `souligné(style)` (Ctrl+U, menu) | Ctrl+U : `toggle underline "single"` ; menu : `set underline <un des six>` ; « Aucun » : `set none` | Les six styles existent sur le fil ; leur dessin manque (audit, T240-A) |
 | `exposant/indice` (Ctrl+=, Ctrl+Maj+=) | `toggle verticalAlign "superscript" | "subscript"` | dessin manquant (T240-C) |
 | `police(nom)` | `set font` ; affichage : `chars.font.value.requested` dans la boîte, `used` et `substituted` dans l'**info-bulle** « police de remplacement » (critère 4) | boîte vide si `mixed` ; nom saisi inconnu accepté (le moteur le remplace) ; plus de 255 octets : refusé côté client |
@@ -332,7 +342,7 @@ Méthode : pour chaque consommateur, l'implémentation simulée méthode par mé
 3. **Sélection décrite par `FormatState`** : une réponse de même révision mais d'une autre sélection n'était pas détectable → `anchor` / `focus` dans la réponse.
 4. **Nom d'affichage et galerie rapide** des styles → `name` et le drapeau `quick` de `StyleEntry`.
 5. **Texte brut** : le ruban ne pouvait pas savoir que le profil TXT ne porte pas de mise en forme → `FormatState.plain` et l'erreur 62.
-6. **Répétition après réponse perdue** d'un `toggle` : sans garde, une répétition aurait annulé l'effet → `base_revision` et `outcome`.
+6. **Répétition après réponse perdue** d'un `toggle` : sans identifiant, une répétition aurait annulé l'effet ; la comparaison des révisions pour savoir si la commande était passée était fausse (frappe intercalée, attributs de saisie sans révision) → `command_id`, `last_command_id`, `RICH_DUPLICATE_COMMAND`.
 7. **Garde construit trop tôt** : une frappe mise en file avant la commande rendait le garde périmé → `client.command()` accepte une fonction évaluée au tour de la commande.
 8. **Attributs de saisie** : aucun point d'entrée dans l'insertion, aucune étape jointe → `after_text_edit`, `Typing`, `apply_format(joindre_précédent)`.
 9. **Aperçu et historique** : l'aperçu par application + Undo détruit la pile Redo → aperçu de session, hors modèle.
@@ -362,19 +372,35 @@ Question : le rendu actuel (mise en page `text-layout`, peinture `rich_paint.rs`
 
 Constats complémentaires : (1) en profil TXT le moteur ignore toute propriété de paragraphe et de style (`cache.rs:382`), d'où `FormatState.plain` ; (2) `docx.rs::parse_char_attrs` rabat `w:dstrike` sur le barré simple : le double barré (US-241) exige un attribut de plus au modèle ; (3) `w:shd`, `w:pBdr`, `w:caps`, `w:spacing`... d'un DOCX importé ne sont pas portés par le modèle : leur conservation à l'enregistrement est à vérifier par US-243-M1 avant de promettre le comportement de Word.
 
-## 10. Fichiers centraux que les tâches de l'audit obligent à toucher
+## 10. Fichiers centraux et plan de fichiers par story
 
-Aucune des **handlers** ne touche d'autre fichier central que les siens. Les tâches de rendu et de modèle, elles, partagent des fichiers : l'intégrateur doit les séquencer ou les confier à une tranche de rendu dédiée.
+Aucun handler ne touche d'autre fichier central que les siens, **sauf US-250** (`rich_editor.rs`, section 5.6). Les tâches de rendu et de modèle partagent des fichiers : voici qui touche quoi, lot par lot.
 
-| Fichier | Tâches | Conflit possible |
+**Lot parallèle (deux agents en même temps, fichiers disjoints)**
+
+| Story | Fichiers |
+|---|---|
+| **US-240** | `rich_editor/format_char.rs`, `rich_editor/format_char_tests.rs`, `web/format-char.mjs`, `tests/rich-editor-format-char.mjs` ; rendu : `rich_layout/rich_paint.rs` (T240-A, B, D), `crates/text-layout/src/lib.rs` (T240-C exposant et indice) ; polices : `rich_preview.rs::build_fonts`, `rich_layout/cache.rs:943` (T240-F), `data/fonts` |
+| **US-243 sans trame ni bordures** | `rich_editor/format_para.rs`, `rich_editor/format_para_tests.rs`, `web/format-para.mjs`, `tests/rich-editor-format-para.mjs` ; marques (T243-C) : **une méthode neuve** dans `rich_layout/cache.rs` (par exemple `PageCache::format_marks`), qui lit la mise en page existante (`ParagraphLayout`, `LayoutLine`, glyphes) sans modifier `text-layout` |
+
+**Collisions à surveiller dans ce lot** : (1) `rich_layout/cache.rs` est touché par US-240 (ligne 943, T240-F) et par US-243 (méthode neuve T243-C) : régions distinctes, fusion textuelle attendue sans conflit, mais à relire ; (2) `crates/text-layout/src/lib.rs` : T240-C le modifie ; T243-C ne doit **pas** en dépendre (si la liste des marques exige une donnée de plus de `text-layout`, la tâche est repoussée après T240-C et séquencée, pas parallélisée) ; (3) `data/engine/atelier_core_wasm.wasm` et `manifest.json` sont régénérés par chaque branche : **ils entrent en conflit à chaque fusion**, l'intégrateur les régénère (`python -I tools/package-engine.py`) après la dernière fusion de chaque lot au lieu de les résoudre ; (4) `tests/rich-editor-format-support.mjs`, `rich_editor/format_tests.rs`, `rich_protocol/format.rs` sont figés : un besoin nouveau passe par l'intégrateur.
+
+**Ensuite, séquencé**
+
+1. **US-243-M1** (trame et bordures dans `ParaProps`) : `crates/text-model/src/rich/attrs.rs`, `fmt-ooxml/src/docx.rs`, `fmt-ooxml/src/docx/write/props.rs`, `rich_editor/format_state.rs` (lecture de la trame et des bordures), et environ 19 littéraux `ParaProps { ... }` des tests et du code qui n'utilisent pas `..Default::default()`. Aucune autre story ne tourne en même temps sur le modèle.
+2. **T243-A / T243-B** (peinture de la trame et des bordures) : `rich_layout/cache.rs` (peinture de page), `text-layout/src/borders.rs` ; après que US-240 a rendu `rich_paint.rs` si la peinture y passe.
+3. **US-250-M1** (nom d'affichage, drapeaux rapide et par défaut du style) : `crates/text-model/src/rich/styles.rs`, `fmt-ooxml/src/docx.rs` : après US-243-M1 (même import DOCX).
+4. **US-250** : `rich_editor/styles.rs`, `rich_editor/styles_tests.rs`, `web/styles-pane.mjs`, `tests/rich-editor-format-styles.mjs` et `rich_editor.rs` (aperçu).
+
+Tableau des tâches de l'audit :
+
+| Fichier | Tâches | Remarque |
 |---|---|---|
-| `crates/core-wasm/src/rich_layout/rich_paint.rs` | T240-A, B, C, D (décorations de caractères) | seul US-240 si T243-A passe par `cache.rs` ; **ne pas lancer T243-A en parallèle** s'il peint dans `rich_paint.rs` |
-| `crates/text-layout/src/lib.rs` | T240-C (exposant, indice) | aucun autre |
-| `crates/core-wasm/src/rich_preview.rs::build_fonts`, `data/fonts`, taille WASM | T240-F | intégrateur : budget de taille (`node tests/check-wasm-size.mjs`) |
-| `crates/text-model/src/rich/attrs.rs`, `fmt-ooxml/src/docx.rs` (+ `docx/write/props.rs`) | US-243-M1 (trame, bordures) ; US-250-M1 (`name`, `quick`, `default` du style, `styles.rs` du modèle) | US-243 et US-250 touchent tous deux le modèle et l'import DOCX : **séquencer US-243-M1 puis US-250-M1** |
-| `crates/core-wasm/src/rich_layout/cache.rs` (peinture de page) et `crates/text-layout/src/borders.rs` | T243-A, B | US-243 seul |
-
-Ordre conseillé : lancer **en parallèle** US-240 (handler + T240-F, A à D) et US-243 (handler `ApplyParaFormat`, sans trame ni bordures, + T243-C marques) ; faire suivre US-243-M1 puis T243-A/B quand US-240 a rendu `rich_paint.rs` ; US-250 après US-243-M1 si l'intégrateur veut éviter un second passage sur le modèle.
+| `rich_layout/rich_paint.rs` | T240-A, B, D ; T243-A si la trame passe par ici | US-240 seul tant que T243-A n'a pas commencé |
+| `crates/text-layout/src/lib.rs` | T240-C | US-240 seul |
+| `rich_preview.rs::build_fonts`, `data/fonts`, taille WASM | T240-F | budget de taille : `node tests/check-wasm-size.mjs` (code 2 098 697 sur 2 286 262 après F0) |
+| `crates/text-model/src/rich/attrs.rs`, `fmt-ooxml/src/docx.rs`, `docx/write/props.rs` | US-243-M1, US-250-M1 | séquencés |
+| `rich_layout/cache.rs` | T240-F (ligne 943), T243-C (méthode neuve), T243-A/B (peinture) | trois régions différentes du même fichier |
 
 ## 11. Vecteurs, tests, commandes
 
@@ -383,11 +409,13 @@ Vecteurs gelés : `tests/rich-editor-format-vectors.txt` (15 requêtes, 8 répon
 | Suite | Contenu | Commande |
 |---|---|---|
 | `rich_protocol/format_tests.rs` + `format.rs` | vecteurs, aller-retour, refus stables, troncatures, `size_step` | `cargo test -p atelier-core-wasm --locked --offline` |
-| `rich_editor/format_tests.rs` | `FormatState` sur sélections, paragraphes, polices, DOCX, lecture seule, texte brut, scan partiel ; `ListFonts` ; stubs | idem |
+| `rich_editor/format_tests.rs` | `FormatState` (sélections, mot sous le curseur, paragraphes, cellules, blocs opaques, sélection inversée ou vide, polices, noms tronqués, DOCX, lecture seule, texte brut, scan partiel), identifiant de commande, `ListFonts` et sa mémoire | idem |
+| `rich_editor/format_char_tests.rs`, `format_para_tests.rs`, `styles_tests.rs` | un test de stub par famille (propre à la story) | idem |
 | `crates/text-model/tests/format_edit.rs` | `apply_format` : une étape, révision, redo, tout ou rien, jointure, portée | `cargo test -p atelier-text-model --locked --offline` |
-| `tests/rich-editor-format.mjs` | vecteurs JS ; client sur moteur simulé (garde au tour, réponse perdue, annulation, refus, aperçu) ; **vrai WASM** : `FormatState`, `ListFonts`, stubs, texte brut | `node tests/rich-editor-format.mjs [engine.wasm]` (après le build `wasm-release`) |
+| `tests/rich-editor-format.mjs` | vecteurs JS ; client sur moteur simulé (garde au tour, réponse perdue, frappe intercalée, attributs de saisie seuls, annulation, refus, aperçu) ; **vrai WASM** : `FormatState`, `ListFonts`, texte brut | `node tests/rich-editor-format.mjs [engine.wasm]` |
+| `tests/rich-editor-format-char.mjs`, `-para.mjs`, `-styles.mjs` | un scénario de stub par famille, sur le vrai WASM (support : `tests/rich-editor-format-support.mjs`) | `node tests/rich-editor-format-char.mjs [engine.wasm]`, idem `-para`, `-styles` |
 
-**À ajouter à la CI** (job `wasm`, avec les autres suites `rich-editor-*`, après `tests/rich-editor-abi.mjs`) : `node tests/rich-editor-format.mjs`. Les tests Rust sont déjà couverts par `cargo test -p atelier-core-wasm -p atelier-text-model ...`.
+**À ajouter à la CI** (job `wasm`, avec les autres suites `rich-editor-*`, après `tests/rich-editor-abi.mjs`) : `node tests/rich-editor-format.mjs`, `node tests/rich-editor-format-char.mjs`, `node tests/rich-editor-format-para.mjs`, `node tests/rich-editor-format-styles.mjs`. Les tests Rust sont déjà couverts par `cargo test -p atelier-core-wasm -p atelier-text-model ...`.
 
 ## 12. Limites et décisions ouvertes
 

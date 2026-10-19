@@ -28,7 +28,7 @@ export const FormatOpcode = Object.freeze({
   ListFonts: 0x0156, FormatMarks: 0x0157,
 });
 export const FormatReplyOpcode = Object.freeze({ FormatState: 0x8130, StyleList: 0x8131, FontList: 0x8132, FormatMarks: 0x8133 });
-export const FormatErrorCode = Object.freeze({ RICH_FORMAT_NOT_IMPLEMENTED: 60, RICH_UNKNOWN_STYLE: 61, RICH_FORMAT_PLAIN_TEXT: 62 });
+export const FormatErrorCode = Object.freeze({ RICH_FORMAT_NOT_IMPLEMENTED: 60, RICH_UNKNOWN_STYLE: 61, RICH_FORMAT_PLAIN_TEXT: 62, RICH_DUPLICATE_COMMAND: 63 });
 
 export const CHAR_ATTRS = Object.freeze({ font: 1, size: 2, bold: 3, italic: 4, underline: 5, strike: 6, verticalAlign: 7, color: 8, highlight: 9 });
 export const PARA_ATTRS = Object.freeze({
@@ -62,6 +62,11 @@ function guard(r) { return r.u64(); }
 function writeGuard(w, value) {
   if (typeof value !== "bigint" || value < 0n || value > MAX_U64) throw new TypeError("revision guard must be a BigInt");
   w.u64(value);
+}
+
+function writeCommandId(w, value) {
+  if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) throw new TypeError("command identifier");
+  w.u32(value);
 }
 
 function readName(r, fail, allowEmpty) {
@@ -264,18 +269,20 @@ export function readFormatCommand(opcode, r, ctx) {
     case FormatOpcode.FormatState: return { type: "formatState" };
     case FormatOpcode.ApplyCharFormat: {
       const baseRevision = guard(r);
+      const commandId = r.u32();
       const scope = FORMAT_SCOPES[r.u8()];
       if (scope === undefined) fail("RICH_INVALID_BODY");
       r.zero(1);
       const edits = readEdits(r, r.u16(), fail, CHAR_ATTRS, charValueFollows, readCharValue);
-      return { type: "applyCharFormat", baseRevision, scope, edits };
+      return { type: "applyCharFormat", baseRevision, commandId, scope, edits };
     }
     case FormatOpcode.ApplyParaFormat: {
       const baseRevision = guard(r);
+      const commandId = r.u32();
       const count = r.u16();
       r.zero(2);
       const edits = readEdits(r, count, fail, PARA_ATTRS, paraValueFollows, readParaValue);
-      return { type: "applyParaFormat", baseRevision, edits };
+      return { type: "applyParaFormat", baseRevision, commandId, edits };
     }
     case FormatOpcode.ListStyles: {
       const filter = nameOf(STYLE_FILTERS, r.u8(), fail);
@@ -285,10 +292,11 @@ export function readFormatCommand(opcode, r, ctx) {
     }
     case FormatOpcode.ApplyStyle: {
       const baseRevision = guard(r);
+      const commandId = r.u32();
       const target = nameOf(STYLE_TARGETS, r.u8(), fail);
       r.zero(3);
       const id = readName(r, fail, target === "character");
-      return { type: "applyStyle", baseRevision, target, id };
+      return { type: "applyStyle", baseRevision, commandId, target, id };
     }
     case FormatOpcode.ListFonts: return { type: "listFonts" };
     case FormatOpcode.FormatMarks: {
@@ -318,13 +326,13 @@ export function writeFormatCommand(w, command) {
   switch (command.type) {
     case "formatState": return FormatOpcode.FormatState;
     case "applyCharFormat":
-      writeGuard(w, command.baseRevision);
+      writeGuard(w, command.baseRevision); writeCommandId(w, command.commandId);
       w.u8(indexOf(FORMAT_SCOPES, command.scope), 0);
       w.u16(command.edits.length);
       writeEdits(w, command.edits, CHAR_ATTRS, charValueFollows, writeCharValue);
       return FormatOpcode.ApplyCharFormat;
     case "applyParaFormat":
-      writeGuard(w, command.baseRevision);
+      writeGuard(w, command.baseRevision); writeCommandId(w, command.commandId);
       w.u16(command.edits.length); w.u8(0, 0);
       writeEdits(w, command.edits, PARA_ATTRS, paraValueFollows, writeParaValue);
       return FormatOpcode.ApplyParaFormat;
@@ -332,7 +340,7 @@ export function writeFormatCommand(w, command) {
       w.u8(indexOf(STYLE_FILTERS, command.filter), command.usedOnly ? 1 : 0, 0, 0);
       return FormatOpcode.ListStyles;
     case "applyStyle":
-      writeGuard(w, command.baseRevision);
+      writeGuard(w, command.baseRevision); writeCommandId(w, command.commandId);
       w.u8(indexOf(STYLE_TARGETS, command.target), 0, 0, 0);
       writeName(w, command.id);
       return FormatOpcode.ApplyStyle;
@@ -479,12 +487,13 @@ export function readFormatReply(opcode, r, ctx) {
     const revision = r.u64();
     const anchor = r.u64();
     const focus = r.u64();
+    const lastCommandId = r.u32();
     const flags = r.u8();
     if (flags & ~0x1f) fail("RICH_INVALID_BODY");
     r.zero(3);
     const chars = readCharState(r, fail);
     const paragraph = readParaState(r, fail);
-    return { type: "formatState", revision, anchor, focus, collapsed: (flags & 1) !== 0, readOnly: (flags & 2) !== 0, partial: (flags & 4) !== 0, typing: (flags & 8) !== 0, plain: (flags & 16) !== 0, chars, paragraph };
+    return { type: "formatState", revision, anchor, focus, lastCommandId, collapsed: (flags & 1) !== 0, readOnly: (flags & 2) !== 0, partial: (flags & 4) !== 0, typing: (flags & 8) !== 0, plain: (flags & 16) !== 0, chars, paragraph };
   }
   if (opcode === FormatReplyOpcode.StyleList) {
     const revision = r.u64();
@@ -533,7 +542,7 @@ export function readFormatReply(opcode, r, ctx) {
 
 export function writeFormatReply(w, response) {
   if (response.type === "formatState") {
-    w.u64(response.revision); w.u64(response.anchor); w.u64(response.focus);
+    w.u64(response.revision); w.u64(response.anchor); w.u64(response.focus); writeCommandId(w, response.lastCommandId);
     w.u8((response.collapsed ? 1 : 0) | (response.readOnly ? 2 : 0) | (response.partial ? 4 : 0) | (response.typing ? 8 : 0) | (response.plain ? 16 : 0), 0, 0, 0);
     writeCharState(w, response.chars);
     writeParaState(w, response.paragraph);
@@ -593,25 +602,35 @@ export function createFormatClient(client) {
     if (typeof revision !== "bigint") throw new TypeError("the client holds no revision: open a document first");
     return revision;
   };
+  // Identifiers 1 to 2^32-1, one per command; 0 means "none" on the wire.
+  let nextId = 1;
+  const takeId = () => { const id = nextId; nextId = nextId === 0xffffffff ? 1 : nextId + 1; return id; };
 
+  /**
+   * A changing command. `retryOf` (the `error.commandId` of an earlier attempt that came out `"not-applied"`) is not
+   * needed: every attempt takes a new identifier; an attempt whose outcome is unknown is settled by the engine, which
+   * reports the last identifier it accepted (`lastCommandId`), never by comparing revisions.
+   */
   async function changing(command, signal) {
-    let before = null;
+    const commandId = takeId();
+    let sent = false;
     try {
       // The guard is read when the command's turn comes, so a keystroke queued before it is taken into account.
-      const result = await client.command(() => { before = guardNow(); return { ...command, baseRevision: before }; }, { signal });
-      return { outcome: "applied", ...result };
+      const result = await client.command(() => { sent = true; return { ...command, baseRevision: guardNow(), commandId }; }, { signal });
+      return { outcome: "applied", commandId, ...result };
     } catch (error) {
       if (isRefusal(error) || error?.code === "CLIENT_CLOSED") throw error;
       // Unknown outcome: the resynchronisation of the client runs before this exchange.
-      let outcome = before === null ? "not-applied" : null;
-      if (before !== null) {
+      let outcome = sent ? null : "not-applied";
+      if (sent) {
         try {
           // No caller signal: it may be the very one that cancelled the command.
           const state = await client.command({ type: "formatState" });
-          outcome = state.response.revision > before ? "applied" : "not-applied";
+          outcome = state.response.lastCommandId === commandId ? "applied" : "not-applied";
         } catch { /* the document cannot be read either: outcome stays unknown */ }
       }
       error.outcome = outcome;
+      error.commandId = commandId;
       throw error;
     }
   }

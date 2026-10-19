@@ -104,8 +104,9 @@ fn dump_request(r: &Request) -> String {
     let tail = match &r.command {
         Command::FormatState => "FormatState".to_string(),
         Command::ApplyCharFormat(f) => format!(
-            "ApplyCharFormat guard={} scope={} edits={}",
+            "ApplyCharFormat guard={} cid={} scope={} edits={}",
             dump_guard(f.base_revision),
+            f.command_id,
             f.scope as u8,
             f.edits
                 .iter()
@@ -119,8 +120,9 @@ fn dump_request(r: &Request) -> String {
                 .join(";")
         ),
         Command::ApplyParaFormat(f) => format!(
-            "ApplyParaFormat guard={} edits={}",
+            "ApplyParaFormat guard={} cid={} edits={}",
             dump_guard(f.base_revision),
+            f.command_id,
             f.edits
                 .iter()
                 .map(|e| format!(
@@ -141,11 +143,13 @@ fn dump_request(r: &Request) -> String {
         }
         Command::ApplyStyle {
             base_revision,
+            command_id,
             target,
             id,
         } => format!(
-            "ApplyStyle guard={} target={} id={}",
+            "ApplyStyle guard={} cid={} target={} id={}",
             dump_guard(*base_revision),
+            command_id,
             *target as u8,
             hex(id.as_bytes())
         ),
@@ -195,10 +199,11 @@ fn dump_reply(r: &Reply) -> String {
             let c = &s.chars;
             let p = &s.paragraph;
             format!(
-                "FormatState revision={} anchor={} focus={} flags={} font={} size={} bold={} italic={} underline={} strike={} valign={} color={} highlight={} cstyle={} | align={} left={} right={} first={} before={} after={} line={} shading={} borders={} pstyle={}",
+                "FormatState revision={} anchor={} focus={} last={} flags={} font={} size={} bold={} italic={} underline={} strike={} valign={} color={} highlight={} cstyle={} | align={} left={} right={} first={} before={} after={} line={} shading={} borders={} pstyle={}",
                 s.revision,
                 s.anchor,
                 s.focus,
+                s.last_command_id,
                 u8::from(s.collapsed)
                     | u8::from(s.read_only) << 1
                     | u8::from(s.partial) << 2
@@ -313,6 +318,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 2,
                 Command::ApplyCharFormat(CharFormat {
                     base_revision: NO_REVISION_GUARD,
+                    command_id: 21,
                     scope: FormatScope::WordOrTyping,
                     edits: vec![char_edit(A::Bold, O::Toggle, None)],
                 }),
@@ -324,6 +330,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 3,
                 Command::ApplyCharFormat(CharFormat {
                     base_revision: 9,
+                    command_id: 22,
                     scope: FormatScope::WordOrTyping,
                     edits: vec![
                         char_edit(A::Font, O::Set, Some(CharValue::Text("Calibri".into()))),
@@ -340,6 +347,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 4,
                 Command::ApplyCharFormat(CharFormat {
                     base_revision: 0,
+                    command_id: 23,
                     scope: FormatScope::SelectionOnly,
                     edits: vec![
                         char_edit(A::Underline, O::Toggle, Some(CharValue::Choice(1))),
@@ -355,6 +363,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 5,
                 Command::ApplyCharFormat(CharFormat {
                     base_revision: NO_REVISION_GUARD,
+                    command_id: 24,
                     scope: FormatScope::WordOrTyping,
                     edits: vec![
                         char_edit(A::Size, O::StepUp, None),
@@ -369,6 +378,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 6,
                 Command::ApplyCharFormat(CharFormat {
                     base_revision: NO_REVISION_GUARD,
+                    command_id: 25,
                     scope: FormatScope::WordOrTyping,
                     edits: vec![char_edit(A::Size, O::StepDownPoint, None)],
                 }),
@@ -380,6 +390,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 7,
                 Command::ApplyParaFormat(ParaFormat {
                     base_revision: 3,
+                    command_id: 26,
                     edits: vec![
                         para_edit(ParaAttr::Alignment, O::Set, Some(ParaValue::Choice(1))),
                         para_edit(ParaAttr::IndentLeft, O::StepUp, None),
@@ -395,6 +406,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 8,
                 Command::ApplyParaFormat(ParaFormat {
                     base_revision: NO_REVISION_GUARD,
+                    command_id: 27,
                     edits: vec![
                         para_edit(
                             ParaAttr::LineSpacing,
@@ -445,6 +457,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 10,
                 Command::ApplyStyle {
                     base_revision: 12,
+                    command_id: 28,
                     target: StyleTarget::Paragraph,
                     id: "Heading1".into(),
                 },
@@ -456,6 +469,7 @@ fn requests() -> Vec<(&'static str, Request)> {
                 11,
                 Command::ApplyStyle {
                     base_revision: NO_REVISION_GUARD,
+                    command_id: 29,
                     target: StyleTarget::Character,
                     id: String::new(),
                 },
@@ -603,6 +617,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                     revision: 7,
                     anchor: 2,
                     focus: 9,
+                    last_command_id: 41,
                     collapsed: false,
                     read_only: false,
                     partial: false,
@@ -621,6 +636,7 @@ fn replies() -> Vec<(&'static str, Reply)> {
                     revision: 0,
                     anchor: 0,
                     focus: 0,
+                    last_command_id: 0,
                     collapsed: true,
                     read_only: true,
                     partial: true,
@@ -753,12 +769,18 @@ fn cat(parts: &[&[u8]]) -> Vec<u8> {
 
 /// A `ApplyCharFormat` body: guard, scope, reserved byte, edit count, edits.
 fn char_body(scope: u8, reserved: u8, count: u16, edits: &[u8]) -> Vec<u8> {
-    cat(&[&u64le(1), &[scope, reserved], &u16le(count), edits])
+    cat(&[
+        &u64le(1),
+        &u32le(5),
+        &[scope, reserved],
+        &u16le(count),
+        edits,
+    ])
 }
 
 /// An `ApplyParaFormat` body: guard, edit count, reserved, edits.
 fn para_body(count: u16, reserved: [u8; 2], edits: &[u8]) -> Vec<u8> {
-    cat(&[&u64le(1), &u16le(count), &reserved, edits])
+    cat(&[&u64le(1), &u32le(5), &u16le(count), &reserved, edits])
 }
 
 fn side(kind: u8, style: u8, eighths: u16, space: u8, mode: u8, c: [u8; 3]) -> Vec<u8> {
@@ -793,6 +815,7 @@ fn with_side(index: usize, replacement: Vec<u8>) -> [Vec<u8>; 6] {
 fn style_body(guard: u64, target: u8, reserved: [u8; 3], id: &[u8]) -> Vec<u8> {
     cat(&[
         &u64le(guard),
+        &u32le(5),
         &[target],
         &reserved,
         &u16le(id.len() as u16),
@@ -1130,7 +1153,14 @@ fn bad_requests() -> Vec<(&'static str, Vec<u8>, ErrorCode)> {
 /// the 25 fields (ten of characters, fifteen of paragraphs) are completed
 /// with `Unset`.
 fn state_body(flags: u8, prefix: &[u8], fields: usize) -> Vec<u8> {
-    let mut b = cat(&[&u64le(1), &u64le(0), &u64le(0), &[flags, 0, 0, 0], prefix]);
+    let mut b = cat(&[
+        &u64le(1),
+        &u64le(0),
+        &u64le(0),
+        &u32le(0),
+        &[flags, 0, 0, 0],
+        prefix,
+    ]);
     b.extend(std::iter::repeat_n(2u8, 25 - fields));
     b
 }
@@ -1190,7 +1220,14 @@ fn bad_replies() -> Vec<(&'static str, Vec<u8>, ErrorCode)> {
             "state-reserved",
             frame(
                 opcode::R_FORMAT_STATE,
-                &cat(&[&u64le(1), &u64le(0), &u64le(0), &[0, 0, 1, 0], &[2]]),
+                &cat(&[
+                    &u64le(1),
+                    &u64le(0),
+                    &u64le(0),
+                    &u32le(0),
+                    &[0, 0, 1, 0],
+                    &[2],
+                ]),
             ),
             InvalidBody,
         ),
@@ -1384,6 +1421,7 @@ fn encoders_refuse_what_the_decoders_would() {
             1,
             Command::ApplyCharFormat(CharFormat {
                 base_revision: 0,
+                command_id: 30,
                 scope: FormatScope::WordOrTyping,
                 edits,
             }),

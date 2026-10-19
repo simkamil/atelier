@@ -6,20 +6,20 @@
 use super::*;
 use crate::rich_protocol::{
     CharAttr, CharEdit, CharFormat, EditOp, FormatScope, FormatStateData, ParaAttr, ParaEdit,
-    ParaFormat, ParaValue, Request, Rgb, StyleFilter, StyleTarget, Tri,
+    ParaFormat, ParaValue, Request, Rgb, StyleTarget, Tri,
 };
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
     Alignment, CharAttrs, Color, ParaProps, RichOp, Underline, VerticalAlign,
 };
 
-struct Harness {
-    editor: RichEditor,
+pub(super) struct Harness {
+    pub(super) editor: RichEditor,
     request: u32,
 }
 
 impl Harness {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let mut h = Self {
             editor: RichEditor::default(),
             request: 0,
@@ -32,7 +32,7 @@ impl Harness {
         h
     }
 
-    fn send(&mut self, command: Command) -> Response {
+    pub(super) fn send(&mut self, command: Command) -> Response {
         self.request += 1;
         let frame = proto::encode_request(&Request {
             doc_id: 1,
@@ -49,21 +49,21 @@ impl Harness {
         proto::decode_reply(&reply.payload).unwrap().response
     }
 
-    fn error(&mut self, command: Command) -> ErrorCode {
+    pub(super) fn error(&mut self, command: Command) -> ErrorCode {
         match self.send(command) {
             Response::Error(code) => code,
             other => panic!("expected an error, got {other:?}"),
         }
     }
 
-    fn type_text(&mut self, text: &str) {
+    pub(super) fn type_text(&mut self, text: &str) {
         assert!(matches!(
             self.send(Command::InsertText { text: text.into() }),
             Response::State(_)
         ));
     }
 
-    fn select(&mut self, anchor: u64, focus: u64) {
+    pub(super) fn select(&mut self, anchor: u64, focus: u64) {
         assert!(matches!(
             self.send(Command::SetSelection {
                 anchor,
@@ -74,19 +74,19 @@ impl Harness {
         ));
     }
 
-    fn state(&mut self) -> FormatStateData {
+    pub(super) fn state(&mut self) -> FormatStateData {
         match self.send(Command::FormatState) {
             Response::FormatState(state) => *state,
             other => panic!("expected a format state, got {other:?}"),
         }
     }
 
-    fn doc(&mut self) -> &mut RichDocument {
+    pub(super) fn doc(&mut self) -> &mut RichDocument {
         &mut self.editor.active.as_mut().unwrap().doc
     }
 
     /// Direct character attributes on `start..end` of paragraph `index`.
-    fn attrs(&mut self, index: usize, start: usize, end: usize, set: CharAttrs) {
+    pub(super) fn attrs(&mut self, index: usize, start: usize, end: usize, set: CharAttrs) {
         let para = self.doc().paragraph_ids()[index];
         self.doc()
             .apply(
@@ -102,7 +102,7 @@ impl Harness {
             .unwrap();
     }
 
-    fn props(&mut self, index: usize, set: ParaProps) {
+    pub(super) fn props(&mut self, index: usize, set: ParaProps) {
         let para = self.doc().paragraph_ids()[index];
         self.doc()
             .apply(
@@ -117,16 +117,17 @@ impl Harness {
     }
 }
 
-fn bold() -> CharAttrs {
+pub(super) fn bold() -> CharAttrs {
     CharAttrs {
         bold: Some(true),
         ..CharAttrs::default()
     }
 }
 
-fn char_format() -> CharFormat {
+pub(super) fn char_format() -> CharFormat {
     CharFormat {
         base_revision: crate::rich_protocol::NO_REVISION_GUARD,
+        command_id: 0,
         scope: FormatScope::WordOrTyping,
         edits: vec![CharEdit {
             attr: CharAttr::Bold,
@@ -136,9 +137,10 @@ fn char_format() -> CharFormat {
     }
 }
 
-fn para_format() -> ParaFormat {
+pub(super) fn para_format() -> ParaFormat {
     ParaFormat {
         base_revision: crate::rich_protocol::NO_REVISION_GUARD,
+        command_id: 0,
         edits: vec![ParaEdit {
             attr: ParaAttr::Alignment,
             op: EditOp::Set,
@@ -346,48 +348,6 @@ fn format_state_changes_nothing_and_is_idempotent() {
 }
 
 #[test]
-fn the_stubs_answer_the_documented_error_and_change_nothing() {
-    let mut h = Harness::new();
-    h.type_text("Hello");
-    let revision = h.state().revision;
-    assert_eq!(
-        h.error(Command::ApplyCharFormat(char_format())),
-        ErrorCode::FormatNotImplemented
-    );
-    assert_eq!(
-        h.error(Command::ApplyParaFormat(para_format())),
-        ErrorCode::FormatNotImplemented
-    );
-    assert_eq!(
-        h.error(Command::ListStyles {
-            filter: StyleFilter::All,
-            used_only: false
-        }),
-        ErrorCode::FormatNotImplemented
-    );
-    assert_eq!(
-        h.error(Command::ApplyStyle {
-            base_revision: crate::rich_protocol::NO_REVISION_GUARD,
-            target: StyleTarget::Paragraph,
-            id: "Heading1".into()
-        }),
-        ErrorCode::FormatNotImplemented
-    );
-    assert_eq!(
-        h.error(Command::PreviewStyle {
-            target: StyleTarget::Paragraph,
-            show: true,
-            id: "Heading1".into()
-        }),
-        ErrorCode::FormatNotImplemented
-    );
-    assert_eq!(h.state().revision, revision);
-    // The session is still usable.
-    h.type_text("!");
-    assert_eq!(h.state().revision, revision + 1);
-}
-
-#[test]
 fn a_read_only_document_refuses_changes_and_still_answers_the_state() {
     let mut h = Harness::new();
     let docx = std::fs::read(concat!(
@@ -418,6 +378,7 @@ fn a_read_only_document_refuses_changes_and_still_answers_the_state() {
     assert_eq!(
         h.error(Command::ApplyStyle {
             base_revision: 0,
+            command_id: 0,
             target: StyleTarget::Paragraph,
             id: "Heading1".into()
         }),
@@ -533,6 +494,7 @@ fn a_plain_text_document_reports_it_and_refuses_formatting() {
     assert_eq!(
         h.error(Command::ApplyStyle {
             base_revision: 0,
+            command_id: 0,
             target: StyleTarget::Paragraph,
             id: "Heading1".into()
         }),
@@ -594,14 +556,244 @@ fn the_font_list_holds_the_engine_faces_the_word_aliases_and_the_document_fonts(
 }
 
 #[test]
-fn format_state_names_the_selection_it_describes_and_marks_are_a_stub() {
+fn format_state_names_the_selection_it_describes() {
     let mut h = Harness::new();
     h.type_text("Hello");
     h.select(4, 1);
     let s = h.state();
     assert_eq!((s.anchor, s.focus), (4, 1));
+    // A reversed selection describes the same range as the forward one.
+    h.select(1, 4);
+    assert_eq!(h.state().chars, s.chars);
+}
+
+#[test]
+fn the_word_under_the_caret_is_a_non_blank_segment_start_included_end_excluded() {
+    let mut h = Harness::new();
+    // 0123456789...: "foo, bar  baz" then a second paragraph "qux".
+    h.type_text("foo, bar  baz\nqux");
+    let doc = h.doc();
+    let word = |p: usize| super::format_state::word_under_caret(doc, p);
+    assert_eq!(word(0), Some((0, 3)), "start of a word");
+    assert_eq!(word(1), Some((0, 3)), "inside a word");
+    assert_eq!(word(3), None, "right after a word, on the punctuation");
+    assert_eq!(word(4), None, "between a punctuation and a blank");
+    assert_eq!(word(5), Some((5, 8)), "start of the second word");
+    assert_eq!(word(8), None, "end of a word, on a blank");
+    assert_eq!(word(9), None, "between two blanks");
+    assert_eq!(word(10), Some((10, 13)), "start of the last word");
+    assert_eq!(word(13), None, "end of the paragraph, on its mark");
+    assert_eq!(word(14), Some((14, 17)), "start of the next paragraph");
+    assert_eq!(word(17), None, "end of the document");
+}
+
+#[test]
+fn a_caret_in_a_word_describes_that_word_not_the_character_before_it() {
+    let mut h = Harness::new();
+    h.type_text("ab cd");
+    h.attrs(0, 0, 1, bold());
+    // Inside "ab": the word is half bold.
+    h.select(1, 1);
+    let s = h.state();
+    assert!(s.collapsed && !s.typing);
+    assert_eq!(s.chars.bold, Tri::Mixed);
+    // Before "b" the character before is bold, but the word decides.
+    h.select(2, 2);
     assert_eq!(
-        h.error(Command::FormatMarks { first: 0, count: 1 }),
+        h.state().chars.bold,
+        Tri::Value(false),
+        "end of the word: the character before"
+    );
+    // Between the words, on the blank: the character before the caret.
+    h.select(3, 3);
+    assert_eq!(h.state().chars.bold, Tri::Value(false));
+}
+
+#[test]
+fn names_of_a_document_are_cut_and_cleaned_before_they_are_encoded() {
+    let mut h = Harness::new();
+    h.type_text("text");
+    // 300 bytes of two-byte letters, then a name made of control characters
+    // around a font, then a style reference of 300 bytes.
+    let long = "\u{e9}".repeat(150);
+    h.attrs(
+        0,
+        0,
+        2,
+        CharAttrs {
+            font: Some(long),
+            char_style: Some("s".repeat(300)),
+            ..CharAttrs::default()
+        },
+    );
+    h.attrs(
+        0,
+        2,
+        4,
+        CharAttrs {
+            font: Some("Ver\u{0}da\nna".into()),
+            ..CharAttrs::default()
+        },
+    );
+    h.select(0, 2);
+    let s = h.state();
+    let Tri::Value(font) = &s.chars.font else {
+        panic!("a font");
+    };
+    assert!(font.requested.len() <= 255 && font.requested.chars().all(|c| c == '\u{e9}'));
+    assert_eq!(font.requested.len(), 254, "cut on a character boundary");
+    let Tri::Value(style) = &s.chars.style else {
+        panic!("a style");
+    };
+    assert_eq!(style.len(), 255);
+    h.select(2, 4);
+    let Tri::Value(font) = h.state().chars.font else {
+        panic!("a font");
+    };
+    assert_eq!(font.requested, "Verdana");
+    // The font list answers too, with the same cleaned names.
+    let Response::FontList(list) = h.send(Command::ListFonts) else {
+        panic!("a font list");
+    };
+    assert!(list.families.iter().any(|f| f.name == "Verdana"));
+    assert!(
+        list.families
+            .iter()
+            .all(|f| f.name.len() <= 255 && !f.name.chars().any(char::is_control))
+    );
+}
+
+#[test]
+fn opaque_blocks_tables_reversed_and_empty_selections() {
+    use atelier_text_model::rich::flat::ParagraphPosition;
+    let mut h = Harness::new();
+    h.type_text("first\nsecond");
+    let section = h.doc().section_ids()[0];
+    let opaque = h.doc().new_opaque("unknown", b"<x/>").unwrap();
+    let table = h.doc().new_table(1, 2).unwrap();
+    for (position, subtree) in [(1, opaque), (2, table)] {
+        h.doc()
+            .apply(
+                &Transaction::new(vec![RichOp::InsertBlock {
+                    parent: Some(section),
+                    position,
+                    subtree,
+                }])
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    // first, [opaque], [table: 2 cell paragraphs], second.
+    let ids = h.doc().paragraph_ids();
+    assert_eq!(ids.len(), 4, "first, two cells, second");
+    h.props(
+        1,
+        ParaProps {
+            alignment: Some(Alignment::Center),
+            ..ParaProps::default()
+        },
+    );
+    let positions: Vec<usize> = (0..h.doc().paragraph_count())
+        .map(|i| {
+            h.doc()
+                .position(ParagraphPosition {
+                    paragraph: i,
+                    offset: 0,
+                })
+                .unwrap()
+        })
+        .collect();
+    let end = h.doc().len() as u64;
+    // Everything: the opaque block does not count, the cell does.
+    h.select(0, end);
+    let s = h.state();
+    assert_eq!(s.paragraph.alignment, Tri::Mixed);
+    // The same, reversed.
+    h.select(end, 0);
+    assert_eq!(h.state().paragraph, s.paragraph);
+    // The opaque block alone shows nothing to describe.
+    let opaque_at = positions[1] as u64;
+    h.select(opaque_at, opaque_at);
+    let s = h.state();
+    assert!(s.collapsed);
+    assert_eq!(s.paragraph.alignment, Tri::Unset);
+    assert_eq!(s.chars.bold, Tri::Unset);
+    // A caret in the centred cell, an empty selection.
+    let cell_start = positions[2] as u64;
+    h.select(cell_start, cell_start);
+    let s = h.state();
+    assert!(s.collapsed);
+    assert_eq!(s.paragraph.alignment, Tri::Value(1));
+}
+
+#[test]
+fn the_command_identifier_is_recorded_on_acceptance_and_a_repeat_is_refused() {
+    use crate::rich_protocol::{CharFormat, FormatScope};
+    let mut h = Harness::new();
+    h.type_text("Hello");
+    let with = |command_id: u32, base_revision: u64| {
+        Command::ApplyCharFormat(CharFormat {
+            command_id,
+            base_revision,
+            ..char_format()
+        })
+    };
+    assert_eq!(h.state().last_command_id, 0);
+    // A refused or unimplemented command is never recorded.
+    assert_eq!(
+        h.error(with(7, crate::rich_protocol::NO_REVISION_GUARD)),
         ErrorCode::FormatNotImplemented
     );
+    assert_eq!(
+        h.error(with(7, crate::rich_protocol::NO_REVISION_GUARD)),
+        ErrorCode::FormatNotImplemented
+    );
+    assert_eq!(h.state().last_command_id, 0);
+    // An accepted one is (the handlers call `note_command`).
+    h.editor.active.as_mut().unwrap().note_command(7);
+    assert_eq!(h.state().last_command_id, 7);
+    assert_eq!(
+        h.error(with(7, crate::rich_protocol::NO_REVISION_GUARD)),
+        ErrorCode::DuplicateCommand
+    );
+    // A repeat is a duplicate even with a stale guard; another identifier is not.
+    assert_eq!(h.error(with(7, 0)), ErrorCode::DuplicateCommand);
+    assert_eq!(h.error(with(8, 0)), ErrorCode::StaleRevision);
+    assert_eq!(
+        h.error(with(8, crate::rich_protocol::NO_REVISION_GUARD)),
+        ErrorCode::FormatNotImplemented
+    );
+    // Identifier 0 means "none": never a duplicate.
+    h.editor.active.as_mut().unwrap().note_command(0);
+    assert_eq!(h.state().last_command_id, 7);
+    assert_eq!(
+        h.error(with(0, crate::rich_protocol::NO_REVISION_GUARD)),
+        ErrorCode::FormatNotImplemented
+    );
+    let _ = FormatScope::WordOrTyping;
+}
+
+#[test]
+fn the_font_list_is_memoised_by_revision() {
+    let mut h = Harness::new();
+    h.type_text("a");
+    let first = h.send(Command::ListFonts);
+    assert_eq!(h.send(Command::ListFonts), first);
+    assert!(h.editor.active.as_ref().unwrap().fonts_memo.is_some());
+    h.attrs(
+        0,
+        0,
+        1,
+        CharAttrs {
+            font: Some("Zork".into()),
+            ..CharAttrs::default()
+        },
+    );
+    // The model was changed behind the history: a new revision is what moves the memo.
+    h.type_text("b");
+    let Response::FontList(list) = h.send(Command::ListFonts) else {
+        panic!("a font list");
+    };
+    assert!(list.families.iter().any(|f| f.name == "Zork"));
+    assert_eq!(list.revision, 2);
 }

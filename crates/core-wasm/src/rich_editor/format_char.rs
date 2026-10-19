@@ -56,8 +56,8 @@ pub(super) fn after_text_edit(
 
 impl Session {
     /// `ApplyCharFormat`. Stub of US-240: documented error until written.
-    pub(super) fn apply_char_format(&mut self, _format: CharFormat) -> Result<Response, ErrorCode> {
-        self.deny_formatting()?;
+    pub(super) fn apply_char_format(&mut self, format: CharFormat) -> Result<Response, ErrorCode> {
+        self.begin_format(format.base_revision, format.command_id)?;
         Err(ErrorCode::FormatNotImplemented)
     }
 }

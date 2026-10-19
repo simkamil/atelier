@@ -184,6 +184,9 @@ pub enum ErrorCode {
     /// A formatting command on a plain-text (TXT profile) document, which holds
     /// no formatting.
     FormatPlainText = 62,
+    /// A formatting command carries the `command_id` of the last one the
+    /// engine accepted: a repeat after a lost reply; nothing changes.
+    DuplicateCommand = 63,
 }
 
 impl ErrorCode {
@@ -223,6 +226,7 @@ impl ErrorCode {
             60 => Self::FormatNotImplemented,
             61 => Self::UnknownStyle,
             62 => Self::FormatPlainText,
+            63 => Self::DuplicateCommand,
             _ => return None,
         })
     }
@@ -263,6 +267,7 @@ impl ErrorCode {
             Self::FormatNotImplemented => "RICH_FORMAT_NOT_IMPLEMENTED",
             Self::UnknownStyle => "RICH_UNKNOWN_STYLE",
             Self::FormatPlainText => "RICH_FORMAT_PLAIN_TEXT",
+            Self::DuplicateCommand => "RICH_DUPLICATE_COMMAND",
         }
     }
 }
@@ -514,6 +519,7 @@ pub enum Command {
     /// Applies a paragraph or character style; answered by `State`.
     ApplyStyle {
         base_revision: u64,
+        command_id: u32,
         target: StyleTarget,
         id: String,
     },

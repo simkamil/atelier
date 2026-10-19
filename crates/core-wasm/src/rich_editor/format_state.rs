@@ -20,11 +20,13 @@ use std::collections::BTreeMap;
 
 use atelier_text_model::rich::ThemeFont;
 
+use atelier_text_model::rich::RichDocument;
+
 use super::Session;
 use crate::rich_protocol::{
     BORDER_SIDES, CharState, ErrorCode, FontEntry, FontListData, FontState, FormatStateData,
-    MAX_FONT_LIST, MAX_HALF_POINTS, MAX_STATE_RUNS, MAX_TWIPS, MIN_HALF_POINTS, ParaState,
-    Response, Rgb, Tri,
+    MAX_FONT_LIST, MAX_HALF_POINTS, MAX_NAME_BYTES, MAX_STATE_RUNS, MAX_TWIPS, MIN_HALF_POINTS,
+    NO_REVISION_GUARD, ParaState, Response, Rgb, Tri,
 };
 
 /// Word fonts the engine draws with a metric-compatible family (the aliases of
@@ -86,6 +88,37 @@ impl<T> Default for Acc<T> {
     }
 }
 
+/// A name as the wire carries it: control characters removed, cut to
+/// `MAX_NAME_BYTES` on a UTF-8 boundary; `None` when nothing is left (a DOCX
+/// can hold a longer or odd name, and the reply must stay encodable).
+fn clean_name(name: &str) -> Option<String> {
+    let mut cleaned: String = name.chars().filter(|c| !c.is_control()).collect();
+    if cleaned.len() > MAX_NAME_BYTES {
+        let mut cut = MAX_NAME_BYTES;
+        while !cleaned.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        cleaned.truncate(cut);
+    }
+    (!cleaned.is_empty()).then_some(cleaned)
+}
+
+/// The word the formatting of a caret at `position` targets (Word's rule,
+/// shared by `FormatState` and the handler of `ApplyCharFormat`): the segment
+/// that starts at or contains the position, only if it holds a letter or a
+/// digit. Blanks, punctuation, objects and the paragraph mark are no word, and
+/// the end of a word is not in it (`word|` and `word |` target the typing
+/// attributes, `|word` the word).
+pub(super) fn word_under_caret(doc: &RichDocument, position: usize) -> Option<(usize, usize)> {
+    let (start, end) = doc.word_at(position).ok()??;
+    if position < start || position >= end {
+        return None;
+    }
+    let text = doc.text(start, end).ok()?;
+    (text.chars().any(char::is_alphanumeric) && !text.contains(['\n', '\u{FFFC}']))
+        .then_some((start, end))
+}
+
 #[derive(Default)]
 struct CharAcc {
     font: Acc<String>,
@@ -113,7 +146,7 @@ fn rgb(c: atelier_text_model::rich::Color) -> Rgb {
 impl CharAcc {
     /// One run: `direct` its direct attributes, `resolved` the effective ones.
     fn add(&mut self, direct: &CharAttrs, resolved: &CharAttrs) {
-        self.font.add(resolved.font.clone());
+        self.font.add(resolved.font.as_deref().and_then(clean_name));
         self.size.add(
             resolved
                 .size_half_points
@@ -138,7 +171,8 @@ impl CharAcc {
         }));
         self.color.add(resolved.color.map(rgb));
         self.highlight.add(resolved.highlight.map(rgb));
-        self.style.add(direct.char_style.clone());
+        self.style
+            .add(direct.char_style.as_deref().and_then(clean_name));
     }
 }
 
@@ -189,7 +223,7 @@ impl ParaAcc {
                 l.value,
             ),
         }));
-        self.style.add(direct.style.clone());
+        self.style.add(direct.style.as_deref().and_then(clean_name));
     }
 }
 
@@ -205,6 +239,34 @@ impl Session {
         Ok(())
     }
 
+    /// First steps of every changing formatting command, in the order of the
+    /// contract: read-only, plain text, **repeat** (`command_id` equal to the
+    /// last accepted one: `RICH_DUPLICATE_COMMAND`), then the revision guard.
+    pub(super) fn begin_format(
+        &self,
+        base_revision: u64,
+        command_id: u32,
+    ) -> Result<(), ErrorCode> {
+        self.deny_formatting()?;
+        if command_id != 0 && command_id == self.last_command_id {
+            return Err(ErrorCode::DuplicateCommand);
+        }
+        if base_revision != NO_REVISION_GUARD && base_revision != self.revision() {
+            return Err(ErrorCode::StaleRevision);
+        }
+        Ok(())
+    }
+
+    /// Records that the command was accepted (applied, or found to change
+    /// nothing, typing attributes included): `FormatState.last_command_id`.
+    /// A refused command is never recorded.
+    #[allow(dead_code)] // called by the handlers of US-240, US-243 and US-250
+    pub(super) fn note_command(&mut self, command_id: u32) {
+        if command_id != 0 {
+            self.last_command_id = command_id;
+        }
+    }
+
     /// `FormatState`: the state of the selection, see the module documentation.
     pub(super) fn format_state(&mut self) -> Result<Response, ErrorCode> {
         let (low, high) = self.selection_range();
@@ -213,7 +275,14 @@ impl Session {
         let mut paras = ParaAcc::default();
         let mut runs = 0usize;
         let mut partial = false;
-        let typing = collapsed && self.typing.armed;
+        // A caret in a word describes (and formats) that word; elsewhere the
+        // typing attributes, else the character before the caret.
+        let word = if collapsed {
+            word_under_caret(&self.doc, low)
+        } else {
+            None
+        };
+        let typing = collapsed && word.is_none() && self.typing.armed;
         {
             let doc = &self.doc;
             let first = doc.locate(low)?;
@@ -240,19 +309,26 @@ impl Session {
                     Err(_) => paras.add(&p.props, &p.props),
                 }
                 let flat_len = doc.paragraph_flat(index)?.len();
-                let start_flat = if index == first.paragraph {
-                    first.offset
-                } else {
-                    0
-                };
-                let end_flat = if index == last.paragraph {
-                    last.offset
-                } else {
-                    flat_len
-                };
+                let (mut start_flat, mut end_flat) = (
+                    if index == first.paragraph {
+                        first.offset
+                    } else {
+                        0
+                    },
+                    if index == last.paragraph {
+                        last.offset
+                    } else {
+                        flat_len
+                    },
+                );
+                if let Some((word_start, word_end)) = word {
+                    let paragraph_start = doc.paragraph_start(index)?;
+                    start_flat = word_start - paragraph_start;
+                    end_flat = word_end - paragraph_start;
+                }
                 let from = doc.flat_to_text(index, start_flat)?;
                 let to = doc.flat_to_text(index, end_flat)?;
-                if collapsed {
+                if collapsed && word.is_none() {
                     // The character before the caret, else the one after it.
                     let probe = if from > 0 {
                         p.text[..from].char_indices().next_back().map(|(i, _)| i)
@@ -322,6 +398,7 @@ impl Session {
             revision: self.revision(),
             anchor: self.anchor as u64,
             focus: self.focus as u64,
+            last_command_id: self.last_command_id,
             collapsed,
             read_only: self.origin.read_only,
             partial,
@@ -362,6 +439,13 @@ impl Session {
     /// of the theme. Availability is probed on the font manager of the layout, so
     /// the list follows the faces the editor really registers.
     pub(super) fn list_fonts(&mut self) -> Result<Response, ErrorCode> {
+        // The answer only depends on the document: memoised by revision, so a
+        // font box that opens again does not read the document again.
+        if let Some((revision, list)) = &self.fonts_memo {
+            if *revision == self.revision() {
+                return Ok(Response::FontList(list.clone()));
+            }
+        }
         let mut used_by_document: BTreeMap<String, String> = BTreeMap::new();
         {
             let doc = &self.doc;
@@ -372,6 +456,9 @@ impl Session {
                 let base = doc.resolved(index).ok().and_then(|r| r.character.font);
                 let runs = p.runs.iter().filter_map(|r| r.attrs.font.clone());
                 for font in base.into_iter().chain(runs) {
+                    let Some(font) = clean_name(&font) else {
+                        continue;
+                    };
                     used_by_document
                         .entry(font.to_ascii_lowercase())
                         .or_insert(font);
@@ -430,12 +517,14 @@ impl Session {
         }
         let theme = LayoutContext::theme(&self.doc);
         let theme_font = |slot| theme.fonts.get(&slot).cloned().unwrap_or_default();
-        Ok(Response::FontList(FontListData {
+        let list = FontListData {
             revision: self.revision(),
-            theme_major: theme_font(ThemeFont::Major),
-            theme_minor: theme_font(ThemeFont::Minor),
+            theme_major: clean_name(&theme_font(ThemeFont::Major)).unwrap_or_default(),
+            theme_minor: clean_name(&theme_font(ThemeFont::Minor)).unwrap_or_default(),
             families,
-        }))
+        };
+        self.fonts_memo = Some((self.revision(), list.clone()));
+        Ok(Response::FontList(list))
     }
 
     /// The font of the selection and the family the engine draws it with.
