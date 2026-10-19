@@ -28,6 +28,7 @@ use atelier_text_model::statistics::{
 
 use super::Session;
 use super::io::Source;
+use super::styles::layout_doc;
 use crate::properties::{FIELDS, LIMITS};
 use crate::rich_layout::{PageDelta, RichPageCache};
 use crate::rich_protocol::{
@@ -281,7 +282,7 @@ impl Session {
     fn complete_layout(&mut self) {
         let mut spent = 0;
         while !self.cache.layout_complete() && spent < STATISTICS_LAYOUT_BUDGET {
-            let more = self.cache.step(&self.doc, 16);
+            let more = self.cache.step(layout_doc!(self), 16);
             self.carry(more);
             spent += 16;
         }
@@ -404,7 +405,7 @@ impl Session {
     ) -> Result<Response, ErrorCode> {
         let mut delta = PageDelta::default();
         if let Some(outcome) = outcome {
-            delta = self.cache.apply_edit(&self.doc, &outcome);
+            delta = self.cache.apply_edit(layout_doc!(self), &outcome);
             let (anchor, focus) = outcome.selection;
             self.select(self.snap(anchor), self.snap(focus), false, None);
         }

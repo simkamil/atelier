@@ -20,6 +20,7 @@ use atelier_text_model::rich::{NodeId, RichDocument, RichOp, default_rich_docume
 use atelier_unicode::encode;
 
 use super::Session;
+use super::styles::layout_doc;
 use crate::images::{self, ImageInsertError};
 use crate::properties::{self, SaveStamp};
 use crate::rich_layout::{PageDelta, RichPageCache};
@@ -523,7 +524,7 @@ impl Session {
         let mut at = start;
         if start != end {
             let outcome = self.doc.replace_range(start, end, "")?;
-            let more = self.cache.apply_edit(&self.doc, &outcome);
+            let more = self.cache.apply_edit(layout_doc!(self), &outcome);
             super::merge(&mut delta, more);
             at = self.snap(start);
         }
@@ -540,7 +541,7 @@ impl Session {
                 return Err(error.into());
             }
         };
-        let more = self.cache.apply_edit(&self.doc, &outcome);
+        let more = self.cache.apply_edit(layout_doc!(self), &outcome);
         super::merge(&mut delta, more);
         let (anchor, focus) = outcome.selection;
         self.select(self.snap(anchor), self.snap(focus), false, None);

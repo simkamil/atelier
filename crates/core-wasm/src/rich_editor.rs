@@ -43,6 +43,7 @@ mod format_tests;
 mod io;
 mod sel;
 mod styles;
+use styles::layout_doc;
 #[cfg(test)]
 mod styles_tests;
 #[cfg(test)]
@@ -349,7 +350,7 @@ impl Session {
     /// blocked until the next `Open`.
     fn rebuild_cache(&mut self) {
         let old = self.cache.page_count();
-        if let Ok(cache) = PageCache::new(&self.doc, self.txt) {
+        if let Ok(cache) = PageCache::new(layout_doc!(self), self.txt) {
             self.cache = cache;
             // A fresh cache numbers its atlas from 0.
             self.epoch = self.epoch.wrapping_add(1);
@@ -384,7 +385,7 @@ impl Session {
                 if spent >= REACH_BUDGET {
                     return Ok(None);
                 }
-                let more = self.cache.step(&self.doc, REACH_SLICE);
+                let more = self.cache.step(layout_doc!(self), REACH_SLICE);
                 self.carry(more);
                 spent += REACH_SLICE;
             } else if !rebuilt {
@@ -490,7 +491,7 @@ impl Session {
                 let mut pages: Vec<PageDisplay> = Vec::new();
                 let mut total = 0usize;
                 for index in first..end {
-                    let display = self.cache.page_display(&self.doc, index)?;
+                    let display = self.cache.page_display(layout_doc!(self), index)?;
                     // Pages past the response bound are asked for again.
                     if !proto::page_fits(pages.len(), total, display.len()) {
                         if pages.is_empty() {
@@ -618,7 +619,7 @@ impl Session {
         let delta = if outcome.revision == before {
             PageDelta::default()
         } else {
-            self.cache.apply_edit(&self.doc, &outcome)
+            self.cache.apply_edit(layout_doc!(self), &outcome)
         };
         // An edit that changed nothing (a separator between a paragraph and a
         // table, a cell or an opaque block cannot be deleted) leaves the
@@ -644,7 +645,7 @@ impl Session {
         let delta = if outcome.revision == before {
             PageDelta::default()
         } else {
-            self.cache.apply_edit(&self.doc, &outcome)
+            self.cache.apply_edit(layout_doc!(self), &outcome)
         };
         if outcome.revision != before {
             let (anchor, focus) = outcome.selection;
@@ -659,7 +660,7 @@ impl Session {
     ) -> Result<Response, ErrorCode> {
         let mut delta = PageDelta::default();
         if let Some(outcome) = outcome {
-            delta = self.cache.apply_edit(&self.doc, &outcome);
+            delta = self.cache.apply_edit(layout_doc!(self), &outcome);
             let (anchor, focus) = outcome.selection;
             self.select(self.snap(anchor), self.snap(focus), false, None);
         }
@@ -824,7 +825,7 @@ impl Session {
         budget: u32,
         window: bool,
     ) -> Result<Response, ErrorCode> {
-        let more = self.cache.step(&self.doc, budget);
+        let more = self.cache.step(layout_doc!(self), budget);
         merge(&mut delta, more);
         Ok(Response::State(self.state(delta, window)?))
     }
@@ -852,7 +853,7 @@ impl Session {
             for index in send {
                 // Over the response bound, a page is invalidated like one
                 // that cannot be painted yet: the client asks for it again.
-                match self.cache.page_display(&self.doc, index) {
+                match self.cache.page_display(layout_doc!(self), index) {
                     Ok(display) if proto::page_fits(pages.len(), total, display.len()) => {
                         total += display.len();
                         pages.push(PageDisplay { index, display });
