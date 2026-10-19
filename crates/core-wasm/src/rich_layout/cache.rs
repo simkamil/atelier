@@ -33,10 +33,15 @@ use atelier_text_layout::{
 use atelier_text_model::rich::flat::{
     EditOutcome, LayoutContext, LayoutScope, OBJECT_LEN, PageSetup,
 };
-use atelier_text_model::rich::{CharAttrs, CharRun, Paragraph, ResolvedProperties};
+use atelier_text_model::rich::{
+    CharAttrs, CharRun, Color, ParaBorder, ParaBorders, ParaProps, Paragraph, ResolvedProperties,
+};
 
 use super::prepare::{Mark, Picture, PictureFit, Prepared, page_break_lines, prepare};
-use super::rich_paint::{FastLine, GlyphCache, PageWriter, StyleTable, paint_line_fast};
+use super::rich_paint::{
+    FastLine, FrameFragment, GlyphCache, PageWriter, StyleTable, border_room, paint_frames,
+    paint_line_fast,
+};
 use super::{CaretGeometry, LayoutError, PageDelta, RichPageCache};
 use crate::rich_preview::build_fonts;
 
@@ -100,6 +105,43 @@ struct ParaInfo {
     painted: Paragraph,
     /// Colours and underlines of its runs, resolved once.
     styles: StyleTable,
+    /// Shading and borders (US-243), when it has any.
+    frame: Option<FrameInfo>,
+}
+
+/// What the painter and the caret need of the shading and borders of a
+/// paragraph. The layout has already made room for the borders: the first
+/// line is `top_room` taller (its glyphs are lower by as much), the last one
+/// `bottom_room`.
+#[derive(Debug, Clone)]
+struct FrameInfo {
+    borders: ParaBorders,
+    shading: Option<Color>,
+    /// Page x of the text edges, 1/64 pt.
+    left: i64,
+    right: i64,
+    top_room: i64,
+    bottom_room: i64,
+    joined_above: bool,
+    joined_below: bool,
+}
+
+/// The borders that draw something (the others are "no border").
+fn drawn_borders(props: &ParaProps) -> ParaBorders {
+    ParaBorders::from_sides(props.borders.sides().map(|b| b.filter(ParaBorder::is_line)))
+}
+
+/// What makes two consecutive paragraphs share one box: the same borders and
+/// the same indents (Word's rule).
+fn box_key(props: &ParaProps) -> Option<(ParaBorders, i32, i32)> {
+    let borders = drawn_borders(props);
+    borders.any_line().then(|| {
+        (
+            borders,
+            props.indent_left.unwrap_or(0) + props.indent_first_line.unwrap_or(0).min(0),
+            props.indent_right.unwrap_or(0),
+        )
+    })
 }
 
 impl ParaInfo {
@@ -438,7 +480,7 @@ impl PageCache {
                 height: p.height,
             })
             .collect();
-        let layout =
+        let mut layout =
             match layout_paragraph_boxes(&paragraph, &defaults, &self.fonts, options, &boxes) {
                 Ok(layout) => layout,
                 Err(_) => {
@@ -467,6 +509,19 @@ impl PageCache {
         }
         let styles = StyleTable::build(&defaults.character, &paragraph)
             .map_err(|_| ShapeError::InvalidParagraph("character attributes"))?;
+        let frame = if self.txt {
+            None
+        } else {
+            self.frame_of(
+                document,
+                index,
+                &defaults.paragraph,
+                resolved_source.as_ref(),
+            )
+        };
+        if let Some(frame) = &frame {
+            Self::make_room(&mut layout, frame);
+        }
         let info = ParaInfo {
             flat_len,
             marks: if degraded { Vec::new() } else { prepared.marks },
@@ -482,8 +537,81 @@ impl PageCache {
                 ..Paragraph::default()
             },
             styles,
+            frame,
         };
         Ok((StreamParagraph { layout, rules }, info))
+    }
+
+    /// Shading and borders of paragraph `index`, from its resolved properties
+    /// (`defaults`, with the direct ones of `source` over them) and its
+    /// neighbours (consecutive paragraphs with the same borders share a box).
+    fn frame_of(
+        &self,
+        document: &dyn LayoutContext,
+        index: usize,
+        defaults: &ParaProps,
+        source: Option<&Paragraph>,
+    ) -> Option<FrameInfo> {
+        let mut props = defaults.clone();
+        if let Some(p) = source {
+            props.overlay(&p.props);
+        }
+        let shading = props.shading.as_ref().and_then(|s| s.paint_color());
+        let borders = drawn_borders(&props);
+        if shading.is_none() && !borders.any_line() {
+            return None;
+        }
+        let key = box_key(&props);
+        let neighbour = |at: Option<usize>| {
+            at.filter(|at| *at < document.paragraph_count())
+                .and_then(|at| document.resolved(at).ok())
+                .and_then(|r| box_key(&r.paragraph))
+        };
+        let joined_above = key.is_some() && neighbour(index.checked_sub(1)) == key;
+        let joined_below = key.is_some() && neighbour(Some(index + 1)) == key;
+        let hang = props.indent_first_line.unwrap_or(0).min(0);
+        let left = self.geometry.left + twips(i64::from(props.indent_left.unwrap_or(0) + hang));
+        let right = self.geometry.left + self.geometry.content_width
+            - twips(i64::from(props.indent_right.unwrap_or(0)));
+        Some(FrameInfo {
+            borders,
+            shading,
+            left,
+            right,
+            top_room: if joined_above {
+                0
+            } else {
+                border_room(borders.top)
+            },
+            bottom_room: if joined_below {
+                border_room(borders.between)
+            } else {
+                border_room(borders.bottom)
+            },
+            joined_above,
+            joined_below,
+        })
+    }
+
+    /// Makes room for the borders in the layout of a paragraph: the first line
+    /// grows (and every glyph goes down) by the room of the top border, the
+    /// last line by the room of the bottom one. The sum rule of the pagination
+    /// (paragraph height = spacing + lines) keeps holding.
+    fn make_room(layout: &mut atelier_text_layout::ParagraphLayout, frame: &FrameInfo) {
+        let (top, bottom) = (frame.top_room, frame.bottom_room);
+        if layout.lines.is_empty() || top + bottom == 0 {
+            return;
+        }
+        for line in &mut layout.lines {
+            line.baseline += top;
+        }
+        if let Some(first) = layout.lines.first_mut() {
+            first.height += top;
+        }
+        if let Some(last) = layout.lines.last_mut() {
+            last.height += bottom;
+        }
+        layout.height += top + bottom;
     }
 
     fn lay_out_range(
@@ -535,6 +663,39 @@ impl PageCache {
         self.infos.splice(first..first + removed, infos);
         self.reindex_starts(first);
         Ok(update)
+    }
+
+    /// `first..first + removed` (laid) replaced by `count` paragraphs, widened
+    /// by one paragraph on each side when a frame is involved: the shared box
+    /// of a neighbour depends on it.
+    fn widen_for_frames(
+        &self,
+        document: &dyn LayoutContext,
+        first: usize,
+        removed: usize,
+        count: usize,
+        laid: usize,
+    ) -> (usize, usize, usize) {
+        if self.txt {
+            return (first, removed, count);
+        }
+        let has_frame = |at: usize| self.infos.get(at).is_some_and(|i| i.frame.is_some());
+        let old = first.saturating_sub(1)..(first + removed + 1).min(laid);
+        let new_frame = (first..first + count).any(|at| {
+            document
+                .resolved(at)
+                .is_ok_and(|r| r.paragraph.borders.any_line() || r.paragraph.shading.is_some())
+        });
+        if !new_frame && !old.clone().any(has_frame) {
+            return (first, removed, count);
+        }
+        let before = usize::from(first > 0);
+        let after = usize::from(first + removed < laid && first + count < self.total_paragraphs);
+        (
+            first - before,
+            removed + before + after,
+            count + before + after,
+        )
     }
 
     fn give_up(&mut self) {
@@ -687,9 +848,12 @@ impl PageCache {
         )
     }
 
-    /// Caret geometry over whole paragraphs `first..=last`.
+    /// Caret geometry over whole paragraphs `first..=last`. The room the
+    /// layout made for the borders is not part of the lines the caret and the
+    /// selection see: the first line starts below the top border, the last
+    /// ends above the bottom one.
     fn caret_window(&self, first: usize, last: usize) -> Result<CaretLayout, LayoutError> {
-        let mut lines = Vec::new();
+        let mut rows = Vec::new();
         for paragraph in first..=last {
             let info = self.infos.get(paragraph).ok_or(LayoutError::NotReady)?;
             let layout = self.stream.layout(paragraph).ok_or(LayoutError::NotReady)?;
@@ -697,17 +861,35 @@ impl PageCache {
             if placed.len() != layout.lines.len() {
                 return Err(LayoutError::NotReady);
             }
-            for (placement, line) in placed.iter().zip(&layout.lines) {
-                lines.push(PositionedLine {
-                    page_index: placement.page_index,
-                    paragraph_index: paragraph,
-                    text: &info.painted.text,
-                    layout: line,
-                    top: placement.top + self.geometry.top,
-                    x_translation: self.geometry.left,
-                });
+            let (top_room, bottom_room) = info
+                .frame
+                .as_ref()
+                .map_or((0, 0), |f| (f.top_room, f.bottom_room));
+            let count = placed.len();
+            for (k, (placement, line)) in placed.iter().zip(&layout.lines).enumerate() {
+                let top = if k == 0 { top_room } else { 0 };
+                let bottom = if k + 1 == count { bottom_room } else { 0 };
+                let line = if top + bottom == 0 {
+                    std::borrow::Cow::Borrowed(line)
+                } else {
+                    let mut trimmed = line.clone();
+                    trimmed.height -= top + bottom;
+                    std::borrow::Cow::Owned(trimmed)
+                };
+                rows.push((paragraph, placement, line, top));
             }
         }
+        let lines: Vec<PositionedLine<'_>> = rows
+            .iter()
+            .map(|(paragraph, placement, line, top)| PositionedLine {
+                page_index: placement.page_index,
+                paragraph_index: *paragraph,
+                text: &self.infos[*paragraph].painted.text,
+                layout: line,
+                top: placement.top + self.geometry.top + top,
+                x_translation: self.geometry.left,
+            })
+            .collect();
         CaretLayout::new(&lines, CARET_OPTIONS).map_err(|_| LayoutError::NotReady)
     }
 
@@ -1057,6 +1239,68 @@ impl PageCache {
         self.memo_order.clear();
     }
 
+    /// The framed paragraphs of a page, as the painters draw them.
+    fn page_frames(
+        stream: &PageStream,
+        infos: &[ParaInfo],
+        margin_top: i64,
+        page: usize,
+    ) -> Vec<FrameFragment> {
+        let placements = stream.page_placements(page);
+        let mut out: Vec<(usize, FrameFragment)> = Vec::new();
+        let mut at = 0;
+        while at < placements.len() {
+            let paragraph = placements[at].paragraph_index;
+            let end = at
+                + placements[at..]
+                    .iter()
+                    .take_while(|p| p.paragraph_index == paragraph)
+                    .count();
+            let (first, last) = (&placements[at], &placements[end - 1]);
+            at = end;
+            let (Some(info), Some(layout)) = (infos.get(paragraph), stream.layout(paragraph))
+            else {
+                continue;
+            };
+            let Some(frame) = &info.frame else { continue };
+            let Some(last_line) = layout.lines.get(last.line_index) else {
+                continue;
+            };
+            let ends = last.line_index + 1 == layout.lines.len();
+            out.push((
+                paragraph,
+                FrameFragment {
+                    borders: frame.borders,
+                    shading: frame.shading,
+                    left: frame.left,
+                    right: frame.right,
+                    top: margin_top + first.top,
+                    bottom: margin_top + last.top + last_line.height,
+                    top_edge: first.line_index == 0 && !frame.joined_above,
+                    bottom_edge: ends && !frame.joined_below,
+                    between_edge: ends && frame.joined_below,
+                    join_next: false,
+                    next_top: 0,
+                    next_shading: None,
+                },
+            ));
+        }
+        for k in 0..out.len().saturating_sub(1) {
+            let (p, next) = (out[k].0, out[k + 1].1.clone());
+            if out[k + 1].0 == p + 1 && out[k].1.between_edge {
+                out[k].1.join_next = true;
+                out[k].1.next_top = next.top;
+                out[k].1.next_shading = next.shading;
+            } else {
+                out[k].1.between_edge = false;
+            }
+        }
+        if let Some((_, last)) = out.last_mut() {
+            last.between_edge = false;
+        }
+        out.into_iter().map(|(_, f)| f).collect()
+    }
+
     fn paint_page(&mut self, index: usize) -> Result<Vec<u8>, LayoutError> {
         let Self {
             fonts,
@@ -1068,6 +1312,11 @@ impl PageCache {
         } = self;
         let mut writer = PageWriter::new(geometry.page_width, geometry.page_height)
             .map_err(|_| LayoutError::NotReady)?;
+        paint_frames(
+            &mut writer,
+            &Self::page_frames(stream, infos, geometry.top, index),
+        )
+        .map_err(|_| LayoutError::NotReady)?;
         for placed in stream.page_placements(index) {
             let info = infos
                 .get(placed.paragraph_index)
@@ -1179,6 +1428,8 @@ impl RichPageCache for PageCache {
             laid - first
         };
         let count = eager.min(self.total_paragraphs.saturating_sub(first));
+        // Neighbours of a paragraph with borders may share its box: they are laid out again.
+        let (first, removed, count) = self.widen_for_frames(document, first, removed, count, laid);
         match self.splice(document, first, removed, count, RunLimit::Pages(EDIT_PAGES)) {
             Ok(update) => self.delta_of(Some(&update)),
             Err(_) => {
@@ -1495,7 +1746,9 @@ fn affinity(upstream: bool) -> CaretAffinity {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use crate::rich_layout::rich_paint::{PaintSink, PlacedLineToPaint, encode_page, paint_line};
+    use crate::rich_layout::rich_paint::{
+        PaintSink, PlacedLineToPaint, encode_page, paint_line, push_frames,
+    };
     use atelier_render::Command;
     use atelier_text_model::rich::flat_double::{VecParagraphs, example_section};
     use atelier_text_model::rich::{Color, Underline};
@@ -1517,6 +1770,13 @@ mod tests {
         let mut commands: Vec<Command> = Vec::new();
         let mut path_elements = 0usize;
         let mut sink = PaintSink::new(false, 0);
+        push_frames(
+            &mut sink,
+            &mut commands,
+            &mut path_elements,
+            &PageCache::page_frames(&cache.stream, &cache.infos, cache.geometry.top, page),
+        )
+        .unwrap();
         for placed in cache.stream.page_placements(page) {
             let info = &cache.infos[placed.paragraph_index];
             let layout = cache.stream.layout(placed.paragraph_index).unwrap();
@@ -1697,6 +1957,51 @@ mod tests {
             });
             paragraphs.push(p);
         }
+        // US-243: a box shared by two paragraphs (with a "between" line and
+        // shading), a shaded one, double, dotted and dashed boxes with indents.
+        use atelier_text_model::rich::{ParaBorder, ParaBorderStyle, ParaBorders, ParaShading};
+        let line = |style, eighths, space, color: Option<Color>| {
+            Some(ParaBorder {
+                style,
+                eighths,
+                space,
+                color,
+            })
+        };
+        let red = Some(Color { r: 200, g: 0, b: 0 });
+        let boxed = ParaBorders {
+            top: line(ParaBorderStyle::Single, 12, 3, red),
+            left: line(ParaBorderStyle::Single, 8, 4, None),
+            bottom: line(ParaBorderStyle::Single, 12, 3, red),
+            right: line(ParaBorderStyle::Single, 8, 4, None),
+            between: line(ParaBorderStyle::Dashed, 4, 2, red),
+            bar: None,
+        };
+        let shade = |r, g, b| {
+            Some(ParaShading {
+                fill: Some(Color { r, g, b }),
+                ..ParaShading::default()
+            })
+        };
+        for (at, borders, shading) in [
+            (2, boxed, shade(220, 230, 250)),
+            (3, boxed, shade(220, 230, 250)),
+            (5, ParaBorders::default(), shade(250, 240, 200)),
+            (
+                16,
+                ParaBorders {
+                    top: line(ParaBorderStyle::Double, 18, 1, None),
+                    bottom: line(ParaBorderStyle::Dotted, 8, 2, red),
+                    ..ParaBorders::default()
+                },
+                None,
+            ),
+        ] {
+            paragraphs[at].props.borders = borders;
+            paragraphs[at].props.shading = shading;
+        }
+        paragraphs[3].props.indent_left = Some(360);
+        paragraphs[2].props.indent_left = Some(360);
         let mut document = VecParagraphs::new(paragraphs);
         document.section = example_section();
         let mut cache = PageCache::new(&document, false).unwrap();
@@ -1802,6 +2107,69 @@ mod tests {
         );
     }
 
+    /// US-243: the frames are drawn (shading under the border lines, the
+    /// shared box once), take room, and the caret and the selection ignore it.
+    #[test]
+    fn shading_and_borders_take_room_and_are_drawn_before_the_text() {
+        let (document, cache) = sample();
+        assert!(cache.infos[2].frame.is_some() && cache.infos[3].frame.is_some());
+        let (a, b) = (
+            cache.infos[2].frame.as_ref().unwrap(),
+            cache.infos[3].frame.as_ref().unwrap(),
+        );
+        // One box: the first opens it, the second closes it.
+        assert!(!a.joined_above && a.joined_below && b.joined_above && !b.joined_below);
+        assert_eq!(
+            (a.top_room, b.bottom_room),
+            (3 * 64 + 12 * 8, 3 * 64 + 12 * 8)
+        );
+        assert_eq!((a.bottom_room, b.top_room), (2 * 64 + 4 * 8, 0));
+        let page = (0..cache.page_count() as usize)
+            .find(|p| {
+                cache
+                    .stream
+                    .page_placements(*p)
+                    .iter()
+                    .any(|l| l.paragraph_index == 2)
+            })
+            .unwrap();
+        let fragments =
+            PageCache::page_frames(&cache.stream, &cache.infos, cache.geometry.top, page);
+        let boxed: Vec<_> = fragments
+            .iter()
+            .filter(|f| f.borders.top.is_some())
+            .collect();
+        assert!(boxed[0].top_edge && boxed[0].between_edge && boxed[0].join_next);
+        assert!(boxed[1].bottom_edge && !boxed[1].top_edge);
+        // The first line of the box starts at the top of the room, the text
+        // below the border; the caret (which ignores the room) agrees.
+        let line = cache.stream.placements_of(2)[0].clone();
+        let flat = cache.starts[2];
+        let rect = cache.caret(flat, false).unwrap();
+        let top_of_line = (line.top + cache.geometry.top) as f64 / 64.0;
+        assert!(
+            (rect.y - top_of_line - a.top_room as f64 / 64.0).abs() < 0.02,
+            "caret {} line {} room {}",
+            rect.y,
+            top_of_line,
+            a.top_room
+        );
+        assert!(rect.height > 5.0 && rect.height < 30.0, "{}", rect.height);
+        // Painting is deterministic and differs from a page without frames.
+        let mut plain = sample().1;
+        for info in &mut plain.infos {
+            info.frame = None;
+        }
+        plain.memo.clear();
+        let mut framed = sample().1;
+        framed.memo.clear();
+        assert_ne!(
+            framed.paint_page(page).unwrap().len(),
+            plain.paint_page(page).unwrap().len()
+        );
+        let _ = document;
+    }
+
     #[test]
     fn entries_are_sent_once_and_in_order() {
         let (_, mut cache) = sample();
@@ -1864,6 +2232,7 @@ mod tests {
             degraded: false,
             painted: Paragraph::with_text(&paragraph.text),
             styles: StyleTable::build(&CharAttrs::default(), &Paragraph::default()).unwrap(),
+            frame: None,
         };
         assert_eq!(paragraph_flat(&paragraph).len(), info.flat_len);
         for flat in 0..=info.flat_len {

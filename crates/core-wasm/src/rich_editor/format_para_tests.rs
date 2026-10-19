@@ -4,8 +4,8 @@
 use super::format_tests::{Harness, para_format};
 use super::{Session, io};
 use crate::rich_protocol::{
-    Command, EditOp, ErrorCode, FormatMark, ParaAttr, ParaEdit, ParaFormat, ParaValue, Response,
-    Tri,
+    BorderEdit, BorderLine, Command, EditOp, ErrorCode, FormatMark, ParaAttr, ParaEdit, ParaFormat,
+    ParaValue, Response, Rgb, Tri,
 };
 use atelier_model::Transaction;
 use atelier_text_model::rich::{BreakKind, Inline, InlineBreak, ParaProps, RichDocument, RichOp};
@@ -250,21 +250,179 @@ fn the_spacing_toggle_adds_twelve_points_when_every_paragraph_has_none_else_remo
     }
 }
 
+fn border(style: u8, eighths: u16, space: u8) -> BorderEdit {
+    BorderEdit::Line(BorderLine {
+        style,
+        eighths,
+        space,
+        color: None,
+    })
+}
+
+/// top, left, bottom, right, between, bar.
+fn borders(sides: [BorderEdit; 6]) -> ParaEdit {
+    edit(
+        ParaAttr::Borders,
+        EditOp::Set,
+        Some(ParaValue::Borders(sides)),
+    )
+}
+
+fn box_of(line: BorderEdit) -> ParaEdit {
+    borders([line, line, line, line, BorderEdit::Keep, BorderEdit::Keep])
+}
+
+fn yellow() -> ParaEdit {
+    edit(
+        ParaAttr::Shading,
+        EditOp::Set,
+        Some(ParaValue::Color(Rgb {
+            r: 255,
+            g: 255,
+            b: 0,
+        })),
+    )
+}
+
 #[test]
-fn shading_and_borders_are_refused_whole_and_nothing_is_recorded() {
+fn shading_is_set_on_every_touched_paragraph_in_one_step_and_reported_mixed_or_uniform() {
     let mut h = three();
     let revision = h.state().revision;
-    for attr in [ParaAttr::Shading, ParaAttr::Borders] {
-        let mut f = format(vec![set_alignment(1), edit(attr, EditOp::Clear, None)]);
-        f.command_id = 77;
-        assert_eq!(
-            h.error(Command::ApplyParaFormat(f)),
-            ErrorCode::FormatNotImplemented
-        );
-    }
-    assert_eq!(h.state().revision, revision);
-    assert_eq!(h.state().paragraph.alignment, Tri::Value(0));
-    assert_eq!(h.state().last_command_id, 0);
+    h.select(1, 5);
+    let mut f = format(vec![yellow()]);
+    f.command_id = 41;
+    assert!(matches!(
+        h.send(Command::ApplyParaFormat(f)),
+        Response::State(_)
+    ));
+    assert_eq!(h.state().revision, revision + 1);
+    assert_eq!(h.state().last_command_id, 41);
+    let yellow_value = Tri::Value(Rgb {
+        r: 255,
+        g: 255,
+        b: 0,
+    });
+    assert_eq!(h.state().paragraph.shading, yellow_value);
+    h.select(8, 8);
+    assert_eq!(h.state().paragraph.shading, Tri::Unset);
+    h.select(0, 13);
+    assert_eq!(h.state().paragraph.shading, Tri::Mixed);
+    // "No colour" on the whole selection, then one Ctrl+Z brings the colours back.
+    apply(&mut h, vec![edit(ParaAttr::Shading, EditOp::Clear, None)]);
+    assert_eq!(h.state().paragraph.shading, Tri::Unset);
+    assert!(matches!(h.send(Command::Undo), Response::State(_)));
+    assert_eq!(h.state().paragraph.shading, Tri::Mixed);
+    h.select(4, 4);
+    assert_eq!(h.state().paragraph.shading, yellow_value);
+}
+
+#[test]
+fn borders_are_set_per_side_kept_removed_and_reported_per_side() {
+    let mut h = three();
+    h.select(0, 13);
+    apply(&mut h, vec![box_of(border(1, 12, 3))]);
+    let state = h.state();
+    let line = || {
+        Tri::Value(BorderLine {
+            style: 1,
+            eighths: 12,
+            space: 3,
+            color: None,
+        })
+    };
+    // top, left, bottom, right set; between and bar untouched.
+    assert_eq!(
+        state.paragraph.borders[..4],
+        [line(), line(), line(), line()]
+    );
+    assert_eq!(state.paragraph.borders[4], Tri::Unset);
+    // Remove the bottom side only; the others are kept.
+    apply(
+        &mut h,
+        vec![borders([
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            BorderEdit::None,
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+        ])],
+    );
+    let state = h.state();
+    assert_eq!(state.paragraph.borders[0], line());
+    assert_eq!(state.paragraph.borders[2], Tri::Unset);
+    // Only the middle paragraph changes its top: mixed on the whole selection.
+    h.select(4, 4);
+    apply(
+        &mut h,
+        vec![borders([
+            border(0, 4, 0),
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+        ])],
+    );
+    h.select(0, 13);
+    assert_eq!(h.state().paragraph.borders[0], Tri::Mixed);
+    // "No border": six `none`.
+    apply(&mut h, vec![borders([BorderEdit::None; 6])]);
+    assert!(h.state().paragraph.borders.iter().all(|b| *b == Tri::Unset));
+    // Undo restores the previous step as a whole.
+    assert!(matches!(h.send(Command::Undo), Response::State(_)));
+    assert_eq!(h.state().paragraph.borders[0], Tri::Mixed);
+}
+
+/// Baseline of the paragraph marks (kind 0) of page 0, points.
+fn mark_ys(h: &mut Harness) -> Vec<f64> {
+    marks(h, 0, 1)
+        .iter()
+        .filter(|m| m.kind == 0)
+        .map(|m| m.y)
+        .collect()
+}
+
+#[test]
+fn borders_take_room_and_consecutive_paragraphs_with_the_same_borders_share_one_box() {
+    let mut h = three();
+    let plain = mark_ys(&mut h);
+    // A 1 pt border at 1 pt from the text takes 2 pt on the sides that have one.
+    let room = 2.0;
+    h.select(4, 4);
+    apply(&mut h, vec![box_of(border(0, 8, 1))]);
+    let boxed = mark_ys(&mut h);
+    assert!((boxed[0] - plain[0]).abs() < 0.01);
+    assert!((boxed[1] - plain[1] - room).abs() < 0.01, "{boxed:?}");
+    assert!((boxed[2] - plain[2] - 2.0 * room).abs() < 0.01, "{boxed:?}");
+    // The last two paragraphs with the same box: one top and one bottom only.
+    h.select(0, 0);
+    h.select(4, 13);
+    apply(&mut h, vec![box_of(border(0, 8, 1))]);
+    let shared = mark_ys(&mut h);
+    assert!((shared[1] - plain[1] - room).abs() < 0.01, "{shared:?}");
+    assert!((shared[2] - plain[2] - room).abs() < 0.01, "{shared:?}");
+    // A "between" line takes room between them.
+    apply(
+        &mut h,
+        vec![borders([
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            BorderEdit::Keep,
+            border(0, 8, 1),
+            BorderEdit::Keep,
+        ])],
+    );
+    let between = mark_ys(&mut h);
+    assert!(
+        (between[2] - plain[2] - 2.0 * room).abs() < 0.01,
+        "{between:?}"
+    );
+    // Ctrl+Z gives back the geometry.
+    assert!(matches!(h.send(Command::Undo), Response::State(_)));
+    let undone = mark_ys(&mut h);
+    assert!((undone[2] - shared[2]).abs() < 0.01);
 }
 
 #[test]
@@ -614,4 +772,81 @@ fn marks_of_justified_text_stretch_and_marks_of_a_later_page_use_its_own_coordin
     let ends = second.iter().filter(|m| m.kind == 0).count();
     let first_page_ends = marks(&mut h, 0, 1).iter().filter(|m| m.kind == 0).count();
     assert!(first_page_ends > 20 && ends > 20);
+}
+
+/// A harness with `text` whose paragraphs from flat position `from` carry the shared box.
+fn boxed_from(text: &str, from: u64) -> Harness {
+    let mut h = Harness::new();
+    h.type_text(text);
+    h.select(from, text.len() as u64);
+    apply(&mut h, vec![box_of(border(0, 8, 1))]);
+    h
+}
+
+#[test]
+fn the_neighbours_of_a_shared_box_are_laid_out_again_after_typing_enter_and_a_deleted_break() {
+    // "one" plain, "two" and "three" share a box.
+    let mut h = boxed_from(
+        "one
+two
+three",
+        4,
+    );
+    // Typing in the first paragraph of the box.
+    h.select(7, 7);
+    h.type_text("XY");
+    let fresh = mark_ys(&mut boxed_from(
+        "one
+twoXY
+three",
+        4,
+    ));
+    assert_eq!(mark_ys(&mut h), fresh, "after typing");
+    // Enter in the middle of the box: the new paragraph joins it.
+    h.select(9, 9);
+    h.type_text(
+        "
+",
+    );
+    let fresh = mark_ys(&mut boxed_from(
+        "one
+twoXY
+
+three",
+        4,
+    ));
+    assert_eq!(mark_ys(&mut h), fresh, "after Enter");
+    // Deleting the break again gives the first geometry back.
+    h.select(10, 10);
+    assert!(matches!(
+        h.send(Command::Delete {
+            forward: false,
+            unit: crate::rich_protocol::DeleteUnit::Grapheme,
+        }),
+        Response::State(_)
+    ));
+    let fresh = mark_ys(&mut boxed_from(
+        "one
+twoXY
+three",
+        4,
+    ));
+    assert_eq!(mark_ys(&mut h), fresh, "after the deleted break");
+    // Deleting the break between the plain paragraph and the box.
+    h.select(4, 4);
+    h.send(Command::Delete {
+        forward: false,
+        unit: crate::rich_protocol::DeleteUnit::Grapheme,
+    });
+    // The merged paragraph keeps the (plain) properties of the first one; "three" is a box of its own.
+    let after = mark_ys(&mut h);
+    assert_eq!(
+        after,
+        mark_ys(&mut boxed_from(
+            "onetwoXY
+three",
+            9
+        )),
+        "after merging the plain paragraph and the box"
+    );
 }

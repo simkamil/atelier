@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // US-243: ApplyParaFormat and FormatMarks against the real WASM engine: every paragraph the selection touches, one undo step,
-// the mixed state, the refusals (shading and borders wait for US-243-M1), the marks, and the DOCX round trip of what the ribbon writes.
+// the mixed state, shading and borders, the marks, and the DOCX round trip of what the ribbon writes.
 // `node tests/rich-editor-format-para.mjs [engine.wasm]`.
 import assert from "node:assert/strict";
 import { loadEngine, scenarios } from "./rich-editor-format-support.mjs";
@@ -71,12 +71,38 @@ await suite.run("real WASM: indents step by 720 twips, line spacing and spacing 
   client.dispose();
 });
 
-await suite.run("real WASM: shading and borders are refused whole (RICH_FORMAT_NOT_IMPLEMENTED) and change nothing", async () => {
+const line = (style, eighths, space, color = null) => ({ style, eighths, space, color });
+const sides = (over) => ({ top: "keep", left: "keep", bottom: "keep", right: "keep", between: "keep", bar: "keep", ...over });
+
+await suite.run("real WASM: shading and borders are set on every touched paragraph, reported per side, mixed, and undone in one step", async () => {
   const { client, format } = await three();
   const revision = client.cache.revision;
-  await assert.rejects(format.applyParaFormat({ edits: [align("center"), { attr: "shading", op: "clear" }] }), (e) => e.code === "RICH_FORMAT_NOT_IMPLEMENTED");
-  assert.equal(client.cache.revision, revision);
-  assert.equal((await format.formatState()).lastCommandId, 0);
+  await select(client, 1, 9);
+  await format.applyParaFormat({ edits: [{ attr: "shading", op: "set", value: { r: 255, g: 255, b: 0 } },
+    { attr: "borders", op: "set", value: sides({ top: line("double", 12, 3, { r: 200, g: 0, b: 0 }), bottom: line("single", 4, 1), left: line("dotted", 8, 4) }) }] });
+  assert.equal(client.cache.revision, revision + 1n, "one revision for both attributes");
+  for (const at of [0, 4, 8]) {
+    const p = await para(client, format, at, at);
+    assert.deepEqual(p.shading, { state: "value", value: { r: 255, g: 255, b: 0 } }, `shading ${at}`);
+    assert.deepEqual(p.borders.top, { state: "value", value: line("double", 12, 3, { r: 200, g: 0, b: 0 }) });
+    assert.deepEqual(p.borders.left, { state: "value", value: line("dotted", 8, 4) });
+    assert.equal(p.borders.right.state, "unset"); assert.equal(p.borders.between.state, "unset");
+  }
+  // "None" on one side, "keep" on the others; a mixed selection reports mixed per side.
+  await select(client, 4, 4);
+  await format.applyParaFormat({ edits: [{ attr: "borders", op: "set", value: sides({ top: "none" }) }, { attr: "shading", op: "clear" }] });
+  const middle = await para(client, format, 4, 4);
+  assert.equal(middle.borders.top.state, "unset"); assert.equal(middle.borders.bottom.state, "value"); assert.equal(middle.shading.state, "unset");
+  const all = await para(client, format, 0, 13);
+  assert.equal(all.borders.top.state, "mixed"); assert.equal(all.shading.state, "mixed"); assert.equal(all.borders.bottom.state, "value");
+  // Ctrl+Z undoes the last command only (the middle paragraph gets its top and its colour back).
+  await client.command({ type: "undo" });
+  const back = await para(client, format, 4, 4);
+  assert.equal(back.borders.top.state, "value"); assert.equal(back.shading.state, "value");
+  // No border at all: six "none".
+  await select(client, 0, 13);
+  await format.applyParaFormat({ edits: [{ attr: "borders", op: "set", value: sides(Object.fromEntries(["top", "left", "bottom", "right", "between", "bar"].map((side) => [side, "none"]))) }] });
+  assert.ok(Object.values((await para(client, format, 0, 13)).borders).every((side) => side.state === "unset"));
   client.dispose();
 });
 
@@ -118,4 +144,29 @@ await suite.run("real WASM: what the ribbon writes survives a DOCX save and a re
   reopened.client.dispose(); client.dispose();
 });
 
-suite.finish("rich-editor-format-para", 6);
+await suite.run("real WASM: shading and borders survive a DOCX save and a reopening, and a Word-style box shows as one", async () => {
+  const { client, format } = await three();
+  await select(client, 4, 13);
+  await format.applyParaFormat({ edits: [{ attr: "shading", op: "set", value: { r: 218, g: 227, b: 243 } },
+    { attr: "borders", op: "set", value: sides({ top: line("single", 12, 1, { r: 0, g: 112, b: 192 }), left: line("single", 12, 4, { r: 0, g: 112, b: 192 }),
+      bottom: line("single", 12, 1, { r: 0, g: 112, b: 192 }), right: line("single", 12, 4, { r: 0, g: 112, b: 192 }), between: line("dashed", 4, 1) }) }] });
+  const saved = await client.command({ type: "save", format: "docx", nowMs: 1700000000000n, user: "test", version: "test" });
+  assert.equal(saved.response.type, "saveData");
+  const reopened = await engineHost.open({ kind: "docx", profile: "document", data: saved.response.bytes });
+  const first = await para(reopened.client, reopened.format, 0, 0);
+  assert.equal(first.shading.state, "unset"); assert.equal(first.borders.top.state, "unset");
+  for (const at of [4, 8]) {
+    const p = await para(reopened.client, reopened.format, at, at);
+    assert.deepEqual(p.shading, { state: "value", value: { r: 218, g: 227, b: 243 } }, `shading ${at}`);
+    assert.deepEqual(p.borders.top.value, line("single", 12, 1, { r: 0, g: 112, b: 192 }));
+    assert.deepEqual(p.borders.right.value, line("single", 12, 4, { r: 0, g: 112, b: 192 }));
+    assert.deepEqual(p.borders.between.value, line("dashed", 4, 1));
+  }
+  // The reopened document lays the box out as the first one did: same page count, same line positions.
+  const marksBefore = (await format.formatMarks({ first: 0, count: 1 })).marks.map((m) => m.y);
+  const marksAfter = (await reopened.format.formatMarks({ first: 0, count: 1 })).marks.map((m) => m.y);
+  assert.deepEqual(marksAfter, marksBefore);
+  reopened.client.dispose(); client.dispose();
+});
+
+suite.finish("rich-editor-format-para", 7);

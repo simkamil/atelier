@@ -177,7 +177,7 @@ pub(super) fn interpreted(level: Level) -> &'static [&'static str] {
         Level::Table => &["tblPr", "tblGrid", "tr"],
         Level::Row => &["tblPrEx", "trPr", "tc"],
         Level::Para => &["pPr", "r"],
-        Level::PPr => &["pStyle", "jc", "ind", "spacing"],
+        Level::PPr => &["pStyle", "jc", "ind", "spacing", "pBdr", "shd"],
         Level::RPr => RPR_KNOWN,
         Level::Run => &[
             "rPr",

@@ -15,3 +15,9 @@
 .para-line-invalid { margin: 0; color: var(--chrome-danger, #902d28); }
 .para-line-actions { display: flex; justify-content: flex-end; gap: 8px; }
 @media (forced-colors: active) { .ribbon-root .para-button[aria-pressed="true"] { outline: 2px solid Highlight; } }
+.ribbon-root .para-shading { display: inline-flex; }
+.ribbon-root .para-shading .para-button { border-bottom: 4px solid var(--para-swatch, transparent); }
+.ribbon-root .para-shading[aria-disabled="true"] .para-button { opacity: 0.55; }
+.para-shading-none { width: 100%; margin-bottom: 6px; }
+.para-borders-menu { min-width: 14rem; }
+.para-borders-menu .ui-menu-item[aria-checked="true"] { font-weight: 600; }

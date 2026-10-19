@@ -14,9 +14,10 @@ use atelier_font::manager::{FontManager, FontSource};
 use atelier_model::Transaction;
 use atelier_text_model::rich::{
     Alignment, AnchoredObject, BreakKind, CharAttrs, ClearSide, Color, DocumentStyleDefaults,
-    Inline, InlineBreak, InlineSymbol, LineRule, LineSpacing, Node, NodeId, OpaqueAttr, ParaProps,
-    Paragraph, ResolvedProperties, RichDocument, RichOp, Style, StyleCatalog, StyleCharAttrs,
-    StyleEngine, StyleKind, Theme, ThemeColor, ThemeFont, Underline, VerticalAlign,
+    Inline, InlineBreak, InlineSymbol, LineRule, LineSpacing, Node, NodeId, OpaqueAttr, ParaBorder,
+    ParaBorderStyle, ParaBorders, ParaProps, ParaShading, Paragraph, ResolvedProperties,
+    RichDocument, RichOp, Style, StyleCatalog, StyleCharAttrs, StyleEngine, StyleKind, Theme,
+    ThemeColor, ThemeFont, Underline, VerticalAlign,
 };
 use atelier_unicode::segmentation::grapheme_boundaries;
 use atelier_xml::{Attribute, Event, Limits as XmlLimits, Name, Reader};
@@ -1726,10 +1727,77 @@ fn parse_para_props(node: &XmlNode) -> Result<ParaProps, DocxError> {
                         },
                     });
             }
+            "shd" => p.shading = Some(parse_para_shading(c)),
+            "pBdr" => p.borders = parse_para_borders(c),
             _ => {}
         }
     }
     Ok(p)
+}
+/// A colour attribute of `w:shd` / `w:pBdr`: `auto`, a theme reference or an
+/// invalid value is "automatic" (no colour).
+fn lenient_color(value: Option<&str>) -> Option<Color> {
+    value
+        .filter(|v| *v != "auto")
+        .and_then(|v| parse_color(Some(v)).ok().flatten())
+}
+fn parse_para_shading(node: &XmlNode) -> ParaShading {
+    let pattern = match node.w_attr("val") {
+        None | Some("clear" | "nil") => None,
+        Some(other) => Some(other.to_owned()),
+    };
+    ParaShading {
+        fill: lenient_color(node.w_attr("fill")),
+        pattern_color: pattern
+            .as_ref()
+            .and_then(|_| lenient_color(node.w_attr("color"))),
+        pattern,
+    }
+}
+fn parse_para_borders(node: &XmlNode) -> ParaBorders {
+    let mut b = ParaBorders::default();
+    for c in &node.children {
+        if !is_w(c, &c.name.local) {
+            continue;
+        }
+        let side = match c.name.local.as_str() {
+            "top" => &mut b.top,
+            "left" | "start" => &mut b.left,
+            "bottom" => &mut b.bottom,
+            "right" | "end" => &mut b.right,
+            "between" => &mut b.between,
+            "bar" => &mut b.bar,
+            _ => continue,
+        };
+        let style = match c.w_attr("val") {
+            None | Some("nil" | "none") => ParaBorderStyle::None,
+            Some("double") => ParaBorderStyle::Double,
+            Some("dotted") => ParaBorderStyle::Dotted,
+            Some("dashed" | "dashSmallGap") => ParaBorderStyle::Dashed,
+            Some(_) => ParaBorderStyle::Single,
+        };
+        let number = |name: &str, default: u32| {
+            c.w_attr(name)
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(default)
+        };
+        *side = Some(if style == ParaBorderStyle::None {
+            ParaBorder {
+                style,
+                eighths: 0,
+                space: 0,
+                color: None,
+            }
+        } else {
+            ParaBorder {
+                style,
+                eighths: number("sz", 4).min(96) as u16,
+                space: number("space", 0).min(31) as u8,
+                color: lenient_color(c.w_attr("color")),
+            }
+        });
+    }
+    b
 }
 fn invalid_value(detail: &str) -> DocxError {
     DocxError::InvalidValue {

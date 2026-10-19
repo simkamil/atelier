@@ -13,7 +13,8 @@
 
 use atelier_text_model::rich::flat::{FlatIndex, LayoutContext};
 use atelier_text_model::rich::{
-    Alignment, CharAttrs, LineRule, ParaProps, Underline, VerticalAlign,
+    Alignment, CharAttrs, LineRule, ParaBorder, ParaBorderStyle, ParaProps, Underline,
+    VerticalAlign,
 };
 
 use std::collections::BTreeMap;
@@ -24,9 +25,10 @@ use atelier_text_model::rich::RichDocument;
 
 use super::Session;
 use crate::rich_protocol::{
-    BORDER_SIDES, CharState, ErrorCode, FontEntry, FontListData, FontState, FormatStateData,
-    MAX_FONT_LIST, MAX_HALF_POINTS, MAX_NAME_BYTES, MAX_STATE_RUNS, MAX_TWIPS, MIN_HALF_POINTS,
-    NO_REVISION_GUARD, ParaState, Response, Rgb, Tri,
+    BORDER_SIDES, BorderLine, CharState, ErrorCode, FontEntry, FontListData, FontState,
+    FormatStateData, MAX_BORDER_EIGHTHS, MAX_BORDER_SPACE, MAX_FONT_LIST, MAX_HALF_POINTS,
+    MAX_NAME_BYTES, MAX_STATE_RUNS, MAX_TWIPS, MIN_HALF_POINTS, NO_REVISION_GUARD, ParaState,
+    Response, Rgb, Tri,
 };
 
 /// Word fonts the engine draws with a metric-compatible family (the aliases of
@@ -186,6 +188,8 @@ struct ParaAcc {
     space_after: Acc<u32>,
     line: Acc<(u8, u32)>,
     style: Acc<String>,
+    shading: Acc<Rgb>,
+    borders: [Acc<BorderLine>; BORDER_SIDES],
 }
 
 fn twips(v: i32) -> i32 {
@@ -224,6 +228,34 @@ impl ParaAcc {
             ),
         }));
         self.style.add(direct.style.as_deref().and_then(clean_name));
+        self.shading.add(
+            resolved
+                .shading
+                .as_ref()
+                .and_then(|s| s.paint_color())
+                .map(|c| Rgb {
+                    r: c.r,
+                    g: c.g,
+                    b: c.b,
+                }),
+        );
+        for (acc, side) in self.borders.iter_mut().zip(resolved.borders.sides()) {
+            acc.add(side.filter(ParaBorder::is_line).map(|b| BorderLine {
+                style: match b.style {
+                    ParaBorderStyle::Double => 1,
+                    ParaBorderStyle::Dotted => 2,
+                    ParaBorderStyle::Dashed => 3,
+                    _ => 0,
+                },
+                eighths: b.eighths.clamp(2, MAX_BORDER_EIGHTHS),
+                space: b.space.min(MAX_BORDER_SPACE),
+                color: b.color.map(|c| Rgb {
+                    r: c.r,
+                    g: c.g,
+                    b: c.b,
+                }),
+            }));
+        }
     }
 }
 
@@ -424,9 +456,8 @@ impl Session {
                 space_before: paras.space_before.tri(),
                 space_after: paras.space_after.tri(),
                 line_spacing: paras.line.tri(),
-                // The model has no paragraph shading or borders yet (US-243 adds them).
-                shading: Tri::Unset,
-                borders: [const { Tri::Unset }; BORDER_SIDES],
+                shading: paras.shading.tri(),
+                borders: paras.borders.map(Acc::tri),
                 style: paras.style.tri(),
             },
         };

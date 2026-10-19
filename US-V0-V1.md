@@ -744,6 +744,8 @@ Réf : §6.5 · Taille : M · Dépend de : US-210
 
 Géométrie et commandes validées : [bordures et trames](docs/us-215-paragraph-borders.md), cadres partagés/multipages, entre paragraphes, styles et sortie DisplayList/SVG. **US partielle** : politiques fournies par l’appelant, persistance/import OOXML/UI riche et comparaison Word encore ouverts; critères utilisateur conservés ouverts.
 
+État (2026-10-19) : rendu branché dans l'éditeur riche avec US-243 (peintre de cadres par page `frame_draws`, `rich_paint.rs` ; `borders.rs` non utilisé, il planifie tout le document). Critère 1 non coché : seuls 4 styles de bordure sont dessinés (simple, double, pointillé, tireté), `w:bar` non dessiné, aperçu DOCX sans cadres. Critère 2 non coché : cadre partagé implémenté et testé, comparaison à Word en attente (US-308).
+
 Preuve du lot : 739 tests workspace Windows, 78 tests text-layout release et 21 contrôles dans le [reçu](_bmad-output/implementation-artifacts/rich-incremental-borders-validation.json); [audit des matrices](_bmad-output/implementation-artifacts/rich-incremental-borders-matrix.json).
 
 Réf : F-TXT-012 · Taille : S · Dépend de : US-212
@@ -987,12 +989,14 @@ Réf : F-TXT-010 · Taille : S · Dépend de : US-013, US-240
 
 #### US-243 — Mettre en forme les paragraphes depuis le ruban
 *En tant qu'*utilisateur, *je veux* aligner et espacer mes paragraphes *afin de* structurer la page.
-- [ ] Alignements, augmenter/diminuer le retrait, interligne (valeurs courantes + options), ajout/suppression de l'espacement avant/après, trame de fond, bordures (menu), afficher les marques de mise en forme.
+- [x] Alignements, augmenter/diminuer le retrait, interligne (valeurs courantes + options), ajout/suppression de l'espacement avant/après, trame de fond, bordures (menu), afficher les marques de mise en forme.
 - [x] S'applique à tous les paragraphes touchés par la sélection.
 
 Réf : F-TXT-011 · Taille : M · Dépend de : US-106, US-201, US-219
 
 Validation US-243 (2026-10-19) : groupe Paragraphe du ruban (`web/format-para.mjs`, handler `rich_editor/format_para.rs`, contrat [F0](docs/us-240-format-protocol.md), [détails](docs/us-243-para-format.md)). Critère 2 vrai de bout en bout : tous les paragraphes touchés en une étape Ctrl+Z, état mixte, rendu vérifié sur le Canvas, aller-retour DOCX. Critère 1 non coché : faits alignements, retraits +/-, interligne (valeurs courantes et Options d'interligne), espace avant/après, marques de mise en forme (¶, Ctrl+Maj+8) ; manquent trame de fond et bordures (US-243-M1 : `ParaProps` n'a ni trame ni bordures), boutons désactivés avec leur raison. Réserve : les marques redemandent toutes les pages visibles à chaque révision (le client ne reçoit pas les pages invalidées). Relecture indépendante : fusionnable, retouches intégrées.
+
+Trame et bordures (2026-10-19, branche `us-243-borders`) : critère 1 coché. `ParaProps` porte trame (`w:shd`, motifs `pctNN`) et bordures (haut, bas, gauche, droite, entre ; style, épaisseur, couleur, espacement), en cascade de styles, importées et exportées en DOCX (seul le côté modifié est réécrit, le reste garde son XML source) ; boutons Trame (V) et Bordures (B, menu Word à 8 entrées) ; cadre partagé des paragraphes consécutifs identiques, ouvert aux sauts de page ; rendu vérifié sur le Canvas, deux peintres identiques. Réserves : styles dessinés simple, double, pointillé, tireté (les autres, comme vague ou relief, en simple) ; `w:bar` conservé mais non dessiné ; `themeColor`/`themeFill` ignorés ; ODT et DOC n'importent ni trame ni bordures ; aucun DOCX produit par Word ouvert (campagne US-308).
 
 #### US-244 — Dialogue Paragraphe
 *En tant qu'*utilisateur, *je veux* un dialogue Paragraphe *afin de* régler précisément retraits, espacements et enchaînements.
