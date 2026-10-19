@@ -152,12 +152,17 @@ jobs:
           node tests/rich-editor-client.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/native-bridge-protocol.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/file-templates.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-abi.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-format.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-format-char.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-format-para.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-format-styles.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-save.mjs
@@ -195,6 +200,7 @@ jobs:
           node --test tests/rich-editor-unit.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-rich-editor-ui-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-file-tab-ui-browser.mjs
 
   linux-musl:
