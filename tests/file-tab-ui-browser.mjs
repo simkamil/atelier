@@ -138,7 +138,8 @@ try {
   const { editorReady } = await import("/app.mjs?first");
   app = await editorReady;
   assert(app.status === "ready" && app.fileTab, "the product starts with the file tab controller");
-  const editor = app.editor;
+  // US-327 : le document affiché change quand un document s'ouvre dans un nouvel onglet ; `editor` désigne toujours celui de l'onglet actif.
+  const editor = new Proxy({}, { get: (_, key) => { const target = app.editor; const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
   const status = document.querySelector("#editor-status");
   const text = () => editor.readText();
   const state = () => app.getState();
@@ -269,16 +270,18 @@ try {
   const again = new Uint8Array(await (await fetch("/templates/lettre.docx")).arrayBuffer());
   assert(again.length === templateBytes.letter.length && again.every((value, index) => value === templateBytes.letter[index]), "the embedded template is unchanged after saving");
 
-  // --- un document modifié demande confirmation avant d'être remplacé par un modèle -----------------------------------------------
+  // --- US-327 : un document modifié n'est jamais remplacé par un modèle : le modèle s'ouvre dans un nouvel onglet, sans rien demander --------
   editor.element.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: "Z", bubbles: true, cancelable: true }));
   await waitFor(() => state().dirty, "dirty before the template");
   const withText = await text();
-  confirmAnswer = false;
+  const modified = app.editor;
   const asked = confirms;
+  const tabsBefore = app.documentTabs.list.length;
   document.querySelector("#file-template-cv").click();
-  await waitFor(() => confirms === asked + 1 && status.textContent === "Opération annulée.", "a declined confirmation cancels the template");
-  assert(await text() === withText && state().dirty, "declining keeps the edited document");
-  confirmAnswer = true;
+  await waitFor(() => app.documentTabs.list.length === tabsBefore + 1 && app.editor !== modified, "the template opens in a new tab");
+  assert(confirms === asked, "nothing is discarded, so nothing is asked");
+  assert(await modified.readText() === withText && modified.state.dirty, "the modified document keeps its text and its modifications in its own tab");
+  assert(!state().dirty && await text() !== withText, "the template is a clean document of its own");
 
   // --- blocage pendant une opération -------------------------------------------------------------------------------------------------------
   app.fileTab.setBlocked(true);

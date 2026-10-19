@@ -12,7 +12,7 @@ const MAX_QUEUE = 4;
 const MAX_QUEUED_BYTES = MAX_DOCX_BYTES + MAX_FILE_BYTES * MAX_QUEUE;
 const PREFIX = "us120-file|1|";
 const LAUNCH_NOTICE = "us115-launch|1";
-const MAX_LAUNCH_SKIPPED = 99;
+const MAX_LAUNCH_REMAINING = 99;
 /** US-113 : taille d'un morceau d'écriture avant Base64 (le natif accepte jusqu'à 128 Kio). */
 export const WRITE_CHUNK_BYTES = 96 * 1024;
 /** US-113 : taille maximale d'un fichier écrit par le pont. */
@@ -210,15 +210,22 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     const entry = pending.get(id);
     if (!entry) return;
     if (status === "cancelled" && payload === "") settle(id, { kind: "cancelled" });
-    else if (status === "error" && /^[A-Za-z][A-Za-z0-9_.]{0,63}$/.test(payload)) settle(id, { kind: "error", key: payload });
+    else if (status === "error" && entry.operation === "launch" && /^[A-Za-z][A-Za-z0-9_.]{0,63};[A-Za-z0-9+/=]*$/.test(payload)) {
+      // US-327 : l'erreur d'un fichier lancé porte son identité (chemin ou nom, base64), pour le message par fichier.
+      const [key, who] = payload.split(";");
+      try { settle(id, { kind: "error", key, path: who === "" ? null : decodeName(who) }); }
+      catch { settle(id, { kind: "error", key }); }
+    } else if (status === "error" && /^[A-Za-z][A-Za-z0-9_.]{0,63}$/.test(payload)) settle(id, { kind: "error", key: payload });
     else if (status === "ok" && ["open", "openDocx"].includes(entry.operation)) {
       try { settle(id, { kind: "ok", bytes: fromBase64(payload, entry.operation === "openDocx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) }); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "launch" && payload !== "") {
-      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*)$/.exec(payload);
+      // `<type>;<restants>;<identité base64>;<octets base64>` : `remaining` fichiers attendent encore (US-327), `path` est
+      // le chemin (ou le nom) du fichier, null s'il n'a pas pu être transmis.
+      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);([A-Za-z0-9+/=]*)$/.exec(payload);
       try {
-        if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED) throw new NativeHostError("HOST_INVALID_RESPONSE");
-        settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes: fromBase64(match[3], MAX_DOCX_BYTES) } });
+        if (!match || Number(match[2]) > MAX_LAUNCH_REMAINING) throw new NativeHostError("HOST_INVALID_RESPONSE");
+        settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), path: match[3] === "" ? null : decodeName(match[3]), bytes: fromBase64(match[4], MAX_DOCX_BYTES) } });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "recentList") {
       try {
@@ -260,14 +267,16 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     stats.sharedReceived += 1;
     const { id, payload } = parsed;
     if (entry.operation === "launch") {
-      const match = /^(txt|docx);([0-9]{1,2});@sb$/.exec(payload);
-      if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED || buffer.byteLength > MAX_LAUNCH_BYTES) {
+      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);@sb$/.exec(payload);
+      let path = null;
+      try { path = match && match[3] !== "" ? decodeName(match[3]) : null; } catch { drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return; }
+      if (!match || Number(match[2]) > MAX_LAUNCH_REMAINING || buffer.byteLength > MAX_LAUNCH_BYTES) {
         drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return;
       }
       // Le document d'ouverture est copié : les appelants le conservent, le tampon est libéré aussitôt.
       const bytes = new Uint8Array(buffer).slice();
       drop();
-      settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes } });
+      settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), path, bytes } });
       return;
     }
     const match = /^sb;([0-9]{1,10})$/.exec(payload);

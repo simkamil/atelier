@@ -141,6 +141,23 @@ function createTransport(client) {
   };
 }
 
+/**
+ * Rich clipboard (US-327, docs/us-327-multidoc-protocol.md 5.5): the system clipboard receives the plain text only; the
+ * rich fragment of the last copy stays here, in memory, ONE for the application (every editor of the module shares it,
+ * a closed document does not take it away: its bytes are a copy). `pending` is the request in flight (a paste that
+ * arrives before the answer waits for it); `token` drops the answer of a copy that a newer copy replaced.
+ */
+const richClipboard = { fragment: null, pending: null, token: 0 };
+
+/** The fragment held for the next paste, `{ text, bytes, lossy }` or null (tests and diagnostics). */
+export function richClipboardFragment() { return richClipboard.fragment; }
+
+/** Forgets the held fragment (tests). */
+export function forgetRichClipboard() { richClipboard.token += 1; richClipboard.fragment = null; richClipboard.pending = null; }
+
+/** Catalogue keys of the refusals of an Open that the interface tells apart (the others stay `status-open-error`). */
+const OPEN_ERROR_KEYS = Object.freeze({ RICH_TOO_MANY_DOCUMENTS: "tabs.error.too_many", RICH_MEMORY: "tabs.error.memory" });
+
 const MIRROR_ROLES = ["paragraph", "heading", "listItem", "tableCell", "opaque"];
 const MIRROR_INLINE_KINDS = ["object", "lineBreak", "pageBreak", "symbol"];
 
@@ -176,7 +193,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   confirmDiscard = DEFAULT_CONFIRM_DISCARD,
   onState = () => {}, onError = () => {}, onBusy = () => {}, onZoom = () => {}, onViewport = () => {}, onImages = () => {}, imageAlt = () => "",
   t = null, user = "", version = "", onReadOnly = () => {}, screenReaderMode = false, onScreenReaderMode = () => {},
-  docId = 1, layoutBudget = 16, mirrorContainer = null, dialogLabels = DEFAULT_DIALOG_LABELS } = {}) {
+  docId = 1, layoutBudget = 16, mirrorContainer = null, dialogLabels = DEFAULT_DIALOG_LABELS, transport = null } = {}) {
   if (!client || typeof client.request !== "function" || !host || typeof host.notifyDirty !== "function"
       || (typeof host.pickOpen !== "function" && (typeof host.open !== "function" || typeof host.save !== "function"))) {
     throw new TypeError("client and native host are required.");
@@ -186,6 +203,9 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     throw new TypeError("Editor callbacks must be functions.");
   }
   if (t !== null && typeof t !== "function") throw new TypeError("t must be a function.");
+  // US-327: with several documents the editors share ONE transport (one outer request counter, see createEngineTransport).
+  if (transport !== null && typeof transport?.request !== "function") throw new TypeError("transport must provide request().");
+  if (!Number.isInteger(docId) || docId < 1 || docId > 0xffffffff) throw new TypeError("docId must be an integer from 1 to 2^32-1.");
 
   // The page cache owns the glyph Path2D objects (one per atlas entry): the renderer keeps none of its own, so an
   // atlas epoch change (new document, resync) can never leave an outline of the previous numbering on screen.
@@ -234,6 +254,9 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   let prefetchKey = "";
   let highlight = []; // selection rectangles of the visible pages, points of the page (R7b-1)
   let lastEpoch = null;
+  let visible = true; // false while the document is not the one shown (tabs): no blink, no drawing, no layout of the view
+  let savedScroll = null;
+  let documentClosed = false;
   let highlights = null; // occurrences of the last search to paint (R7b-2)
   const decoded = new WeakMap();
   const abort = new AbortController();
@@ -242,7 +265,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
 
   const cache = new EditorPageCache({ onChange: change => { try { onCacheChange(change); } catch (error) { reportError(error); } } });
   resolveGlyph = cache.glyphResolver;
-  const rich = createRichEditorClient({ transport: createTransport(client), docId, cache, layoutBudget, signal: abort.signal,
+  const rich = createRichEditorClient({ transport: transport ?? createTransport(client), docId, cache, layoutBudget, signal: abort.signal,
     onSelectionRects: ({ rects }) => { highlight = rects; repaintOverlay(); },
     hasImage: id => images.has(id),
     onImageBitmap: bitmap => {
@@ -363,7 +386,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   }
 
   function repaintOverlay() {
-    if (!state || disposed) return;
+    if (!state || disposed || !visible) return;
     const caret = caretViewport();
     const compositionRects = composition ? [{ ...composition.caret, width: composition.width, height: 1 }] : [];
     const selectionRects = [];
@@ -373,7 +396,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   }
 
   function updatePageLayout() {
-    if (disposed) return;
+    if (disposed || !visible) return;
     const width = pageLists.reduce((max, page) => Math.max(max, page.page.bounds.width * pageZoom), 0);
     const viewportWidth = scrollport.clientWidth;
     const contentWidth = Math.max(width, viewportWidth);
@@ -408,7 +431,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   }
 
   function updateViewport() {
-    if (disposed) return;
+    if (disposed || !visible) return;
     const viewportWidth = scrollport.clientWidth;
     canvas.style.position = "sticky";
     canvas.style.left = "0px";
@@ -500,7 +523,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     // The caret of a far jump arrives after its State and possibly before its page: scrolling waits for both, and the
     // spacer must cover the page before scrollTop is set.
     if (scrollWanted && !next.caret && next.layoutComplete) scrollWanted = false;
-    if (scrollWanted && next.caret && caretViewport()) { scrollWanted = false; updateViewport(); scrollCaretIntoView(); }
+    if (visible && scrollWanted && next.caret && caretViewport()) { scrollWanted = false; updateViewport(); scrollCaretIntoView(); }
   }
 
   function announceReadOnly(next) {
@@ -598,7 +621,42 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     const text = textFromWindow(lo, hi);
     if (text === null) { prefetchKey = ""; prefetchSelection(state); reportError(new EditorError("EDITOR_CLIPBOARD_UNAVAILABLE")); return null; }
     lastClipboard = { revision: state.revision, lo, hi };
+    requestFragment(lo, hi, state.revision);
     return { text, selection: { anchor: 0, focus: byteLength(text) }, revision: state.revision };
+  }
+
+  /**
+   * The copy is synchronous (the text is written at once); the rich fragment of the same range is asked for right after
+   * and kept for the next paste. A refusal (too large, empty, stale) leaves text only, and forgets an older fragment.
+   */
+  function requestFragment(lo, hi, revision) {
+    const token = ++richClipboard.token;
+    richClipboard.fragment = null;
+    let request;
+    try { request = rich.copyFragment(BigInt(lo), BigInt(hi), { revision: BigInt(revision) }); } catch { richClipboard.pending = null; return; }
+    const mine = request.then(held => {
+      if (token === richClipboard.token) richClipboard.fragment = { text: sanitizeEditText(held.text), bytes: held.bytes, lossy: held.lossy };
+    }, () => { /* text only */ }).finally(() => { if (richClipboard.pending === mine) richClipboard.pending = null; });
+    richClipboard.pending = mine;
+  }
+
+  /**
+   * Paste rule (docs 5.5): when the text of the clipboard equals the text of the held fragment, the rich fragment is
+   * pasted (one undo step); otherwise `plain(text)` inserts the text. A fragment the engine refuses as invalid or too
+   * large falls back to the text; any other refusal (read-only, memory) is the user's answer. Runs inside a task.
+   */
+  async function pasteOrInsert(raw, plain) {
+    const wanted = sanitizeEditText(raw);
+    if (richClipboard.pending) { try { await richClipboard.pending; } catch { /* text only */ } }
+    const held = richClipboard.fragment;
+    if (held && wanted.length > 0 && held.text === wanted && state && !state.readOnly) {
+      extensionMode = false;
+      try { return await rich.pasteFragment(held.bytes); } catch (error) {
+        const mapped = toEditorError(error);
+        if (mapped.code !== "RICH_FRAGMENT_INVALID" && mapped.code !== "RICH_LIMIT") throw mapped;
+      }
+    }
+    return wanted.length === 0 ? state : plain(wanted);
   }
 
   /** Text of the selection of `snapshot` (an `editor.getState()` taken earlier): window first, else `TextWindow`. */
@@ -732,6 +790,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       const committed = command.inputType === "insertCompositionText" ? compositionCommit : null;
       if (command.inputType === "insertCompositionText") compositionCommit = null;
       const text = sanitizeEditText(command.text ?? "");
+      if (command.inputType === "insertFromPaste") return enqueueTask(() => pasteOrInsert(command.text ?? "", wanted => insertWithSpacing(wanted, command.inputType)));
       return enqueueTask(async () => {
         if (committed && state?.revision === committed.revision
             && committed.selection && Number.isInteger(committed.selection.anchor) && Number.isInteger(committed.selection.focus)) {
@@ -902,13 +961,13 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   globalThis.addEventListener?.("resize", scheduleViewport);
   let fitResizeFrame = 0;
   const scheduleRefit = () => {
-    if (fitResizeFrame || disposed) return;
+    if (fitResizeFrame || disposed || !visible) return;
     fitResizeFrame = requestAnimationFrame(() => { fitResizeFrame = 0; refitZoom(); });
   };
   const fitResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleRefit);
   fitResizeObserver?.observe(scrollport);
   globalThis.addEventListener?.("resize", scheduleRefit);
-  const blink = setInterval(() => { caretVisible = !caretVisible; repaintOverlay(); }, 530);
+  const blink = setInterval(() => { if (!visible) return; caretVisible = !caretVisible; repaintOverlay(); }, 530);
 
   // ---- documents ------------------------------------------------------------------------------------------
 
@@ -1163,6 +1222,87 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       return () => { changeListeners.delete(listener); };
     },
     setFrenchSpacing(enabled) { spacingEnabled = Boolean(enabled); },
+    /** Name of the file the document came from (or was saved as), null for a new document (tab title). */
+    get documentName() { return origin.name; },
+    get documentFormat() { return origin.format; },
+    /** The identifier of the document in the engine. */
+    get docId() { return docId; },
+    get visible() { return visible; },
+    /**
+     * Whether this document is the one shown (tabs, US-327). Hidden: the caret does not blink, nothing is drawn, the
+     * resize and scroll of the view are ignored, the highlights are cleared and the focus is released; the state, the
+     * layout pump and the accessible mirror keep working (a hidden document is still laid out, fairly, docs 3). Call
+     * `setVisible(false)` BEFORE hiding the DOM (the scroll position is saved) and `setVisible(true)` AFTER showing it
+     * (the view is measured again, the scroll position and the zoom come back).
+     */
+    setVisible(value) {
+      if (disposed) throw new EditorError("EDITOR_CLOSED");
+      const next = Boolean(value);
+      if (next === visible) return;
+      if (!next) {
+        savedScroll = { left: scrollport.scrollLeft, top: scrollport.scrollTop };
+        visible = false;
+        mouseSelection?.cancel(); textDragDrop?.cancel();
+        clearTimeout(mirrorTimer); mirrorTimer = 0;
+        if (viewportFrame) { cancelAnimationFrame(viewportFrame); viewportFrame = 0; }
+        if (fitResizeFrame) { cancelAnimationFrame(fitResizeFrame); fitResizeFrame = 0; }
+        renderer.setEditorOverlay({ selectionRects: [], caret: null, compositionRects: [], caretVisible: false });
+        if (globalThis.document?.activeElement === input.element) input.element.blur();
+        return;
+      }
+      visible = true;
+      caretVisible = true;
+      updatePageLayout();
+      if (savedScroll) { scrollport.scrollLeft = savedScroll.left; scrollport.scrollTop = savedScroll.top; savedScroll = null; }
+      updateViewport();
+      refitZoom();
+      renderer.render();
+      if (scrollWanted && state?.caret && caretViewport()) { scrollWanted = false; scrollCaretIntoView(); }
+    },
+    /** Copies the rich fragment of the selection of `snapshot` after the text went to the clipboard (context menu). */
+    rememberFragment(snapshot) {
+      checkActionSnapshot(snapshot);
+      const { lo, hi } = selectionBounds(snapshot);
+      if (hi > lo && hi - lo <= MAX_CLIPBOARD_BYTES) requestFragment(lo, hi, snapshot.revision);
+    },
+    /** Paste of the context menu: the rich fragment when `text` is its text (docs 5.5), else the text in the selection. */
+    pasteText(text, snapshot) {
+      if (typeof text !== "string") return Promise.reject(new TypeError("Pasted text must be a string."));
+      return enqueueTask(() => {
+        checkActionSnapshot(snapshot);
+        extensionMode = false;
+        return pasteOrInsert(text, wanted => {
+          const { lo, hi } = selectionBounds(state);
+          return send({ type: "replaceRange", start: BigInt(lo), end: BigInt(hi), text: wanted });
+        });
+      });
+    },
+    /**
+     * Closes the document in the engine (`Close`: model, history, pages and atlas are freed and the weight goes back to
+     * the budget) and drops what the editor held for it. It also resolves when the engine no longer knows the document
+     * (`RICH_UNKNOWN_DOCUMENT`). Closing a tab: confirmation and save first, then `closeDocument()`, then `dispose()`.
+     */
+    async closeDocument({ signal } = {}) {
+      if (disposed || documentClosed) return;
+      documentClosed = true;
+      try { await rich.closeDocument({ signal }); } catch (error) {
+        if (error?.code !== "RICH_UNKNOWN_DOCUMENT" && error?.code !== "CLIENT_CLOSED") { documentClosed = false; throw toEditorError(error); }
+      }
+      images.clear(); highlight = []; highlights = null; visibleFlat = null; lastClipboard = null; prefetchKey = "";
+      if (!disposed) repaintOverlay();
+    },
+    get documentClosed() { return documentClosed; },
+    /** The last text window the engine gave (at most 256 KiB around the focus): what stays readable when the engine is lost. */
+    get windowText() { return cache.textWindow?.text ?? ""; },
+    /** Resolves true when the first page is drawn-ready (or the layout is complete), false after `timeoutMs`: launch of several files opens them one after the other. */
+    async whenFirstScreen(timeoutMs = 2000) {
+      const end = performance.now() + timeoutMs;
+      while (!disposed && performance.now() < end) {
+        if (state && (cache.layoutComplete || cache.has(0))) return true;
+        await new Promise(resolve => setTimeout(resolve, 16));
+      }
+      return false;
+    },
     setSuspended(value) { if (disposed) throw new EditorError("EDITOR_CLOSED"); setBusy(Boolean(value)); },
     setScreenReaderMode(enabled) { input.setScreenReaderMode(Boolean(enabled)); },
     setZoom(zoom) {
@@ -1245,7 +1385,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
           return { kind: "ok", state: opened };
         } catch (error) {
           if (error?.code === "EDITOR_CLOSED") throw error;
-          return { kind: "error", key: "status-open-error" };
+          return { kind: "error", key: OPEN_ERROR_KEYS[error?.code] ?? "status-open-error", code: error?.code };
         }
       } finally { setBusy(false); input.focus(); }
     },
@@ -1255,6 +1395,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       let ticket = null;
       try {
         let format = defaultSaveFormat();
+        let savedName = null;
         if (typeof host.pickSave === "function") {
           const picked = await host.pickSave({ title: dialogLabels.saveTitle, filters: dialogFormats([format, ...SAVE_FORMATS.filter(f => f !== format)], dialogLabels),
             suggestedName: `${baseName(origin.name)}.${format}` });
@@ -1262,6 +1403,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
           ticket = picked.ticket;
           if (!SAVE_FORMATS.includes(picked.format)) return { kind: "error", key: "files.error.unsupported_format" };
           format = picked.format;
+          savedName = typeof picked.name === "string" && picked.name !== "" ? picked.name : null;
         }
         const saved = await enqueueTask(() => saveToBytes(format));
         const written = ticket === null ? await host.save(saved.bytes) : await host.writeTicket(ticket, saved.bytes);
@@ -1269,7 +1411,8 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
         if (written.kind !== "ok") return written;
         const marked = await enqueueTask(() => send({ type: "markSaved", revision: saved.revision }, "save"));
         if (marked.change?.ignored) throw new EditorError("EDITOR_STALE_SAVE");
-        origin = { format, name: origin.name };
+        origin = { format, name: savedName ?? origin.name };
+        notifyChange("document-name");
         return { kind: "ok", state, notices: saved.notices };
       } catch (error) {
         throw toEditorError(error, "save");
@@ -1312,7 +1455,6 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       if (disposed) return;
       disposed = true;
       highlights = null;
-      abort.abort();
       clearInterval(blink);
       clearTimeout(mirrorTimer);
       if (viewportFrame) cancelAnimationFrame(viewportFrame);
@@ -1324,7 +1466,16 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       mouseSelection.dispose();
       imagePaste.dispose();
       changeListeners.clear();
-      rich.dispose();
+      // The session is closed in the engine unless it already is (best effort, bounded): a tab that goes away must give
+      // its weight back to the budget. The client goes after the Close (or two seconds later).
+      const finish = () => { abort.abort(); rich.dispose(); };
+      if (rich.opened && !documentClosed) {
+        documentClosed = true;
+        rich.stopPump();
+        let timer = 0;
+        const bound = new Promise(resolve => { timer = setTimeout(resolve, 2000); });
+        Promise.race([rich.closeDocument().catch(() => {}), bound]).then(() => { clearTimeout(timer); finish(); });
+      } else finish();
       mirror?.dispose();
       globalThis.removeEventListener?.("resize", scheduleViewport);
       fitResizeObserver?.disconnect();

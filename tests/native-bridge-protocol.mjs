@@ -267,15 +267,27 @@ for (const [bad, key] of [
   const host = createNativeHost({ webview: fake.webview, timeoutMs: 1000 });
   const docx = new Uint8Array(500000).fill(7);
   const taking = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|docx;2;@sb`, docx);
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|docx;2;${b64("C:\\dossier\\é.docx")};@sb`, docx);
   const result = await taking;
   assert.equal(result.document.type, "docx");
-  assert.equal(result.document.skipped, 2);
+  assert.equal(result.document.remaining, 2, "US-327: the following files stay pending, the front claims them one by one");
+  assert.equal(result.document.path, "C:\\dossier\\é.docx", "the identity of the file travels with it (tab title, file already open)");
   assert.equal(result.document.bytes.byteLength, 500000);
   assert.equal(fake.released.length, 1, "the launch document is copied and its buffer released");
   const legacy = host.takeLaunch();
-  fake.reply(fake.last().id, "ok", `txt;0;${b64("bonjour")}`);
-  assert.equal(new TextDecoder().decode((await legacy).document.bytes), "bonjour");
+  fake.reply(fake.last().id, "ok", `txt;0;;${b64("bonjour")}`);
+  const inline = (await legacy).document;
+  assert.equal(new TextDecoder().decode(inline.bytes), "bonjour");
+  assert.equal(inline.path, null, "an empty identity is null");
+  const refused = host.takeLaunch();
+  fake.reply(fake.last().id, "error", `files.error.unsupported_type;${b64("C:\\x.png")}`);
+  assert.deepEqual(await refused, { kind: "error", key: "files.error.unsupported_type", path: "C:\\x.png" }, "a refused launched file carries its identity");
+  const bare = host.takeLaunch();
+  fake.reply(fake.last().id, "error", "files.error.queue_full");
+  assert.deepEqual(await bare, { kind: "error", key: "files.error.queue_full" });
+  const hostile = host.takeLaunch();
+  fake.reply(fake.last().id, "ok", "txt;0;bad base64!;AAAA");
+  assert.deepEqual(await hostile, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   host.close();
 }
 
@@ -285,15 +297,15 @@ for (const [bad, key] of [
   const host = createNativeHost({ webview: fake.webview, timeoutMs: 1000 });
   const text = new Uint8Array(1024 * 1024).fill(0x78);
   const first = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;@sb`, text);
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;@sb`, text);
   const opened = await first;
   assert.equal(opened.document.type, "txt");
   assert.equal(opened.document.bytes.byteLength, 1024 * 1024, "a 1 MiB launched TXT is delivered whole");
   const atLimit = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes));
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes));
   assert.equal((await atLimit).document.bytes.byteLength, RICH_LIMITS.maxOpenBytes);
   const over = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes + 1));
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes + 1));
   assert.deepEqual(await over, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   host.close();
 }

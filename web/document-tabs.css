@@ -1,0 +1,24 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* US-327 : barre d'onglets de documents (document-tabs.mjs). Couleurs : variables de theme.css. */
+#document-tabs-slot{flex:0 0 auto;padding:6px clamp(12px,3vw,42px) 0;background:var(--chrome)}
+#document-tabs-slot[hidden]{display:none}
+.document-tabs{display:flex;align-items:flex-end;gap:2px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.document-tab{display:flex;align-items:center;flex:0 1 190px;min-width:96px;max-width:240px;height:34px;border:1px solid var(--chrome-border);border-bottom:0;border-radius:7px 7px 0 0;background:var(--chrome-control);color:var(--muted);position:relative;user-select:none}
+.document-tab:hover{background:var(--chrome-control-hover)}
+.document-tab.active{background:var(--chrome-workspace);color:var(--ink);font-weight:600;box-shadow:inset 0 2px 0 var(--green)}
+.document-tab.dragging{opacity:.75;z-index:2;box-shadow:0 2px 8px rgb(0 0 0 / .25)}
+.document-tab-label{flex:1;min-width:0;display:flex;align-items:center;gap:6px;height:100%;padding:0 4px 0 10px;border:0;background:transparent;color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer;touch-action:none}
+.document-tab-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.document-tab-dirty{color:var(--chrome-warning-ink);font-size:10px}
+.document-tab-error{color:var(--chrome-danger);font-weight:700}
+.document-tab-close{flex:0 0 auto;width:24px;height:24px;margin-right:4px;border:0;border-radius:5px;background:transparent;color:inherit;font-size:16px;line-height:1;cursor:pointer}
+.document-tab-close:hover{background:var(--chrome-control-hover-border)}
+.document-tab-label:focus-visible,.document-tab-close:focus-visible{outline:2px solid var(--chrome-focus);outline-offset:-2px}
+.document-scroll[hidden]{display:none}
+@media(forced-colors:active){.document-tab{border-color:ButtonText}.document-tab.active{border-color:Highlight;box-shadow:none;outline:2px solid Highlight}}
+.document-scroll .page-stack>div[aria-hidden="true"]{height:0;pointer-events:none}
+.engine-lost-banner{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:8px clamp(18px,4vw,54px);background:var(--chrome-warning-background);color:var(--chrome-warning-ink);border-bottom:1px solid var(--chrome-warning-ink);font-size:13px}
+.engine-lost-banner[hidden]{display:none}
+.engine-lost-banner button{height:30px}
+.engine-lost-text{flex:1 1 320px}
+.document-tabs-confirm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}

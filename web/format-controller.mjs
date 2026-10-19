@@ -6,7 +6,9 @@
 //
 // Contrat (docs/us-240-format-protocol.md §7) :
 //   const controller = createFormatController({ onError });   // créé avant l'éditeur : les modules le reçoivent
-//   controller.attach(editor)       -> à l'ouverture de l'éditeur (une seule fois) ; avant : state null, busy faux
+//   controller.attach(editor)       -> à l'ouverture de l'éditeur ; avant : state null, busy faux. Refuse seulement si un
+//                                      éditeur est ENCORE attaché (US-327 : detach() d'abord, puis attach() du suivant)
+//   controller.detach()             -> retire l'abonnement à l'éditeur et publie l'état neutre ; le contrôleur reste utilisable
 //   controller.subscribe(listener)  -> unsubscribe ; listener({ state, readOnly, plainText, busy }) est appelé tout de
 //                                      suite avec l'instantané courant, puis après chaque changement.
 //   controller.snapshot()           -> le dernier instantané
@@ -89,6 +91,7 @@ export function createFormatController({ editor: initial = null, onError = () =>
 
   const api = {
     attach(target) {
+      if (disposed) return pendingRefresh;
       if (editor) throw new TypeError("The controller already has an editor.");
       if (!target || typeof target.subscribe !== "function" || !target.format) throw new TypeError("An editor with subscribe() and format is required.");
       editor = target;
@@ -97,6 +100,14 @@ export function createFormatController({ editor: initial = null, onError = () =>
         void schedule();
       });
       return schedule();
+    },
+    /** US-327 : détache l'éditeur courant (changement d'onglet) ; les réponses en vol deviennent périmées, l'état redevient neutre. */
+    detach() {
+      if (!editor) return;
+      unsubscribeEditor(); unsubscribeEditor = () => {};
+      editor = null;
+      generation += 1;
+      publish(EMPTY);
     },
     get client() { return editor?.format ?? null; },
     snapshot: () => snap,
@@ -131,6 +142,7 @@ export function createFormatController({ editor: initial = null, onError = () =>
  */
 export const RESERVED_SHORTCUTS = Object.freeze([
   "Ctrl+N", "Ctrl+O", "Ctrl+S",                  // app.mjs : nouveau, ouvrir, enregistrer
+  "Ctrl+W", "Ctrl+F4", "Ctrl+Tab", "Ctrl+Shift+Tab", // document-tabs.mjs : fermer, onglet suivant, onglet précédent
   "Ctrl+F", "Ctrl+H",                            // navigation-tools.mjs : rechercher, remplacer
   "Ctrl+A", "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z",  // text-input.mjs : tout sélectionner, annuler, rétablir
   "Ctrl+Shift+Space",                            // app.mjs : espace insécable
@@ -145,7 +157,7 @@ const id = binding => {
   const name = String(binding.key ?? binding.code ?? "").toLowerCase();
   return `${binding.ctrl ? "ctrl+" : ""}${binding.shift ? "shift+" : ""}${binding.alt ? "alt+" : ""}${name}`;
 };
-const RESERVED_IDS = new Set(["ctrl+n", "ctrl+o", "ctrl+s", "ctrl+f", "ctrl+h", "ctrl+a", "ctrl+z", "ctrl+shift+z", "ctrl+y",
+const RESERVED_IDS = new Set(["ctrl+w", "ctrl+f4", "ctrl+tab", "ctrl+shift+tab", "ctrl+n", "ctrl+o", "ctrl+s", "ctrl+f", "ctrl+h", "ctrl+a", "ctrl+z", "ctrl+shift+z", "ctrl+y",
   "ctrl+c", "ctrl+x", "ctrl+v", "ctrl+f1", "ctrl+shift+ ", "ctrl+shift+space", "ctrl+home", "ctrl+end",
   "ctrl+arrowleft", "ctrl+arrowright", "ctrl+arrowup", "ctrl+arrowdown"]);
 

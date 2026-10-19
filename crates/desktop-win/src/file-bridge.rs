@@ -467,18 +467,43 @@ pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
     }
 }
 
-/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<ignorés>;<base64>` en ligne, ou
-/// `ok|<txt|docx>;<ignorés>;@sb` quand les octets partent par SharedBuffer (repli : la forme en ligne).
-/// En cas de succès les chemins restants sont écartés et comptés, en cas d'erreur ils restent en attente.
-pub(crate) fn launch_reply(id: &str, read: LaunchRead, pending: &mut VecDeque<PathBuf>) -> Outcome {
+/// Identité du fichier d'ouverture pour le front (titre de l'onglet, fichier déjà ouvert) : le chemin complet en
+/// UTF-8 s'il tient en 1 Kio (limite de `decodeName` côté JS), sinon le nom seul, sinon rien.
+fn launch_identity(path: &std::path::Path) -> String {
+    let full = path.to_string_lossy();
+    if full.len() <= 1024 {
+        return full.into_owned();
+    }
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if name.len() <= 1024 {
+        name
+    } else {
+        String::new()
+    }
+}
+
+/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<restants>;<identité base64>;<base64>` en
+/// ligne, ou `ok|<txt|docx>;<restants>;<identité base64>;@sb` quand les octets partent par SharedBuffer (repli :
+/// la forme en ligne). `<restants>` compte les chemins encore en attente : ils ne sont PAS écartés (US-327, un
+/// onglet par fichier : le front les réclame un par un). Une erreur est `error|<clé>;<identité base64>` ; les chemins
+/// suivants restent en attente dans les deux cas.
+pub(crate) fn launch_reply(
+    id: &str,
+    path: &std::path::Path,
+    read: LaunchRead,
+    pending: &mut VecDeque<PathBuf>,
+) -> Outcome {
+    let who = encode_base64(launch_identity(path).as_bytes());
     match read {
         Ok((kind, bytes)) => {
-            let skipped = pending.len();
-            pending.clear();
-            let prefix = format!("{kind};{skipped};");
+            let remaining = pending.len();
+            let prefix = format!("{kind};{remaining};{who};");
             bridge_ops::bytes_outcome(id, &prefix, &format!("{prefix}@sb"), &prefix, bytes)
         }
-        Err(key) => Outcome::Text(format!("us120-file|1|{id}|error|{key}")),
+        Err(key) => Outcome::Text(format!("us120-file|1|{id}|error|{key};{who}")),
     }
 }
 
@@ -488,7 +513,7 @@ pub(crate) fn process_launch(id: &str, pending: &mut VecDeque<PathBuf>) -> Strin
     let Some(path) = pending.pop_front() else {
         return format!("us120-file|1|{id}|ok|");
     };
-    launch_reply(id, read_launch_file(&path), pending)
+    launch_reply(id, &path, read_launch_file(&path), pending)
         .text()
         .to_owned()
 }
@@ -881,14 +906,27 @@ mod tests {
         let b = dir.join("b.txt");
         std::fs::write(&a, "bonjour").unwrap();
         std::fs::write(&b, "autre").unwrap();
-        let mut pending: VecDeque<PathBuf> = [a, b].into();
+        let mut pending: VecDeque<PathBuf> = [a.clone(), b.clone()].into();
         let reply = process_launch("7", &mut pending);
         assert_eq!(
             reply,
-            format!("us120-file|1|7|ok|txt;1;{}", encode_base64(b"bonjour"))
+            format!(
+                "us120-file|1|7|ok|txt;1;{};{}",
+                encode_base64(a.to_string_lossy().as_bytes()),
+                encode_base64(b"bonjour")
+            )
         );
-        assert!(pending.is_empty());
-        assert_eq!(process_launch("8", &mut pending), "us120-file|1|8|ok|");
+        // US-327 : le second fichier n'est pas écarté, il est servi à la réclamation suivante.
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            process_launch("8", &mut pending),
+            format!(
+                "us120-file|1|8|ok|txt;0;{};{}",
+                encode_base64(b.to_string_lossy().as_bytes()),
+                encode_base64(b"autre")
+            )
+        );
+        assert_eq!(process_launch("9", &mut pending), "us120-file|1|9|ok|");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -900,15 +938,22 @@ mod tests {
         let good = dir.join("good.docx");
         std::fs::write(&image, "x").unwrap();
         std::fs::write(&good, "PK").unwrap();
-        let mut pending: VecDeque<PathBuf> = [image, missing, good].into();
+        let mut pending: VecDeque<PathBuf> = [image.clone(), missing, good.clone()].into();
         assert_eq!(
             process_launch("1", &mut pending),
-            "us120-file|1|1|error|files.error.unsupported_type"
+            format!(
+                "us120-file|1|1|error|files.error.unsupported_type;{}",
+                encode_base64(image.to_string_lossy().as_bytes())
+            )
         );
         assert!(process_launch("2", &mut pending).starts_with("us120-file|1|2|error|files.error."));
         assert_eq!(
             process_launch("3", &mut pending),
-            format!("us120-file|1|3|ok|docx;0;{}", encode_base64(b"PK"))
+            format!(
+                "us120-file|1|3|ok|docx;0;{};{}",
+                encode_base64(good.to_string_lossy().as_bytes()),
+                encode_base64(b"PK")
+            )
         );
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -959,14 +1004,17 @@ mod tests {
         let big = dir.join("big.txt");
         let content = vec![b'x'; 1024 * 1024];
         std::fs::write(&big, &content).unwrap();
-        let mut pending: VecDeque<PathBuf> = [big].into();
-        match launch_reply(
-            "1",
-            read_launch_file(&pending.pop_front().unwrap()),
-            &mut pending,
-        ) {
+        let mut pending: VecDeque<PathBuf> = [big.clone()].into();
+        let path = pending.pop_front().unwrap();
+        match launch_reply("1", &path, read_launch_file(&path), &mut pending) {
             Outcome::Shared { reply, bytes, .. } => {
-                assert_eq!(reply, "us120-file|1|1|ok|txt;0;@sb");
+                assert_eq!(
+                    reply,
+                    format!(
+                        "us120-file|1|1|ok|txt;0;{};@sb",
+                        encode_base64(big.to_string_lossy().as_bytes())
+                    )
+                );
                 assert_eq!(bytes, content);
             }
             _ => panic!("a 1 MiB file must travel by SharedBuffer"),

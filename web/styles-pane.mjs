@@ -146,6 +146,11 @@ export function createStylesPane({ document, i18n, controller, announce = () => 
       if (attempt < 2) { await sleep(150); if (!preview.active && !disposed) await cancelNow(attempt + 1); }
     }
   }
+  /** US-327 : annule l'aperçu et ATTEND la réponse du moteur (changement d'onglet : l'aperçu ne doit pas rester affiché dans le document quitté). */
+  async function cancelPreviewNow() {
+    clearTimeout(preview.timer); preview.timer = 0; preview.epoch += 1;
+    if (preview.active) await cancelNow();
+  }
   /** Before an application: the engine ends the preview itself (`cancels_preview`), nothing to send. */
   function forgetPreview() { clearTimeout(preview.timer); preview.timer = 0; preview.epoch += 1; preview.active = false; preview.shown = null; }
 
@@ -516,6 +521,7 @@ export function createStylesPane({ document, i18n, controller, announce = () => 
     keyBindings() { return KEY_BINDINGS; },
     open: openPane,
     close: closePane,
+    cancelPreview: cancelPreviewNow,
     toggle() { if (paneOpen) closePane(); else openPane(); },
     /** Pour les tests : la liste lue, le style courant et l'état de l'aperçu. */
     get state() { return { list: list?.styles ?? null, current, preview: { active: preview.active, shown: preview.shown }, paneOpen }; },

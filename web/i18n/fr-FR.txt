@@ -350,7 +350,6 @@ image-alt-default=Image {number}
 # US-115 : ouverture par argument de ligne de commande ou seconde instance
 files.error.unsupported_type=Ce type de fichier ne peut pas être ouvert. Utilisez un fichier .txt ou .docx.
 files.error.timeout=Le fichier n’a pas répondu à temps (partage réseau injoignable ou lent). Réessayez plus tard.
-status-launch-skipped={count, plural, one {# autre fichier n’a pas été ouvert : un seul document peut être ouvert à la fois.} other {# autres fichiers n’ont pas été ouverts : un seul document peut être ouvert à la fois.}}
 
 # US-113 : erreurs du pont natif (fichiers, polices, URL). Clés stables émises par le shell Windows.
 files.error.broker_full=Trop d’autorisations de fichier sont en cours. Terminez les opérations précédentes.
@@ -634,3 +633,36 @@ styles-builtin-list-paragraph=Paragraphe de liste
 styles-builtin-no-spacing=Sans interligne
 styles-builtin-body-text=Corps de texte
 # fin US-250
+
+# US-327 : plusieurs documents (onglets), lancement de plusieurs fichiers (US-115), reprise après perte du moteur
+tabs.list=Documents ouverts
+tabs.close=Fermer {name}
+tabs.modified=modifié
+tabs.error=erreur
+tabs.untitled=Document {number}
+tabs.switched=Document {name} affiché.
+tabs.closed=Document {name} fermé.
+tabs.moved=Document {name} déplacé en position {position} sur {count}.
+tabs.error.too_many=Le nombre maximal de documents ouverts ({max}) est atteint : fermez un document avant d’en ouvrir un autre.
+tabs.error.memory=La mémoire du moteur ne permet pas d’ouvrir ce document en plus de ceux qui sont déjà ouverts : fermez un document, puis réessayez.
+tabs.close.title=Fermer le document
+tabs.close.prompt=Enregistrer les modifications de {name} avant de fermer ce document ?
+tabs.close.save=Enregistrer
+tabs.close.discard=Ne pas enregistrer
+tabs.close.cancel=Annuler
+tabs.close.save-failed=Le document {name} n’a pas pu être enregistré : il reste ouvert.
+tabs.launch.opened={count, plural, one {# document ouvert.} other {# documents ouverts.}}
+tabs.launch.refused=Le fichier {name} n’a pas été ouvert : {reason}
+tabs.launch.already=Le document {name} est déjà ouvert : son onglet est affiché.
+tabs.launch.skipped={count, plural, one {# fichier n’a pas été ouvert : le nombre maximal de documents est atteint.} other {# fichiers n’ont pas été ouverts : le nombre maximal de documents est atteint.}}
+tabs.lost.message=Le moteur s’est arrêté : les documents ouverts ne sont plus liés à leur session et les modifications non enregistrées sont perdues. Le texte affiché reste lisible. Choisissez, document par document, comment continuer.
+tabs.lost.worker=Le moteur ne répond plus. Relancez-le : les documents ouverts seront remplacés par des documents vierges.
+tabs.lost.reopen=Rouvrir depuis le fichier…
+tabs.lost.copy=Copier le texte affiché
+tabs.lost.blank=Remplacer par un document vierge
+tabs.lost.restart=Relancer le moteur
+tabs.lost.copied=Le texte affiché a été copié (au plus 256 Kio autour du curseur : ce n’est pas le document entier).
+tabs.lost.copy-failed=Le texte affiché n’a pas pu être copié.
+tabs.lost.restarted=Le moteur a été relancé : les documents ouverts ont été remplacés par des documents vierges. Rouvrez-les depuis leurs fichiers.
+tabs.lost.recovered=Le document est de nouveau lié au moteur.
+# fin US-327

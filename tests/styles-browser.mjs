@@ -137,10 +137,16 @@ try {
   const { editorReady } = await import("/app.mjs?first");
   app = await editorReady;
   assert(app.status === "ready" && app.engine === "v2", "product initializes with the v2 editor");
-  const editor = app.editor;
+  // US-327 : le document affiché change quand un document s'ouvre dans un nouvel onglet ; ces références désignent toujours celui de l'onglet actif.
+  const liveNode = id => new Proxy({}, {
+    get: (_, key) => { const node = document.getElementById(id); const value = node[key]; return typeof value === "function" ? value.bind(node) : value; },
+    set: (_, key, value) => { document.getElementById(id)[key] = value; return true; },
+  });
+  const canvasNode = () => document.getElementById("document-canvas");
+  const editor = new Proxy({}, { get: (_, key) => { const target = app.editor; const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
   const controller = app.formatController;
   const styles = app.stylesPane;
-  const canvas = document.querySelector("#document-canvas");
+  const canvas = liveNode("document-canvas");
   const state = () => app.getState();
   const text = () => editor.readText();
   const snap = () => controller.snapshot().state;
@@ -152,7 +158,7 @@ try {
   const image = () => {
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
-    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvasNode(), 0, 0);
     return ctx.getImageData(0, 0, view.width, view.height);
   };
   const ink = (x0, y0, x1, y1, picture = image()) => {
@@ -413,6 +419,7 @@ try {
   assert(JSON.stringify(names()) === JSON.stringify(expected), `the names and the order of the styles survive the DOCX (${names()})`);
   await caretHome();
   await waitState(s => s.paragraph.style.state === "value", "state of the reopened document");
+  await waitFor(() => tile("atelier.heading.1"), "the gallery of the reopened document is drawn again");
   assert(snap().paragraph.style.value === "atelier.heading.1" && aria("atelier.heading.1") === "true", "the applied style survives the DOCX and is current");
   assert(tile("atelier.title") && tile("atelier.normal"), "the tiles of the reopened document exist");
   // The preview of a reopened document: a fresh session.

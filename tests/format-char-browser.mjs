@@ -135,9 +135,15 @@ try {
   const { editorReady } = await import("/app.mjs?first");
   app = await editorReady;
   assert(app.status === "ready" && app.engine === "v2", "product initializes with the v2 editor");
-  const editor = app.editor;
+  // US-327 : le document affiché change quand un document s'ouvre dans un nouvel onglet ; ces références désignent toujours celui de l'onglet actif.
+  const liveNode = id => new Proxy({}, {
+    get: (_, key) => { const node = document.getElementById(id); const value = node[key]; return typeof value === "function" ? value.bind(node) : value; },
+    set: (_, key, value) => { document.getElementById(id)[key] = value; return true; },
+  });
+  const canvasNode = () => document.getElementById("document-canvas");
+  const editor = new Proxy({}, { get: (_, key) => { const target = app.editor; const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
   const controller = app.formatController;
-  const canvas = document.querySelector("#document-canvas");
+  const canvas = liveNode("document-canvas");
   const state = () => app.getState();
   const text = () => editor.readText();
   const snap = () => controller.snapshot().state;
@@ -151,7 +157,7 @@ try {
   const image = () => {
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
-    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvasNode(), 0, 0);
     return ctx.getImageData(0, 0, view.width, view.height);
   };
   /** Ink (0..1 per pixel) of a rectangle in page points. */
