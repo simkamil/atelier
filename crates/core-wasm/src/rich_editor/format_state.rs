@@ -91,7 +91,7 @@ impl<T> Default for Acc<T> {
 /// A name as the wire carries it: control characters removed, cut to
 /// `MAX_NAME_BYTES` on a UTF-8 boundary; `None` when nothing is left (a DOCX
 /// can hold a longer or odd name, and the reply must stay encodable).
-fn clean_name(name: &str) -> Option<String> {
+pub(super) fn clean_name(name: &str) -> Option<String> {
     let mut cleaned: String = name.chars().filter(|c| !c.is_control()).collect();
     if cleaned.len() > MAX_NAME_BYTES {
         let mut cut = MAX_NAME_BYTES;

@@ -366,6 +366,16 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/format-para.mjs"),
     },
     Resource {
+        path: "/styles-pane.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/styles-pane.css"),
+    },
+    Resource {
+        path: "/styles-pane.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/styles-pane.mjs"),
+    },
+    Resource {
         path: "/fonts/Carlito-Regular.ttf",
         mime: "font/ttf",
         bytes: include_bytes!("../../../data/fonts/carlito/Carlito-Regular.ttf"),

@@ -50,6 +50,36 @@ const HEADING: [&str; 9] = [
     "atelier.heading.9",
 ];
 
+/// Word name (`w:name`), quick-gallery flag and `w:uiPriority` of a style of
+/// the profile. The galleries list by priority: Normal, No Spacing, headings,
+/// Title, Subtitle, Emphasis, Strong, Quote, Intense Quote.
+fn declared(id: &str) -> (String, bool, Option<u32>) {
+    let heading = id
+        .strip_prefix("atelier.heading.")
+        .and_then(|n| n.parse::<u32>().ok());
+    if let Some(level) = heading {
+        return (format!("heading {level}"), level <= 3, Some(9));
+    }
+    let (name, quick, priority) = match id {
+        NORMAL => ("Normal", true, Some(0)),
+        TITLE => ("Title", true, Some(10)),
+        SUBTITLE => ("Subtitle", true, Some(11)),
+        "atelier.quote" => ("Quote", true, Some(29)),
+        "atelier.quote.intense" => ("Intense Quote", true, Some(30)),
+        "atelier.emphasis" => ("Emphasis", true, Some(20)),
+        "atelier.strong" => ("Strong", true, Some(22)),
+        "atelier.caption" => ("caption", false, Some(35)),
+        "atelier.header" => ("header", false, Some(99)),
+        "atelier.footer" => ("footer", false, Some(99)),
+        "atelier.hyperlink" => ("Hyperlink", false, Some(99)),
+        "atelier.list.paragraph" => ("List Paragraph", false, Some(34)),
+        "atelier.no_spacing" => ("No Spacing", true, Some(1)),
+        "atelier.table.grid" => ("Table Grid", false, Some(39)),
+        other => (other, false, None),
+    };
+    (name.to_owned(), quick, priority)
+}
+
 /// Creates an independent and deterministic default document profile.
 pub fn default_rich_document() -> DefaultRichDocument {
     let auto_108 = LineSpacing {
@@ -73,7 +103,12 @@ pub fn default_rich_document() -> DefaultRichDocument {
                    next: &str,
                    character: CharAttrs,
                    paragraph: ParaProps| {
+        let (declared, quick, priority) = declared(id);
         let style = Style {
+            name: Some(declared),
+            quick,
+            is_default: id == NORMAL,
+            ui_priority: priority,
             id: id.into(),
             kind,
             based_on: based_on.map(str::to_owned),

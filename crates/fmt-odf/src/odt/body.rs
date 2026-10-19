@@ -435,6 +435,7 @@ impl<'a> Importer<'a> {
                         ..StyleCharAttrs::default()
                     },
                     paragraph,
+                    ..Style::default()
                 })
                 .map_err(|e| OdtError::Style(e.to_string()))?;
         }

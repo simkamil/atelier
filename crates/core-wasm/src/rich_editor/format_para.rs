@@ -18,6 +18,7 @@
 use atelier_text_model::rich::flat::{FlatIndex, LayoutContext, LayoutScope};
 use atelier_text_model::rich::{Alignment, LineRule, LineSpacing, ParaProps, RichOp};
 
+use super::styles::layout_doc;
 use super::{DEFAULT_LAYOUT_BUDGET, Session};
 use crate::rich_layout::{PageDelta, RichPageCache};
 use crate::rich_protocol::{
@@ -54,9 +55,9 @@ fn indent_step(from: i32, up: bool) -> i32 {
 }
 
 /// What the paragraphs touched resolve to, before the command.
-struct Touched {
-    index: usize,
-    resolved: ParaProps,
+pub(super) struct Touched {
+    pub(super) index: usize,
+    pub(super) resolved: ParaProps,
 }
 
 /// `set` and `clear` of one paragraph for the edits of the command.
@@ -139,7 +140,7 @@ struct SpaceTarget {
 
 impl Session {
     /// Paragraphs the selection touches, with their resolved properties.
-    fn touched_paragraphs(&self) -> Result<Vec<Touched>, ErrorCode> {
+    pub(super) fn touched_paragraphs(&self) -> Result<Vec<Touched>, ErrorCode> {
         let (low, high) = self.selection_range();
         let doc = &self.doc;
         let first = doc.locate(low)?;
@@ -176,7 +177,7 @@ impl Session {
         let end = first.saturating_add(count).min(page_count);
         let marks = self
             .cache
-            .format_marks(&self.doc, first, end, MAX_FORMAT_MARKS)?;
+            .format_marks(layout_doc!(self), first, end, MAX_FORMAT_MARKS)?;
         if marks.len() > MAX_FORMAT_MARKS {
             return Err(ErrorCode::Limit);
         }
@@ -232,7 +233,7 @@ impl Session {
         let delta = if outcome.revision == before {
             PageDelta::default()
         } else {
-            self.cache.apply_edit(&self.doc, &outcome)
+            self.cache.apply_edit(layout_doc!(self), &outcome)
         };
         self.note_command(format.command_id);
         self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)

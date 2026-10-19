@@ -20,6 +20,7 @@ use atelier_text_model::rich::flat::{
 use atelier_text_model::rich::{CharAttrs, Color, RichDocument, RichOp, Underline, VerticalAlign};
 
 use super::format_state::word_under_caret;
+use super::styles::layout_doc;
 use super::{DEFAULT_LAYOUT_BUDGET, Session};
 use crate::rich_layout::{PageDelta, RichPageCache};
 use crate::rich_preview::{LOADED_FONT_BYTES, LOADED_FONT_FACES};
@@ -100,13 +101,13 @@ impl Typing {
 }
 
 /// One stretch of one paragraph with uniform direct attributes.
-struct Piece {
+pub(super) struct Piece {
     /// Flat paragraph index.
-    index: usize,
+    pub(super) index: usize,
     /// Text offsets (bytes of the paragraph text).
-    from: usize,
-    to: usize,
-    direct: CharAttrs,
+    pub(super) from: usize,
+    pub(super) to: usize,
+    pub(super) direct: CharAttrs,
     resolved: CharAttrs,
 }
 
@@ -119,7 +120,7 @@ fn resolve(doc: &RichDocument, index: usize, direct: &CharAttrs) -> CharAttrs {
 
 /// The pieces of the flat range `low..high` (the paragraphs it touches; one
 /// that the range ends at the very start of is not touched), in order.
-fn pieces(doc: &RichDocument, low: usize, high: usize) -> Result<Vec<Piece>, ErrorCode> {
+pub(super) fn pieces(doc: &RichDocument, low: usize, high: usize) -> Result<Vec<Piece>, ErrorCode> {
     let first = doc.locate(low)?;
     let last = doc.locate(high)?;
     let mut last_index = last.paragraph;
@@ -532,7 +533,7 @@ impl Session {
                     false,
                 )?;
                 if outcome.revision != before {
-                    delta = self.cache.apply_edit(&self.doc, &outcome);
+                    delta = self.cache.apply_edit(layout_doc!(self), &outcome);
                 }
             }
         }
@@ -593,7 +594,7 @@ impl Session {
         // All or nothing: a face the font manager refuses leaves the session as it was.
         let delta = self
             .cache
-            .add_fonts(&self.doc, &faces)
+            .add_fonts(layout_doc!(self), &faces)
             .map_err(|()| ErrorCode::Limit)?;
         self.fonts_memo = None;
         self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)

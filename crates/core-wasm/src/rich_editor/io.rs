@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use atelier_fmt_ooxml::docx_image::{write_docx_with_pictures, write_new_docx_with_pictures};
 use atelier_fmt_ooxml::{
     AcceptError, DocxVariant, DocxWriteOptions, ImportedDocx, NewDocument, RevisionReport,
-    WriteNotice, WrittenDocx, accept_all_revisions,
+    StyleDecl, WriteNotice, WrittenDocx, accept_all_revisions,
 };
 use atelier_model::Transaction;
 use atelier_text_model::inline_image::IMAGE_OBJECT_KIND;
@@ -20,6 +20,7 @@ use atelier_text_model::rich::{NodeId, RichDocument, RichOp, default_rich_docume
 use atelier_unicode::encode;
 
 use super::Session;
+use super::styles::layout_doc;
 use crate::images::{self, ImageInsertError};
 use crate::properties::{self, SaveStamp};
 use crate::rich_layout::{PageDelta, RichPageCache};
@@ -425,6 +426,21 @@ impl Session {
                 // import: it gets a working copy of the session's document,
                 // never the session's own (the history stays).
                 options.regenerate_all = modified;
+                // Built-in styles instantiated by `ApplyStyle`: written when the document uses them.
+                let (used_paragraph, used_character) = self.doc.used_style_ids();
+                for style in &self.added_styles {
+                    if used_paragraph.contains(&style.id) || used_character.contains(&style.id) {
+                        imported
+                            .styles
+                            .set_style(style.clone())
+                            .map_err(|_| ErrorCode::SaveFailed)?;
+                        options.added_styles.push(StyleDecl {
+                            id: style.id.clone(),
+                            name: style.display_name().to_owned(),
+                            next: None,
+                        });
+                    }
+                }
                 imported.document = self.doc.clone();
                 properties::stamp(imported, &stamp).map_err(|_| ErrorCode::SaveFailed)?;
                 let mut result = write_docx_with_pictures(imported, &options);
@@ -523,7 +539,7 @@ impl Session {
         let mut at = start;
         if start != end {
             let outcome = self.doc.replace_range(start, end, "")?;
-            let more = self.cache.apply_edit(&self.doc, &outcome);
+            let more = self.cache.apply_edit(layout_doc!(self), &outcome);
             super::merge(&mut delta, more);
             at = self.snap(start);
         }
@@ -540,7 +556,7 @@ impl Session {
                 return Err(error.into());
             }
         };
-        let more = self.cache.apply_edit(&self.doc, &outcome);
+        let more = self.cache.apply_edit(layout_doc!(self), &outcome);
         super::merge(&mut delta, more);
         let (anchor, focus) = outcome.selection;
         self.select(self.snap(anchor), self.snap(focus), false, None);

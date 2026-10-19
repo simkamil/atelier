@@ -10,6 +10,7 @@
 //! every U+FFFC, with a boundary before and after every `\n` separator.
 
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::sync::PoisonError;
 
 use atelier_unicode::segmentation::{grapheme_boundaries, word_boundaries};
@@ -22,7 +23,9 @@ use super::flat::{
 };
 use super::flat_tree::{CellContext, Entry, FlatTree, ListState};
 use super::node::{BlockList, Node};
-use super::{ListRef, NodeId, Paragraph, ResolvedProperties, Section, StyleCatalog, Theme};
+use super::{
+    ListRef, NodeId, ParaProps, Paragraph, ResolvedProperties, Section, StyleCatalog, Theme,
+};
 
 /// Flat length of a paragraph: its text plus 3 bytes per non-text item.
 pub(crate) fn flat_len(p: &Paragraph) -> usize {
@@ -525,11 +528,12 @@ impl LayoutContext for RichDocument {
     }
 
     fn resolved(&self, index: usize) -> Result<ResolvedProperties, FlatError> {
-        self.resolve_at(index, None).map(|(resolved, _)| resolved)
+        self.resolve_at(index, None, None)
+            .map(|(resolved, _)| resolved)
     }
 
     fn resolved_run(&self, index: usize, direct: &CharAttrs) -> Result<CharAttrs, FlatError> {
-        self.resolve_at(index, Some(direct))
+        self.resolve_at(index, Some(direct), None)
             .map(|(resolved, _)| resolved.character)
     }
 
@@ -608,6 +612,58 @@ impl LayoutContext for RichDocument {
 }
 
 impl RichDocument {
+    /// Like [`LayoutContext::resolved`] (`direct` `None`) or
+    /// [`LayoutContext::resolved_run`], for paragraph `index` as it would be
+    /// with the properties of `paragraph` instead of its own: the style
+    /// preview resolves a paragraph that is not in the document.
+    pub fn resolved_for(
+        &self,
+        index: usize,
+        paragraph: &Paragraph,
+        direct: Option<&CharAttrs>,
+    ) -> Result<ResolvedProperties, FlatError> {
+        self.resolve_at(index, direct, Some(paragraph))
+            .map(|(resolved, _)| resolved)
+    }
+
+    /// Resolves a style on its own (document defaults, `based_on` chain, the
+    /// style itself): what a gallery tile or a preview shows. `None` for an
+    /// unknown style or a failing cascade.
+    pub fn resolved_style(&self, id: &str, kind: super::StyleKind) -> Option<ResolvedProperties> {
+        let none = CharAttrs::default();
+        let props = ParaProps::default();
+        let (paragraph, character) = match kind {
+            super::StyleKind::Character => (None, Some(id)),
+            _ => (Some(id), None),
+        };
+        self.styles
+            .resolve_detached(paragraph, character, None, &props, &none)
+            .ok()
+    }
+
+    /// Identifiers of the paragraph styles and of the character styles the
+    /// document references (paragraphs, runs and table cells included).
+    pub fn used_style_ids(&self) -> (BTreeSet<String>, BTreeSet<String>) {
+        let (mut paragraphs, mut characters) = (BTreeSet::new(), BTreeSet::new());
+        for node in self.nodes.values() {
+            if let Node::Paragraph(p) = node {
+                if let Some(style) = &p.props.style {
+                    if !paragraphs.contains(style) {
+                        paragraphs.insert(style.clone());
+                    }
+                }
+                for run in &p.runs {
+                    if let Some(style) = &run.attrs.char_style {
+                        if !characters.contains(style) {
+                            characters.insert(style.clone());
+                        }
+                    }
+                }
+            }
+        }
+        (paragraphs, characters)
+    }
+
     /// Cascade for the paragraph `index`, with `direct` run attributes when
     /// given. The table style is the one of the innermost table holding the
     /// paragraph, else the catalog default for cell paragraphs.
@@ -615,6 +671,7 @@ impl RichDocument {
         &self,
         index: usize,
         direct: Option<&CharAttrs>,
+        substitute: Option<&Paragraph>,
     ) -> Result<(ResolvedProperties, bool), FlatError> {
         let entry = self
             .with_flat(|t| t.entry(index).copied())
@@ -623,7 +680,7 @@ impl RichDocument {
             return Ok((ResolvedProperties::default(), false));
         }
         let paragraph = match self.nodes.get(&entry.id) {
-            Some(Node::Paragraph(p)) if !entry.opaque => Some(p),
+            Some(Node::Paragraph(p)) if !entry.opaque => Some(substitute.unwrap_or(p)),
             _ => None,
         };
         let table_style = entry.cell.and_then(|c| {

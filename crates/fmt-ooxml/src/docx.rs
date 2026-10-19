@@ -1901,7 +1901,34 @@ fn parse_styles(root: &XmlNode, limits: &DocxLimits) -> Result<ParsedStyles, Doc
             .and_then(|x| x.w_attr("val"))
             .map(str::to_owned);
         ids.insert(id.clone());
+        let flag = |name: &str| -> Result<bool, DocxError> {
+            n.find(W_NS, name)
+                .or_else(|| n.find(W_STRICT_NS, name))
+                .map(|e| parse_on_off(e.w_attr("val"), true))
+                .transpose()
+                .map(|v| v.unwrap_or(false))
+        };
+        let declared_name = n
+            .find(W_NS, "name")
+            .or_else(|| n.find(W_STRICT_NS, "name"))
+            .and_then(|x| x.w_attr("val"))
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned);
+        let ui_priority = n
+            .find(W_NS, "uiPriority")
+            .or_else(|| n.find(W_STRICT_NS, "uiPriority"))
+            .and_then(|x| x.w_attr("val"))
+            .and_then(|v| v.trim().parse::<u32>().ok());
+        let is_default = n
+            .w_attr("default")
+            .map(|v| parse_on_off(Some(v), false))
+            .transpose()?
+            .unwrap_or(false);
         let style = Style {
+            name: declared_name,
+            quick: flag("qFormat")?,
+            is_default,
+            ui_priority,
             id,
             kind,
             based_on: based,

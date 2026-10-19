@@ -154,6 +154,8 @@ const RESERVED_IDS = new Set(["ctrl+n", "ctrl+o", "ctrl+s", "ctrl+f", "ctrl+h", 
  *   key   : valeur de `event.key` (insensible à la casse), p. ex. "g", ">", "=" ; ou code : valeur de `event.code`
  *   ctrl  : Ctrl ou Cmd requis (défaut faux) ; alt : exact (défaut faux)
  *   shift : exact (défaut faux) ; `undefined` explicite = Maj ignoré (utile pour ">" ou "+", que Maj produit selon la disposition)
+ *   ifNoCharacter : pour Ctrl+Alt (AltGr sous Windows) : reconnu par `code`, exécuté au RELÂCHEMENT de la touche, et seulement si l'appui
+ *           n'a tapé aucun caractère (voir le routeur) ; sans cette option, Ctrl+Alt n'est jamais un raccourci. Déclarer `ctrl: true, alt: true` (l'identité du raccourci en dépend).
  *   run   : appelé avec l'événement quand le focus est dans l'éditeur, qu'aucun dialogue modal n'est ouvert et que
  *           `isEnabled()` est vrai ; le routeur fait preventDefault dans tous les cas (même désactivé). `run` doit tester `canFormat(controller.snapshot())`.
  * Deux modules ne peuvent pas prendre la même combinaison, ni une combinaison réservée (erreur à la création).
@@ -169,13 +171,29 @@ export function createFormatKeyRouter({ document: doc, target, modules = [], isE
       seen.add(bindingId); table.push(binding);
     }
   }
+  // Ctrl+Alt (AltGr on Windows) is never a shortcut by default: AltGr+2 is « ~ » on an AZERTY keyboard. A binding declared
+  // `ifNoCharacter` (Word's Ctrl+Alt+1 to 3) is recognised by `code` at the press, but runs at the RELEASE of the key, and only if the
+  // keystroke typed nothing: no `beforeinput`, `keypress`, `input` or composition event came in between (they follow the press and
+  // precede the release). The press is not prevented, so a keystroke that does type a character types it.
+  let armed = null;
   const onKeyDown = event => {
     if (!table.length || event.isComposing || event.keyCode === 229) return;
-    if (event.target !== target() || doc.querySelector("dialog:modal")) return;
-    if (event.getModifierState?.("AltGraph") || (event.ctrlKey && event.altKey)) return;
+    const mine = event.target === target() && !doc.querySelector("dialog:modal");
+    if (armed && !(mine && event.repeat && event.code === armed.code)) armed = null; // another key: the chord is over
+    if (!mine) return;
+    const altGraph = event.getModifierState?.("AltGraph") === true;
+    if (altGraph || (event.ctrlKey && event.altKey)) {
+      if (event.repeat) return;
+      const ctrl = Boolean(event.ctrlKey || event.metaKey);
+      const binding = table.find(candidate => candidate.ifNoCharacter && Boolean(candidate.ctrl) === ctrl && Boolean(candidate.shift) === Boolean(event.shiftKey)
+        && candidate.code === event.code);
+      if (binding) armed = { binding, code: event.code };
+      return;
+    }
     const ctrl = Boolean(event.ctrlKey || event.metaKey);
     const key = typeof event.key === "string" ? event.key.toLowerCase() : "";
     for (const binding of table) {
+      if (binding.ifNoCharacter) continue;
       if (Boolean(binding.ctrl) !== ctrl || Boolean(binding.alt) !== Boolean(event.altKey)) continue;
       if (!("shift" in binding && binding.shift === undefined) && Boolean(binding.shift) !== Boolean(event.shiftKey)) continue;
       if (binding.code ? event.code !== binding.code : key !== String(binding.key).toLowerCase()) continue;
@@ -185,6 +203,24 @@ export function createFormatKeyRouter({ document: doc, target, modules = [], isE
       return;
     }
   };
+  const onTyped = () => { armed = null; };
+  const onKeyUp = event => {
+    if (!armed || event.code !== armed.code) return;
+    const { binding } = armed;
+    armed = null;
+    if (event.target !== target() || doc.querySelector("dialog:modal") || !isEnabled()) return;
+    event.preventDefault?.();
+    binding.run(event);
+  };
+  const typedEvents = ["beforeinput", "keypress", "input", "compositionstart"];
   doc.addEventListener("keydown", onKeyDown);
-  return Object.freeze({ dispose() { doc.removeEventListener("keydown", onKeyDown); }, get size() { return table.length; } });
+  doc.addEventListener("keyup", onKeyUp);
+  for (const type of typedEvents) doc.addEventListener(type, onTyped, true);
+  return Object.freeze({
+    dispose() {
+      doc.removeEventListener("keydown", onKeyDown); doc.removeEventListener("keyup", onKeyUp);
+      for (const type of typedEvents) doc.removeEventListener(type, onTyped, true);
+    },
+    get size() { return table.length; },
+  });
 }

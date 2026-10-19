@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, imageAvailable = false, aboutAvailable = false, propertiesAvailable = false, fileTab = null, charFormat = null, paraFormat = null, onProperties = () => {}, onSymbols = () => {}, onImage = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
+export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, imageAvailable = false, aboutAvailable = false, propertiesAvailable = false, fileTab = null, charFormat = null, paraFormat = null, stylesPane = null, onProperties = () => {}, onSymbols = () => {}, onImage = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -72,8 +72,9 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
   // US-240 / US-243 : le groupe « Mise en forme » est la suite des entrées des deux modules (format-char.mjs, format-para.mjs),
   // qui peuvent fournir des éléments personnalisés (voir leur en-tête) ; sans eux, les deux boutons d'origine.
   // Chaque module renvoie des groupes complets { id, label, keyTip?, commands } (« Police », « Paragraphe » comme dans Word).
-  const formatGroups = charFormat || paraFormat
-    ? [...(charFormat?.groups({ command, future }) ?? []), ...(paraFormat?.groups({ command, future }) ?? [])]
+  // US-250 : le groupe « Styles » (galerie et volet, styles-pane.mjs) vient après « Paragraphe ».
+  const formatGroups = charFormat || paraFormat || stylesPane
+    ? [...(charFormat?.groups({ command, future }) ?? []), ...(paraFormat?.groups({ command, future }) ?? []), ...(stylesPane?.groups({ command, future }) ?? [])]
     : [{ id: "format", label: t("ribbon-format-group"), commands: [future("font", "ribbon-font", "P"), future("paragraph", "ribbon-paragraph", "G")] }];
   // Doublon d'info-touche dans l'onglet Accueil (modules compris) : erreur explicite avant la construction du ruban.
   const homeGroups = [

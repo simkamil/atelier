@@ -49,6 +49,6 @@ pub use paragraph::{
 };
 pub use styles::{
     DocumentStyleDefaults, ResolvedProperties, Style, StyleCatalog, StyleCharAttrs, StyleEngine,
-    StyleError, StyleKind, Theme, ThemeColor, ThemeFont,
+    StyleError, StyleKind, Theme, ThemeColor, ThemeFont, is_builtin_style_name,
 };
 pub use table::NewCell;

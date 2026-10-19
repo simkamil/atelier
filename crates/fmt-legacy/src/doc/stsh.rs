@@ -471,6 +471,7 @@ pub(crate) fn convert(
                 ..StyleCharAttrs::default()
             },
             paragraph,
+            ..Style::default()
         };
         engine
             .set_style(style)
