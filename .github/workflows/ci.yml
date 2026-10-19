@@ -214,6 +214,8 @@ jobs:
           node tests/run-format-char-browser.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-styles-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/run-document-tabs-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests

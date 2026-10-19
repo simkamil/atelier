@@ -596,6 +596,7 @@ Validation US-114 (2026-10-11) : [sonde injectée, diagnostic natif et barrière
 - [ ] Mutex nommé ; transmission des chemins à l'instance existante (`WM_COPYDATA`) ; mise au premier plan.
 - [ ] Plusieurs fichiers en argument ouverts chacun dans un onglet.
 - État (2026-10-18) : mutex, transmission synchrone, file d'ouverture et signalement vérifiés, détail dans [docs/us-115-single-instance.md](docs/us-115-single-instance.md). Premier critère non coché : mise au premier plan non vérifiée automatiquement. Second critère non coché : l'application n'a pas d'onglets de documents ; le premier fichier s'ouvre, les suivants sont signalés.
+- État (2026-10-20) : avec US-327, chaque fichier lancé (arguments ou `WM_COPYDATA` vers l'instance existante) s'ouvre dans son onglet, séquentiellement, un refus au milieu ne cache pas les suivants, un fichier déjà ouvert affiche son onglet (empreinte opaque du chemin canonique). Vérifié par simulation du pont ; critère 2 laissé non coché jusqu'à un essai manuel dans l'exe avec trois fichiers.
 
 Réf : §6.8, F-COM-002 · Taille : S · Dépend de : US-113
 
@@ -1463,10 +1464,12 @@ Réf : F-COM-008 · Taille : S · Dépend de : US-113
 #### US-327 — Plusieurs documents
 *En tant qu'*utilisateur, *je veux* ouvrir plusieurs documents *afin de* travailler sur plusieurs fichiers à la fois.
 - [ ] Onglets de documents dans la fenêtre : Ctrl+Tab / Ctrl+Maj+Tab, Ctrl+W pour fermer, réorganisation par glisser.
-- [ ] Chaque document a son historique d'annulation, sa vue et son zoom.
-- [ ] Copier-coller entre documents sans perte (format interne).
+- [x] Chaque document a son historique d'annulation, sa vue et son zoom.
+- [x] Copier-coller entre documents sans perte (format interne).
 
 Réf : F-COM-023 · Taille : M · Dépend de : US-092, US-320, US-217
+
+Validation US-327 (2026-10-20) : onglets de documents (`web/document-tabs.mjs`), un éditeur et un DOM par onglet sur un moteur multi-sessions ([contrat T0](docs/us-327-multidoc-protocol.md) : 8 documents, budget mémoire, fragment riche `CopyFragment`/`PasteFragment`). Critères 2 et 3 vrais de bout en bout (test navigateur : historique, zoom et défilement indépendants ; paragraphe gras encadré collé identique en une étape Ctrl+Z, texte externe collé en texte seul ; 50 ouvertures/fermetures sans fuite). Critère 1 non coché : Ctrl+Tab, Ctrl+Maj+Tab, Ctrl+W, glisser et Alt+Maj+flèche passent sous Edge headless, à confirmer à la main dans le WebView2 de l'exe (aucun réglage `AreBrowserAcceleratorKeysEnabled`). Réserves : fermeture de la fenêtre avec plusieurs onglets modifiés = une confirmation globale (demande par onglet décrite au §10 du contrat, non faite) ; après perte du moteur, seul un TXT modifié est reconstruit, les autres onglets restent lisibles et copiables, marqués perdus ; glisser du texte d'un onglet à l'autre non pris en charge. Relectures indépendantes : trois passes, défauts de perte de données corrigés.
 
 #### US-328 — Propriétés du document
 *En tant qu'*utilisateur, *je veux* renseigner les propriétés du document *afin de* le décrire et le retrouver.
