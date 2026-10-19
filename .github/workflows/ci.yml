@@ -167,6 +167,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/format-key-router.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/rich-editor-format-para.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-save.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-selection.mjs
@@ -204,6 +206,8 @@ jobs:
           node tests/run-rich-editor-ui-browser.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-file-tab-ui-browser.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node tests/run-rich-editor-format-para-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests

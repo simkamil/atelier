@@ -275,7 +275,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; listeners.abort();
-    formatKeys?.dispose(); formatController.dispose(); charFormat.dispose(); paraFormat.dispose(); fileTab?.dispose(); imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    formatKeys?.dispose(); formatController.dispose(); charFormat.dispose(); paraFormat.detachEditor(); paraFormat.dispose(); fileTab?.dispose(); imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -389,6 +389,8 @@ async function start() {
         dialogLabels: { openTitle: messages.get("dialog-open-title"), saveTitle: messages.get("dialog-save-title"), txt: messages.get("dialog-filter-txt"),
           docx: messages.get("dialog-filter-docx"), docm: messages.get("dialog-filter-docm"), dotx: messages.get("dialog-filter-dotx"), defaultName: messages.get("dialog-default-name") } });
       void formatController.attach(editor);
+      // US-243 : surcouche des marques de mise en forme, dessinée au-dessus des pages de l'éditeur.
+      paraFormat.attachEditor(editor, { canvas: editorOptions.canvas, scrollport: editorOptions.scrollport, spacer: editorOptions.spacer });
       // Raccourcis des modules de mise en forme : chaque module les déclare dans keyBindings() (voir format-controller.mjs).
       formatKeys = createFormatKeyRouter({ document, target: () => editor?.element, modules: [charFormat, paraFormat], isEnabled: () => Boolean(editor?.canEdit) });
       const { createReaderModeToggle } = await import("/document-mirror.mjs");

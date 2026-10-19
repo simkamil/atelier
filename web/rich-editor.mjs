@@ -1137,6 +1137,8 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     get busy() { return busy; },
     get element() { return input.element; },
     get engine() { return "v2"; },
+    /** Géométrie des pages en points et zoom courant (surcouches du ruban, US-243). */
+    getGeometry,
     capabilities: RICH_CAPABILITIES,
     get input() { return input; },
     get mirror() { return mirror; },

@@ -202,12 +202,11 @@ try {
   // --- formatting controller (preparation of US-240 / US-243): one FormatState per change, UI unchanged ------------------------------------
   {
     const controller = app.formatController;
-    const fontButton = document.querySelector('[data-ribbon-command-id="font"]');
-    const paragraphButton = document.querySelector('[data-ribbon-command-id="paragraph"]');
-    assert(fontButton?.disabled && paragraphButton?.disabled && fontButton.textContent === "Police" && paragraphButton.textContent === "Paragraphe"
-      && fontButton.closest(".ribbon-group")?.dataset.ribbonGroupId === "font" && paragraphButton.closest(".ribbon-group")?.dataset.ribbonGroupId === "paragraph"
-      && fontButton.closest(".ribbon-group").nextElementSibling === paragraphButton.closest(".ribbon-group"),
-      "the Home tab shows the groups Police then Paragraphe, each with its disabled button");
+    const groupNamed = name => [...document.querySelectorAll("[data-ribbon-group-id]")].find(group => group.querySelector(".ribbon-group-label")?.textContent === name);
+    const fontGroup = groupNamed("Police");
+    const paragraphGroup = groupNamed("Paragraphe");
+    assert(fontGroup && paragraphGroup && fontGroup.nextElementSibling === paragraphGroup,
+      "the Home tab shows the groups Police then Paragraphe (filled by format-char.mjs and format-para.mjs)");
     let requests = 0;
     const original = editor.format.formatState;
     editor.format.formatState = (...args) => { requests += 1; return original.apply(editor.format, args); };

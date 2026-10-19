@@ -986,9 +986,11 @@ Réf : F-TXT-010 · Taille : S · Dépend de : US-013, US-240
 #### US-243 — Mettre en forme les paragraphes depuis le ruban
 *En tant qu'*utilisateur, *je veux* aligner et espacer mes paragraphes *afin de* structurer la page.
 - [ ] Alignements, augmenter/diminuer le retrait, interligne (valeurs courantes + options), ajout/suppression de l'espacement avant/après, trame de fond, bordures (menu), afficher les marques de mise en forme.
-- [ ] S'applique à tous les paragraphes touchés par la sélection.
+- [x] S'applique à tous les paragraphes touchés par la sélection.
 
 Réf : F-TXT-011 · Taille : M · Dépend de : US-106, US-201, US-219
+
+Validation US-243 (2026-10-19) : groupe Paragraphe du ruban (`web/format-para.mjs`, handler `rich_editor/format_para.rs`, contrat [F0](docs/us-240-format-protocol.md), [détails](docs/us-243-para-format.md)). Critère 2 vrai de bout en bout : tous les paragraphes touchés en une étape Ctrl+Z, état mixte, rendu vérifié sur le Canvas, aller-retour DOCX. Critère 1 non coché : faits alignements, retraits +/-, interligne (valeurs courantes et Options d'interligne), espace avant/après, marques de mise en forme (¶, Ctrl+Maj+8) ; manquent trame de fond et bordures (US-243-M1 : `ParaProps` n'a ni trame ni bordures), boutons désactivés avec leur raison. Réserve : les marques redemandent toutes les pages visibles à chaque révision (le client ne reçoit pas les pages invalidées). Relecture indépendante : fusionnable, retouches intégrées.
 
 #### US-244 — Dialogue Paragraphe
 *En tant qu'*utilisateur, *je veux* un dialogue Paragraphe *afin de* régler précisément retraits, espacements et enchaînements.
