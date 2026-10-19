@@ -82,6 +82,26 @@ pub(crate) enum Request {
         id: String,
         url: String,
     },
+    /// US-320 : liste des documents récents (chemin, date, épinglage, présence sur le disque).
+    RecentList {
+        id: String,
+    },
+    /// US-320 : ouvre un document récent par son numéro de session ; remet un ticket de lecture.
+    RecentOpen {
+        id: String,
+        recent: u64,
+    },
+    /// US-320 : épingle ou désépingle un document récent.
+    RecentPin {
+        id: String,
+        recent: u64,
+        pinned: bool,
+    },
+    /// US-320 : retire un document de la liste (le fichier n'est jamais touché).
+    RecentRemove {
+        id: String,
+        recent: u64,
+    },
 }
 
 impl Request {
@@ -99,6 +119,10 @@ impl Request {
             | Self::ListFonts { id }
             | Self::ReadFont { id, .. }
             | Self::OpenUrl { id, .. }
+            | Self::RecentList { id }
+            | Self::RecentOpen { id, .. }
+            | Self::RecentPin { id, .. }
+            | Self::RecentRemove { id, .. }
             | Self::Dirty { id, .. } => id,
         }
     }
@@ -490,6 +514,25 @@ fn parse_extended(operation: &str, tail: &str, id: &str) -> Option<Result<Reques
             font: tail.to_owned(),
         }),
         "readFont" => Err(BAD),
+        "recentList" if tail.is_empty() => Ok(Request::RecentList { id }),
+        "recentList" => Err(BAD),
+        "recentOpen" => parse_recent_id(tail)
+            .map(|recent| Request::RecentOpen { id, recent })
+            .ok_or(BAD),
+        "recentRemove" => parse_recent_id(tail)
+            .map(|recent| Request::RecentRemove { id, recent })
+            .ok_or(BAD),
+        "recentPin" => {
+            let (number, flag) = tail.split_once(';').unwrap_or(("", ""));
+            match (parse_recent_id(number), flag) {
+                (Some(recent), "0" | "1") => Ok(Request::RecentPin {
+                    id,
+                    recent,
+                    pinned: flag == "1",
+                }),
+                _ => Err(BAD),
+            }
+        }
         "openUrl" => match decode_base64(tail) {
             Ok(bytes) if bytes.len() > crate::url_open::MAX_URL_BYTES => Err("url.error.too_long"),
             Ok(bytes) => String::from_utf8(bytes)
@@ -499,6 +542,14 @@ fn parse_extended(operation: &str, tail: &str, id: &str) -> Option<Result<Reques
         },
         _ => return None,
     })
+}
+
+/// Numéro de document récent : 1 à 10 chiffres, non nul.
+fn parse_recent_id(text: &str) -> Option<u64> {
+    if text.is_empty() || text.len() > 10 || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<u64>().ok().filter(|number| *number != 0)
 }
 
 /// `w<n>;<seq>;<0|1>;<base64>` : un morceau d'écriture.

@@ -23,7 +23,7 @@ assert(executable, "An installed Edge/Chromium browser is required for this chec
 const files = new Map([
   ...["symbol-dialog", "symbol-catalogue", "editor-context-menu", "about-dialog", "about-licenses", "build-info", "properties-dialog"].flatMap(name =>
     [`/${name}.mjs`, `/web/${name}.mjs`].map(url => [url, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]])),
-  ...["symbol-dialog", "about-dialog", "properties-dialog", "document-mirror"].map(name => [`/${name}.css`, [`web/${name}.css`, "text/css; charset=utf-8"]]),
+  ...["symbol-dialog", "about-dialog", "properties-dialog", "file-tab", "document-mirror"].map(name => [`/${name}.css`, [`web/${name}.css`, "text/css; charset=utf-8"]]),
   ["/tests/editor-utilities-integration-browser.mjs", ["tests/editor-utilities-integration-browser.mjs", "text/javascript; charset=utf-8"]],
   ["/page-navigation.mjs", ["web/page-navigation.mjs", "text/javascript; charset=utf-8"]],
   ["/replace-controls.mjs", ["web/replace-controls.mjs", "text/javascript; charset=utf-8"]],
@@ -56,7 +56,7 @@ const files = new Map([
   ["/i18n/fr-FR.txt", ["web/i18n/fr-FR.txt", "text/plain; charset=utf-8"]],
   ["/atelier_core_wasm.wasm", ["target/wasm32-unknown-unknown/wasm-release/atelier_core_wasm.wasm", "application/wasm"]],
   ["/tests/docx-reference/basic.docx", ["tests/docx-reference/basic.docx", "application/octet-stream"]],
-  ...["i18n", "navigation-tools", "search-pane", "statistics-controls", "zoom", "zoom-controls", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "image-insert", "native-host", "editor-shell", "ui-components", "ribbon", "theme", "rich-editor", "rich-editor-client", "rich-image-cache", "rich-editor-protocol", "editor-page-cache", "document-mirror"].map(name =>
+  ...["i18n", "navigation-tools", "search-pane", "statistics-controls", "zoom", "zoom-controls", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "image-insert", "native-host", "file-tab", "editor-shell", "ui-components", "ribbon", "theme", "rich-editor", "rich-editor-client", "rich-image-cache", "rich-editor-protocol", "editor-page-cache", "document-mirror"].map(name =>
     [`/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),
   ...["i18n", "navigation-tools", "search-pane", "statistics-controls", "zoom", "zoom-controls", "editor-protocol", "engine-client", "engine-worker", "wasm-loader", "wasm-protocol", "text-input", "mouse-selection", "text-drag-drop", "french-spacing", "canvas-renderer", "display-list", "image-insert", "rich-editor", "rich-editor-client", "rich-image-cache", "rich-editor-protocol", "editor-page-cache", "document-mirror"].map(name =>
     [`/web/${name}.mjs`, [`web/${name}.mjs`, "text/javascript; charset=utf-8"]]),

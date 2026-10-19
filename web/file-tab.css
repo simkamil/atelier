@@ -1,0 +1,70 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Onglet Fichier (US-320) : liste des documents récents dans le ruban. */
+.ribbon-group[data-ribbon-group-id="recent"] { flex: 3 1 24rem; }
+.ribbon-root .ribbon-command.file-recent {
+  display: block;
+  width: 100%;
+  max-height: 11rem;
+  overflow: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-weight: 400;
+  cursor: default;
+}
+.file-recent-note { margin: 4px 2px; color: var(--muted, #5f716d); font-size: 13px; }
+.file-recent-note.error { color: var(--chrome-danger, #902d28); }
+.file-recent-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.file-recent-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+}
+.file-recent-item[data-pinned="true"] { background: color-mix(in srgb, var(--green, #236c57) 7%, transparent); }
+.file-recent-item button {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--ink, #172a2a);
+  background: transparent;
+  font: 600 13px Carlito, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+.file-recent-item button:hover:not(:disabled) {
+  border-color: var(--green, #236c57);
+  background: color-mix(in srgb, var(--green, #236c57) 7%, var(--paper, #fff));
+}
+.file-recent-item button:disabled { opacity: .5; cursor: default; }
+.file-recent-item button:focus-visible { outline: 2px solid var(--chrome-focus, #236c57); outline-offset: 1px; }
+.file-recent-open {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name date" "path path";
+  gap: 0 12px;
+  min-width: 0;
+  text-align: left;
+}
+.file-recent-name { grid-area: name; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-recent-date { grid-area: date; color: var(--muted, #5f716d); font-weight: 400; white-space: nowrap; }
+.file-recent-path { grid-area: path; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #5f716d); font-size: 12px; font-weight: 400; }
+.file-recent-missing {
+  grid-area: path;
+  justify-self: end;
+  color: var(--chrome-danger, #902d28);
+  font-size: 12px;
+}
+.file-recent-item[data-missing="true"] .file-recent-name { text-decoration: line-through; }
+.file-recent-item[data-missing="true"] .file-recent-path { max-width: calc(100% - 6rem); }
+.file-recent-pin[aria-pressed="true"] {
+  border-color: var(--green, #236c57);
+  color: var(--green, #236c57);
+  background: color-mix(in srgb, var(--green, #236c57) 12%, var(--paper, #fff));
+}
+@media (forced-colors: active) {
+  .file-recent-item button { border-color: ButtonBorder; }
+  .file-recent-pin[aria-pressed="true"] { border-color: Highlight; color: Highlight; }
+  .file-recent-note.error, .file-recent-missing { color: CanvasText; }
+}

@@ -10,3 +10,8 @@ Les 71 fichiers officiels UCD 17.0.0 et la licence Unicode V3 sont figés sous
 `ucd/17.0.0/`, avec manifeste SHA-256. Le générateur local produit les
 [tables Unicode versionnées](../docs/us-010-ucd-tables.md) hors ligne.
 Les dictionnaires restent à ajouter avec leurs stories.
+
+Les [modèles de documents](templates/) (lettre, CV, rapport, compte rendu) sont de
+simples DOCX fournis avec l'exe comme ressources hors réseau (`/templates/*.docx`).
+Ils s'ouvrent dans l'éditeur riche comme des documents sans nom ; leur ouverture et
+leur réenregistrement sont vérifiés par `node tests/file-templates.mjs`.

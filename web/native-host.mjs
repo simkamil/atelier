@@ -20,6 +20,8 @@ export const MAX_WRITE_BYTES = 64 * 1024 * 1024;
 const MAX_SHARED_BYTES = 1024 * 1024 * 1024;
 const MAX_URL_LENGTH = 2048;
 const MAX_FONT_LIST_BYTES = 2 * 1024 * 1024;
+/** US-320 : liste des documents récents (30 entrées de 1 024 caractères au plus, très en dessous). */
+const MAX_RECENT_LIST_BYTES = 256 * 1024;
 /** Formats que le natif sait proposer dans ses dialogues ; le moteur choisit le sous-ensemble utile. */
 export const DIALOG_FORMATS = Object.freeze(["txt", "docx", "docm", "dotx", "odt", "doc"]);
 const SHARED_OPERATIONS = new Set(["readTicket", "readFont", "listFonts", "launch"]);
@@ -35,7 +37,7 @@ export const BRIDGE_ERROR_KEYS = Object.freeze([
   "files.error.invalid_limit", "files.error.invalid_path", "files.error.invalid_request", "files.error.io",
   "files.error.not_found", "files.error.not_regular_file", "files.error.read_failed", "files.error.reparse_point",
   "files.error.save_failed", "files.error.shared_buffer_failed", "files.error.shared_buffer_unavailable",
-  "files.error.ticket_exhausted", "files.error.unknown_ticket", "files.error.unsupported_format",
+  "files.error.ticket_exhausted", "files.error.unknown_recent", "files.error.unknown_ticket", "files.error.unsupported_format",
   "files.error.windows_only", "files.error.write_sequence", "files.error.wrong_capability",
   "fonts.error.changed", "fonts.error.read_failed", "fonts.error.too_large", "fonts.error.unknown_id",
   "url.error.access_denied", "url.error.invalid", "url.error.launch_failed", "url.error.no_handler",
@@ -108,6 +110,26 @@ export function buildDialogSpec({ title, filters, suggestedName } = {}, save = f
   }
   const text = lines.join("\n");
   return new TextEncoder().encode(text).length <= 4096 ? text : null;
+}
+
+/**
+ * Liste des récents du natif : une ligne `id\tépinglé\tdate\tprésent\tchemin` par document. `used` est en
+ * secondes Unix. Le chemin ne sert qu'à l'affichage : toute action désigne l'entrée par son `id`.
+ */
+export function parseRecentList(bytes) {
+  let text;
+  try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { throw new NativeHostError("HOST_INVALID_RESPONSE"); }
+  const entries = [];
+  for (const line of text.split("\n")) {
+    if (line === "") continue;
+    const fields = line.split("\t");
+    if (fields.length !== 5 || !/^[1-9][0-9]{0,9}$/.test(fields[0]) || !["0", "1"].includes(fields[1])
+        || !/^[0-9]{1,15}$/.test(fields[2]) || !["0", "1"].includes(fields[3]) || fields[4] === "" || hasControl(fields[4])) {
+      throw new NativeHostError("HOST_INVALID_RESPONSE");
+    }
+    entries.push({ id: Number(fields[0]), pinned: fields[1] === "1", used: Number(fields[2]), present: fields[3] === "1", path: fields[4] });
+  }
+  return entries;
 }
 
 function decodeName(encoded) {
@@ -198,7 +220,13 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
         if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED) throw new NativeHostError("HOST_INVALID_RESPONSE");
         settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes: fromBase64(match[3], MAX_DOCX_BYTES) } });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
-    } else if (status === "ok" && entry.operation === "pickOpen") {
+    } else if (status === "ok" && entry.operation === "recentList") {
+      try {
+        const match = /^b64;([A-Za-z0-9+/=]*)$/.exec(payload);
+        if (!match) throw new NativeHostError("HOST_INVALID_RESPONSE");
+        settle(id, { kind: "ok", entries: parseRecentList(fromBase64(match[1], MAX_RECENT_LIST_BYTES)) });
+      } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
+    } else if (status === "ok" && ["pickOpen", "recentOpen"].includes(entry.operation)) {
       const match = /^(r[1-9][0-9]{0,19});([a-z]{2,5});([0-9]{1,10});([A-Za-z0-9+/=]*)$/.exec(payload);
       try {
         if (!match || !DIALOG_FORMATS.includes(match[2])) throw new NativeHostError("HOST_INVALID_RESPONSE");
@@ -213,7 +241,7 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     } else if (status === "ok" && ["readTicket", "readFont", "listFonts"].includes(entry.operation)) {
       try { finishData(id, entry, inlineBytes(payload, entry.operation === "listFonts" ? MAX_FONT_LIST_BYTES : MAX_DOCX_BYTES), noop); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
-    } else if (status === "ok" && payload === "" && ["save", "dirty", "launch", "writeTicket", "releaseTicket", "openUrl"].includes(entry.operation)) {
+    } else if (status === "ok" && payload === "" && ["save", "dirty", "launch", "writeTicket", "releaseTicket", "openUrl", "recentPin", "recentRemove"].includes(entry.operation)) {
       settle(id, { kind: "ok" });
     } else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   }
@@ -305,6 +333,7 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
   }
 
   const invalid = key => Promise.resolve({ kind: "error", key });
+  const validRecentId = value => Number.isSafeInteger(value) && value >= 1 && value <= 9999999999;
 
   function pick(operation, options) {
     const save = operation === "pickSave";
@@ -354,6 +383,16 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     pickOpen(options) { return pick("pickOpen", options); },
     /** US-113 : dialogue d'enregistrement natif ; `{ kind: "ok", ticket, format, name }` avec un ticket d'écriture opaque. */
     pickSave(options) { return pick("pickSave", options); },
+    /** US-320 : documents récents du natif, `{ kind: "ok", entries: [{ id, pinned, used, present, path }] }` (épinglés d'abord). */
+    recentList() { return request("recentList"); },
+    /** US-320 : ouvre un récent par son `id` ; même résultat que `pickOpen` (ticket de lecture), ou `files.error.not_found`. */
+    recentOpen(recentId) { return validRecentId(recentId) ? request("recentOpen", String(recentId)) : invalid("files.error.unknown_recent"); },
+    /** US-320 : épingle (`true`) ou désépingle un récent. */
+    recentPin(recentId, pinned) {
+      return validRecentId(recentId) && typeof pinned === "boolean" ? request("recentPin", `${recentId};${pinned ? 1 : 0}`) : invalid("files.error.unknown_recent");
+    },
+    /** US-320 : retire un récent de la liste ; le fichier n'est pas touché. */
+    recentRemove(recentId) { return validRecentId(recentId) ? request("recentRemove", String(recentId)) : invalid("files.error.unknown_recent"); },
     /**
      * US-113 : lit (une fois) le fichier d'un ticket `r…`. Au-delà du seuil natif, `bytes` est une vue en
      * lecture seule d'un SharedBuffer : appeler `result.release()` quand les octets ne servent plus

@@ -11,6 +11,7 @@ use crate::file_bridge::{MAX_DOCX_PREVIEW_BYTES, Request, encode_base64};
 use crate::file_dialog::{DialogOwner, FileFilter, StaFileDialogs};
 use crate::files::{FileBroker, FileError, ReadTicket, WriteTicket};
 use crate::fonts::FontCatalog;
+use crate::recent::{self, RecentList};
 use crate::webview::{SharedBufferError, WebView};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -274,6 +275,8 @@ pub(crate) type Job = Box<dyn FnOnce() -> JobResult + Send + 'static>;
 pub(crate) struct JobResult {
     outcome: Outcome,
     fonts: Option<Arc<FontCatalog>>,
+    /// Fichier écrit avec succès, à noter dans les documents récents (US-320).
+    remember: Option<PathBuf>,
 }
 
 impl JobResult {
@@ -281,6 +284,7 @@ impl JobResult {
         Self {
             outcome,
             fonts: None,
+            remember: None,
         }
     }
 }
@@ -298,6 +302,11 @@ pub(crate) struct BridgeState {
     staging: Option<Staging>,
     fonts: Option<Arc<FontCatalog>>,
     font_dirs: Vec<PathBuf>,
+    /// US-320 : destinations des tickets d'écriture remis (pour noter le fichier une fois écrit).
+    write_paths: Vec<(u64, PathBuf)>,
+    /// US-320 : documents récents et fichier où ils sont conservés (`None` : en mémoire seulement).
+    recent: RecentList,
+    recent_file: Option<PathBuf>,
 }
 
 /// Services de confiance appelés sur la STA ; injectables pour les tests sans dialogue.
@@ -315,6 +324,30 @@ impl BridgeState {
             staging: None,
             fonts: None,
             font_dirs,
+            write_paths: Vec::new(),
+            recent: RecentList::default(),
+            recent_file: None,
+        }
+    }
+
+    /// Relit les documents récents de `file` et les y réécrit à chaque changement.
+    pub(crate) fn with_recent_file(mut self, file: PathBuf) -> Self {
+        self.recent = RecentList::load(&file);
+        self.recent_file = Some(file);
+        self
+    }
+
+    fn persist_recent(&self) {
+        // Les récents sont un confort : un disque en échec ne doit pas gêner l'ouverture ou l'enregistrement.
+        if let Some(file) = &self.recent_file {
+            let _ = self.recent.save(file);
+        }
+    }
+
+    /// Note l'ouverture ou l'enregistrement d'un fichier choisi par le natif.
+    pub(crate) fn remember(&mut self, path: &Path) {
+        if self.recent.touch(path, recent::now_secs()) {
+            self.persist_recent();
         }
     }
 
@@ -357,6 +390,9 @@ impl BridgeState {
         if let Some(catalog) = result.fonts {
             self.fonts = Some(catalog);
         }
+        if let Some(path) = result.remember {
+            self.remember(&path);
+        }
         result.outcome
     }
 
@@ -381,6 +417,7 @@ impl BridgeState {
     /// l'utilise encore le révoque lui-même.
     fn detach_write(&mut self, ticket: u64) {
         self.write_tickets.retain(|held| *held != ticket);
+        self.write_paths.retain(|(held, _)| *held != ticket);
         if self
             .staging
             .as_ref()
@@ -397,6 +434,7 @@ impl BridgeState {
 
     fn forget_write(&mut self, ticket: u64, broker: &FileBroker) {
         self.write_tickets.retain(|held| *held != ticket);
+        self.write_paths.retain(|(held, _)| *held != ticket);
         if self
             .staging
             .as_ref()
@@ -455,6 +493,7 @@ pub(crate) fn begin_bridge_request(
                 JobResult {
                     outcome: bytes_outcome(&id, "b64;", &shared_payload(size), "fb;", listing),
                     fonts: Some(catalog),
+                    remember: None,
                 }
             }))
         }
@@ -473,6 +512,22 @@ pub(crate) fn begin_bridge_request(
         Request::OpenUrl { id, url } => Step::Done(match host.open_url(&url) {
             Ok(()) => ok_reply(&id, ""),
             Err(key) => error_reply(&id, key),
+        }),
+        Request::RecentList { id } => recent_list(id, state),
+        Request::RecentOpen { id, recent } => Step::Done(recent_open(&id, recent, state, broker)),
+        Request::RecentPin { id, recent, pinned } => {
+            Step::Done(if state.recent.set_pinned(recent, pinned) {
+                state.persist_recent();
+                ok_reply(&id, "")
+            } else {
+                error_reply(&id, "files.error.unknown_recent")
+            })
+        }
+        Request::RecentRemove { id, recent } => Step::Done(if state.recent.remove(recent) {
+            state.persist_recent();
+            ok_reply(&id, "")
+        } else {
+            error_reply(&id, "files.error.unknown_recent")
         }),
         Request::Open { id }
         | Request::OpenDocx { id }
@@ -527,6 +582,65 @@ fn pick_open(
         return error_reply(id, "files.error.too_large");
     }
     state.read_tickets.push(ticket.id());
+    state.remember(&path);
+    ok_reply(
+        id,
+        &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(&path)),
+    )
+}
+
+/// Format (identifiant JS) d'un chemin d'après son extension, parmi les formats connus du natif.
+fn format_of_extension(path: &Path) -> Option<&'static str> {
+    let extension = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    FORMATS
+        .iter()
+        .find(|(_, known)| *known == extension)
+        .map(|(format, _)| *format)
+}
+
+/// Liste des récents : `id\tépinglé\tdate\tprésent\tchemin` par ligne, en Base64 en ligne. La
+/// présence sur le disque est testée hors du fil UI (un partage réseau lent ne fige pas la fenêtre).
+fn recent_list(id: String, state: &BridgeState) -> Step {
+    let entries = state.recent.ordered();
+    Step::Job(Box::new(move || {
+        let mut text = String::new();
+        for entry in entries {
+            let present = std::fs::metadata(&entry.path).is_ok_and(|meta| meta.is_file());
+            text.push_str(&format!(
+                "{}\t{}\t{}\t{}\t{}\n",
+                entry.id,
+                u8::from(entry.pinned),
+                entry.used,
+                u8::from(present),
+                entry.path.display()
+            ));
+        }
+        JobResult::outcome(ok_reply(
+            &id,
+            &format!("b64;{}", encode_base64(text.as_bytes())),
+        ))
+    }))
+}
+
+/// Ouvre un récent comme `pick_open` après le choix de l'utilisateur : ticket de lecture opaque.
+/// Fichier absent : `files.error.not_found`, l'entrée reste dans la liste (l'utilisateur la retire).
+fn recent_open(id: &str, recent: u64, state: &mut BridgeState, broker: &FileBroker) -> Outcome {
+    if state.read_tickets.len() >= MAX_OPEN_TICKETS {
+        return error_reply(id, "files.error.ticket_exhausted");
+    }
+    let Some(path) = state.recent.path_of(recent) else {
+        return error_reply(id, "files.error.unknown_recent");
+    };
+    let Some(format) = format_of_extension(&path) else {
+        return error_reply(id, "files.error.unsupported_format");
+    };
+    let ticket = match broker.grant_read(&path, TICKET_READ_LIMIT) {
+        Ok(ticket) => ticket,
+        Err(error) => return error_reply(id, error.message_key),
+    };
+    let size = std::fs::metadata(&path).map_or(0, |meta| meta.len());
+    state.read_tickets.push(ticket.id());
+    state.remember(&path);
     ok_reply(
         id,
         &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(&path)),
@@ -560,6 +674,7 @@ fn pick_save(
         Err(error) => error_reply(id, error.message_key),
         Ok(ticket) => {
             state.write_tickets.push(ticket.id());
+            state.write_paths.push((ticket.id(), path.clone()));
             ok_reply(
                 id,
                 &format!("w{};{format};{}", ticket.id(), file_name_b64(&path)),
@@ -640,16 +755,26 @@ fn write_ticket(
     }
     // Écriture atomique par le courtier, hors du fil UI ; le ticket est consommé quel que soit le
     // résultat.
+    let destination = state
+        .write_paths
+        .iter()
+        .find(|(held, _)| *held == ticket)
+        .map(|(_, path)| path.clone());
     state.detach_write(ticket);
     let broker = Arc::clone(broker);
     Step::Job(Box::new(move || {
         let ticket = WriteTicket::from_id(ticket);
         let result = broker.write(ticket, &staging.bytes);
         broker.revoke_write(ticket);
-        JobResult::outcome(match result {
+        let written = result.is_ok();
+        let mut done = JobResult::outcome(match result {
             Ok(()) => ok_reply(&id, ""),
             Err(error) => error_reply(&id, error.message_key),
-        })
+        });
+        if written {
+            done.remember = destination;
+        }
+        done
     }))
 }
 
@@ -1713,6 +1838,304 @@ mod tests {
             text_of(&failed),
             "us120-file|1|2|error|url.error.no_handler"
         );
+    }
+
+    fn recent_state(dir: &Path) -> BridgeState {
+        BridgeState::new(Vec::new()).with_recent_file(dir.join("recent.ini"))
+    }
+
+    fn recent_rows(state: &mut BridgeState, broker: &Arc<FileBroker>) -> Vec<Vec<String>> {
+        let mut host = FakeHost::new(None);
+        let reply = text_of(&process_bridge_request(
+            Request::RecentList { id: "9".into() },
+            state,
+            broker,
+            &mut host,
+        ));
+        let payload = reply.strip_prefix("us120-file|1|9|ok|b64;").expect(&reply);
+        String::from_utf8(crate::file_bridge::decode_base64(payload).unwrap())
+            .unwrap()
+            .lines()
+            .map(|line| line.split('\t').map(str::to_owned).collect())
+            .collect()
+    }
+
+    fn request_text(state: &mut BridgeState, broker: &Arc<FileBroker>, request: Request) -> String {
+        let mut host = FakeHost::new(None);
+        text_of(&process_bridge_request(request, state, broker, &mut host))
+    }
+
+    /// US-320 : ouvrir via le dialogue, enregistrer et rouvrir un récent alimentent `recent.ini`, qui survit au
+    /// redémarrage (nouvel état relu depuis le fichier) ; épinglage et retrait sont persistés ; un fichier
+    /// disparu est signalé (`présent` = 0, `not_found` à l'ouverture) sans quitter la liste.
+    #[test]
+    fn recent_documents_persist_across_restarts_and_report_missing_files() {
+        let dir = work_dir("recent");
+        let first = dir.join("Premier é.docx");
+        let second = dir.join("second.txt");
+        std::fs::write(&first, b"un").unwrap();
+        let broker = Arc::new(FileBroker::new());
+        let mut state = recent_state(&dir);
+        assert!(recent_rows(&mut state, &broker).is_empty());
+
+        // Ouverture par le dialogue : l'entrée apparaît, avec le chemin complet pour l'affichage.
+        let mut host = FakeHost::new(Some(first.clone()));
+        let opened = text_of(&process_bridge_request(
+            Request::PickOpen {
+                id: "1".into(),
+                spec: open_spec(),
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        ));
+        assert!(opened.contains("|ok|r"), "{opened}");
+        // Enregistrement : le fichier n'entre dans la liste qu'une fois écrit.
+        let ticket = pick_save_ticket(&dir, "second.txt", &mut state, &broker);
+        assert_eq!(
+            recent_rows(&mut state, &broker).len(),
+            1,
+            "pas avant l'écriture"
+        );
+        let wrote = request_text(
+            &mut state,
+            &broker,
+            Request::WriteTicket {
+                id: "2".into(),
+                ticket,
+                seq: 0,
+                last: true,
+                bytes: b"deux".to_vec(),
+            },
+        );
+        assert_eq!(wrote, "us120-file|1|2|ok|");
+        let rows = recent_rows(&mut state, &broker);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0][4],
+            second.display().to_string(),
+            "le plus récent d'abord"
+        );
+        assert_eq!((rows[0][1].as_str(), rows[0][3].as_str()), ("0", "1"));
+        assert_eq!(rows[1][4], first.display().to_string());
+        assert!(rows[0][2].parse::<u64>().unwrap() > 1_700_000_000);
+
+        // Redémarrage : un nouvel état relit recent.ini.
+        let first_id: u64 = rows[1][0].parse().unwrap();
+        let mut restarted = recent_state(&dir);
+        let again = recent_rows(&mut restarted, &broker);
+        assert_eq!(again.len(), 2);
+        assert_eq!(again[1][4], first.display().to_string());
+
+        // Épinglage : l'entrée épinglée passe en tête et le reste après redémarrage.
+        let pinned = request_text(
+            &mut state,
+            &broker,
+            Request::RecentPin {
+                id: "3".into(),
+                recent: first_id,
+                pinned: true,
+            },
+        );
+        assert_eq!(pinned, "us120-file|1|3|ok|");
+        let mut restarted = recent_state(&dir);
+        let after = recent_rows(&mut restarted, &broker);
+        // Les numéros sont ceux de la session : on désigne l'entrée par le numéro relu après redémarrage.
+        let restarted_first: u64 = after[0][0].parse().unwrap();
+        assert_eq!(
+            (after[0][1].as_str(), after[0][4].as_str()),
+            ("1", first.display().to_string().as_str())
+        );
+
+        // Fichier introuvable : signalé dans la liste et à l'ouverture, l'entrée reste.
+        std::fs::remove_file(&first).unwrap();
+        let missing_rows = recent_rows(&mut restarted, &broker);
+        assert_eq!(missing_rows[0][3], "0");
+        let missing = request_text(
+            &mut restarted,
+            &broker,
+            Request::RecentOpen {
+                id: "4".into(),
+                recent: restarted_first,
+            },
+        );
+        assert_eq!(missing, "us120-file|1|4|error|files.error.not_found");
+        assert_eq!(recent_rows(&mut restarted, &broker).len(), 2);
+        assert_eq!(
+            restarted.outstanding(),
+            (0, 0),
+            "aucun ticket pour un fichier absent"
+        );
+
+        // Retrait : l'entrée disparaît (le fichier n'est jamais touché) ; un numéro inconnu est refusé.
+        let removed = request_text(
+            &mut restarted,
+            &broker,
+            Request::RecentRemove {
+                id: "5".into(),
+                recent: restarted_first,
+            },
+        );
+        assert_eq!(removed, "us120-file|1|5|ok|");
+        assert!(second.exists());
+        let unknown = request_text(
+            &mut restarted,
+            &broker,
+            Request::RecentRemove {
+                id: "6".into(),
+                recent: restarted_first,
+            },
+        );
+        assert_eq!(unknown, "us120-file|1|6|error|files.error.unknown_recent");
+        let last = recent_rows(&mut recent_state(&dir), &broker);
+        assert_eq!(last.len(), 1);
+        assert_eq!(last[0][4], second.display().to_string());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn opening_a_recent_hands_out_the_same_ticket_as_the_dialog_and_never_a_path() {
+        let dir = work_dir("recent-open");
+        let file = dir.join("Lettre.docx");
+        std::fs::write(&file, b"docx bytes").unwrap();
+        let broker = Arc::new(FileBroker::new());
+        let mut state = recent_state(&dir);
+        state.remember(&file);
+        let id: u64 = recent_rows(&mut state, &broker)[0][0].parse().unwrap();
+        let text = request_text(
+            &mut state,
+            &broker,
+            Request::RecentOpen {
+                id: "1".into(),
+                recent: id,
+            },
+        );
+        let payload = text.strip_prefix("us120-file|1|1|ok|").expect(&text);
+        let fields: Vec<&str> = payload.split(';').collect();
+        assert_eq!((fields[1], fields[2]), ("docx", "10"));
+        assert_eq!(
+            crate::file_bridge::decode_base64(fields[3]).unwrap(),
+            "Lettre.docx".as_bytes()
+        );
+        assert!(!text.contains(dir.to_string_lossy().as_ref()));
+        let (_, ticket) = parse_ticket(fields[0]).unwrap();
+        let read = request_text(
+            &mut state,
+            &broker,
+            Request::ReadTicket {
+                id: "2".into(),
+                ticket,
+            },
+        );
+        assert_eq!(
+            read,
+            format!("us120-file|1|2|ok|b64;{}", encode_base64(b"docx bytes"))
+        );
+        let unknown = request_text(
+            &mut state,
+            &broker,
+            Request::RecentOpen {
+                id: "3".into(),
+                recent: id + 100,
+            },
+        );
+        assert_eq!(unknown, "us120-file|1|3|error|files.error.unknown_recent");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_failed_write_and_a_cancelled_dialog_leave_the_recent_list_untouched() {
+        let dir = work_dir("recent-failed");
+        let broker = Arc::new(FileBroker::new());
+        let mut state = recent_state(&dir);
+        let ticket = pick_save_ticket(&dir, "perdu.txt", &mut state, &broker);
+        let bad = request_text(
+            &mut state,
+            &broker,
+            Request::WriteTicket {
+                id: "2".into(),
+                ticket,
+                seq: 5,
+                last: true,
+                bytes: b"x".to_vec(),
+            },
+        );
+        assert!(bad.contains("|error|"), "{bad}");
+        let mut host = FakeHost::new(None);
+        let cancelled = text_of(&process_bridge_request(
+            Request::PickOpen {
+                id: "3".into(),
+                spec: open_spec(),
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        ));
+        assert_eq!(cancelled, "us120-file|1|3|cancelled|");
+        assert!(recent_rows(&mut state, &broker).is_empty());
+        assert!(!dir.join("recent.ini").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn recent_requests_are_parsed_strictly_at_ingress() {
+        let mut queue = queue();
+        let accepted = |queue: &mut Queue, id: u32, operation: &str, tail: &str| {
+            queue
+                .accept(ORIGIN, &format!("us120-file|1|{id}|{operation}|{tail}"))
+                .is_ok()
+        };
+        assert!(accepted(&mut queue, 1, "recentList", ""));
+        assert!(accepted(&mut queue, 2, "recentOpen", "12"));
+        assert!(accepted(&mut queue, 3, "recentPin", "12;1"));
+        assert!(accepted(&mut queue, 4, "recentRemove", "12"));
+        assert_eq!(queue.pop(), Some(Request::RecentList { id: "1".into() }));
+        assert_eq!(
+            queue.pop(),
+            Some(Request::RecentOpen {
+                id: "2".into(),
+                recent: 12
+            })
+        );
+        assert_eq!(
+            queue.pop(),
+            Some(Request::RecentPin {
+                id: "3".into(),
+                recent: 12,
+                pinned: true
+            })
+        );
+        assert_eq!(
+            queue.pop(),
+            Some(Request::RecentRemove {
+                id: "4".into(),
+                recent: 12
+            })
+        );
+        for (index, (operation, tail)) in [
+            ("recentList", "x"),
+            ("recentOpen", ""),
+            ("recentOpen", "0"),
+            ("recentOpen", "C:\\a.docx"),
+            ("recentOpen", "12345678901"),
+            ("recentPin", "12"),
+            ("recentPin", "12;2"),
+            ("recentPin", ";1"),
+            ("recentRemove", "-1"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = 10 + index as u32;
+            assert!(
+                !accepted(&mut queue, id, operation, tail),
+                "{operation}|{tail}"
+            );
+            assert_eq!(
+                queue.pop_rejection().as_deref(),
+                Some(format!("us120-file|1|{id}|error|files.error.invalid_request").as_str())
+            );
+        }
     }
 
     /// Chaque clé d'erreur du natif doit exister dans le catalogue français (US-113, critère 3).

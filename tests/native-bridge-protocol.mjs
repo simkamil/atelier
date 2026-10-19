@@ -298,6 +298,57 @@ for (const [bad, key] of [
   host.close();
 }
 
+// --- US-320 : documents récents ------------------------------------------------------------------------
+{
+  const fake = fakeWebview();
+  const host = createNativeHost({ webview: fake.webview, timeoutMs: 1000 });
+  const listed = host.recentList();
+  assert.deepEqual([fake.last().op, fake.last().tail], ["recentList", ""]);
+  const rows = ["3\t1\t1760000000\t1\tC:\\Docs\\Lettre é.docx", "2\t0\t1750000000\t0\tD:\\absent.txt"].join("\n") + "\n";
+  fake.reply(fake.last().id, "ok", `b64;${b64(rows)}`);
+  assert.deepEqual(await listed, { kind: "ok", entries: [
+    { id: 3, pinned: true, used: 1760000000, present: true, path: "C:\\Docs\\Lettre é.docx" },
+    { id: 2, pinned: false, used: 1750000000, present: false, path: "D:\\absent.txt" },
+  ] });
+  const empty = host.recentList();
+  fake.reply(fake.last().id, "ok", "b64;");
+  assert.deepEqual(await empty, { kind: "ok", entries: [] });
+  for (const bad of ["0\t0\t1\t1\tC:\\a", "1\t2\t1\t1\tC:\\a", "1\t0\t1\t1\t", "1\t0\t1\t1\tC:\\a\u0001b", "1\t0\t1\tC:\\a", "x\t0\t1\t1\tC:\\a"]) {
+    const broken = host.recentList();
+    fake.reply(fake.last().id, "ok", `b64;${b64(`${bad}\n`)}`);
+    assert.deepEqual(await broken, { kind: "error", key: "HOST_INVALID_RESPONSE" }, JSON.stringify(bad));
+  }
+  const notBase64 = host.recentList();
+  fake.reply(fake.last().id, "ok", "pas du base64");
+  assert.deepEqual(await notBase64, { kind: "error", key: "HOST_INVALID_RESPONSE" });
+
+  const opened = host.recentOpen(3);
+  assert.deepEqual([fake.last().op, fake.last().tail], ["recentOpen", "3"]);
+  fake.reply(fake.last().id, "ok", `r7;docx;2048;${b64("Lettre é.docx")}`);
+  assert.deepEqual(await opened, { kind: "ok", ticket: "r7", format: "docx", size: 2048, name: "Lettre é.docx" });
+  const missing = host.recentOpen(2);
+  fake.reply(fake.last().id, "error", "files.error.not_found");
+  assert.deepEqual(await missing, { kind: "error", key: "files.error.not_found" });
+
+  const pinned = host.recentPin(3, false);
+  assert.deepEqual([fake.last().op, fake.last().tail], ["recentPin", "3;0"]);
+  fake.reply(fake.last().id, "ok");
+  assert.deepEqual(await pinned, { kind: "ok" });
+  const removed = host.recentRemove(2);
+  assert.deepEqual([fake.last().op, fake.last().tail], ["recentRemove", "2"]);
+  fake.reply(fake.last().id, "ok");
+  assert.deepEqual(await removed, { kind: "ok" });
+
+  const sentBefore = fake.sent.length;
+  for (const bad of [0, -1, 1.5, "3", "C:\\a.docx", null, 10 ** 10]) {
+    assert.deepEqual(await host.recentOpen(bad), { kind: "error", key: "files.error.unknown_recent" }, String(bad));
+    assert.deepEqual(await host.recentRemove(bad), { kind: "error", key: "files.error.unknown_recent" });
+  }
+  assert.deepEqual(await host.recentPin(3, "oui"), { kind: "error", key: "files.error.unknown_recent" });
+  assert.equal(fake.sent.length, sentBefore, "an invalid recent id or flag never reaches the native side");
+  host.close();
+}
+
 // --- catalogue : chaque clé du pont existe en français -------------------------------------------------
 {
   const catalogue = new Set(readFileSync(new URL("../web/i18n/fr-FR.txt", import.meta.url), "utf8").split("\n").map(line => line.split("=")[0]));
@@ -305,4 +356,4 @@ for (const [bad, key] of [
   assert.deepEqual(missing, []);
 }
 
-console.log("native bridge protocol checks passed: dialog specs, tickets, shared buffers (release, copy, late, invalid), chunked writes, fonts, URL, launch");
+console.log("native bridge protocol checks passed: dialog specs, tickets, shared buffers (release, copy, late, invalid), chunked writes, fonts, URL, launch, recents");

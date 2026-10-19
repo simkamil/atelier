@@ -155,7 +155,8 @@ fn run_bridge_cycle(state_file: &Path, cache: &Path) -> io::Result<String> {
     let write_target = files.join("bridge-write.bin");
     let _ = std::fs::remove_file(&write_target);
 
-    let mut runtime = FileRuntime::new().map_err(|error| io::Error::other(error.message_key))?;
+    let mut runtime = FileRuntime::new(files.join("bridge-recent.ini"))
+        .map_err(|error| io::Error::other(error.message_key))?;
     let issue = |error: crate::files::FileError| io::Error::other(error.message_key);
     let mut trials = Vec::new();
     for _ in 0..TRIALS {
