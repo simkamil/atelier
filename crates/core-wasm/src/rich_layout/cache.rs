@@ -799,6 +799,125 @@ impl PageCache {
         Ok(out)
     }
 
+    /// Formatting marks of pages `first..end` (US-243, `FormatMarks`): spaces,
+    /// tabs, no-break spaces, line and page breaks and paragraph ends, at the
+    /// origin of the marked character on its baseline, in points of the page.
+    /// Reads the existing layout only (glyph and line geometry). A column
+    /// break is reported as a page break (the layout treats both alike).
+    /// `NotReady` when a page is not laid out; more than `limit` marks is
+    /// answered with `limit + 1` of them, so that the caller can refuse.
+    pub fn format_marks(
+        &self,
+        document: &dyn LayoutContext,
+        first: u32,
+        end: u32,
+        limit: usize,
+    ) -> Result<Vec<crate::rich_protocol::FormatMark>, LayoutError> {
+        const KIND_PARAGRAPH: u8 = 0;
+        const KIND_SPACE: u8 = 1;
+        const KIND_TAB: u8 = 2;
+        const KIND_NO_BREAK: u8 = 3;
+        const KIND_LINE: u8 = 4;
+        const KIND_PAGE: u8 = 5;
+        let mut out: Vec<crate::rich_protocol::FormatMark> = Vec::new();
+        // Which `\n` of a paragraph is a page break, computed once per paragraph.
+        let mut page_breaks: Option<(usize, Vec<bool>)> = None;
+        for page in first..end {
+            let placements = self.stream.page_placements(page as usize);
+            if placements.is_empty() {
+                return Err(LayoutError::NotReady);
+            }
+            for placed in placements {
+                let info = self
+                    .infos
+                    .get(placed.paragraph_index)
+                    .ok_or(LayoutError::NotReady)?;
+                let layout = self
+                    .stream
+                    .layout(placed.paragraph_index)
+                    .ok_or(LayoutError::NotReady)?;
+                let line = layout
+                    .lines
+                    .get(placed.line_index)
+                    .ok_or(LayoutError::NotReady)?;
+                let text = &info.painted.text;
+                let line_y = self.geometry.top + placed.baseline;
+                let mut push = |kind: u8, x: i64, y: i64, width: i64| {
+                    out.push(crate::rich_protocol::FormatMark {
+                        page,
+                        kind,
+                        x: (self.geometry.left + x) as f64 / 64.0,
+                        y: y as f64 / 64.0,
+                        width: width.max(0) as f64 / 64.0,
+                    });
+                };
+                let mut line_end = line.x;
+                let mut size = 0i64;
+                for glyph in line.fragments.iter().flat_map(|f| &f.glyphs) {
+                    line_end = line_end.max(glyph.x + glyph.x_advance);
+                    if glyph.glyph_id == atelier_text_layout::INLINE_BOX_GLYPH {
+                        continue;
+                    }
+                    size = glyph.size;
+                    let kind = match text
+                        .get(glyph.source.clone())
+                        .and_then(|t| t.chars().next())
+                    {
+                        Some(' ') => KIND_SPACE,
+                        Some('\t') => KIND_TAB,
+                        Some('\u{a0}' | '\u{202f}') => KIND_NO_BREAK,
+                        _ => continue,
+                    };
+                    push(
+                        kind,
+                        glyph.x,
+                        self.geometry.top + glyph.y + placed.baseline - line.baseline,
+                        glyph.x_advance,
+                    );
+                }
+                let width = if size > 0 { size / 2 } else { line.height / 2 };
+                let ended = text.get(..line.source.end).unwrap_or("");
+                if line.mandatory_break && ended.ends_with('\n') {
+                    let ordinal = ended[..ended.len() - 1].matches('\n').count();
+                    if page_breaks.as_ref().map(|(p, _)| *p) != Some(placed.paragraph_index) {
+                        let flags = document
+                            .paragraph(placed.paragraph_index)
+                            .map(|p| {
+                                let prepared = prepare(p, &self.fonts, !self.txt, None);
+                                prepared
+                                    .paragraph
+                                    .text
+                                    .match_indices('\n')
+                                    .map(|(at, _)| prepared.page_breaks.contains(&(at + 1)))
+                                    .collect::<Vec<bool>>()
+                            })
+                            .unwrap_or_default();
+                        page_breaks = Some((placed.paragraph_index, flags));
+                    }
+                    let is_page = page_breaks
+                        .as_ref()
+                        .and_then(|(_, flags)| flags.get(ordinal))
+                        .copied()
+                        .unwrap_or(false);
+                    push(
+                        if is_page { KIND_PAGE } else { KIND_LINE },
+                        line_end,
+                        line_y,
+                        width,
+                    );
+                }
+                if line.final_line {
+                    push(KIND_PARAGRAPH, line_end, line_y, width);
+                }
+                if out.len() > limit {
+                    out.truncate(limit + 1);
+                    return Ok(out);
+                }
+            }
+        }
+        Ok(out)
+    }
+
     /// Lines laid out so far (all of them once the layout is complete).
     pub fn line_count(&self) -> usize {
         (0..self.stream.paginated_paragraphs())
