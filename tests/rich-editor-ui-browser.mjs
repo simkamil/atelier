@@ -197,6 +197,53 @@ try {
   checks.push("a pasted CRLF is normalised to one paragraph break");
   await waitFor(async () => (await text()) === "\n", "line break replaces the selection");
 
+  // --- formatting controller (preparation of US-240 / US-243): one FormatState per change, UI unchanged ------------------------------------
+  {
+    const controller = app.formatController;
+    const fontButton = document.querySelector('[data-ribbon-command-id="font"]');
+    const paragraphButton = document.querySelector('[data-ribbon-command-id="paragraph"]');
+    assert(fontButton?.disabled && paragraphButton?.disabled && fontButton.textContent === "Police" && paragraphButton.textContent === "Paragraphe"
+      && fontButton.closest(".ribbon-group")?.dataset.ribbonGroupId === "format" && fontButton.nextElementSibling === paragraphButton,
+      "the ribbon format group still shows the two disabled buttons Police and Paragraphe in order");
+    let requests = 0;
+    const original = editor.format.formatState;
+    editor.format.formatState = (...args) => { requests += 1; return original.apply(editor.format, args); };
+    const seen = [];
+    const unsubscribe = controller.subscribe(snapshot => seen.push(snapshot));
+    await sleep(150);
+    const settled = () => requests;
+    let snapshot = controller.snapshot();
+    assert(snapshot.state?.type === "formatState" && snapshot.state.revision === state().revision && snapshot.readOnly === false
+      && snapshot.plainText === true && snapshot.busy === false, `the controller holds the FormatState of the current revision (a blank document is plain text) ${JSON.stringify({ t: snapshot.state?.type, r: String(snapshot.state?.revision), s: String(state().revision), ro: snapshot.readOnly, p: snapshot.plainText, b: snapshot.busy, n: requests })}`);
+    assert(seen.length >= 1 && seen[0] === controller.snapshot(), "a subscriber receives the current snapshot at once and then the changes");
+    inputText(editor.element, "Q");
+    await waitFor(() => state().docLen === 2 && controller.snapshot().state?.revision === state().revision, "FormatState after typing");
+    const afterCaret = settled();
+    key(editor.element, "ArrowLeft");
+    await waitFor(() => state().focus === 1 && controller.snapshot().state !== snapshot.state, "FormatState after a caret move");
+    await sleep(150);
+    assert(settled() === afterCaret + 1, `one FormatState request for one caret move (${settled() - afterCaret})`);
+    const beforeTyping = settled();
+    inputText(editor.element, "R");
+    await waitFor(() => state().docLen === 3 && controller.snapshot().state?.revision === state().revision, "FormatState after a keystroke");
+    await sleep(150);
+    assert(settled() === beforeTyping + 1, `one FormatState request for one keystroke (${settled() - beforeTyping})`);
+    // A command read back: state read once more and the focus returns to the document.
+    snapshot = controller.snapshot();
+    const beforeRun = settled();
+    editor.setSuspended(true); await sleep(50);
+    assert(controller.snapshot().busy === true && settled() === beforeRun, "a suspended editor is published as busy without a request");
+    editor.setSuspended(false);
+    await waitFor(() => controller.snapshot().busy === false, "busy cleared");
+    document.querySelector("#undo").focus();
+    await controller.run(client => client.formatState());
+    assert(document.activeElement === editor.element, "the focus returns to the document after a formatting command");
+    unsubscribe();
+    editor.format.formatState = original;
+    await controller.refresh();
+    await text();
+  }
+
   // --- mirror and reader mode ----------------------------------------------------------------------------------
   const mirror = document.querySelector(".document-mirror");
   assert(mirror && mirror.getAttribute("role") === "document", "accessible DOM mirror exists in the page stack");

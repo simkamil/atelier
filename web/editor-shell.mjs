@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, imageAvailable = false, aboutAvailable = false, propertiesAvailable = false, fileTab = null, onProperties = () => {}, onSymbols = () => {}, onImage = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
+export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, imageAvailable = false, aboutAvailable = false, propertiesAvailable = false, fileTab = null, charFormat = null, paraFormat = null, onProperties = () => {}, onSymbols = () => {}, onImage = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -69,12 +69,17 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
     ...(propertiesAvailable ? [command("properties", "propertiesTitle", "R", propertiesCommand)] : []),
     ...(aboutAvailable ? [command("about", "aboutTitle", "P", aboutCommand)] : []),
   ] }];
+  // US-240 / US-243 : le groupe « Mise en forme » est la suite des entrées des deux modules (format-char.mjs, format-para.mjs),
+  // qui peuvent fournir des éléments personnalisés (voir leur en-tête) ; sans eux, les deux boutons d'origine.
+  const formatCommands = charFormat || paraFormat
+    ? [...(charFormat?.groups({ command, future }) ?? []), ...(paraFormat?.groups({ command, future }) ?? [])]
+    : [future("font", "ribbon-font", "P"), future("paragraph", "ribbon-paragraph", "G")];
   const tabs = [
     { id: "file", label: t("ribbon-file"), keyTip: "F", groups: fileGroups },
     { id: "home", label: t("ribbon-home"), keyTip: "A", groups: [
       { id: "history", label: t("ribbon-history-group"), commands: [command("undo", "action-undo", "U", byId("undo")), command("redo", "action-redo", "R", byId("redo"))] },
       { id: "editing", label: t("ribbon-editing-group"), commands: [command("options", "options-label", "E", options), ...(localizedNavigation ? [command("search", "searchTitle", "C", searchCommand), command("replace", "replaceTitle", "H", replaceCommand)] : [])] },
-      { id: "format", label: t("ribbon-format-group"), commands: [future("font", "ribbon-font", "P"), future("paragraph", "ribbon-paragraph", "G")] },
+      { id: "format", label: t("ribbon-format-group"), commands: formatCommands },
     ] },
     { id: "insert", label: t("ribbon-insert"), keyTip: "I", groups: [{ id: "objects", label: t("ribbon-objects-group"), commands: [future("table", "ribbon-table", "T"), imageAvailable ? command("image", "ribbon-image", "M", imageCommand) : future("image", "ribbon-image", "M"), ...(symbolsAvailable ? [command("symbols", "symbolsTitle", "S", symbolsCommand)] : [])] }] },
     { id: "layout", label: t("ribbon-layout"), keyTip: "M", groups: [{ id: "page", label: t("ribbon-page-group"), commands: [future("margins", "ribbon-margins", "G"), future("orientation", "ribbon-orientation", "O")] }] },

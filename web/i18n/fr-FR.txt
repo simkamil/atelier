@@ -59,6 +59,8 @@ ribbon-references-group=Repères
 ribbon-appearance-group=Interface
 ribbon-font=Police
 ribbon-paragraph=Paragraphe
+# US-240 : mise en forme des caractères (bloc réservé à cette story : n’écrire que dans ce bloc, jusqu’à « # fin US-240 »)
+# fin US-240
 ribbon-table=Tableau
 ribbon-image=Image
 ribbon-margins=Marges
@@ -413,3 +415,5 @@ file-recent-missing-status=« {name} » est introuvable : le fichier a été dé
 file-recent-pinned-status=« {name} » est épinglé en haut de la liste.
 file-recent-unpinned-status=« {name} » n’est plus épinglé.
 file-recent-removed-status=« {name} » retiré de la liste des documents récents.
+# US-243 : mise en forme des paragraphes (bloc réservé à cette story : n’écrire que dans ce bloc, jusqu’à « # fin US-243 »)
+# fin US-243
