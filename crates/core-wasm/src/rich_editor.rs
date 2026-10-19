@@ -110,6 +110,8 @@ struct Session {
     typing: format_char::Typing,
     /// Style preview in progress (US-250).
     preview: styles::Preview,
+    /// Built-in styles instantiated into the catalog since the open (US-250); the save writes those the document uses.
+    added_styles: Vec<atelier_text_model::rich::Style>,
     /// `command_id` of the last formatting command accepted (`begin_format`).
     last_command_id: u32,
     /// `ListFonts` answer and the revision it was computed at.
@@ -321,6 +323,7 @@ impl Session {
             epoch: 0,
             typing: format_char::Typing::default(),
             preview: styles::Preview::default(),
+            added_styles: Vec::new(),
             last_command_id: 0,
             fonts_memo: None,
         })

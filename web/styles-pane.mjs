@@ -425,7 +425,7 @@ export function createStylesPane({ document, i18n, controller, announce = () => 
     const host = paneBuilt.root.parentElement;
     paneOpen = true; host.hidden = false; host.dataset.open = "true";
     try { globalThis.localStorage?.setItem(PANE_KEY, "true"); } catch { /* ignored */ }
-    paneButton.setAttribute("aria-pressed", "true");
+    paneButton.setAttribute("aria-expanded", "true");
     paneBuilt.setDisabled(!canAct());
     paneKey = ""; schedulePane(); void ensureList();
     paneBuilt.box.root.focus?.();
@@ -437,13 +437,13 @@ export function createStylesPane({ document, i18n, controller, announce = () => 
     const host = paneBuilt?.root.parentElement;
     if (host) { host.hidden = true; delete host.dataset.open; }
     try { globalThis.localStorage?.setItem(PANE_KEY, "false"); } catch { /* ignored */ }
-    paneButton.setAttribute("aria-pressed", "false");
+    paneButton.setAttribute("aria-expanded", "false");
     if (focusDocument) void controller.run(async () => {});
   }
 
   // ---- ribbon controls -----------------------------------------------------------------------------------------------------------
   const paneButton = make(document, "button", "styles-pane-button", i18n.t("styles-pane-open"));
-  paneButton.type = "button"; paneButton.setAttribute("aria-pressed", "false"); paneButton.setAttribute("aria-haspopup", "dialog");
+  paneButton.type = "button"; paneButton.setAttribute("aria-expanded", "false"); paneButton.setAttribute("aria-controls", "styles-slot"); // a non-modal pane: expanded, not a popup
   paneButton.addEventListener("click", () => { if (paneButton.getAttribute("aria-disabled") !== "true") { if (paneOpen) closePane(); else openPane(); } });
 
   // ---- state -> controls ------------------------------------------------------------------------------------------------------

@@ -205,7 +205,7 @@ try {
   assert(JSON.stringify(names()) === JSON.stringify(expected), `the gallery lists the quick styles in Word's order, in French (${names()})`);
   assert(tile("atelier.heading.1").querySelector(".styles-tile-name").style.fontWeight === "700" && tile("atelier.normal").querySelector(".styles-tile-name").style.fontWeight === "400"
     && parseFloat(tile("atelier.heading.1").querySelector(".styles-tile-name").style.fontSize) > parseFloat(tile("atelier.normal").querySelector(".styles-tile-name").style.fontSize), "each tile is drawn in its own style");
-  assert(cmd("styles-pane").textContent === "Volet Styles" && cmd("styles-pane").getAttribute("aria-pressed") === "false", "the pane button is named and not pressed");
+  assert(cmd("styles-pane").textContent === "Volet Styles" && cmd("styles-pane").getAttribute("aria-expanded") === "false" && cmd("styles-pane").getAttribute("aria-controls") === "styles-slot" && !cmd("styles-pane").hasAttribute("aria-haspopup"), "the pane button is named, controls the pane and is collapsed");
 
   inputText(editor.element, "Hello world");
   await waitFor(() => state().docLen === 11, "typed text");
@@ -346,7 +346,7 @@ try {
   // --- the pane: list used / all, preview, current ---------------------------------------------------------------------------------------------------
   cmd("styles-pane").click();
   await waitFor(() => styles.pane && !document.querySelector("#styles-slot").hidden, "the pane opens in its slot");
-  assert(cmd("styles-pane").getAttribute("aria-pressed") === "true", "the pane button is pressed");
+  assert(cmd("styles-pane").getAttribute("aria-expanded") === "true", "the pane button is expanded");
   const paneList = () => styles.pane.querySelector(".styles-pane-list");
   const rows = () => [...paneList().querySelectorAll(".styles-row")].map(node => node.querySelector(".styles-tile-name").textContent);
   await waitFor(() => rows().length > 0, "the pane lists styles");
@@ -391,7 +391,7 @@ try {
   // Escape in the pane closes it and ends any preview.
   styles.pane.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
   await waitFor(() => document.querySelector("#styles-slot").hidden && !previewing(), "Escape in the pane closes it");
-  assert(cmd("styles-pane").getAttribute("aria-pressed") === "false", "the pane button is released");
+  assert(cmd("styles-pane").getAttribute("aria-expanded") === "false", "the pane button is collapsed again");
   cmd("styles-pane").click();
   await waitFor(() => !document.querySelector("#styles-slot").hidden, "the pane opens again");
   document.querySelector(".styles-pane-close").click();

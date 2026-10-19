@@ -10,7 +10,7 @@ use crate::rich_protocol::{
     Tri,
 };
 use atelier_render::DisplayList;
-use atelier_text_model::rich::{Alignment, CharAttrs, ParaProps};
+use atelier_text_model::rich::{Alignment, CharAttrs, ParaProps, RichOp};
 
 const NORMAL: &str = "atelier.normal";
 const H1: &str = "atelier.heading.1";
@@ -702,4 +702,202 @@ fn bold_direct_formatting_is_kept_by_a_style_that_is_not_bold() {
     paragraph_style(&mut h, NORMAL);
     let runs = LayoutContext::paragraph(h.doc(), 0).unwrap().runs.clone();
     assert_eq!(runs[0].attrs.bold, Some(true));
+}
+
+#[test]
+fn statistics_and_properties_do_not_keep_the_preview() {
+    // Their page and line counts come from the layout: they must not count the preview.
+    for command in [Command::Statistics, Command::PropertiesRead] {
+        let mut h = Harness::new();
+        h.type_text("Hello");
+        let base_page = page0(&mut h);
+        preview(&mut h, StyleTarget::Paragraph, TITLE);
+        assert!(page0(&mut h) != base_page);
+        h.send(command);
+        assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+        assert!(page0(&mut h) == base_page, "the preview ended");
+    }
+}
+
+#[test]
+fn the_default_style_on_a_paragraph_without_reference_changes_nothing() {
+    let mut h = Harness::new();
+    h.type_text("Hello");
+    // No style reference: the paragraph is in the default style (None is Normal).
+    let para = h.doc().paragraph_ids()[0];
+    h.doc()
+        .apply(
+            &atelier_model::Transaction::new(vec![RichOp::SetParaProps {
+                para,
+                set: ParaProps::default(),
+                clear: ParaProps {
+                    style: Some("x".into()),
+                    ..ParaProps::default()
+                },
+            }])
+            .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(style_of(&mut h, 0), None);
+    let before = state_of(h.send(Command::Layout { budget: 1 }));
+    let after = paragraph_style(&mut h, NORMAL);
+    assert_eq!(after.revision, before.revision, "no revision");
+    assert_eq!(after.can_undo, before.can_undo);
+    assert_eq!(style_of(&mut h, 0), None, "no reference written");
+    // A preview of the default style shows nothing either.
+    let shown = preview(&mut h, StyleTarget::Paragraph, NORMAL);
+    assert!(shown.pages.is_empty());
+    assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+}
+
+/// A DOCX whose catalog lacks Heading 2, Heading 3 and Quote (Word writes them once used).
+fn docx_without_headings() -> Vec<u8> {
+    use atelier_fmt_ooxml::{DocxWriteOptions, NewDocument, write_new_docx};
+    let mut profile = atelier_text_model::rich::default_rich_document();
+    for id in ["atelier.heading.2", "atelier.heading.3", "atelier.quote"] {
+        profile.styles.remove_style(id);
+        profile.style_names.remove(id);
+    }
+    write_new_docx(
+        &NewDocument::from_default(&profile),
+        &DocxWriteOptions::default(),
+    )
+    .unwrap()
+    .bytes
+}
+
+fn save_docx(h: &mut Harness) -> Vec<u8> {
+    match h.send(Command::Save {
+        format: SaveFormat::Docx,
+        stamp: Stamp {
+            now_ms: 1_700_000_000_000,
+            user: "Alice".into(),
+            version: "1.2".into(),
+        },
+    }) {
+        Response::SaveData { bytes, .. } => bytes,
+        other => panic!("expected SaveData, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_built_in_style_the_file_lacks_is_offered_instantiated_when_applied_and_saved() {
+    let mut h = Harness::new();
+    assert!(matches!(
+        h.send(Command::Open {
+            kind: OpenKind::Docx,
+            profile: Profile::Document,
+            data: docx_without_headings()
+        }),
+        Response::State(_)
+    ));
+    h.type_text("Hello");
+    let listed = styles(&mut h, StyleFilter::All, false);
+    let heading = listed.iter().find(|s| s.id == "Heading2").expect("offered");
+    assert_eq!(
+        (heading.name.as_str(), heading.heading_level, heading.flags),
+        ("heading 2", 2, 0b10001)
+    );
+    assert_eq!(heading.half_points, 30, "sampled from the profile");
+    assert!(
+        listed
+            .iter()
+            .any(|s| s.id == "Heading3" && s.heading_level == 3)
+    );
+    assert!(!listed.iter().any(|s| s.id == "atelier.heading.2"));
+    // Not used, not current: absent from the used list.
+    assert!(
+        !styles(&mut h, StyleFilter::All, true)
+            .iter()
+            .any(|s| s.id == "Heading2")
+    );
+    // Applying it defines it (based on the default style) in the same undo step.
+    let before = h.state().revision;
+    let applied = paragraph_style(&mut h, "Heading2");
+    assert_eq!(applied.revision, before + 1);
+    assert_eq!(style_of(&mut h, 0).as_deref(), Some("Heading2"));
+    let listed = styles(&mut h, StyleFilter::All, false);
+    let heading = listed.iter().find(|s| s.id == "Heading2").unwrap();
+    assert_eq!(heading.flags & 0b110, 0b110, "used and current");
+    assert_eq!(heading.based_on, NORMAL);
+    assert_eq!(
+        listed.iter().filter(|s| s.id == "Heading2").count(),
+        1,
+        "once"
+    );
+    let state = h.state();
+    assert!(
+        matches!(&state.chars.half_points, Tri::Value(30)),
+        "{:?}",
+        state.chars.half_points
+    );
+    // One Ctrl+Z restores the paragraph.
+    state_of(h.send(Command::Undo));
+    assert_eq!(style_of(&mut h, 0).as_deref(), Some(NORMAL));
+    state_of(h.send(Command::Redo));
+    // Round trip: the saved file defines it, with its outline level, and the style is applied.
+    let bytes = save_docx(&mut h);
+    let mut again = Harness::new();
+    assert!(matches!(
+        again.send(Command::Open {
+            kind: OpenKind::Docx,
+            profile: Profile::Document,
+            data: bytes
+        }),
+        Response::State(_)
+    ));
+    assert_eq!(style_of(&mut again, 0).as_deref(), Some("Heading2"));
+    let listed = styles(&mut again, StyleFilter::All, false);
+    let heading = listed.iter().find(|s| s.id == "Heading2").unwrap();
+    assert_eq!((heading.heading_level, heading.flags & 0b11), (2, 0b11));
+    assert!(heading.name == "heading 2" && heading.half_points == 30);
+    // Heading 3 was never used: still offered, still not in the file.
+    assert!(
+        listed
+            .iter()
+            .any(|s| s.id == "Heading3" && s.flags & 0b10 == 0)
+    );
+}
+
+#[test]
+fn a_previewed_built_in_style_is_saved_only_when_applied() {
+    let mut h = Harness::new();
+    h.send(Command::Open {
+        kind: OpenKind::Docx,
+        profile: Profile::Document,
+        data: docx_without_headings(),
+    });
+    h.type_text("Hello");
+    preview(&mut h, StyleTarget::Paragraph, "Heading3");
+    cancel(&mut h);
+    state_of(h.send(Command::Layout { budget: 8 }));
+    let mut again = Harness::new();
+    again.send(Command::Open {
+        kind: OpenKind::Docx,
+        profile: Profile::Document,
+        data: save_docx(&mut h),
+    });
+    // Hovered only: not defined in the saved file, still offered.
+    let listed = styles(&mut again, StyleFilter::All, false);
+    assert!(
+        listed
+            .iter()
+            .any(|s| s.id == "Heading3" && s.flags & 0b10 == 0)
+    );
+    assert_eq!(
+        LayoutContext::catalog(again.doc())
+            .style("Heading3")
+            .map(|s| s.id.clone()),
+        None
+    );
+    // An unknown identifier is still refused.
+    assert_eq!(
+        h.error(Command::ApplyStyle {
+            base_revision: NO_REVISION_GUARD,
+            command_id: 0,
+            target: StyleTarget::Paragraph,
+            id: "Heading7x".into()
+        }),
+        ErrorCode::UnknownStyle
+    );
 }

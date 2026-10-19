@@ -11,6 +11,13 @@
 //!   touches (`SetParaProps`), or the character style of the selection or of
 //!   the word under the caret (`SetCharAttrs`), as one history step. Direct
 //!   character **and** paragraph formatting stay: only the reference changes.
+//! * Built-in styles the file lacks (Word writes Heading 2 or 3 only once
+//!   used, the others are latent): `ListStyles` offers them with the Word
+//!   identifier (`Heading2`), and `ApplyStyle` or `PreviewStyle` instantiates
+//!   them from the profile of US-202 into the catalog (`Session::added_styles`:
+//!   the save writes those the document uses). The catalog is not part of the
+//!   edit history: the style application is the only undo step and an undone
+//!   style stays defined but unused (not saved).
 //! * `PreviewStyle`: the preview never touches the document, its history, its
 //!   revision or its `modified` flag. The touched paragraphs are cloned with
 //!   the style applied (`Overlay`); every layout call goes through
@@ -28,7 +35,7 @@ use atelier_text_model::rich::flat::{
 };
 use atelier_text_model::rich::{
     CharAttrs, NodeId, ParaProps, Paragraph, ResolvedProperties, RichDocument, RichOp, Section,
-    Style, StyleCatalog, StyleKind, Theme, Underline,
+    Style, StyleCatalog, StyleKind, Theme, Underline, default_rich_document,
 };
 
 use super::format_char::pieces;
@@ -208,8 +215,6 @@ pub(super) fn cancels_preview(command: &Command) -> bool {
             | Command::Save { .. }
             | Command::Search { .. }
             | Command::SearchRects { .. }
-            | Command::Statistics
-            | Command::PropertiesRead
             | Command::FormatState
             | Command::ListStyles { .. }
             | Command::ListFonts
@@ -255,6 +260,76 @@ fn known_style<'a>(
         .ok_or(ErrorCode::UnknownStyle)
 }
 
+/// Word style identifier of a built-in name: `heading 2` is `Heading2`.
+fn word_id(name: &str) -> String {
+    name.split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            chars
+                .next()
+                .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// The quick built-in styles of the profile of US-202 that the document lacks
+/// (by name), as they would be defined in it: Word identifier, based on the
+/// document's default style, with its resolution in the profile (the sample of a tile).
+fn missing_builtins(doc: &RichDocument) -> Vec<(Style, ResolvedProperties)> {
+    let catalog = LayoutContext::catalog(doc);
+    let by_name: BTreeMap<String, &str> = catalog
+        .styles()
+        .map(|s| (s.display_name().to_lowercase(), s.id.as_str()))
+        .collect();
+    let taken: Vec<&str> = catalog.styles().map(|s| s.id.as_str()).collect();
+    let default_id = catalog
+        .default_style(StyleKind::Paragraph)
+        .map(|s| s.id.clone());
+    let factory = default_rich_document();
+    let mut out = Vec::new();
+    for profile in factory.styles.catalog().styles() {
+        if !profile.quick || profile.is_default || profile.kind == StyleKind::Table {
+            continue;
+        }
+        let name = profile.display_name();
+        let id = word_id(name);
+        if by_name.contains_key(&name.to_lowercase()) || taken.contains(&id.as_str()) {
+            continue;
+        }
+        let mut style = profile.clone();
+        style.id = id;
+        style.linked_style = None;
+        style.based_on = if profile.kind == StyleKind::Paragraph {
+            profile
+                .based_on
+                .as_deref()
+                .and_then(|base| factory.styles.catalog().style(base))
+                .and_then(|base| by_name.get(&base.display_name().to_lowercase()))
+                .map(|id| (*id).to_owned())
+                .or_else(|| default_id.clone())
+        } else {
+            None
+        };
+        let (paragraph, character) = match profile.kind {
+            StyleKind::Character => (None, Some(profile.id.as_str())),
+            _ => (Some(profile.id.as_str()), None),
+        };
+        let sample = factory
+            .styles
+            .resolve_detached(
+                paragraph,
+                character,
+                None,
+                &ParaProps::default(),
+                &CharAttrs::default(),
+            )
+            .unwrap_or_default();
+        out.push((style, sample));
+    }
+    out
+}
+
 fn rgb(color: atelier_text_model::rich::Color) -> Rgb {
     Rgb {
         r: color.r,
@@ -264,6 +339,28 @@ fn rgb(color: atelier_text_model::rich::Color) -> Rgb {
 }
 
 impl Session {
+    /// The style `id` of `target`, defined in the catalog: a built-in style
+    /// the file lacks is instantiated (once) from the profile of US-202.
+    /// `Ok(true)` when it was instantiated, `RICH_UNKNOWN_STYLE` when unknown.
+    fn ensure_style(&mut self, id: &str, target: StyleTarget) -> Result<bool, ErrorCode> {
+        if known_style(&self.doc, id, target).is_ok() {
+            return Ok(false);
+        }
+        let kind = match target {
+            StyleTarget::Paragraph => StyleKind::Paragraph,
+            StyleTarget::Character => StyleKind::Character,
+        };
+        let (style, _) = missing_builtins(&self.doc)
+            .into_iter()
+            .find(|(s, _)| s.id == id && s.kind == kind)
+            .ok_or(ErrorCode::UnknownStyle)?;
+        self.doc
+            .add_style(style.clone())
+            .map_err(|_| ErrorCode::Limit)?;
+        self.added_styles.push(style);
+        Ok(true)
+    }
+
     /// The styles the selection is in: `(paragraph, character)` identifiers.
     /// A paragraph without style reference is in the default style.
     fn current_styles(&mut self) -> (Option<String>, Option<String>) {
@@ -298,8 +395,15 @@ impl Session {
         let (used_paragraph, used_character) = self.doc.used_style_ids();
         let (current_paragraph, current_character) = self.current_styles();
         let catalog = LayoutContext::catalog(&self.doc);
+        // A plain-text document has no style at all.
+        let missing = if self.txt {
+            Vec::new()
+        } else {
+            missing_builtins(&self.doc)
+        };
         let mut chosen: Vec<&Style> = catalog
             .styles()
+            .chain(missing.iter().map(|(style, _)| style))
             .filter(|style| {
                 !matches!(
                     (style.kind, filter),
@@ -335,7 +439,10 @@ impl Session {
         chosen.truncate(MAX_STYLE_LIST);
         let mut styles = Vec::with_capacity(chosen.len());
         for style in chosen {
-            let resolved = self.doc.resolved_style(&style.id, style.kind);
+            let resolved = match missing.iter().find(|(m, _)| std::ptr::eq(m, style)) {
+                Some((_, sample)) => Some(sample.clone()),
+                None => self.doc.resolved_style(&style.id, style.kind),
+            };
             let character = resolved
                 .as_ref()
                 .map(|r| r.character.clone())
@@ -428,9 +535,11 @@ impl Session {
         if target == StyleTarget::Paragraph && id.is_empty() {
             return Err(ErrorCode::UnknownStyle);
         }
-        if !id.is_empty() || target == StyleTarget::Paragraph {
-            known_style(&self.doc, id, target)?;
-        }
+        let instantiated = if id.is_empty() {
+            false
+        } else {
+            self.ensure_style(id, target)?
+        };
         let mut delta = PageDelta::default();
         match target {
             StyleTarget::Paragraph => {
@@ -440,7 +549,7 @@ impl Session {
                     let Some(p) = LayoutContext::paragraph(&self.doc, t.index) else {
                         continue;
                     };
-                    if p.props.style.as_deref() == Some(id) {
+                    if has_style(&self.doc, p, id) {
                         continue;
                     }
                     let start = self.doc.paragraph_start(t.index)?;
@@ -493,10 +602,15 @@ impl Session {
                                 .collect();
                             if !ops.is_empty() {
                                 let before = self.doc.revision();
+                                let scope = if instantiated {
+                                    LayoutScope::All
+                                } else {
+                                    LayoutScope::Paragraphs
+                                };
                                 let outcome = self.doc.apply_format(
                                     ops,
                                     (self.anchor, self.focus),
-                                    LayoutScope::Paragraphs,
+                                    scope,
                                     false,
                                 )?;
                                 if outcome.revision != before {
@@ -528,7 +642,7 @@ impl Session {
     ) -> Result<Response, ErrorCode> {
         self.deny_formatting()?;
         if show {
-            known_style(&self.doc, id, target)?;
+            self.ensure_style(id, target)?;
         }
         // `show` replaces the preview in progress; `cancel` is idempotent.
         cancel_preview(self);
@@ -553,7 +667,7 @@ impl Session {
                     let Some(p) = LayoutContext::paragraph(&self.doc, t.index) else {
                         continue;
                     };
-                    if p.props.style.as_deref() != Some(id) {
+                    if !has_style(&self.doc, p, id) {
                         let mut clone = p.clone();
                         clone.props.style = Some(id.to_owned());
                         paragraphs.insert(t.index, clone);
@@ -592,6 +706,17 @@ impl Session {
             first,
             last,
         }))
+    }
+}
+
+/// The paragraph is in style `id`: it names it, or it names none and `id` is
+/// the default style (no reference is the default style).
+fn has_style(doc: &RichDocument, paragraph: &Paragraph, id: &str) -> bool {
+    match paragraph.props.style.as_deref() {
+        Some(own) => own == id,
+        None => LayoutContext::catalog(doc)
+            .default_style(StyleKind::Paragraph)
+            .is_some_and(|style| style.id == id),
     }
 }
 

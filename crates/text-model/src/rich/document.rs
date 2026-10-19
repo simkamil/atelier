@@ -11,7 +11,7 @@ use super::node::{
 };
 use super::ops::RichOp;
 use super::paragraph::Paragraph;
-use super::styles::{StyleCatalog, StyleEngine, Theme};
+use super::styles::{Style, StyleCatalog, StyleEngine, StyleError, Theme};
 use super::validate::{Walk, validate_subtree};
 use atelier_model::{IndexedTree, Transaction, TransactionError, TransactionalState};
 use core::fmt;
@@ -149,6 +149,13 @@ impl RichDocument {
     pub fn set_styles(&mut self, catalog: StyleCatalog, theme: Theme) {
         self.styles = StyleEngine::new(catalog, theme.clone(), 0);
         self.theme = theme;
+    }
+
+    /// Adds or replaces a style definition of the catalog that
+    /// [`LayoutContext`](super::flat::LayoutContext) serves (a built-in style
+    /// the file did not define). Not recorded in the edit history.
+    pub fn add_style(&mut self, style: Style) -> Result<(), StyleError> {
+        self.styles.set_style(style)
     }
 
     /// Sets the uninterpreted attributes of a section, among them the page

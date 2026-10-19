@@ -167,10 +167,7 @@ fn write_style_new(
     if style.quick || style.name.is_none() {
         out.empty("w:qFormat", std::iter::empty());
     }
-    let heading = style
-        .id
-        .strip_prefix("atelier.heading.")
-        .and_then(|n| n.parse::<u32>().ok());
+    let heading = Some(u32::from(style.heading_level())).filter(|level| *level > 0);
     let mut extra = Vec::new();
     if let Some(level) = heading {
         extra.push(p.el("keepNext", &[]));
