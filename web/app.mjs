@@ -20,6 +20,7 @@ import { createFileTab, FILE_TAB_KEYS } from "/file-tab.mjs";
 import { createFormatController, createFormatKeyRouter } from "/format-controller.mjs";
 import { createCharFormat } from "/format-char.mjs";
 import { createParaFormat } from "/format-para.mjs";
+import { createStylesPane } from "/styles-pane.mjs";
 
 const READER_MODE_KEY = "atelier.screenReaderMode";
 const byId = id => document.getElementById(id);
@@ -236,8 +237,10 @@ async function start() {
   const announceFormat = (text, isError = false) => showEditorMessage(text, isError);
   const charFormat = createCharFormat({ document, i18n, controller: formatController, announce: announceFormat });
   const paraFormat = createParaFormat({ document, i18n, controller: formatController, announce: announceFormat });
+  // US-250 : galerie de styles, volet Styles et raccourcis Titre 1 à 3 (styles-pane.mjs).
+  const stylesPane = createStylesPane({ document, i18n, controller: formatController, announce: announceFormat, slot: byId("styles-slot") });
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
-    symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, fileTab, charFormat, paraFormat, onImage: () => { void insertPickedImages(); }, onProperties: () => {
+    symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, fileTab, charFormat, paraFormat, stylesPane, onImage: () => { void insertPickedImages(); }, onProperties: () => {
       if (!properties || document.querySelector("dialog:modal")) return;
       if (!initialized || busy || !editor?.capabilities?.properties) return;
       properties.open({ returnFocusTo: document.activeElement }).catch(() => showEditorMessage(messages.get("status-properties-loadError"), true));
@@ -275,7 +278,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; listeners.abort();
-    formatKeys?.dispose(); formatController.dispose(); charFormat.dispose(); paraFormat.detachEditor(); paraFormat.dispose(); fileTab?.dispose(); imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    formatKeys?.dispose(); formatController.dispose(); charFormat.dispose(); paraFormat.detachEditor(); paraFormat.dispose(); stylesPane.dispose(); fileTab?.dispose(); imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -322,7 +325,7 @@ async function start() {
     nodes.frenchSpacing.disabled = blocked;
     nodes.openDocx.disabled = blocked;
     fileTab?.setBlocked(blocked);
-    charFormat.setBlocked(blocked); paraFormat.setBlocked(blocked);
+    charFormat.setBlocked(blocked); paraFormat.setBlocked(blocked); stylesPane.setBlocked(blocked);
     updateZoom();
     const toolsEnabled = !blocked;
     const writable = !state?.readOnly;
@@ -392,7 +395,7 @@ async function start() {
       // US-243 : surcouche des marques de mise en forme, dessinée au-dessus des pages de l'éditeur.
       paraFormat.attachEditor(editor, { canvas: editorOptions.canvas, scrollport: editorOptions.scrollport, spacer: editorOptions.spacer });
       // Raccourcis des modules de mise en forme : chaque module les déclare dans keyBindings() (voir format-controller.mjs).
-      formatKeys = createFormatKeyRouter({ document, target: () => editor?.element, modules: [charFormat, paraFormat], isEnabled: () => Boolean(editor?.canEdit) });
+      formatKeys = createFormatKeyRouter({ document, target: () => editor?.element, modules: [charFormat, paraFormat, stylesPane], isEnabled: () => Boolean(editor?.canEdit) });
       const { createReaderModeToggle } = await import("/document-mirror.mjs");
       const toggle = createReaderModeToggle({ container: nodes.options, input: editor.input, t: (key, values) => i18n.t(key, values) });
       listeners.signal.addEventListener("abort", () => toggle.dispose(), { once: true });
@@ -528,7 +531,8 @@ async function start() {
         void editor.editSelection("\u00a0", editor.getState()).catch(onError);
         return;
       }
-      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.isComposing) return;
+      // Ctrl+N, O, S only: Ctrl+Maj+N is the style Normal (US-250, Word's), not « Nouveau ».
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.isComposing) return;
       const action = event.key.toLowerCase();
       const button = action === "n" ? nodes.new : action === "o" ? nodes.open : action === "s" ? nodes.save : null;
       if (!button) return;
@@ -585,7 +589,7 @@ async function start() {
       editor, host,
       theme: shell.theme, ribbon: shell.ribbon,
       zoomControls,
-      fileTab, formatController,
+      fileTab, formatController, stylesPane,
       navigation,
       documentStatus,
       symbols, about, properties, contextMenu,
