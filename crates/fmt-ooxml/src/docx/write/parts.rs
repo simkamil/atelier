@@ -131,7 +131,7 @@ fn write_style_new(
         StyleKind::Table => "table",
     };
     let mut attrs = vec![("w:type", kind), ("w:styleId", style.id.as_str())];
-    if is_default {
+    if is_default || style.is_default {
         attrs.push(("w:default", "1"));
     }
     out.start("w:style", attrs);
@@ -139,7 +139,12 @@ fn write_style_new(
     val(
         out,
         "w:name",
-        builtin_name(&style.id).as_deref().unwrap_or(name),
+        style
+            .name
+            .clone()
+            .or_else(|| builtin_name(&style.id))
+            .as_deref()
+            .unwrap_or(name),
     );
     if let Some(b) = &style.based_on {
         val(out, "w:basedOn", b);
@@ -152,10 +157,16 @@ fn write_style_new(
     if let Some(l) = &style.linked_style {
         val(out, "w:link", l);
     }
-    if builtin_name(&style.id).is_some() {
+    if let Some(priority) = style.ui_priority {
+        val(out, "w:uiPriority", &priority.to_string());
+    } else if builtin_name(&style.id).is_some() {
         val(out, "w:uiPriority", "99");
     }
-    out.empty("w:qFormat", std::iter::empty());
+    // A style that declares no name (converted from another format) keeps the
+    // former behaviour: it is offered in the gallery.
+    if style.quick || style.name.is_none() {
+        out.empty("w:qFormat", std::iter::empty());
+    }
     let heading = style
         .id
         .strip_prefix("atelier.heading.")

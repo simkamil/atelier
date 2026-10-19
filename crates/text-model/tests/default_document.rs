@@ -186,3 +186,45 @@ fn no_spacing_is_independent_and_factory_instances_do_not_share_mutations() {
         Some(Node::Section(_))
     ));
 }
+
+#[test]
+fn factory_styles_carry_word_names_gallery_flags_and_one_default() {
+    let value = default_rich_document();
+    let catalog = value.styles.catalog();
+    let defaults: Vec<_> = catalog
+        .styles()
+        .filter(|s| s.is_default)
+        .map(|s| s.id.as_str())
+        .collect();
+    assert_eq!(defaults, ["atelier.normal"]);
+    for (id, name, level, quick) in [
+        ("atelier.normal", "Normal", 0, true),
+        ("atelier.heading.1", "heading 1", 1, true),
+        ("atelier.heading.3", "heading 3", 3, true),
+        ("atelier.heading.4", "heading 4", 4, false),
+        ("atelier.title", "Title", 0, true),
+        ("atelier.hyperlink", "Hyperlink", 0, false),
+    ] {
+        let style = catalog.style(id).unwrap();
+        assert_eq!(style.name.as_deref(), Some(name), "{id}");
+        assert_eq!((style.heading_level(), style.quick), (level, quick), "{id}");
+        assert!(style.is_builtin(), "{id}");
+    }
+    // A user style is neither built in nor a heading.
+    let custom = atelier_text_model::rich::Style {
+        id: "Mine".into(),
+        name: Some("Mon style".into()),
+        ..Default::default()
+    };
+    assert!(!custom.is_builtin() && custom.heading_level() == 0);
+    assert_eq!(custom.display_name(), "Mon style");
+    // Every style of the profile has a name and the table style is excluded from paragraph styles.
+    assert!(catalog.styles().all(|s| s.name.is_some()));
+    assert_eq!(
+        catalog
+            .styles()
+            .filter(|s| s.kind == StyleKind::Table)
+            .count(),
+        1
+    );
+}

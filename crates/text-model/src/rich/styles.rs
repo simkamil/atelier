@@ -63,6 +63,82 @@ pub struct Style {
     pub linked_style: Option<String>,
     pub character: StyleCharAttrs,
     pub paragraph: ParaProps,
+    /// Name of the style as the file gives it (`w:name`: `heading 1`, `Normal`,
+    /// or a name chosen by a user). `None`: the identifier is the name.
+    pub name: Option<String>,
+    /// Shown in the quick-style gallery (`w:qFormat`).
+    pub quick: bool,
+    /// Default style of its kind (`w:default="1"`): the one that applies to
+    /// paragraphs, runs or tables without a style reference.
+    pub is_default: bool,
+    /// Order in the galleries (`w:uiPriority`, lower first); `None`: 99.
+    pub ui_priority: Option<u32>,
+}
+
+impl Style {
+    /// Name to show: the declared name, else the identifier.
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.id)
+    }
+
+    /// True for a style of Word's built-in set (by name) or of Atelier's own
+    /// profile (identifiers `atelier.*`): the interface translates their names.
+    pub fn is_builtin(&self) -> bool {
+        self.id.starts_with("atelier.") || is_builtin_style_name(self.display_name())
+    }
+
+    /// 1 to 9 for a heading style (`heading N`, `atelier.heading.N`, `HeadingN`), else 0.
+    pub fn heading_level(&self) -> u8 {
+        let from = |text: &str, prefix: &str| -> Option<u8> {
+            let rest = text
+                .get(..prefix.len())
+                .filter(|head| head.eq_ignore_ascii_case(prefix))
+                .map(|_| &text[prefix.len()..])?;
+            let n: u8 = rest.trim().parse().ok()?;
+            (1..=9).contains(&n).then_some(n)
+        };
+        from(self.display_name(), "heading ")
+            .or_else(|| from(&self.id, "atelier.heading."))
+            .or_else(|| from(&self.id, "heading"))
+            .unwrap_or(0)
+    }
+}
+
+/// Names (lower case) of the styles Word defines itself, in WordprocessingML
+/// spelling: the interface shows them translated.
+const BUILTIN_STYLE_NAMES: &[&str] = &[
+    "normal",
+    "heading 1",
+    "heading 2",
+    "heading 3",
+    "heading 4",
+    "heading 5",
+    "heading 6",
+    "heading 7",
+    "heading 8",
+    "heading 9",
+    "title",
+    "subtitle",
+    "quote",
+    "intense quote",
+    "emphasis",
+    "strong",
+    "subtle emphasis",
+    "intense emphasis",
+    "caption",
+    "header",
+    "footer",
+    "hyperlink",
+    "list paragraph",
+    "no spacing",
+    "body text",
+    "table grid",
+];
+
+/// True when `name` is one of the styles Word defines itself (case-insensitive).
+pub fn is_builtin_style_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    BUILTIN_STYLE_NAMES.contains(&lower.as_str())
 }
 
 /// Document-level fallback formatting and optional default table style.
@@ -101,6 +177,18 @@ impl StyleCatalog {
 
     pub fn defaults(&self) -> &DocumentStyleDefaults {
         &self.defaults
+    }
+
+    /// Every style, in identifier order.
+    pub fn styles(&self) -> impl Iterator<Item = &Style> {
+        self.styles.values()
+    }
+
+    /// The default style of `kind` (`w:default`), if the document marks one.
+    pub fn default_style(&self, kind: StyleKind) -> Option<&Style> {
+        self.styles
+            .values()
+            .find(|style| style.kind == kind && style.is_default)
     }
 }
 
