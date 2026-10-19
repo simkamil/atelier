@@ -198,10 +198,7 @@ impl M {
             },
         ) {
             Response::Fragment {
-                text,
-                bytes,
-                lossy,
-                ..
+                text, bytes, lossy, ..
             } => (text, bytes, lossy),
             other => panic!("expected a fragment, got {other:?}"),
         }
@@ -260,7 +257,10 @@ fn three_documents_have_their_own_history_revision_selection_and_atlas_epoch() {
     m.insert(2, "?");
     m.insert(2, "?");
     let s3 = m.select(3, 1, 4);
-    assert_eq!((m.text(1), m.text(2), m.text(3)), ("one!".into(), "??two".into(), "three".into()));
+    assert_eq!(
+        (m.text(1), m.text(2), m.text(3)),
+        ("one!".into(), "??two".into(), "three".into())
+    );
     // Undo in document 2 touches document 2 only.
     let undone = m.state(2, Command::Undo);
     assert_eq!(m.text(2), "?two");
@@ -283,7 +283,10 @@ fn three_documents_have_their_own_history_revision_selection_and_atlas_epoch() {
     assert!(e1 != 0 && e2 != 0 && e3 != 0);
     let mut seen = [e1, e2, e3];
     seen.sort_unstable();
-    assert!(seen[0] < seen[1] && seen[1] < seen[2], "epochs differ: {seen:?}");
+    assert!(
+        seen[0] < seen[1] && seen[1] < seen[2],
+        "epochs differ: {seen:?}"
+    );
     let resync = m.state(1, Command::Resync);
     assert_eq!(resync.atlas.epoch, e1 + 1);
     assert_eq!(epoch(&mut m, 2), e2);
@@ -311,7 +314,10 @@ fn an_open_id_is_replaced_and_a_refused_open_leaves_every_document() {
     m.select(1, 0, 0);
     m.insert(1, "x");
     let state = m.txt(1, "fresh");
-    assert_eq!((state.revision, state.can_undo, state.modified), (0, false, false));
+    assert_eq!(
+        (state.revision, state.can_undo, state.modified),
+        (0, false, false)
+    );
     assert_eq!(m.text(1), "fresh");
     assert_eq!(m.text(2), "keep two");
     assert_eq!(m.editor.document_ids(), vec![1, 2]);
@@ -369,7 +375,10 @@ fn close_frees_the_document_and_leaves_the_others() {
     m.insert(2, "!");
     assert_eq!(m.send(2, Command::Close), Response::Closed);
     assert_eq!(m.error(2, Command::Undo), ErrorCode::UnknownDocument);
-    assert_eq!(m.send(2, Command::Close), Response::Error(ErrorCode::UnknownDocument));
+    assert_eq!(
+        m.send(2, Command::Close),
+        Response::Error(ErrorCode::UnknownDocument)
+    );
     assert_eq!(m.text(1), "one");
     assert_eq!(m.editor.document_ids(), vec![1]);
     // The id is free: a new document of that id starts a new atlas epoch.
@@ -438,7 +447,10 @@ fn fonts_loaded_by_a_document_reach_the_documents_opened_after_it() {
         .iter()
         .map(|style| font_file(&format!("LiberationSans-{style}.ttf")))
         .collect();
-    assert!(matches!(m.send(1, Command::LoadFonts(faces)), Response::State(_)));
+    assert!(matches!(
+        m.send(1, Command::LoadFonts(faces)),
+        Response::State(_)
+    ));
     assert_eq!(used(&mut m, 1), "Liberation Sans");
     // Document 2 was open before the load: its own LoadFonts is the client's job.
     assert_eq!(used(&mut m, 2), "Carlito");
@@ -527,7 +539,10 @@ fn a_fragment_copied_between_documents_keeps_text_formatting_styles_and_picture(
     let runs = m.model(2).paragraph(first).unwrap().runs.clone();
     assert_eq!(runs.len(), 2);
     assert_eq!((runs[0].start, runs[0].end), (1, 6));
-    assert_eq!((runs[1].start, runs[1].end, &runs[1].attrs), (7, 12, &bold()));
+    assert_eq!(
+        (runs[1].start, runs[1].end, &runs[1].attrs),
+        (7, 12, &bold())
+    );
     // Styles: Word's rule. The target's own "Heading 1" and "mine" are used
     // whatever their definition; "Quirk" is absent and is added.
     let heading_id = m.paragraph_style(2, 1).expect("a heading style");
@@ -552,7 +567,10 @@ fn a_fragment_copied_between_documents_keeps_text_formatting_styles_and_picture(
     let undone = m.state(2, Command::Undo);
     assert_eq!(m.text(2), "xyz");
     assert_eq!(undone.revision, revision + 2);
-    assert!(undone.can_undo && undone.can_redo, "\"xyz\" is still undoable");
+    assert!(
+        undone.can_undo && undone.can_redo,
+        "\"xyz\" is still undoable"
+    );
     assert_eq!(m.model(2).paragraph_ids().len(), 1);
     m.model(2).validate().unwrap();
     let redone = m.state(2, Command::Redo);
@@ -580,7 +598,10 @@ fn a_partial_selection_pastes_its_part_and_replaces_the_target_selection() {
     assert_eq!((run.start, run.end, run.attrs), (1, 6, bold()));
     // The first paragraph keeps the target's properties, the new one has the heading's.
     assert_eq!(m.paragraph_style(2, 0).as_deref(), Some("atelier.normal"));
-    assert_eq!(m.paragraph_style(2, 1).as_deref(), Some("atelier.heading.1"));
+    assert_eq!(
+        m.paragraph_style(2, 1).as_deref(),
+        Some("atelier.heading.1")
+    );
     assert_eq!(m.state(2, Command::Undo).revision, 3);
     assert_eq!(m.text(2), "abcdef");
 }
@@ -694,7 +715,12 @@ fn a_read_only_document_refuses_a_paste_and_the_closed_one_is_unknown() {
     m.blank(2);
     m.session(2).origin.read_only = true;
     assert_eq!(
-        m.error(2, Command::PasteFragment { bytes: bytes.clone() }),
+        m.error(
+            2,
+            Command::PasteFragment {
+                bytes: bytes.clone()
+            }
+        ),
         ErrorCode::ReadOnly
     );
     m.send(2, Command::Close);

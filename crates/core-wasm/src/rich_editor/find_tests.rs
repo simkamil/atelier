@@ -78,7 +78,9 @@ impl Find {
 
     fn with(doc: RichDocument) -> Self {
         let mut f = Self::new();
-        f.editor.install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+        f.editor.install(
+            Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap(),
+        );
         f
     }
 

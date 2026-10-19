@@ -383,7 +383,8 @@ fn line_and_page_breaks_are_marked_apart() {
     )
     .unwrap();
     let mut h = Harness::new();
-    h.editor.install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+    h.editor
+        .install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     let marks = match h.send(Command::FormatMarks { first: 0, count: 2 }) {
         Response::FormatMarks { marks, .. } => marks,
         other => panic!("{other:?}"),
@@ -533,7 +534,8 @@ fn marks_of_a_page_that_is_not_laid_out_are_not_ready() {
     }
     doc.apply(&Transaction::new(ops).unwrap()).unwrap();
     let mut h = Harness::new();
-    h.editor.install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+    h.editor
+        .install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     let (page_count, complete) = {
         let cache = &h.editor.session().cache;
         (cache.page_count(), cache.layout_complete())

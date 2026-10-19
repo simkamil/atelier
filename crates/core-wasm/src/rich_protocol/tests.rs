@@ -115,9 +115,7 @@ fn describe_request(r: &Request) -> String {
         // The vectors of this one are in `move_tests` (tests/rich-editor-move-vectors.txt).
         Command::MoveText { .. } => "see move_tests".into(),
         // The vectors of these are in `fragment_tests` (tests/rich-editor-multidoc-vectors.txt).
-        Command::CopyFragment { .. } | Command::PasteFragment { .. } => {
-            "see fragment_tests".into()
-        }
+        Command::CopyFragment { .. } | Command::PasteFragment { .. } => "see fragment_tests".into(),
         // The vectors of these are in `find_tests` (tests/rich-editor-find-vectors.txt).
         Command::Search { .. }
         | Command::Statistics

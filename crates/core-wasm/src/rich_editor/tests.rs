@@ -198,7 +198,8 @@ fn object_document() -> RichDocument {
 
 fn harness_with(doc: RichDocument) -> Harness {
     let mut h = Harness::new();
-    h.editor.install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+    h.editor
+        .install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     h
 }
 

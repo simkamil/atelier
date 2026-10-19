@@ -149,11 +149,19 @@ fn bad_requests() -> Vec<(&'static str, Vec<u8>, ErrorCode)> {
     let mut too_long = ((MAX_FRAGMENT_BYTES + 1) as u32).to_le_bytes().to_vec();
     too_long.extend_from_slice(&[0; 4]);
     vec![
-        ("copy-start-after-end", copy(&copy_body(1, 5, 4)), InvalidRange),
+        (
+            "copy-start-after-end",
+            copy(&copy_body(1, 5, 4)),
+            InvalidRange,
+        ),
         ("copy-truncated", copy(&[0; 23]), InvalidBody),
         ("copy-trailing", copy(&[0; 25]), InvalidBody),
         ("paste-too-long", paste(&too_long), Limit),
-        ("paste-truncated", paste(&[4, 0, 0, 0, 1, 2, 3]), InvalidBody),
+        (
+            "paste-truncated",
+            paste(&[4, 0, 0, 0, 1, 2, 3]),
+            InvalidBody,
+        ),
         ("paste-trailing", paste(&[1, 0, 0, 0, 1, 2]), InvalidBody),
         ("paste-no-length", paste(&[]), InvalidBody),
     ]
@@ -246,7 +254,10 @@ fn a_fragment_reply_refuses_reserved_flags_and_oversized_parts() {
     let mut frame = encode_reply(&r).unwrap();
     // Body: revision (8), flags (4), text length (4), bytes length (4).
     frame[HEADER_BYTES + 8] = 2;
-    assert_eq!(decode_reply(&frame).unwrap_err().code, ErrorCode::InvalidBody);
+    assert_eq!(
+        decode_reply(&frame).unwrap_err().code,
+        ErrorCode::InvalidBody
+    );
     let big = Reply {
         response: Response::Fragment {
             revision: 1,
