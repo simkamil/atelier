@@ -127,8 +127,8 @@ try {
   {
     const [box] = pictures();
     assert(Math.abs(box.width - 150) < EPS && Math.abs(box.height - 75) < EPS, "200x100 px is laid out at 96 dpi (150 x 75 pt)");
-    // The picture sits on the line of the letters: it starts after the "A" and no further left than the margin.
-    assert(box.min.x > 54 && box.min.x < 54 + 12, "the picture is placed right after the letter A");
+    // The picture sits on the line of the letters: it starts after the "A" and no further left than the margin (25 mm, the default document profile of US-202).
+    assert(box.min.x > 70.8 && box.min.x < 70.8 + 12, "the picture is placed right after the letter A");
     await waitForColor(() => pictures()[0], 0.5, 0.5, [255, 0, 0], "the Canvas shows the decoded picture pixels");
   }
   assert(status.textContent.includes("image insérée") && !status.classList.contains("error"), "success is announced in the status line");
@@ -175,7 +175,8 @@ try {
   const transfer = new DataTransfer();
   transfer.items.add(file(green, "vert.png", "image/png"));
   const rect = canvas.getBoundingClientRect();
-  const target = { clientX: rect.left + 54 + 2, clientY: rect.top + 54 + 6 };
+  const MARGIN = 1417 / 20; const TEXT_WIDTH = (11906 - 2 * 1417) / 20; // A4 with 25 mm margins: default document profile (US-202)
+  const target = { clientX: rect.left + MARGIN + 2, clientY: rect.top + MARGIN + 6 };
   canvas.dispatchEvent(new DragEvent("dragover", { dataTransfer: transfer, bubbles: true, cancelable: true, ...target }));
   canvas.dispatchEvent(new DragEvent("drop", { dataTransfer: transfer, bubbles: true, cancelable: true, ...target }));
   await waitFor(async () => await picturesIn() === 1, "dropped picture inserted");
@@ -193,9 +194,9 @@ try {
   await waitFor(() => pictures().length === 2, "the page draws both pictures");
   {
     const widest = pictures().reduce((a, b) => (b.width > a.width ? b : a));
-    assert(Math.abs(widest.width - (595.276 - 108)) < Math.max(0.01, EPS) && Math.abs(widest.width / widest.height - 2) < RATIO_EPS,
+    assert(Math.abs(widest.width - TEXT_WIDTH) < Math.max(0.01, EPS) && Math.abs(widest.width / widest.height - 2) < RATIO_EPS,
       "a picture wider than the text area shrinks proportionally to its width");
-    assert(Math.abs(widest.height - (595.276 - 108) / 2) < Math.max(1e-6, EPS), "the reduced picture keeps its aspect ratio in height");
+    assert(Math.abs(widest.height - TEXT_WIDTH / 2) < Math.max(1e-6, EPS), "the reduced picture keeps its aspect ratio in height");
   }
 
   // --- EXIF -------------------------------------------------------------------------

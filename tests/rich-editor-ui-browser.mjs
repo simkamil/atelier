@@ -161,7 +161,9 @@ try {
     return [...ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data];
   };
   const near = (rgb, expected, tolerance = 40) => expected.every((v, i) => Math.abs(rgb[i] - v) <= tolerance);
-  assert(darkPixels(60, 20, 300, 80) === 0, "blank page area (beside the caret) is white");
+  assert(darkPixels(90, 20, 300, 140) === 0, "blank page area (beside the caret) is white");
+  // US-202: a new document is the rich default profile, A4 with 25 mm margins (71 pt) used by the layout.
+  assert(Math.abs(state().caret.x - 70.9) < 1 && Math.abs(state().caret.y - 70.9) < 1, "the blank document uses the A4 profile margins (25 mm)");
 
   // --- typing, selection, undo/redo through the hidden input -------------------------------------------------
   inputText(editor.element, "A"); inputText(editor.element, "é"); inputText(editor.element, "B");
@@ -196,6 +198,54 @@ try {
   inputText(editor.element, "\r\n");
   checks.push("a pasted CRLF is normalised to one paragraph break");
   await waitFor(async () => (await text()) === "\n", "line break replaces the selection");
+
+  // --- formatting controller (preparation of US-240 / US-243): one FormatState per change, UI unchanged ------------------------------------
+  {
+    const controller = app.formatController;
+    const fontButton = document.querySelector('[data-ribbon-command-id="font"]');
+    const paragraphButton = document.querySelector('[data-ribbon-command-id="paragraph"]');
+    assert(fontButton?.disabled && paragraphButton?.disabled && fontButton.textContent === "Police" && paragraphButton.textContent === "Paragraphe"
+      && fontButton.closest(".ribbon-group")?.dataset.ribbonGroupId === "font" && paragraphButton.closest(".ribbon-group")?.dataset.ribbonGroupId === "paragraph"
+      && fontButton.closest(".ribbon-group").nextElementSibling === paragraphButton.closest(".ribbon-group"),
+      "the Home tab shows the groups Police then Paragraphe, each with its disabled button");
+    let requests = 0;
+    const original = editor.format.formatState;
+    editor.format.formatState = (...args) => { requests += 1; return original.apply(editor.format, args); };
+    const seen = [];
+    const unsubscribe = controller.subscribe(snapshot => seen.push(snapshot));
+    await sleep(150);
+    const settled = () => requests;
+    let snapshot = controller.snapshot();
+    assert(snapshot.state?.type === "formatState" && snapshot.state.revision === state().revision && snapshot.readOnly === false
+      && snapshot.plainText === false && snapshot.state.plain === false && snapshot.busy === false, `the controller holds the FormatState of the current revision (a new document is rich, not plain text) ${JSON.stringify({ t: snapshot.state?.type, r: String(snapshot.state?.revision), s: String(state().revision), ro: snapshot.readOnly, p: snapshot.plainText, b: snapshot.busy, n: requests })}`);
+    assert(seen.length >= 1 && seen[0] === controller.snapshot(), "a subscriber receives the current snapshot at once and then the changes");
+    inputText(editor.element, "Q");
+    await waitFor(() => state().docLen === 2 && controller.snapshot().state?.revision === state().revision, "FormatState after typing");
+    const afterCaret = settled();
+    key(editor.element, "ArrowLeft");
+    await waitFor(() => state().focus === 1 && controller.snapshot().state !== snapshot.state, "FormatState after a caret move");
+    await sleep(150);
+    assert(settled() === afterCaret + 1, `one FormatState request for one caret move (${settled() - afterCaret})`);
+    const beforeTyping = settled();
+    inputText(editor.element, "R");
+    await waitFor(() => state().docLen === 3 && controller.snapshot().state?.revision === state().revision, "FormatState after a keystroke");
+    await sleep(150);
+    assert(settled() === beforeTyping + 1, `one FormatState request for one keystroke (${settled() - beforeTyping})`);
+    // A command read back: state read once more and the focus returns to the document.
+    snapshot = controller.snapshot();
+    const beforeRun = settled();
+    editor.setSuspended(true); await sleep(50);
+    assert(controller.snapshot().busy === true && settled() === beforeRun, "a suspended editor is published as busy without a request");
+    editor.setSuspended(false);
+    await waitFor(() => controller.snapshot().busy === false, "busy cleared");
+    document.querySelector("#undo").focus();
+    await controller.run(client => client.formatState());
+    assert(document.activeElement === editor.element, "the focus returns to the document after a formatting command");
+    unsubscribe();
+    editor.format.formatState = original;
+    await controller.refresh();
+    await text();
+  }
 
   // --- mirror and reader mode ----------------------------------------------------------------------------------
   const mirror = document.querySelector(".document-mirror");
@@ -823,6 +873,21 @@ try {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "n", ctrlKey: true, bubbles: true, cancelable: true }));
     await waitFor(async () => state().docLen === 0 && !state().dirty, "Ctrl+N invokes the app New action");
     assert(bridge.calls.slice(callsBefore).every(message => !/\|(pickOpen|pickSave)\|/.test(message)), "Ctrl+N does not request file access");
+    // Decision US-202: New is a rich document (default profile), saved as DOCX first under Document.docx; a TXT stays plain text.
+    await app.formatController.refresh();
+    assert(app.formatController.snapshot().state.plain === false && app.formatController.snapshot().plainText === false, "Ctrl+N creates a rich document (FormatState.plain is false)");
+    const filesNew = bridge.files.length;
+    bridge.nextSave = {};
+    document.querySelector("#save-document").click();
+    await waitFor(() => bridge.files.length === filesNew + 1, "the new document is saved");
+    assert(/^Enregistrer le document\nfilter:docx=/m.test(bridge.lastSaveSpec) && /name:Document\.docx$/m.test(bridge.lastSaveSpec), "Save as proposes DOCX first and the name Document.docx for a new document");
+    assert(decoder.decode(bridge.files.at(-1).bytes).includes("word/document.xml"), "the new document is written as a DOCX package");
+    await editor.openDocument(async () => ({ kind: "ok", bytes: encoder.encode("brut"), format: "txt" }));
+    await app.formatController.refresh();
+    assert(app.formatController.snapshot().state.plain === true && app.formatController.snapshot().plainText === true, "a TXT document stays plain text");
+    await editor.newDocument();
+    await app.formatController.refresh();
+    assert(app.formatController.snapshot().state.plain === false, "New after a TXT gives a rich document again");
     const before = bridge.calls.length;
     bridge.nextOpen = { cancelled: true };
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "o", ctrlKey: true, bubbles: true, cancelable: true }));

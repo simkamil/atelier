@@ -17,6 +17,9 @@ import { BUILD_INFO } from "/build-info.mjs";
 import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
 import { createImagePicker, imageMessageKey } from "/image-insert.mjs";
 import { createFileTab, FILE_TAB_KEYS } from "/file-tab.mjs";
+import { createFormatController, createFormatKeyRouter } from "/format-controller.mjs";
+import { createCharFormat } from "/format-char.mjs";
+import { createParaFormat } from "/format-para.mjs";
 
 const READER_MODE_KEY = "atelier.screenReaderMode";
 const byId = id => document.getElementById(id);
@@ -227,8 +230,14 @@ async function start() {
     else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
     else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
   }
+  // US-240 / US-243 : contrôleur de mise en forme partagé (un FormatState par changement) et modules du ruban ; l'éditeur
+  // est branché sur le contrôleur à son ouverture (`formatController.attach`).
+  const formatController = createFormatController({ onError: error => onError(error) });
+  const announceFormat = (text, isError = false) => showEditorMessage(text, isError);
+  const charFormat = createCharFormat({ document, i18n, controller: formatController, announce: announceFormat });
+  const paraFormat = createParaFormat({ document, i18n, controller: formatController, announce: announceFormat });
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
-    symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, fileTab, onImage: () => { void insertPickedImages(); }, onProperties: () => {
+    symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, fileTab, charFormat, paraFormat, onImage: () => { void insertPickedImages(); }, onProperties: () => {
       if (!properties || document.querySelector("dialog:modal")) return;
       if (!initialized || busy || !editor?.capabilities?.properties) return;
       properties.open({ returnFocusTo: document.activeElement }).catch(() => showEditorMessage(messages.get("status-properties-loadError"), true));
@@ -243,6 +252,7 @@ async function start() {
   let host;
   let lastReadTicket = null;
   let editor;
+  let formatKeys = null;
   let disposed = false;
   const imagePicker = imageAvailable ? createImagePicker() : null;
   async function insertPickedImages() {
@@ -265,7 +275,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; listeners.abort();
-    fileTab?.dispose(); imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    formatKeys?.dispose(); formatController.dispose(); charFormat.dispose(); paraFormat.dispose(); fileTab?.dispose(); imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -312,6 +322,7 @@ async function start() {
     nodes.frenchSpacing.disabled = blocked;
     nodes.openDocx.disabled = blocked;
     fileTab?.setBlocked(blocked);
+    charFormat.setBlocked(blocked); paraFormat.setBlocked(blocked);
     updateZoom();
     const toolsEnabled = !blocked;
     const writable = !state?.readOnly;
@@ -377,6 +388,9 @@ async function start() {
         onReadOnly: info => showReadOnly(info.readOnly && info.hasRevisions),
         dialogLabels: { openTitle: messages.get("dialog-open-title"), saveTitle: messages.get("dialog-save-title"), txt: messages.get("dialog-filter-txt"),
           docx: messages.get("dialog-filter-docx"), docm: messages.get("dialog-filter-docm"), dotx: messages.get("dialog-filter-dotx"), defaultName: messages.get("dialog-default-name") } });
+      void formatController.attach(editor);
+      // Raccourcis des modules de mise en forme : chaque module les déclare dans keyBindings() (voir format-controller.mjs).
+      formatKeys = createFormatKeyRouter({ document, target: () => editor?.element, modules: [charFormat, paraFormat], isEnabled: () => Boolean(editor?.canEdit) });
       const { createReaderModeToggle } = await import("/document-mirror.mjs");
       const toggle = createReaderModeToggle({ container: nodes.options, input: editor.input, t: (key, values) => i18n.t(key, values) });
       listeners.signal.addEventListener("abort", () => toggle.dispose(), { once: true });
@@ -569,7 +583,7 @@ async function start() {
       editor, host,
       theme: shell.theme, ribbon: shell.ribbon,
       zoomControls,
-      fileTab,
+      fileTab, formatController,
       navigation,
       documentStatus,
       symbols, about, properties, contextMenu,

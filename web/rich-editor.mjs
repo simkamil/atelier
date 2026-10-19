@@ -15,6 +15,7 @@ import { CanvasRenderer } from "./canvas-renderer.mjs";
 import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
 import { RICH_LIMITS, RichProtocolError, PROPERTY_FIELDS } from "./rich-editor-protocol.mjs";
 import { createRichEditorClient, EditorPageCache, RichClientError } from "./rich-editor-client.mjs";
+import { createFormatClient } from "./rich-editor-format.mjs";
 import { createRichImageCache } from "./rich-image-cache.mjs";
 import { createDocumentMirror } from "./document-mirror.mjs";
 import { attachImagePaste, imageAltText, insertImageFiles } from "./image-insert.mjs";
@@ -268,10 +269,20 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     onError: reportError,
   });
 
+  // Subscribers of `api.subscribe` (ribbon formatting, shared controller): told of each change that can alter what the
+  // formatting commands show or allow. Reasons: "state" (revision, selection, read-only), "document" (opened or reopened),
+  // "resync" (new atlas epoch), "busy" (suspended or resumed). Isolated from one another, like the UI callbacks.
+  const changeListeners = new Set();
+  function notifyChange(reason) {
+    for (const listener of [...changeListeners]) { try { listener({ reason }); } catch (error) { reportError(error); } }
+  }
+  let formatClient = null;
+
   function setBusy(value) {
     if (busy === value) return;
     busy = value;
     try { onBusy(value); } catch { /* UI callbacks are isolated */ }
+    notifyChange("busy");
     input.element.disabled = value;
     if (value) { mouseSelection?.cancel(); textDragDrop?.cancel(); }
   }
@@ -451,6 +462,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
   function onCacheChange() {
     if (disposed) return;
     if (cache.revision === null) return; // a reset, nothing to show yet
+    const resynced = lastEpoch !== null && cache.atlasEpoch !== lastEpoch;
     if (cache.atlasEpoch !== lastEpoch) { lastEpoch = cache.atlasEpoch; images.clear(); }
     refreshHighlightsOnChange();
     const candidate = buildState();
@@ -472,6 +484,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       updateViewport();
       if (documentReplaced || previous?.readOnly !== next.readOnly || previous?.hasRevisions !== next.hasRevisions) announceReadOnly(next);
       try { onState(next, { documentReplaced }); } catch { /* UI callbacks are isolated */ }
+      notifyChange(documentReplaced ? "document" : resynced ? "resync" : "state");
       if (lastHostDirty !== next.dirty) {
         lastHostDirty = next.dirty;
         void host.notifyDirty(next.dirty).then(result => {
@@ -482,6 +495,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       prefetchSelection(next);
     } else {
       updateViewport();
+      if (resynced) notifyChange("resync");
     }
     // The caret of a far jump arrives after its State and possibly before its page: scrolling waits for both, and the
     // spacer must cover the page before scrollTop is set.
@@ -898,9 +912,13 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
 
   // ---- documents ------------------------------------------------------------------------------------------
 
-  /** Opens `data` as `format` ("blank" | "txt" | "docx"): the previous document survives a refused Open. */
+  /**
+   * Opens `data` as `format` ("blank" | "txt" | "docx"): the previous document survives a refused Open. A blank document is
+   * a rich document with the default profile of US-202 (A4, Carlito 11 pt, default styles; `FormatState.plain` is false) and
+   * is saved as DOCX first; only a TXT file opened as such stays plain text.
+   */
   async function loadDocument(format, data = new Uint8Array(), name = null) {
-    const spec = format === "blank" ? { kind: "blank", profile: "txt", data: new Uint8Array() }
+    const spec = format === "blank" ? { kind: "blank", profile: "document", data: new Uint8Array() }
       : format === "txt" ? { kind: "txt", profile: "txt", data } : { kind: "docx", profile: "document", data };
     replacedPending = true;
     scrollWanted = false;
@@ -918,7 +936,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     visibleFlat = null;
     prefetchKey = "";
     lastClipboard = null;
-    origin = { format: format === "blank" ? "txt" : format, name };
+    origin = { format: format === "blank" ? "docx" : format, name };
     resetZoom();
     if (!state) throw new EditorError("EDITOR_INVALID_STATE");
     return state;
@@ -1134,6 +1152,14 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     /** Pictures whose bitmap is held (R7b-1). */
     get pictureBitmaps() { return images.size; },
     focus() { return input.focus(); },
+    /** Typed formatting client (`createFormatClient`, rich-editor-format.mjs) on the editor's own queue: one per editor. */
+    get format() { return formatClient ??= createFormatClient(rich); },
+    /** `listener({ reason })` after each change that can alter formatting state or availability; returns the unsubscribe. */
+    subscribe(listener) {
+      if (typeof listener !== "function") throw new TypeError("A listener function is required.");
+      changeListeners.add(listener);
+      return () => { changeListeners.delete(listener); };
+    },
     setFrenchSpacing(enabled) { spacingEnabled = Boolean(enabled); },
     setSuspended(value) { if (disposed) throw new EditorError("EDITOR_CLOSED"); setBusy(Boolean(value)); },
     setScreenReaderMode(enabled) { input.setScreenReaderMode(Boolean(enabled)); },
@@ -1295,6 +1321,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
       textDragDrop.dispose();
       mouseSelection.dispose();
       imagePaste.dispose();
+      changeListeners.clear();
       rich.dispose();
       mirror?.dispose();
       globalThis.removeEventListener?.("resize", scheduleViewport);
