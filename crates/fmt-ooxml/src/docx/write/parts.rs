@@ -29,6 +29,9 @@ pub(super) fn put(out: &mut Out, g: &GenEl) {
         &g.name,
         g.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
     );
+    for c in &g.children {
+        put(out, c);
+    }
     out.end();
 }
 

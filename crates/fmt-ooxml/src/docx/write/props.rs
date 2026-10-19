@@ -6,8 +6,8 @@
 use super::super::preserve::{PreservedChild, PreservedElement};
 use super::super::{parse_highlight, ppr_rank, rpr_rank};
 use atelier_text_model::rich::{
-    Alignment, CharAttrs, Color, LineRule, ParaProps, ThemeColor, ThemeFont, Underline,
-    VerticalAlign,
+    Alignment, CharAttrs, Color, LineRule, ParaBorderStyle, ParaProps, ThemeColor, ThemeFont,
+    Underline, VerticalAlign,
 };
 
 /// An element built by the writer: qualified name, qualified attribute names.
@@ -15,6 +15,7 @@ use atelier_text_model::rich::{
 pub(super) struct GenEl {
     pub name: String,
     pub attrs: Vec<(String, String)>,
+    pub children: Vec<GenEl>,
 }
 
 /// One child of a merged property element.
@@ -39,6 +40,7 @@ impl Prefixes {
                 .iter()
                 .map(|(k, v)| (format!("{}:{k}", self.w), v.clone()))
                 .collect(),
+            children: Vec::new(),
         }
     }
 }
@@ -365,6 +367,7 @@ fn fonts_merge(src: &PreservedElement, new: GenEl) -> GenEl {
     GenEl {
         name: src.name.clone(),
         attrs,
+        children: Vec::new(),
     }
 }
 
@@ -463,9 +466,13 @@ pub(super) enum ParaFam {
     Indent,
     Spacing,
     Numbering,
+    Borders,
+    Shading,
 }
 
-pub(super) const PARA_FAMILIES: [ParaFam; 5] = [
+pub(super) const PARA_FAMILIES: [ParaFam; 7] = [
+    ParaFam::Borders,
+    ParaFam::Shading,
     ParaFam::Style,
     ParaFam::Numbering,
     ParaFam::Spacing,
@@ -488,6 +495,8 @@ pub(super) fn para_fam_eq(fam: ParaFam, a: &ParaProps, b: &ParaProps) -> bool {
                 && a.line_spacing == b.line_spacing
         }
         ParaFam::Numbering => a.list == b.list,
+        ParaFam::Borders => a.borders == b.borders,
+        ParaFam::Shading => a.shading == b.shading,
     }
 }
 
@@ -498,6 +507,8 @@ fn para_fam_owns(fam: ParaFam) -> &'static [&'static str] {
         ParaFam::Indent => &["ind"],
         ParaFam::Spacing => &["spacing"],
         ParaFam::Numbering => &["numPr"],
+        ParaFam::Borders => &["pBdr"],
+        ParaFam::Shading => &["shd"],
     }
 }
 
@@ -572,6 +583,47 @@ pub(super) fn para_fam_elems(
                 out.push(p.el("spacing", &attrs));
             }
         }
+        ParaFam::Borders => {
+            const NAMES: [&str; 6] = ["top", "left", "bottom", "right", "between", "bar"];
+            let mut el = p.el("pBdr", &[]);
+            for (name, side) in NAMES.iter().zip(cur.borders.sides()) {
+                let Some(b) = side else { continue };
+                el.children.push(if b.style == ParaBorderStyle::None {
+                    p.el(name, &[("val", "nil".into())])
+                } else {
+                    let val = match b.style {
+                        ParaBorderStyle::Double => "double",
+                        ParaBorderStyle::Dotted => "dotted",
+                        ParaBorderStyle::Dashed => "dashed",
+                        _ => "single",
+                    };
+                    p.el(
+                        name,
+                        &[
+                            ("val", val.into()),
+                            ("sz", b.eighths.to_string()),
+                            ("space", b.space.to_string()),
+                            ("color", b.color.map_or_else(|| "auto".into(), hex)),
+                        ],
+                    )
+                });
+            }
+            if !el.children.is_empty() {
+                out.push(el);
+            }
+        }
+        ParaFam::Shading => {
+            if let Some(s) = &cur.shading {
+                out.push(p.el(
+                    "shd",
+                    &[
+                        ("val", s.pattern.clone().unwrap_or_else(|| "clear".into())),
+                        ("color", s.pattern_color.map_or_else(|| "auto".into(), hex)),
+                        ("fill", s.fill.map_or_else(|| "auto".into(), hex)),
+                    ],
+                ));
+            }
+        }
         ParaFam::Numbering => {
             if let Some(l) = cur.list {
                 let mut el = p.el("numPr", &[]);
@@ -626,6 +678,7 @@ pub(super) fn merge_ppr<'a>(
                     new.push(GenEl {
                         name: src.name.clone(),
                         attrs: kept,
+                        children: Vec::new(),
                     });
                 }
             }

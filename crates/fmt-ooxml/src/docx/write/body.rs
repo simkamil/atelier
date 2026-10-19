@@ -306,6 +306,9 @@ impl<'a> Gen<'a> {
             &g.name,
             g.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
         );
+        for c in &g.children {
+            self.write_gen(c);
+        }
         self.out.end();
     }
 
