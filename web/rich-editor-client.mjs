@@ -510,13 +510,15 @@ export function createRichEditorClient({
       }, callerSignal);
     },
     /**
-     * Rich fragment of [start, end) (flat positions, BigInt) at the current revision (T0): resolves
+     * Rich fragment of [start, end) (flat positions, BigInt) of the document at `revision` (T0): the revision the caller
+     * saw the range in (BigInt, required: the engine answers RICH_STALE_REVISION when the document moved on). Resolves
      * `{revision, lossy, text, bytes}`; `bytes` (a copy) goes to `pasteFragment` of any document of the engine, `text`
      * is what the system clipboard receives. Changes neither the cache nor the document.
      */
-    copyFragment(start, end, { signal: callerSignal } = {}) {
+    copyFragment(start, end, { revision, signal: callerSignal } = {}) {
+      if (typeof revision !== "bigint") return Promise.reject(new TypeError("copyFragment needs the expected revision (BigInt)."));
       return enqueue(async () => {
-        const { response } = await exchange({ type: "copyFragment", revision: cache.revision ?? 0n, start, end }, callerSignal);
+        const { response } = await exchange({ type: "copyFragment", revision, start, end }, callerSignal);
         return { revision: response.revision, lossy: response.lossy, text: response.text, bytes: response.bytes.slice() };
       }, callerSignal);
     },

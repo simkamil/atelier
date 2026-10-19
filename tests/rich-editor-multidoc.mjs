@@ -89,7 +89,7 @@ function createEngine() {
     return body.slice(4);
   }
   return {
-    log, plan,
+    log, plan, memoryBytes: () => memory.buffer.byteLength,
     async request(frame) {
       const d = decodeRichRequest(decodeMessage(frame, "command").payload);
       log.push({ doc: d.docId, type: d.command.type });
@@ -172,7 +172,7 @@ await insert(source, "alpha!");
 await insert(target, "beta");
 await source.command({ type: "setSelection", anchor: 0n, focus: 5n, upstream: false });
 await source.command({ type: "applyCharFormat", baseRevision: 0xffffffffffffffffn, commandId: 0, scope: "selectionOnly", edits: [{ attr: "bold", op: "toggle" }] });
-const fragment = await source.copyFragment(0n, 6n);
+const fragment = await source.copyFragment(0n, 6n, { revision: source.cache.revision });
 assert.equal(fragment.text, "alpha!");
 assert.equal(fragment.lossy, false);
 assert.equal(String.fromCharCode(...fragment.bytes.subarray(0, 4)), "ATFR");
@@ -191,9 +191,25 @@ await target.command({ type: "undo" });
 assert.equal(await textOf(target), "beta");
 check();
 // A stale revision and an empty range are refused, hostile bytes too, and nothing changes.
-await assert.rejects(source.copyFragment(2n, 2n), (e) => e.code === "RICH_EMPTY_SELECTION");
+await assert.rejects(source.copyFragment(2n, 2n, { revision: source.cache.revision }), (e) => e.code === "RICH_EMPTY_SELECTION");
 await assert.rejects(target.pasteFragment(Uint8Array.of(1, 2, 3)), (e) => e.code === "RICH_FRAGMENT_INVALID");
 assert.equal(await textOf(target), "beta");
+// Stale revision is the caller's guard; a missing one is a programming error.
+await target.command({ type: "setSelection", anchor: 0n, focus: 0n, upstream: false });
+await insert(target, "z");
+await assert.rejects(target.copyFragment(0n, 1n, { revision: target.cache.revision - 1n }), (e) => e.code === "RICH_STALE_REVISION");
+await assert.rejects(target.copyFragment(0n, 1n), TypeError);
+await target.command({ type: "undo" });
+// A hostile fragment of 4 MB that declares 4 000 000 paragraphs is refused without allocating for the count (no trap, no growth).
+const hostile = new Uint8Array(4_000_016).fill(0xff);
+hostile.set([0x41, 0x54, 0x46, 0x52, 1, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x09, 0x3d, 0x00]);
+const warm = hostile.slice(); warm[0] = 0;
+await assert.rejects(target.pasteFragment(warm), (e) => e.code === "RICH_FRAGMENT_INVALID");
+const memoryBefore = engine.memoryBytes();
+await assert.rejects(target.pasteFragment(hostile), (e) => e.code === "RICH_FRAGMENT_INVALID");
+assert.ok(engine.memoryBytes() - memoryBefore < 1024 * 1024, `memory grew by ${engine.memoryBytes() - memoryBefore}`);
+assert.equal(await textOf(target), "beta");
+check();
 // Into a text document the fragment gives its text.
 await caret(c3, 0);
 await c3.pasteFragment(fragment.bytes);

@@ -400,7 +400,7 @@ impl<'a> R<'a> {
     }
     fn opaque(&mut self) -> Res<Vec<OpaqueAttr>> {
         let n = self.count()?;
-        let mut list: Vec<OpaqueAttr> = Vec::with_capacity(n);
+        let mut list: Vec<OpaqueAttr> = Vec::with_capacity(n.min(1024));
         for _ in 0..n {
             list.push(OpaqueAttr {
                 namespace: self.str()?,
@@ -593,7 +593,7 @@ pub(super) fn decode(
     if count > MAX_STYLES {
         return Err(ErrorCode::FragmentInvalid);
     }
-    let mut styles = Vec::with_capacity(count);
+    let mut styles = Vec::with_capacity(count.min(1024));
     for _ in 0..count {
         styles.push(r.style()?);
     }
@@ -601,7 +601,7 @@ pub(super) fn decode(
     if count == 0 {
         return Err(ErrorCode::FragmentInvalid);
     }
-    let mut pieces = Vec::with_capacity(count);
+    let mut pieces = Vec::with_capacity(count.min(1024));
     let mut text = 0usize;
     for _ in 0..count {
         let p = r.paragraph(mint)?;
