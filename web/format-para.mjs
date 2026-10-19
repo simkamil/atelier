@@ -7,9 +7,10 @@
 //                `controller.run(fn)` exécute une commande, relit l'état et rend le focus au document) ; announce(texte, isError).
 // Sortie : { groups, setBlocked, keyBindings, attachEditor, detachEditor, dispose }
 //   groups({ command, future })  -> le groupe « Paragraphe » : alignements (boutons à aria-pressed), retraits, menu « Interligne et
-//     espacement » (valeurs courantes, Options d'interligne…, espace avant/après), Trame et Bordures (désactivés avec leur raison,
-//     jusqu'à US-243-M1), marques de mise en forme (bouton à aria-pressed). Info-touches : G N D J M O L Q ; B est gardée pour
-//     les bordures.
+//     espacement » (valeurs courantes, Options d'interligne…, espace avant/après), Trame de fond (palette, « Aucune couleur »),
+//     Bordures (menu de Word : inférieure, supérieure, gauche, droite, aucune, toutes, extérieures, intérieure horizontale ; les
+//     quatre côtés et l'intérieure s'inversent comme dans Word), marques de mise en forme (bouton à aria-pressed). Info-touches :
+//     G N D J M O L Q, B (Bordures) et V (Trame : toutes les lettres réservées à US-243 sont prises, V est libre sur l'onglet Accueil).
 //   keyBindings() : Ctrl+L, E, R, J (alignements) ; Ctrl+M et Ctrl+Maj+M (retrait) ; Ctrl+1, 2, 5 (interligne), Ctrl+0 (espace
 //     avant) ; Ctrl+Maj+8 (marques). Les chiffres sont reconnus par `code` (Digit1…) : ils fonctionnent aussi en AZERTY.
 //   attachEditor(editor, { canvas, scrollport, spacer }?) / detachEditor() : la surcouche des marques de mise en forme se dessine
@@ -21,7 +22,7 @@
 //   nombre de pages, mise en page achevée), jamais dessinées par le moteur : activer l'option n'invalide aucune page.
 
 import { canFormat } from "/format-controller.mjs";
-import { createButton, createContextMenu, createDialog } from "/ui-components.mjs";
+import { createButton, createColorPicker, createContextMenu, createDialog } from "/ui-components.mjs";
 
 const SVG = "http://www.w3.org/2000/svg";
 const MARKS_KEY = "atelier.formatMarks";
@@ -33,6 +34,19 @@ const LINE_VALUES = Object.freeze([240, 276, 360, 480, 600, 720]);
 // i18n-ignore: familles de polices CSS, pas du texte d’interface
 const markFont = size => `${Math.max(6, size)}px Carlito, "Segoe UI", sans-serif`;
 const MARK_COLOR = "rgba(63, 105, 150, 0.85)";
+/** Trame de fond : [clé du catalogue, hex]. Les couleurs standard réutilisent les noms de la palette de police (bloc US-240). */
+const SHADING_STANDARD = [["char-color-darkred", "#c00000"], ["char-color-red", "#ff0000"], ["char-color-amber", "#ffc000"], ["char-color-yellow", "#ffff00"],
+  ["char-color-lightgreen", "#92d050"], ["char-color-green", "#00b050"], ["char-color-cyan", "#00b0f0"], ["char-color-blue", "#0070c0"],
+  ["char-color-navy", "#002060"], ["char-color-purple", "#7030a0"]];
+const SHADING_TINTS = [["char-color-white", "#ffffff"], ["char-color-silver", "#e7e6e6"], ["para-tint-gray", "#f2f2f2"], ["para-tint-blue", "#dae3f3"],
+  ["para-tint-green", "#e2efd9"], ["para-tint-yellow", "#fff2cc"], ["para-tint-orange", "#fbe5d6"], ["para-tint-pink", "#f8d7da"], ["para-tint-purple", "#e4dfec"]];
+const toHex = color => `#${[color.r, color.g, color.b].map(v => v.toString(16).padStart(2, "0")).join("")}`;
+const fromHex = hex => ({ r: parseInt(hex.slice(1, 3), 16), g: parseInt(hex.slice(3, 5), 16), b: parseInt(hex.slice(5, 7), 16) });
+/** Bordure de Word par défaut : simple, 1/2 pt, couleur automatique ; écart de 1 pt en haut et en bas, de 4 pt sur les côtés. */
+const SIDE_SPACE = Object.freeze({ top: 1, bottom: 1, left: 4, right: 4, between: 1 });
+const line = side => ({ style: "single", eighths: 4, space: SIDE_SPACE[side], color: null });
+const KEEP_ALL = Object.freeze({ top: "keep", left: "keep", bottom: "keep", right: "keep", between: "keep", bar: "keep" });
+const BORDER_ITEMS = Object.freeze(["bottom", "top", "left", "right", "none", "all", "outside", "inside"]);
 
 const make = (document, name, className, text) => {
   const node = document.createElement(name);
@@ -256,6 +270,23 @@ export function createParaFormat({ document, i18n, controller, announce = () => 
   }
   const apply = (edits, status) => perform(client => client.applyParaFormat({ edits }), status);
 
+  // Shading: a colour or "No colour"; the custom colour input fires continuously, only the last colour of a burst is applied.
+  const shade = hex => apply([{ attr: "shading", op: "set", value: fromHex(hex) }], i18n.t("para-status-shading"));
+  const shadeNone = () => apply([{ attr: "shading", op: "clear" }], i18n.t("para-status-shading-none"));
+  let shadeTimer = 0; let silent = false;
+  const shadeLater = hex => { clearTimeout(shadeTimer); shadeTimer = setTimeout(() => { shadeTimer = 0; void shade(hex); }, 120); };
+  // Borders (menu of Word): the four sides and the inside line toggle on the state of the selection.
+  const borders = choice => perform(async client => {
+    const current = (await client.formatState()).paragraph.borders;
+    const sides = { ...KEEP_ALL };
+    const toggle = side => { sides[side] = current[side].state === "value" ? "none" : line(side); };
+    if (choice === "none") for (const side of Object.keys(sides)) sides[side] = "none";
+    else if (choice === "all") for (const side of ["top", "left", "bottom", "right", "between"]) sides[side] = line(side);
+    else if (choice === "outside") { for (const side of ["top", "left", "bottom", "right"]) sides[side] = line(side); sides.between = "none"; }
+    else toggle(choice === "inside" ? "between" : choice);
+    return client.applyParaFormat({ edits: [{ attr: "borders", op: "set", value: sides }] });
+  }, i18n.t(choice === "none" ? "para-status-borders-none" : "para-status-borders"));
+
   // Alignment: a second click on the active one goes back to left (Word), decided on a FormatState of the current selection.
   const align = (name, status) => perform(async client => {
     const current = (await client.formatState()).paragraph.alignment;
@@ -336,18 +367,43 @@ export function createParaFormat({ document, i18n, controller, announce = () => 
   const observer = new MutationObserver(() => spacingButton.setAttribute("aria-expanded", String(!menu.popup.hidden)));
   observer.observe(menu.popup, { attributes: true, attributeFilter: ["hidden"] });
 
-  // Shading and borders: no model field yet (US-243-M1): disabled, with the reason.
-  function unavailable(id, label, reason) {
-    const button = make(document, "button", "para-button para-unavailable", label);
-    button.type = "button"; button.id = `para-${id}`;
-    button.setAttribute("aria-disabled", "true"); button.title = reason;
-    const note = make(document, "span", "", reason); note.id = `para-${id}-reason`; note.hidden = true;
-    button.append(note); button.setAttribute("aria-describedby", note.id);
-    button.addEventListener("click", event => { event.preventDefault(); announce(reason, false); });
-    return button;
-  }
-  const shadingButton = unavailable("shading", i18n.t("para-shading"), i18n.t("para-shading-reason"));
-  const bordersButton = unavailable("borders", i18n.t("para-borders"), i18n.t("para-borders-reason"));
+  // Shading: a palette plus "No colour".
+  const swatches = list => list.map(([key, hex]) => ({ label: i18n.t(key), value: hex }));
+  const shadingPicker = createColorPicker({
+    label: i18n.t("para-shading"), customLabel: i18n.t("para-shading-custom"), value: "#ffff00",
+    themeColors: { label: i18n.t("para-shading-tints"), colors: swatches(SHADING_TINTS) },
+    standardColors: { label: i18n.t("para-shading-standard"), colors: swatches(SHADING_STANDARD) },
+    onChange: hex => { if (!silent) shadeLater(hex); },
+  });
+  shadingPicker.element.classList.add("para-shading");
+  shadingPicker.trigger.classList.add("para-button");
+  shadingPicker.trigger.textContent = i18n.t("para-shading-short");
+  shadingPicker.trigger.setAttribute("aria-label", i18n.t("para-shading")); shadingPicker.trigger.title = i18n.t("para-shading");
+  const shadingNone = make(document, "button", "ui-button para-shading-none", i18n.t("para-shading-none"));
+  shadingNone.type = "button";
+  shadingNone.addEventListener("click", () => { shadingPicker.close({ restoreFocus: false }); void shadeNone(); });
+  shadingPicker.popup.prepend(shadingNone);
+  // A swatch closes the palette (the custom colour input does not: it keeps firing while the colour is being chosen).
+  shadingPicker.popup.addEventListener("click", event => { if (event.target.closest?.(".ui-color-swatch")) shadingPicker.close({ restoreFocus: false }); });
+
+  // Borders: a button that opens the menu of Word.
+  const bordersButton = make(document, "button", "para-button para-borders", i18n.t("para-borders-short"));
+  bordersButton.type = "button"; bordersButton.id = "para-borders"; named(bordersButton, i18n.t("para-borders"));
+  bordersButton.setAttribute("aria-haspopup", "menu"); bordersButton.setAttribute("aria-expanded", "false");
+  controls.push(bordersButton);
+  const borderLabels = Object.fromEntries(BORDER_ITEMS.map(item => [item, i18n.t(`para-border-${item}`)]));
+  const bordersMenu = createContextMenu({ label: i18n.t("para-borders-menu"), items: BORDER_ITEMS.map(value => ({ value, label: borderLabels[value] })), onSelect: choice => { void borders(choice); } });
+  bordersMenu.popup.classList.add("para-borders-menu");
+  document.body.append(bordersMenu.popup);
+  const bordersItems = [...bordersMenu.popup.querySelectorAll(".ui-menu-item")];
+  bordersButton.addEventListener("click", () => {
+    if (bordersButton.getAttribute("aria-disabled") === "true") return;
+    const rect = bordersButton.getBoundingClientRect();
+    bordersMenu.open({ x: rect.left, y: rect.bottom + 2, returnFocusTo: bordersButton });
+    bordersButton.setAttribute("aria-expanded", "true");
+  });
+  const bordersObserver = new MutationObserver(() => bordersButton.setAttribute("aria-expanded", String(!bordersMenu.popup.hidden)));
+  bordersObserver.observe(bordersMenu.popup, { attributes: true, attributeFilter: ["hidden"] });
 
   const marksButton = make(document, "button", "para-button para-marks", "¶");
   marksButton.type = "button"; named(marksButton, i18n.t("para-marks"));
@@ -433,7 +489,26 @@ export function createParaFormat({ document, i18n, controller, announce = () => 
     for (const button of controls) setDisabled(button, !can);
     const usable = Boolean(snapshot.state) && !snapshot.busy && !blocked;
     setDisabled(marksButton, !usable);
-    if (!can) menu.close({ restoreFocus: false });
+    if (!can) { menu.close({ restoreFocus: false }); bordersMenu.close({ restoreFocus: false }); shadingPicker.close({ restoreFocus: false }); }
+    shadingPicker.trigger.disabled = !can; shadingPicker.trigger.setAttribute("aria-disabled", String(!can));
+    shadingPicker.element.setAttribute("aria-disabled", String(!can));
+    const shading = paragraph?.shading;
+    const shown = shading?.state === "value" ? toHex(shading.value) : null;
+    shadingPicker.element.style.setProperty("--para-swatch", shown ?? "transparent");
+    shadingPicker.element.dataset.shadingState = shading?.state ?? "";
+    if (shown) { silent = true; try { shadingPicker.setValue(shown); } finally { silent = false; } }
+    const sideOn = side => paragraph?.borders?.[side]?.state === "value";
+    const sideMixed = side => paragraph?.borders?.[side]?.state === "mixed";
+    BORDER_ITEMS.forEach((item, index) => {
+      const side = item === "inside" ? "between" : item;
+      const on = ["bottom", "top", "left", "right", "inside"].includes(item) && sideOn(side);
+      const all = item === "all" && ["top", "left", "bottom", "right", "between"].every(sideOn);
+      const outside = item === "outside" && ["top", "left", "bottom", "right"].every(sideOn);
+      const none = item === "none" && Object.keys(SIDE_SPACE).every(name => paragraph?.borders?.[name]?.state === "unset");
+      const checked = on || all || outside || none;
+      bordersItems[index].setAttribute("aria-checked", String(checked));
+      bordersItems[index].textContent = `${checked ? "✓ " : ""}${borderLabels[item]}${["bottom", "top", "left", "right", "inside"].includes(item) && sideMixed(side) ? " …" : ""}`;
+    });
     const line = paragraph?.lineSpacing;
     LINE_VALUES.forEach((value, index) => {
       const checked = line?.state === "value" && line.value.rule === "auto" && line.value.value === value;
@@ -445,6 +520,7 @@ export function createParaFormat({ document, i18n, controller, announce = () => 
     menuButtons[LINE_VALUES.length + 2].textContent = label("spaceAfter", i18n.t("para-space-after-add"), i18n.t("para-space-after-remove"));
   }
   const unsubscribe = controller.subscribe(render);
+  for (const item of bordersItems) item.setAttribute("role", "menuitemcheckbox");
 
   // ---- public ---------------------------------------------------------------------------------------------------------------------
   const KEY_BINDINGS = [
@@ -466,7 +542,7 @@ export function createParaFormat({ document, i18n, controller, announce = () => 
         command("para-align-right", "para-align-right", "D", alignButtons.right), command("para-align-justify", "para-align-justify", "J", alignButtons.justify),
         command("para-indent-decrease", "para-indent-decrease", "M", indentDown), command("para-indent-increase", "para-indent-increase", "O", indentUp),
         command("para-spacing", "para-spacing", "L", spacingButton),
-        command("para-shading", "para-shading", undefined, shadingButton), command("para-borders", "para-borders", undefined, bordersButton),
+        command("para-shading", "para-shading", "V", shadingPicker.element), command("para-borders", "para-borders", "B", bordersButton),
         command("para-marks", "para-marks", "Q", marksButton),
       ] }];
     },
@@ -478,9 +554,9 @@ export function createParaFormat({ document, i18n, controller, announce = () => 
     get marks() { return { active: overlay.active, drawn: overlay.drawn, element: overlay.element }; },
     dispose() {
       if (disposed) return;
-      disposed = true; unsubscribe(); observer.disconnect(); overlay.dispose(); menu.dispose(); dialog.dispose();
-      applyButton.dispose(); cancelButton.dispose();
-      for (const node of [...controls, shadingButton, bordersButton, marksButton, menu.popup, dialog.element]) node.remove();
+      disposed = true; unsubscribe(); observer.disconnect(); bordersObserver.disconnect(); overlay.dispose(); menu.dispose(); dialog.dispose();
+      clearTimeout(shadeTimer); bordersMenu.dispose(); shadingPicker.dispose(); applyButton.dispose(); cancelButton.dispose();
+      for (const node of [...controls, shadingPicker.element, marksButton, menu.popup, bordersMenu.popup, dialog.element]) node.remove();
     },
   });
 }

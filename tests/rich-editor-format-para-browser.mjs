@@ -145,21 +145,20 @@ try {
   assert(ids.every(id => group.contains(ribbonButton(id))), "the group holds alignments, indents, spacing, shading, borders and marks");
   assert(ids.every(id => ribbonButton(id).getAttribute("aria-label") || ribbonButton(id).textContent.trim()), "every control has an accessible name");
   const shading = ribbonButton("para-shading"); const borders = ribbonButton("para-borders");
-  assert(shading.getAttribute("aria-disabled") === "true" && borders.getAttribute("aria-disabled") === "true" && shading.title.includes("pas encore") && borders.title.includes("pas encore"), "shading and borders are disabled and say why");
-  shading.click();
-  assert(status.textContent === shading.title, "a click on a disabled entry announces its reason");
+  assert(shading.querySelector(".ui-color-trigger").getAttribute("aria-label") === "Trame de fond" && borders.getAttribute("aria-haspopup") === "menu", "shading is a palette and borders a menu, both named");
 
   // ---- Canvas measurements -------------------------------------------------------------------------------------------------------
   const zoom = () => editor.getZoom();
-  const inkLines = () => {
+  const inkLines = (range = null) => {
     const view = document.createElement("canvas"); view.width = canvas.width; view.height = canvas.height;
     const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
     const { data, width, height } = ctx.getImageData(0, 0, view.width, view.height);
     const pageWidth = Math.round(595.276 * zoom() * ratio); const lines = []; let open = null; let blank = 0;
+    const from = Math.round((range?.from ?? 0) * ratio); const to = Math.min(width, Math.round((range?.to ?? 1e9) * ratio), pageWidth);
     const close = () => { lines.push({ top: open.top / ratio, bottom: open.bottom / ratio, left: open.left / ratio, right: open.right / ratio }); open = null; blank = 0; };
     for (let y = 0; y < height; y += 1) {
       let left = -1; let right = -1;
-      for (let x = 0; x < Math.min(width, pageWidth); x += 1) {
+      for (let x = from; x < to; x += 1) {
         const i = (y * width + x) * 4;
         if (data[i] < 110 && data[i + 1] < 110 && data[i + 2] < 110) { if (left < 0) left = x; right = x; }
       }
@@ -179,6 +178,7 @@ try {
   const toTop = async () => { key(editor.element, "Home", { ctrlKey: true }); await waitFor(() => state().focus === 0, "caret at the start"); await quiet(); };
   const selectAll = async () => { key(editor.element, "a", { ctrlKey: true }); await waitFor(() => state().anchor !== state().focus, "everything selected"); await quiet(); };
   await selectAll();
+  assert(shading.getAttribute("aria-disabled") === "false" && borders.getAttribute("aria-disabled") === "false" && !borders.disabled, "shading and borders are enabled in a rich document");
   assert(paragraph()?.alignment.state === "value" && paragraph().alignment.value === "left", "the three paragraphs start aligned left");
   assert(ribbonButton("para-align-left").getAttribute("aria-pressed") === "true" && ribbonButton("para-align-center").getAttribute("aria-pressed") === "false", "the button of the current alignment is pressed");
   await toTop();
@@ -302,6 +302,140 @@ try {
   await selectAll();
   lineKey("Digit1");
   await waitFor(() => paragraph()?.lineSpacing.value?.rule === "auto" && paragraph().lineSpacing.value.value === 240, "single spacing again before the marks");
+
+  // ---- shading and borders (US-243-M1, T243-A, T243-B) -------------------------------------------------------------------------
+  const pixels = () => {
+    const view = document.createElement("canvas"); view.width = canvas.width; view.height = canvas.height;
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    const { data, width } = ctx.getImageData(0, 0, view.width, view.height);
+    const at = (px, py) => { const i = (Math.round(py * ratio) * width + Math.round(px * ratio)) * 4; return [data[i], data[i + 1], data[i + 2]]; };
+    const dark = (px, py) => at(px, py).every(v => v < 110);
+    return { at, dark, width: width / ratio };
+  };
+  const isYellow = ([r, g, b]) => r > 235 && g > 235 && b < 90;
+  const isWhite = ([r, g, b]) => r > 245 && g > 245 && b > 245;
+  await toTop();
+  // Shading from the palette on the three paragraphs: state, pixels behind the text, one undo step.
+  await selectAll();
+  const revisionShade = state().revision;
+  shading.querySelector(".ui-color-trigger").click();
+  const swatch = shading.querySelector('.ui-color-swatch[data-value="#ffff00"]');
+  await waitFor(() => !shading.querySelector(".ui-color-popup").hidden && swatch, "the shading palette opens");
+  assert(shading.querySelector(".para-shading-none").textContent === "Aucune couleur", "the palette offers « Aucune couleur »");
+  swatch.click();
+  await waitFor(() => paragraph()?.shading.state === "value" && state().revision === revisionShade + 1n, "yellow shading applied to the three paragraphs in one revision");
+  assert(document.activeElement === editor.element, "the focus returns to the document after the palette");
+  await toTop(); await quiet();
+  lines = inkLines();
+  const where = line => ({ x: (MARGIN + 380) * zoom(), y: (line.top + line.bottom) / 2 });
+  assert(lines.every(line => isYellow(pixels().at(where(line).x, where(line).y))), "the Canvas shows the yellow behind all three paragraphs");
+  assert(isWhite(pixels().at(20 * zoom(), (lines[0].top + lines[0].bottom) / 2)) && isWhite(pixels().at((PAGE - 20) * zoom(), (lines[0].top + lines[0].bottom) / 2)), "the shading stops at the text area (nothing in the margins)");
+  assert(shading.dataset.shadingState === "value" && getComputedStyle(shading).getPropertyValue("--para-swatch").trim() === "#ffff00", "the palette button shows the colour of the selection");
+  await selectAll();
+  { // The selection highlight stays above the shading: the line is bluer than with the caret only.
+    const line0 = inkLines()[0]; const spot = { x: (line0.left + line0.right) / 2, y: (line0.top + line0.bottom) / 2 };
+    const sample = () => { const view = pixels(); let blue = 0; let count = 0; for (let dx = -6; dx <= 6; dx += 1) for (let dy = -3; dy <= 3; dy += 1) { const [r, , b] = view.at(spot.x + dx, spot.y + dy); blue += b - r; count += 1; } return blue / count; };
+    const selected = sample(); await toTop(); await quiet(); const caretOnly = sample();
+    assert(selected > caretOnly + 40, `the selection is drawn above the shading (${caretOnly.toFixed(0)} -> ${selected.toFixed(0)})`);
+  }
+  document.querySelector("#undo").click();
+  await waitFor(() => paragraph()?.shading.state === "unset", "one undo step removes the shading of the three paragraphs");
+  await quiet(); lines = inkLines();
+  assert(lines.every(line => isWhite(pixels().at(where(line).x, where(line).y))), "the Canvas is white again");
+  // Mixed state: the first paragraph only.
+  await toTop();
+  shading.querySelector(".ui-color-trigger").click();
+  await waitFor(() => !shading.querySelector(".ui-color-popup").hidden, "the palette opens again");
+  shading.querySelector('.ui-color-swatch[data-value="#92d050"]').click();
+  await waitFor(() => paragraph()?.shading.state === "value", "the first paragraph is green");
+  await selectAll();
+  assert(paragraph().shading.state === "mixed" && shading.dataset.shadingState === "mixed", "a selection with and without colour is mixed");
+  shading.querySelector(".ui-color-trigger").click();
+  await waitFor(() => !shading.querySelector(".ui-color-popup").hidden, "the palette opens for « Aucune couleur »");
+  shading.querySelector(".para-shading-none").click();
+  await waitFor(() => paragraph()?.shading.state === "unset", "« Aucune couleur » removes the shading from the whole selection");
+  // Borders, from the menu: toggles on the state of the selection.
+  await selectAll();
+  borders.click();
+  const bordersMenu = document.querySelector(".para-borders-menu");
+  await waitFor(() => !bordersMenu.hidden && bordersMenu.contains(document.activeElement), "the borders menu opens with the focus inside");
+  const borderItems = () => [...bordersMenu.querySelectorAll(".ui-menu-item")];
+  assert(borderItems().map(item => item.textContent.replace("✓ ", "")).join("|") === "Bordure inférieure|Bordure supérieure|Bordure gauche|Bordure droite|Aucune bordure|Toutes les bordures|Bordures extérieures|Bordure intérieure horizontale", "the menu offers the borders of Word, in its order");
+  borderItems()[0].click();
+  await waitFor(() => paragraph()?.borders.bottom.state === "value" && bordersMenu.hidden, "Bottom border is set on the three paragraphs");
+  assert(paragraph().borders.top.state === "unset" && paragraph().borders.bottom.value.style === "single" && paragraph().borders.bottom.value.eighths === 4 && paragraph().borders.bottom.value.space === 1, "a single 1/2 pt line, 1 pt from the text");
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu reopened");
+  assert(borderItems()[0].getAttribute("aria-checked") === "true" && borderItems()[0].textContent.startsWith("✓") && borderItems()[1].getAttribute("aria-checked") === "false", "the menu checks the bottom border");
+  borderItems()[0].click();
+  await waitFor(() => paragraph()?.borders.bottom.state === "unset", "a second click on Bottom border removes it");
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu reopened for all borders");
+  borderItems()[5].click();
+  await waitFor(() => ["top", "left", "bottom", "right", "between"].every(side => paragraph()?.borders[side].state === "value"), "All borders sets the five lines");
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu reopened for none");
+  borderItems()[4].click();
+  await waitFor(() => ["top", "left", "bottom", "right", "between"].every(side => paragraph()?.borders[side].state === "unset"), "No border clears them");
+  // The mixed state of one side: the middle paragraph alone gets a top border.
+  await toTop(); key(editor.element, "ArrowDown"); await quiet();
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu for the middle paragraph");
+  borderItems()[1].click();
+  await waitFor(() => paragraph()?.borders.top.state === "value", "Top border on the middle paragraph");
+  await selectAll();
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu on the mixed selection");
+  assert(borderItems()[1].getAttribute("aria-checked") === "false" && borderItems()[1].textContent.endsWith("…"), "a side that differs between paragraphs is marked mixed");
+  key(bordersMenu, "Escape"); await waitFor(() => bordersMenu.hidden, "Escape closes the borders menu");
+  await waitFor(() => document.activeElement === borders, "Escape restores the opener");
+  editor.focus();
+  await selectAll();
+  await controller.run(client => client.applyParaFormat({ edits: [{ attr: "borders", op: "set", value: { top: "none", left: "none", bottom: "none", right: "none", between: "none", bar: "none" } }] }));
+  await waitFor(() => paragraph()?.borders.top.state === "unset", "borders cleared before the pixel checks");
+  // Pixels: a box of 3 pt around the three paragraphs, shared (no line between them), then a line between them.
+  await toTop(); await quiet();
+  const plainLines = inkLines();
+  await selectAll();
+  const black3 = { style: "single", eighths: 24, space: 2, color: null };
+  await controller.run(client => client.applyParaFormat({ edits: [{ attr: "borders", op: "set", value: { top: black3, left: black3, bottom: black3, right: black3, between: "none", bar: "keep" } },
+    { attr: "shading", op: "set", value: { r: 255, g: 255, b: 0 } }] }));
+  await waitFor(() => paragraph()?.borders.left.state === "value" && paragraph().shading.state === "value", "a 3 pt box and yellow shading on the three paragraphs");
+  await toTop(); await quiet();
+  const room = (3 + 2) * zoom();
+  const view = pixels();
+  const textTop = plainLines[0].top; const midY = (plainLines[0].top + plainLines[0].bottom) / 2;
+  let firstDark = -1;
+  for (let y = 0; y < 400 && firstDark < 0; y += 0.5) if (view.dark((MARGIN + 200) * zoom(), y)) firstDark = y;
+  assert(firstDark > 0 && Math.abs(firstDark - (textTop - 0.5 * zoom() - 0)) < 40, `the top border is drawn above the first line (${firstDark.toFixed(1)})`);
+  let leftEdge = -1;
+  for (let x = 0; x < 300 && leftEdge < 0; x += 0.25) if (view.dark(x, midY + room)) leftEdge = x;
+  const expectedLeft = (MARGIN - 2 - 3) * zoom();
+  assert(leftEdge > 0 && Math.abs(leftEdge - expectedLeft) < 2.5, `the left border stands 2 pt + its width left of the text (${leftEdge.toFixed(1)} vs ${expectedLeft.toFixed(1)})`);
+  let rightEdge = -1;
+  for (let x = (PAGE - 10) * zoom(); x > (PAGE / 2) * zoom() && rightEdge < 0; x -= 0.25) if (view.dark(x, midY + room)) rightEdge = x;
+  const expectedRight = (PAGE - MARGIN + 2 + 3) * zoom();
+  assert(rightEdge > 0 && Math.abs(rightEdge - expectedRight) < 2.5, `the right border mirrors it (${rightEdge.toFixed(1)} vs ${expectedRight.toFixed(1)}, canvas ${view.width}, zoom ${zoom()})`);
+  // The text moved down by the room of the top border, and one box holds the three paragraphs: no line between them.
+  const inner = { from: (MARGIN - 1) * zoom(), to: (PAGE - MARGIN + 1) * zoom() };
+  const textRows = inkLines(inner).filter(line => line.right - line.left < (PAGE - 2 * MARGIN - 20) * zoom());
+  // The first line is too close to the top border to be a row of its own (3 blank rows split them): the other two prove the shift.
+  assert(textRows.length >= 2 && textRows.slice(-2).every((row, k) => Math.abs(row.top - (plainLines[k + 1].top + room)) < 1.5), `the lines went down by the room of the top border (${textRows.map(l => l.top.toFixed(1)).join(" ")} vs ${plainLines.map(l => (l.top + room).toFixed(1)).join(" ")})`);
+  let crossed = false;
+  for (let x = (MARGIN + 5) * zoom(); x < (PAGE - MARGIN - 5) * zoom(); x += 3) for (let y = textRows[textRows.length - 2].bottom + 2; y < textRows[textRows.length - 1].top - 2; y += 0.5) if (view.dark(x, y)) crossed = true;
+  assert(!crossed, "no line between two paragraphs that share the box (no « between » border)");
+  assert(isYellow(pixels().at((MARGIN + 380) * zoom(), midY + room)), "the shading is painted inside the box");
+  // Between border: a line across the width in the gap, none elsewhere.
+  await selectAll();
+  await controller.run(client => client.applyParaFormat({ edits: [{ attr: "borders", op: "set", value: { top: "keep", left: "keep", bottom: "keep", right: "keep", between: black3, bar: "keep" } }] }));
+  await waitFor(() => paragraph()?.borders.between.state === "value", "the between border is set");
+  await toTop(); await quiet();
+  const after = pixels(); const rows = inkLines(inner).filter(line => line.right - line.left < (PAGE - 2 * MARGIN - 20) * zoom());
+  const betweenLine = (a, b) => { for (let y = a.bottom; y < b.top; y += 0.5) { let run = 0; for (let x = (MARGIN + 10) * zoom(); x < (PAGE - MARGIN - 10) * zoom(); x += 2) if (after.dark(x, y)) run += 1; if (run > ((PAGE - 2 * MARGIN - 20) * zoom() / 2) * 0.9) return true; } return false; };
+  assert(rows.length >= 2 && betweenLine(rows[rows.length - 2], rows[rows.length - 1]), "a line crosses the box between the paragraphs");
+  // Ctrl+Z: one step takes the between line away, the geometry returns.
+  document.querySelector("#undo").click();
+  await waitFor(() => paragraph()?.borders.between.state === "unset", "one undo removes the between line");
+  document.querySelector("#undo").click();
+  await waitFor(() => paragraph()?.borders.left.state === "unset" && paragraph()?.shading.state === "unset", "the second undo removes the box and the shading together");
+  await toTop(); await quiet();
+  const restored = inkLines();
+  assert(restored.length === plainLines.length && restored.every((line, i) => Math.abs(line.top - plainLines[i].top) < 1), "the Canvas is back to the original geometry after Ctrl+Z");
 
   // ---- formatting marks (T243-C) --------------------------------------------------------------------------------------------------
   const { createParaFormat } = await import("/format-para.mjs");

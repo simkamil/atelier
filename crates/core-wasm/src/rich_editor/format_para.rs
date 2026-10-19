@@ -8,22 +8,26 @@
 //! selection ends at the very start of excepted; a caret touches its own
 //! paragraph; opaque blocks are skipped), builds one `SetParaProps` per
 //! paragraph and applies them with `RichDocument::apply_format`: one history
-//! step, one revision. Shading and borders need model fields first (task
-//! US-243-M1 of the audit in the contract): a command that carries one is
-//! refused whole with `RICH_FORMAT_NOT_IMPLEMENTED`.
+//! step, one revision. Shading and borders (US-243-M1: `ParaProps::shading`
+//! and `borders`) change what the neighbours draw (consecutive paragraphs with
+//! the same borders share one box), so such a command asks for a layout of the
+//! whole document (`LayoutScope::All`).
 //!
 //! `FormatMarks` reads the layout only (`PageCache::format_marks`), so it is
 //! allowed on a read-only or plain-text document.
 
 use atelier_text_model::rich::flat::{FlatIndex, LayoutContext, LayoutScope};
-use atelier_text_model::rich::{Alignment, LineRule, LineSpacing, ParaProps, RichOp};
+use atelier_text_model::rich::{
+    Alignment, Color, LineRule, LineSpacing, ParaBorder, ParaBorderStyle, ParaBorders, ParaProps,
+    ParaShading, RichOp,
+};
 
 use super::styles::layout_doc;
 use super::{DEFAULT_LAYOUT_BUDGET, Session};
 use crate::rich_layout::{PageDelta, RichPageCache};
 use crate::rich_protocol::{
-    EditOp, ErrorCode, MAX_FORMAT_MARKS, MAX_TWIPS, ParaAttr, ParaEdit, ParaFormat, ParaValue,
-    Response,
+    BorderEdit, EditOp, ErrorCode, MAX_FORMAT_MARKS, MAX_TWIPS, ParaAttr, ParaEdit, ParaFormat,
+    ParaValue, Response,
 };
 
 /// Default tab stop: one step of "increase / decrease indent", twips.
@@ -53,6 +57,14 @@ fn indent_step(from: i32, up: bool) -> i32 {
     };
     stepped.clamp(0, MAX_TWIPS)
 }
+
+/// A side set to "no border": hides the border a style defines.
+const NO_BORDER: ParaBorder = ParaBorder {
+    style: ParaBorderStyle::None,
+    eighths: 0,
+    space: 0,
+    color: None,
+};
 
 /// What the paragraphs touched resolve to, before the command.
 pub(super) struct Touched {
@@ -92,7 +104,34 @@ fn props_for(
                 ParaAttr::SpaceBefore => clear.space_before = marker.space_before,
                 ParaAttr::SpaceAfter => clear.space_after = marker.space_after,
                 ParaAttr::LineSpacing => clear.line_spacing = marker.line_spacing,
-                ParaAttr::Shading | ParaAttr::Borders => return None,
+                ParaAttr::Shading => {
+                    // "No colour": hides the colour of a style, else drops the direct one.
+                    if resolved
+                        .shading
+                        .as_ref()
+                        .and_then(ParaShading::paint_color)
+                        .is_some()
+                    {
+                        set.shading = Some(ParaShading::default());
+                    } else {
+                        clear.shading = Some(ParaShading::default());
+                    }
+                }
+                ParaAttr::Borders => {
+                    let mut hide = ParaBorders::default().sides();
+                    let mut drop = hide;
+                    for ((h, d), side) in
+                        hide.iter_mut().zip(&mut drop).zip(resolved.borders.sides())
+                    {
+                        if side.is_some_and(|b| b.is_line()) {
+                            *h = Some(NO_BORDER);
+                        } else {
+                            *d = Some(NO_BORDER);
+                        }
+                    }
+                    set.borders = ParaBorders::from_sides(hide);
+                    clear.borders = ParaBorders::from_sides(drop);
+                }
             },
             EditOp::Set => match (edit.attr, edit.value.as_ref()?) {
                 (ParaAttr::Alignment, ParaValue::Choice(n)) => set.alignment = Some(alignment(*n)?),
@@ -111,6 +150,54 @@ fn props_for(
                         },
                         value: *value,
                     });
+                }
+                (ParaAttr::Shading, ParaValue::Color(c)) => {
+                    set.shading = Some(ParaShading {
+                        fill: Some(Color {
+                            r: c.r,
+                            g: c.g,
+                            b: c.b,
+                        }),
+                        ..ParaShading::default()
+                    });
+                }
+                (ParaAttr::Borders, ParaValue::Borders(edits)) => {
+                    let mut put = ParaBorders::default().sides();
+                    let mut drop = put;
+                    for (((p, d), edit), side) in put
+                        .iter_mut()
+                        .zip(&mut drop)
+                        .zip(edits)
+                        .zip(resolved.borders.sides())
+                    {
+                        match edit {
+                            BorderEdit::Keep => {}
+                            BorderEdit::None if side.is_some_and(|b| b.is_line()) => {
+                                *p = Some(NO_BORDER);
+                            }
+                            BorderEdit::None => *d = Some(NO_BORDER),
+                            BorderEdit::Line(l) => {
+                                *p = Some(ParaBorder {
+                                    style: match l.style {
+                                        0 => ParaBorderStyle::Single,
+                                        1 => ParaBorderStyle::Double,
+                                        2 => ParaBorderStyle::Dotted,
+                                        3 => ParaBorderStyle::Dashed,
+                                        _ => return None,
+                                    },
+                                    eighths: l.eighths,
+                                    space: l.space,
+                                    color: l.color.map(|c| Color {
+                                        r: c.r,
+                                        g: c.g,
+                                        b: c.b,
+                                    }),
+                                });
+                            }
+                        }
+                    }
+                    set.borders = ParaBorders::from_sides(put);
+                    clear.borders = ParaBorders::from_sides(drop);
                 }
                 _ => return None,
             },
@@ -191,15 +278,21 @@ impl Session {
     /// as one history step (one Ctrl+Z).
     pub(super) fn apply_para_format(&mut self, format: ParaFormat) -> Result<Response, ErrorCode> {
         self.begin_format(format.base_revision, format.command_id)?;
-        // Shading and borders: no model field yet (US-243-M1).
-        if format
+        // Shading and borders change what the neighbours draw (and an indent
+        // change what a neighbour shares): relayout everything.
+        let touched = self.touched_paragraphs()?;
+        let scope = if format
             .edits
             .iter()
             .any(|e| matches!(e.attr, ParaAttr::Shading | ParaAttr::Borders))
+            || touched
+                .iter()
+                .any(|t| t.resolved.borders.any_line() || t.resolved.shading.is_some())
         {
-            return Err(ErrorCode::FormatNotImplemented);
-        }
-        let touched = self.touched_paragraphs()?;
+            LayoutScope::All
+        } else {
+            LayoutScope::Paragraphs
+        };
         let all_zero = |value: fn(&ParaProps) -> Option<u32>| {
             touched.iter().all(|t| value(&t.resolved).unwrap_or(0) == 0)
         };
@@ -224,12 +317,9 @@ impl Session {
             ops.push(RichOp::SetParaProps { para, set, clear });
         }
         let before = self.revision();
-        let outcome = self.doc.apply_format(
-            ops,
-            (self.anchor, self.focus),
-            LayoutScope::Paragraphs,
-            false,
-        )?;
+        let outcome = self
+            .doc
+            .apply_format(ops, (self.anchor, self.focus), scope, false)?;
         let delta = if outcome.revision == before {
             PageDelta::default()
         } else {
