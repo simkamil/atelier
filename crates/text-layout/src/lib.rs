@@ -899,7 +899,9 @@ fn shape_range(
             )?,
         };
         extents.ascent = extents.ascent.max(face_extents.ascent + span.shift.max(0));
-        extents.descent = extents.descent.max(face_extents.descent + (-span.shift).max(0));
+        extents.descent = extents
+            .descent
+            .max(face_extents.descent + (-span.shift).max(0));
         extents.gap = extents.gap.max(face_extents.gap);
         let text = &context.paragraph.text[piece.clone()];
         *work = add_work(*work, text.chars().count(), context.options.max_work)?;

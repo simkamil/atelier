@@ -22,10 +22,32 @@ use atelier_text_model::rich::{CharAttrs, Color, RichDocument, RichOp, Underline
 use super::format_state::word_under_caret;
 use super::{DEFAULT_LAYOUT_BUDGET, Session};
 use crate::rich_layout::{PageDelta, RichPageCache};
+use crate::rich_preview::{LOADED_FONT_BYTES, LOADED_FONT_FACES};
 use crate::rich_protocol::{
     CharAttr, CharEdit, CharFormat, CharValue, EditOp, ErrorCode, FormatScope, MAX_HALF_POINTS,
     MAX_STATE_RUNS, MIN_HALF_POINTS, Response, size_step,
 };
+
+/// Font files already given to the engine, kept for the life of the module so
+/// that a reopened document does not leak its fonts again (`FontManager`
+/// borrows `'static` bytes).
+static LOADED_FONTS: std::sync::Mutex<Vec<&'static [u8]>> = std::sync::Mutex::new(Vec::new());
+
+/// The `'static` copy of a font file (`None` when it is no font or the budget is spent).
+fn intern_font(bytes: Vec<u8>) -> Option<&'static [u8]> {
+    atelier_font::FontFace::parse_collection(&bytes, 0).ok()?;
+    let mut known = LOADED_FONTS.lock().ok()?;
+    if let Some(found) = known.iter().find(|font| ***font == *bytes) {
+        return Some(*found);
+    }
+    let total: usize = known.iter().map(|font| font.len()).sum();
+    if known.len() >= LOADED_FONT_FACES || total + bytes.len() > LOADED_FONT_BYTES {
+        return None;
+    }
+    let leaked: &'static [u8] = Box::leak(bytes.into_boxed_slice());
+    known.push(leaked);
+    Some(leaked)
+}
 
 /// Size used when the cascade gives none: 11 pt.
 const DEFAULT_HALF_POINTS: u16 = 22;
@@ -530,5 +552,21 @@ impl Session {
         merge_typing(&mut self.typing, &changes[0], &inherited);
         self.note_command(format.command_id);
         self.finish(PageDelta::default(), DEFAULT_LAYOUT_BUDGET, true)
+    }
+
+    /// `LoadFonts` (T240-F): the font files the client fetched on demand for a
+    /// family the document uses. The engine registers them (it never carries
+    /// them in the WASM) and lays the document out again with the faces; the
+    /// substitute reported by `FormatState` and `ListFonts` follows. A layout
+    /// change, not a document one: no revision, no history, allowed in a
+    /// read-only document.
+    pub(super) fn load_fonts(&mut self, fonts: Vec<Vec<u8>>) -> Result<Response, ErrorCode> {
+        let mut faces = Vec::with_capacity(fonts.len());
+        for bytes in fonts {
+            faces.push(intern_font(bytes).ok_or(ErrorCode::InvalidBody)?);
+        }
+        let delta = self.cache.add_fonts(&self.doc, &faces);
+        self.fonts_memo = None;
+        self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)
     }
 }

@@ -130,6 +130,7 @@ fn describe_request(r: &Request) -> String {
         | Command::ApplyStyle { .. }
         | Command::PreviewStyle { .. }
         | Command::ListFonts
+        | Command::LoadFonts(_)
         | Command::FormatMarks { .. } => "see format_tests".into(),
     };
     format!("{head} {tail}")

@@ -20,12 +20,14 @@
 export const NO_REVISION_GUARD = 0xffffffffffffffffn;
 export const FORMAT_LIMITS = Object.freeze({
   maxEdits: 16, maxNameBytes: 255, maxStyleList: 4096, maxFontList: 512, maxFormatMarks: 16384, maxPagesPerMarks: 16, minHalfPoints: 2, maxHalfPoints: 3276, maxTwips: 31680,
-  minBorderEighths: 2, maxBorderEighths: 96, maxBorderSpace: 31, maxStateRuns: 20000,
+  maxLoadFonts: 8, maxFontFileBytes: 1024 * 1024, minBorderEighths: 2, maxBorderEighths: 96, maxBorderSpace: 31, maxStateRuns: 20000,
 });
 
 export const FormatOpcode = Object.freeze({
   FormatState: 0x0150, ApplyCharFormat: 0x0151, ApplyParaFormat: 0x0152, ListStyles: 0x0153, ApplyStyle: 0x0154, PreviewStyle: 0x0155,
   ListFonts: 0x0156, FormatMarks: 0x0157,
+  // US-240 (T240-F): font files fetched on demand, top of the reserved range 0x0158 to 0x016F.
+  LoadFonts: 0x016F,
 });
 export const FormatReplyOpcode = Object.freeze({ FormatState: 0x8130, StyleList: 0x8131, FontList: 0x8132, FormatMarks: 0x8133 });
 export const FormatErrorCode = Object.freeze({ RICH_FORMAT_NOT_IMPLEMENTED: 60, RICH_UNKNOWN_STYLE: 61, RICH_FORMAT_PLAIN_TEXT: 62, RICH_DUPLICATE_COMMAND: 63 });
@@ -299,6 +301,17 @@ export function readFormatCommand(opcode, r, ctx) {
       return { type: "applyStyle", baseRevision, commandId, target, id };
     }
     case FormatOpcode.ListFonts: return { type: "listFonts" };
+    case FormatOpcode.LoadFonts: {
+      const count = r.u8();
+      if (count === 0 || count > FORMAT_LIMITS.maxLoadFonts) fail("RICH_INVALID_BODY");
+      const fonts = [];
+      for (let i = 0; i < count; i += 1) {
+        const length = r.u32();
+        if (length === 0 || length > FORMAT_LIMITS.maxFontFileBytes) fail("RICH_INVALID_BODY");
+        fonts.push(r.take(length).slice());
+      }
+      return { type: "loadFonts", fonts };
+    }
     case FormatOpcode.FormatMarks: {
       const first = r.u32();
       const count = r.u32();
@@ -345,6 +358,16 @@ export function writeFormatCommand(w, command) {
       writeName(w, command.id);
       return FormatOpcode.ApplyStyle;
     case "listFonts": return FormatOpcode.ListFonts;
+    case "loadFonts": {
+      const fonts = command.fonts;
+      if (!Array.isArray(fonts) || fonts.length === 0 || fonts.length > FORMAT_LIMITS.maxLoadFonts) throw new TypeError("fonts");
+      w.u8(fonts.length);
+      for (const font of fonts) {
+        if (!(font instanceof Uint8Array) || font.length === 0 || font.length > FORMAT_LIMITS.maxFontFileBytes) throw new TypeError("font file");
+        w.u32(font.length); w.raw(font);
+      }
+      return FormatOpcode.LoadFonts;
+    }
     case "formatMarks":
       for (const k of ["first", "count"]) if (!Number.isInteger(command[k]) || command[k] < 0 || command[k] > 0xffffffff) throw new TypeError(k);
       w.u32(command.first); w.u32(command.count);
@@ -357,12 +380,12 @@ export function writeFormatCommand(w, command) {
   }
 }
 
-export const FORMAT_COMMAND_TYPES = Object.freeze(["formatState", "applyCharFormat", "applyParaFormat", "listStyles", "applyStyle", "previewStyle", "listFonts", "formatMarks"]);
+export const FORMAT_COMMAND_TYPES = Object.freeze(["formatState", "applyCharFormat", "applyParaFormat", "listStyles", "applyStyle", "previewStyle", "listFonts", "loadFonts", "formatMarks"]);
 export const FORMAT_REPLY_TYPES = Object.freeze(["formatState", "styleList", "fontList", "formatMarks"]);
 /** Reply type the client expects for each command (`State` for the commands that change the document). */
 export const FORMAT_REPLY_TYPE = Object.freeze({
   formatState: "formatState", applyCharFormat: "state", applyParaFormat: "state", listStyles: "styleList", applyStyle: "state", previewStyle: "state",
-  listFonts: "fontList", formatMarks: "formatMarks",
+  listFonts: "fontList", formatMarks: "formatMarks", loadFonts: "state",
 });
 
 // ------------------------------------------------------------------ replies
@@ -651,6 +674,8 @@ export function createFormatClient(client) {
       return { revision: response.revision, styles: response.styles };
     },
     async listFonts({ signal } = {}) { return (await client.command({ type: "listFonts" }, { signal })).response; },
+    /** Font files (one face each) for the engine, which never carries them (US-240, T240-F); answered by a page state. */
+    loadFonts({ fonts, signal }) { return client.command({ type: "loadFonts", fonts }, { signal }); },
     async formatMarks({ first, count, signal }) { return (await client.command({ type: "formatMarks", first, count }, { signal })).response; },
     applyCharFormat({ scope = "wordOrTyping", edits, signal }) { return changing({ type: "applyCharFormat", scope, edits }, signal); },
     applyParaFormat({ edits, signal }) { return changing({ type: "applyParaFormat", edits }, signal); },

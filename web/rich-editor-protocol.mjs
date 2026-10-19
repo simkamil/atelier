@@ -373,6 +373,7 @@ function parseCommand(opcode, body) {
       command = readFindCommand(opcode, r); break;
     case RichOpcode.FormatState: case RichOpcode.ApplyCharFormat: case RichOpcode.ApplyParaFormat:
     case RichOpcode.ListStyles: case RichOpcode.ApplyStyle: case RichOpcode.PreviewStyle: case RichOpcode.ListFonts: case RichOpcode.FormatMarks:
+    case RichOpcode.LoadFonts:
       command = readFormatCommand(opcode, r, { fail }); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
@@ -451,7 +452,7 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "propertiesRead": case "propertiesApply":
       opcode = writeFindCommand(w, command); break;
     case "formatState": case "applyCharFormat": case "applyParaFormat": case "listStyles": case "applyStyle": case "previewStyle":
-    case "listFonts": case "formatMarks":
+    case "listFonts": case "formatMarks": case "loadFonts":
       opcode = writeFormatCommand(w, command); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }

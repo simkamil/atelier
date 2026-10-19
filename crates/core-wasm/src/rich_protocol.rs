@@ -101,7 +101,9 @@ pub mod opcode {
     pub const PREVIEW_STYLE: u16 = 0x0155;
     pub const LIST_FONTS: u16 = 0x0156;
     pub const FORMAT_MARKS: u16 = 0x0157;
-    // 0x0158 to 0x016F: later formatting commands (US-241, US-242, US-247, US-248).
+    // 0x0158 to 0x016E: later formatting commands (US-241, US-242, US-247, US-248).
+    /// Font faces loaded on demand (US-240, T240-F); answered by `State`.
+    pub const LOAD_FONTS: u16 = 0x016F;
     pub const R_FORMAT_STATE: u16 = 0x8130;
     pub const R_STYLE_LIST: u16 = 0x8131;
     pub const R_FONT_LIST: u16 = 0x8132;
@@ -532,6 +534,9 @@ pub enum Command {
     },
     /// The fonts the engine draws and those the document names; answered by `FontList`.
     ListFonts,
+    /// Font files (TrueType, one face each) the client fetched from the application
+    /// resources for a family the document uses (US-240, T240-F); answered by `State`.
+    LoadFonts(Vec<Vec<u8>>),
     /// Formatting marks (paragraph ends, spaces, tabs...) of pages
     /// `first..first + count`, drawn over the pages by the client; `FormatMarks`.
     FormatMarks {
@@ -1064,7 +1069,8 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
         | opcode::APPLY_STYLE
         | opcode::PREVIEW_STYLE
         | opcode::LIST_FONTS
-        | opcode::FORMAT_MARKS => format::parse_command(opcode, &mut r)?,
+        | opcode::FORMAT_MARKS
+        | opcode::LOAD_FONTS => format::parse_command(opcode, &mut r)?,
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -1205,6 +1211,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
         | Command::ApplyStyle { .. }
         | Command::PreviewStyle { .. }
         | Command::ListFonts
+        | Command::LoadFonts(_)
         | Command::FormatMarks { .. } => format::encode_command(&request.command, &mut b)?,
     };
     let frame = header(op, request.doc_id, request.request_id, &b)?;
@@ -1821,10 +1828,11 @@ mod format;
 pub use format::{
     BORDER_SIDES, BorderEdit, BorderLine, CharAttr, CharEdit, CharFormat, CharState, CharValue,
     EditOp, FontEntry, FontListData, FontState, FormatMark, FormatScope, FormatStateData,
-    MARK_KINDS, MAX_BORDER_EIGHTHS, MAX_BORDER_SPACE, MAX_FONT_LIST, MAX_FORMAT_EDITS,
-    MAX_FORMAT_MARKS, MAX_HALF_POINTS, MAX_NAME_BYTES, MAX_STATE_RUNS, MAX_STYLE_LIST, MAX_TWIPS,
-    MIN_HALF_POINTS, NO_REVISION_GUARD, ParaAttr, ParaEdit, ParaFormat, ParaState, ParaValue, Rgb,
-    SIZE_STEPS, StyleEntry, StyleFilter, StyleTarget, Tri, size_step,
+    MARK_KINDS, MAX_BORDER_EIGHTHS, MAX_BORDER_SPACE, MAX_FONT_FILE_BYTES, MAX_FONT_LIST,
+    MAX_FORMAT_EDITS, MAX_FORMAT_MARKS, MAX_HALF_POINTS, MAX_LOAD_FONTS, MAX_NAME_BYTES,
+    MAX_STATE_RUNS, MAX_STYLE_LIST, MAX_TWIPS, MIN_HALF_POINTS, NO_REVISION_GUARD, ParaAttr,
+    ParaEdit, ParaFormat, ParaState, ParaValue, Rgb, SIZE_STEPS, StyleEntry, StyleFilter,
+    StyleTarget, Tri, size_step,
 };
 mod find;
 pub use find::{

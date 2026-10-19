@@ -169,10 +169,17 @@ pub struct RenderJob {
     phase: Phase,
 }
 
+/// Faces and bytes the engine accepts through `LoadFonts` (US-240).
+pub(crate) const LOADED_FONT_FACES: usize = 16;
+pub(crate) const LOADED_FONT_BYTES: usize = 6 * 1024 * 1024;
+
 pub(crate) fn build_fonts(embedded_fonts: &[Vec<u8>]) -> Result<FontManager<'_>, PreviewError> {
     let mut fonts = FontManager::with_limits(FontManagerLimits {
-        max_faces: 4 + 16,
+        // Room for the faces loaded on demand (US-240, `LoadFonts`: Liberation
+        // and Caladea, 16 faces, about 5 MB, never part of the binary).
+        max_faces: 4 + 16 + LOADED_FONT_FACES,
         max_total_bytes: MAX_EMBEDDED_FONT_BYTES
+            + LOADED_FONT_BYTES
             + CARLITO_REGULAR.len()
             + CARLITO_BOLD.len()
             + CARLITO_ITALIC.len()

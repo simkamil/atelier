@@ -204,10 +204,12 @@ try {
     const controller = app.formatController;
     const fontButton = document.querySelector('[data-ribbon-command-id="font"]');
     const paragraphButton = document.querySelector('[data-ribbon-command-id="paragraph"]');
-    assert(fontButton?.disabled && paragraphButton?.disabled && fontButton.textContent === "Police" && paragraphButton.textContent === "Paragraphe"
+    // US-240: the group Police holds the real font box (a combo box), not the placeholder button.
+    assert(fontButton?.getAttribute("aria-disabled") === "false" && fontButton.querySelector("input[role=combobox]")?.getAttribute("aria-label") === "Police"
+      && paragraphButton?.disabled && paragraphButton.textContent === "Paragraphe"
       && fontButton.closest(".ribbon-group")?.dataset.ribbonGroupId === "font" && paragraphButton.closest(".ribbon-group")?.dataset.ribbonGroupId === "paragraph"
       && fontButton.closest(".ribbon-group").nextElementSibling === paragraphButton.closest(".ribbon-group"),
-      "the Home tab shows the groups Police then Paragraphe, each with its disabled button");
+      "the Home tab shows the groups Police (font box) then Paragraphe (disabled button)");
     let requests = 0;
     const original = editor.format.formatState;
     editor.format.formatState = (...args) => { requests += 1; return original.apply(editor.format, args); };

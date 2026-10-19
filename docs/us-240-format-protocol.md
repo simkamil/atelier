@@ -11,7 +11,8 @@ Tranche **F0** : le contrat du protocole ATED v2 pour la mise en forme des carac
 | `ListFonts` (polices dessinées, alias Word, polices du document, polices du thème) | **fait** | personne |
 | `RichDocument::apply_format` (une étape d'historique, une révision) | **fait** (`crates/text-model/src/rich/edit/format.rs`, 6 tests) | personne |
 | Crochets : `after_text_edit` + `Typing`, `cancel_preview`, `deny_formatting` | **posés** (no-op documentés) | US-240 / US-250 |
-| `ApplyCharFormat` | **stub** `RICH_FORMAT_NOT_IMPLEMENTED` dans `rich_editor/format_char.rs` | **US-240** |
+| `ApplyCharFormat` | **fait par US-240** (`rich_editor/format_char.rs`, section 5.2) | US-240 |
+| `LoadFonts` (0x016F) | **ajouté par US-240** (T240-F, section 5.9) | US-240 |
 | `ApplyParaFormat`, `FormatMarks` | **stub** dans `rich_editor/format_para.rs` | **US-243** |
 | `ListStyles`, `ApplyStyle`, `PreviewStyle` | **stub** dans `rich_editor/styles.rs` | **US-250** |
 
@@ -45,7 +46,7 @@ Commandes (corps après l'en-tête de 20 octets de l'enveloppe) :
 | `0x0156` | ListFonts | `0x8132` FontList |
 | `0x0157` | FormatMarks | `0x8133` FormatMarks |
 
-`0x0158` à `0x016F` et `0x8134` à `0x813F` sont **réservés** à la suite de la famille (US-241 dialogue Police, US-242 casse, US-247 reproduire la mise en forme, US-248 effacer la mise en forme) : ces stories ajoutent leurs opcodes dans ces plages et leurs attributs dans les plages réservées ci-dessous, sans toucher aux existants.
+`0x0158` à `0x016E` et `0x8134` à `0x813F` sont **réservés** (`0x016F` : `LoadFonts`, US-240, section 5.9) à la suite de la famille (US-241 dialogue Police, US-242 casse, US-247 reproduire la mise en forme, US-248 effacer la mise en forme) : ces stories ajoutent leurs opcodes dans ces plages et leurs attributs dans les plages réservées ci-dessous, sans toucher aux existants.
 
 Erreurs nouvelles (plage 60 à 69, jamais renumérotées ; 64 à 69 libres) :
 
@@ -177,7 +178,7 @@ Corps : `base_revision u64`, `command_id u32`, `scope u8`, `0 u8`, `count u16` (
            { attr: "underline", op: "toggle", value: "single" }, { attr: "highlight", op: "clear" } ] }
 ```
 
-Erreurs : celles de la section 3 (`RICH_DUPLICATE_COMMAND` si `command_id` répète la dernière commande acceptée). Révision : +1 si au moins un caractère change, sinon aucune (réponse `State` identique). Annulation : une étape, qui restaure la sélection d'origine ; avec des attributs de saisie, jointe à l'insertion. Pages et atlas : `invalidated` et `pages` couvrent les paragraphes touchés ; de nouvelles tailles ou familles créent des entrées d'atlas, envoyées dans la même réponse. Resynchronisation : réponse perdue = `needsResync` du client (`Resync` 0x0118 avant la commande suivante), comme toute commande qui renvoie un `State`. Lecture seule : `RICH_READ_ONLY`. Handler : **stub US-240** (`apply_char_format`).
+Erreurs : celles de la section 3 (`RICH_DUPLICATE_COMMAND` si `command_id` répète la dernière commande acceptée). Révision : +1 si au moins un caractère change, sinon aucune (réponse `State` identique). Annulation : une étape, qui restaure la sélection d'origine ; avec des attributs de saisie, jointe à l'insertion. Pages et atlas : `invalidated` et `pages` couvrent les paragraphes touchés ; de nouvelles tailles ou familles créent des entrées d'atlas, envoyées dans la même réponse. Resynchronisation : réponse perdue = `needsResync` du client (`Resync` 0x0118 avant la commande suivante), comme toute commande qui renvoie un `State`. Lecture seule : `RICH_READ_ONLY`. Handler : `Session::apply_char_format` (US-240, `rich_editor/format_char.rs`) : la cible (sélection, mot, attributs de saisie), les morceaux d'attributs uniformes de chaque paragraphe, une `SetCharAttrs` par morceau modifié, `RichDocument::apply_format` (une étape, une révision), `cache.apply_edit`, `finish`. `toggle` de gras, italique, barré : tous vrais -> retirer (`Some(false)` seulement si le style résout à vrai), sinon mettre à vrai les morceaux qui ne l'ont pas ; `toggle` de souligné, exposant, indice : vers la valeur donnée pour les morceaux qui diffèrent, sinon retour à `none` ou `baseline` ; `stepUp` et `stepDown` par morceau (`size_step`), `stepUpPoint` et `stepDownPoint` de ± 2 demi-points ; un attribut de saisie est fusionné dans `Typing` (une valeur égale à celle que le texte hériterait ou un retrait de ce qu'il n'a pas ne laisse rien en attente). `after_text_edit` applique `Typing` au texte inséré (`join_previous`) et rend l'`EditOutcome` fusionné de la section 7. Ajout hors contrat : `RichDocument::flat_node_ids` (`text-model/src/rich/edit/format.rs`), l'accesseur des identifiants de paragraphe plats.
 
 ### 5.3 `ApplyParaFormat` `0x0152`
 
@@ -250,6 +251,12 @@ Corps : `first u32`, `count u32` (1 à 16 pages ; `RICH_TOO_MANY_PAGES` au-delà
 
 **Décision** : les marques de mise en forme (¶, espaces, tabulations, espaces insécables, sauts) sont une **surcouche dessinée par le client** à partir de cette liste, et non des commandes ajoutées aux listes d'affichage : activer ou désactiver l'option n'invalide aucune page, ne touche pas à l'atlas, et l'option (« Avancé : marques affichées ») reste une préférence du client. Le client redemande les marques des pages visibles quand `State.pages` ou `invalidated` les touchent, et les met en cache par page et révision. Lecture seule, aucune révision. Handler : **stub US-243** (`format_marks`), autorisé en lecture seule et en texte brut.
 
+### 5.9 `LoadFonts` `0x016F` (US-240, T240-F : polices à la demande)
+
+Contrainte : le WASM n'embarque que Carlito (budget de taille, `tests/check-wasm-size.mjs`) ; Liberation (Arial, Times New Roman, Courier New) et Caladea (Cambria) sont dans `data/fonts` mais **pas** dans le binaire. Le client les charge à la demande depuis les ressources de l'application (`/fonts/<Famille>-<Style>.ttf`, servies par l'exe ou le serveur de développement) et les remet au moteur.
+
+Corps : `count u8` (1 à 8), puis par fichier `len u32` (1 à 1 Mio) et les octets d'une face TrueType. Réponse : `State` (même mécanique qu'`InsertText` : pages changées, entrées d'atlas nouvelles). Effet : le moteur analyse chaque fichier (`FontFace::parse_collection`), en garde une copie `'static` pour la vie du processus (`intern_font` : un fichier déjà reçu n'est pas copié deux fois, au plus 16 faces et 6 Mio), l'enregistre dans le gestionnaire de polices de la session (`PageCache::add_fonts`) et remet **tout** le document en page (`rebuild`) : Arial est alors dessinée avec Liberation Sans par l'alias métrique du gestionnaire (`arial -> Liberation Sans`, `times new roman -> Liberation Serif`, `courier new -> Liberation Mono`, `cambria -> Caladea`), et `FormatState.font.used` et `ListFonts.substitute` le disent (info-bulle de US-240, critère 4). Ni révision, ni étape d'historique, ni `modified` : c'est un changement de mise en page, pas du document ; la commande est donc permise en lecture seule. Erreurs : `RICH_INVALID_BODY` pour un octet qui n'est pas une police ou pour le dépassement du budget ; le corps est refusé au décodage si `count` ou une longueur est hors borne. Les polices de la session sont perdues avec elle : après `Open`, le client les recharge (le navigateur les garde en cache), au premier texte dont la police demandée a un substitut métrique que le moteur n'utilise pas encore. Un fichier absent des ressources (404) laisse la police de remplacement, indiquée dans l'info-bulle.
+
 ## 6. Annulation, révision, atlas, resynchronisation, réouverture
 
 | Situation | Comportement du contrat |
@@ -295,8 +302,8 @@ Méthode : pour chaque consommateur, l'implémentation simulée méthode par mé
 |---|---|---|
 | `refresh()` (après chaque `State` qui change révision ou sélection, regroupé par image) | `formatState()` : `revision`, `anchor`, `focus` comparés à `client.cache` ; `chars.*` pour les boutons et les boîtes | **jeter** la réponse si la sélection a changé ou si la génération d'ouverture n'est plus la courante ; `RICH_UNKNOWN_DOCUMENT` (document fermé) : ruban grisé ; réponse perdue : rien à resynchroniser, le prochain `State` relance ; réouverture : génération |
 | `boutonGras/Italique/Barré` (Ctrl+B, I) | `applyCharFormat` `toggle` sans valeur ; état du bouton : `chars.bold.state` (`mixed` : `aria-pressed="mixed"`) | `READ_ONLY`/`PLAIN_TEXT` : boutons déjà grisés par `readOnly`/`plain` ; résultat inconnu (`error.outcome`, établi par `last_command_id`) : le panneau relit `refresh()` et n'affiche rien de plus ; annulation (`AbortError`) : idem |
-| `souligné(style)` (Ctrl+U, menu) | Ctrl+U : `toggle underline "single"` ; menu : `set underline <un des six>` ; « Aucun » : `set none` | Les six styles existent sur le fil ; leur dessin manque (audit, T240-A) |
-| `exposant/indice` (Ctrl+=, Ctrl+Maj+=) | `toggle verticalAlign "superscript" | "subscript"` | dessin manquant (T240-C) |
+| `souligné(style)` (Ctrl+U, menu) | Ctrl+U : `toggle underline "single"` ; menu : `set underline <un des six>` ; « Aucun » : `set none` | Les six styles sont dessinés (T240-A, fait) |
+| `exposant/indice` (Ctrl+=, Ctrl+Maj+=) | `toggle verticalAlign "superscript" | "subscript"` | dessinés : deux tiers de la taille, ligne de base relevée d'un tiers de la taille (exposant) ou abaissée de 14 % (indice) (T240-C, fait) |
 | `police(nom)` | `set font` ; affichage : `chars.font.value.requested` dans la boîte, `used` et `substituted` dans l'**info-bulle** « police de remplacement » (critère 4) | boîte vide si `mixed` ; nom saisi inconnu accepté (le moteur le remplace) ; plus de 255 octets : refusé côté client |
 | `listeDesPolices()` | `listFonts()` : `families` (aperçu, indicateur « remplacée »), `themeMajor`/`themeMinor` (section « polices du thème »), polices récentes en stockage local | pas de liste de polices dans la v1 du contrat : **manque trouvé** (corrigé : `ListFonts`) ; l'aperçu de chaque entrée utilise la police du navigateur du même nom (le moteur ne dessine qu'avec ses faces) |
 | `taille(valeur)` (boîte, saisie libre) | `set size` en demi-points : « 10,5 » → 21 ; vide si `size.state == "mixed"` | hors 1 à 1638 pt : refusé côté client avant l'envoi |
@@ -354,14 +361,14 @@ Question : le rendu actuel (mise en page `text-layout`, peinture `rich_paint.rs`
 
 | Attribut | Dessiné ? | Preuve | Tâche |
 |---|---|---|---|
-| Police (famille) | **partiellement** | la famille demandée part dans `text-layout/src/lib.rs::request_for_attrs` (repli `SansSerif`), mais l'éditeur n'enregistre que les 4 faces de Carlito (`rich_preview.rs::build_fonts`, appelée avec `&[]` par `rich_layout/cache.rs:943`) ; Caladea et les trois Liberation sont dans `atelier_font::embedded` mais **non enregistrées** : Arial, Times New Roman, Courier New, Cambria sont dessinées en Carlito | **T240-F** : enregistrer les faces embarquées dans l'éditeur (`build_fonts` ; coût de taille WASM à mesurer contre la limite) |
+| Police (famille) | **oui, à la demande** (T240-F fait) | la famille demandée part dans `text-layout/src/lib.rs::request_for_attrs` ; Carlito est la seule face du binaire ; les faces Liberation et Caladea sont chargées par `LoadFonts` (section 5.9) au premier usage de la famille, et `build_fonts` réserve la place (`LOADED_FONT_FACES`, `LOADED_FONT_BYTES`) | T240-F : fait |
 | Taille | oui | `text-layout/src/lib.rs` : `size_half_points × 32` (lignes 762 et 821) ; hauteur de ligne dérivée de la police | — |
 | Gras, italique | oui | `rich_paint.rs::paint_line` : poids 700 et italique demandés ; 4 faces de Carlito | — |
-| Soulignés (6) | **un seul** | `rich_paint.rs:228` (`paint_line`) et `PageWriter::underline` (`paint_line_fast`, ligne 1035) : un trait simple pour tout `!= None` ; double, épais, pointillé, tirets, ondulé sont dessinés comme simple | **T240-A** : un dessin par style (`rich_paint.rs`) |
-| Barré | **non** | aucune occurrence de `strike` dans `rich_paint.rs` ni `prepare.rs` | **T240-B** |
-| Exposant, indice | **non** | `text-layout/src/lib.rs:692` les déclare « unsupported » : ni décalage de ligne de base ni réduction de taille | **T240-C** (`text-layout` et `rich_paint.rs`) |
+| Soulignés (6) | **oui** (T240-A fait) | `rich_paint.rs::underline` : simple, épais (double largeur), double (deux traits), pointillé et tirets (segments), ondulé (ligne brisée à jointure ronde) ; un tracé par suite de glyphes adjacents, pour que la phase des tirets continue ; la même géométrie sert `paint_line` et `paint_line_fast` | T240-A : fait |
+| Barré | **oui** (T240-B fait) | un trait au tiers de la taille au-dessus de la ligne de base, même regroupement | T240-B : fait |
+| Exposant, indice | **oui** (T240-C fait) | `text-layout/src/lib.rs` : `Span.shift` ; deux tiers de la taille, relevé d'un tiers (exposant) ou abaissé de 14 % (indice) ; la ligne de base du texte voisin ne bouge pas | T240-C : fait |
 | Couleur | oui | `rich_paint.rs::paint_line` : couleur de la plage (`StyleTable`) | — |
-| Surlignage | **non** | `highlight` n'est lu ni par `rich_paint.rs` ni par `cache.rs` ; aucun rectangle sous le texte | **T240-D** (rectangle avant les glyphes) |
+| Surlignage | **oui** (T240-D fait) | un rectangle plein avant les glyphes de la ligne, par suite de glyphes adjacents de même couleur ; les seize couleurs de `w:highlight` sont les seules que le sélecteur propose, car un DOCX n'en garde pas d'autres exactement | T240-D : fait |
 | Alignements | oui | `text-layout/src/lib.rs:631` à 635 (centré, droite) et 584 (justifié) | — |
 | Retraits (gauche, droit, 1re ligne, suspendu) | oui | `text-layout/src/lib.rs:385` à 412 ; `cache.rs:334` à 343 pour les images | — |
 | Interligne | oui | `text-layout/src/lib.rs::line_height` (`auto`, `exact`, `atLeast`, lignes 1285 à 1311) appelée en 648 | — |
@@ -421,6 +428,6 @@ Vecteurs gelés : `tests/rich-editor-format-vectors.txt` (15 requêtes, 8 répon
 
 ## 12. Limites et décisions ouvertes
 
-- Le dessin de plusieurs attributs et la famille de polices manquent (section 9) : le contrat est complet, le rendu ne l'est pas ; tant que T240-A à D ne sont pas faits, les critères de rendu de US-240 ne peuvent pas être cochés.
+- Réserves de US-240 après sa livraison : (1) les fichiers de polices sont servis par le serveur de développement et par les bancs de test ; l'exe (`crates/desktop-win/src/resources.rs`, la liste de `win32.rs` et `tests/check-embedded-resources.ps1`) ne sert aujourd'hui que `/fonts/Carlito-Regular.ttf` : tant que les quinze autres fichiers n'y sont pas, Arial et les autres familles restent dessinées en Carlito dans l'application installée (la police de remplacement est indiquée) ; (2) la mise en forme de caractères se valide contre Word par US-308 ; l'aperçu de la liste de polices utilise la police du navigateur de même nom. Ancien constat : le dessin de plusieurs attributs et la famille de polices manquaient (section 9) ; tant que T240-A à D n'étaient pas faits, les critères de rendu de US-240 ne peuvent pas être cochés.
 - Palier de taille, règle du mot sous le curseur, retrait de 720 twips et 12 pt d'espacement sont des **décisions de F0**, à valider contre Word par la campagne US-308.
 - `ListFonts` n'énumère pas les polices système du navigateur : l'aperçu d'une entrée utilise la police du navigateur de même nom, approximation à signaler dans l'interface.

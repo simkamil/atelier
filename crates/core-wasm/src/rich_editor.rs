@@ -587,6 +587,7 @@ impl Session {
             } => self.apply_style(base_revision, command_id, target, &id),
             Command::PreviewStyle { target, show, id } => self.preview_style(target, show, &id),
             Command::ListFonts => self.list_fonts(),
+            Command::LoadFonts(fonts) => self.load_fonts(fonts),
             Command::FormatMarks { first, count } => self.format_marks(first, count),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),

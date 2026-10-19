@@ -400,6 +400,11 @@ pub struct FormatStateData {
 
 /// Runs `FormatState` examines at most; beyond it `partial` is set.
 pub const MAX_STATE_RUNS: usize = 20_000;
+/// Font files one `LoadFonts` carries (US-240: the four faces of a family).
+pub const MAX_LOAD_FONTS: usize = 8;
+/// Size of one font file of `LoadFonts`.
+pub const MAX_FONT_FILE_BYTES: usize = 1024 * 1024;
+
 /// Families one `FontList` carries.
 pub const MAX_FONT_LIST: usize = 512;
 /// Marks one `FormatMarks` reply carries.
@@ -884,6 +889,21 @@ pub(super) fn parse_command(opcode: u16, r: &mut Reader<'_>) -> Result<Command, 
             Command::PreviewStyle { target, show, id }
         }
         super::opcode::LIST_FONTS => Command::ListFonts,
+        super::opcode::LOAD_FONTS => {
+            let count = usize::from(r.u8()?);
+            if count == 0 || count > MAX_LOAD_FONTS {
+                return Err(Fail::InvalidBody);
+            }
+            let mut fonts = Vec::with_capacity(count);
+            for _ in 0..count {
+                let len = r.u32()? as usize;
+                if len == 0 || len > MAX_FONT_FILE_BYTES {
+                    return Err(Fail::InvalidBody);
+                }
+                fonts.push(r.take(len)?.to_vec());
+            }
+            Command::LoadFonts(fonts)
+        }
         super::opcode::FORMAT_MARKS => {
             let (first, count) = (r.u32()?, r.u32()?);
             if count == 0 {
@@ -943,6 +963,20 @@ pub(super) fn encode_command(command: &Command, b: &mut Vec<u8>) -> Result<u16, 
             op::PREVIEW_STYLE
         }
         Command::ListFonts => op::LIST_FONTS,
+        Command::LoadFonts(fonts) => {
+            if fonts.is_empty() || fonts.len() > MAX_LOAD_FONTS {
+                return Err(Fail::InvalidBody);
+            }
+            b.push(fonts.len() as u8);
+            for font in fonts {
+                if font.is_empty() || font.len() > MAX_FONT_FILE_BYTES {
+                    return Err(Fail::InvalidBody);
+                }
+                put_u32(b, font.len() as u32);
+                b.extend_from_slice(font);
+            }
+            op::LOAD_FONTS
+        }
         Command::FormatMarks { first, count } => {
             put_u32(b, *first);
             put_u32(b, *count);

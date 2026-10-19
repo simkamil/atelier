@@ -303,3 +303,60 @@ fn a_command_that_changes_nothing_records_no_revision() {
     assert_eq!(h.state().revision, revision);
     let _ = CharValue::Flag(true);
 }
+
+fn font_file(name: &str) -> Vec<u8> {
+    let path = format!(
+        "{}/../../data/fonts/liberation/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read(path).expect("a font of data/fonts")
+}
+
+#[test]
+fn a_font_loaded_on_demand_replaces_the_substitute_and_is_reported() {
+    let mut h = Harness::new();
+    h.type_text("Hello");
+    h.select(0, 5);
+    word(
+        &mut h,
+        vec![edit(
+            CharAttr::Font,
+            EditOp::Set,
+            Some(CharValue::Text("Arial".into())),
+        )],
+    );
+    let used = |h: &mut Harness| match h.state().chars.font {
+        Tri::Value(font) => (font.used, font.substituted),
+        other => panic!("a font, got {other:?}"),
+    };
+    // The editor registers Carlito only: Arial is drawn with it.
+    assert_eq!(used(&mut h), ("Carlito".to_string(), true));
+    let revision = h.state().revision;
+    let faces: Vec<Vec<u8>> = ["Regular", "Bold", "Italic", "BoldItalic"]
+        .iter()
+        .map(|style| font_file(&format!("LiberationSans-{style}.ttf")))
+        .collect();
+    assert!(matches!(
+        h.send(Command::LoadFonts(faces.clone())),
+        Response::State(_)
+    ));
+    // The metric substitute is now the face of the family; no revision moves.
+    assert_eq!(used(&mut h), ("Liberation Sans".to_string(), true));
+    assert_eq!(h.state().revision, revision);
+    // Loading the same files again changes nothing.
+    assert!(matches!(
+        h.send(Command::LoadFonts(faces)),
+        Response::State(_)
+    ));
+    assert_eq!(used(&mut h), ("Liberation Sans".to_string(), true));
+    let Response::FontList(list) = h.send(Command::ListFonts) else {
+        panic!("a font list");
+    };
+    let arial = list.families.iter().find(|f| f.name == "Arial").unwrap();
+    assert_eq!(arial.substitute, "Liberation Sans");
+    // Bytes that are no font are refused.
+    assert_eq!(
+        h.error(Command::LoadFonts(vec![vec![1, 2, 3, 4]])),
+        ErrorCode::InvalidBody
+    );
+}
