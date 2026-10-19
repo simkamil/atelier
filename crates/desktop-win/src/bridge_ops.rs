@@ -277,6 +277,8 @@ pub(crate) struct JobResult {
     fonts: Option<Arc<FontCatalog>>,
     /// Fichier écrit avec succès, à noter dans les documents récents (US-320).
     remember: Option<PathBuf>,
+    /// Ticket de lecture dont la lecture a réussi : (numéro, chemin), en attente de `recentNote`.
+    readable: Option<(u64, PathBuf)>,
 }
 
 impl JobResult {
@@ -285,6 +287,7 @@ impl JobResult {
             outcome,
             fonts: None,
             remember: None,
+            readable: None,
         }
     }
 }
@@ -304,6 +307,9 @@ pub(crate) struct BridgeState {
     font_dirs: Vec<PathBuf>,
     /// US-320 : destinations des tickets d'écriture remis (pour noter le fichier une fois écrit).
     write_paths: Vec<(u64, PathBuf)>,
+    /// US-320 : chemins des tickets de lecture remis ; lus avec succès, ils attendent la confirmation du front.
+    read_paths: Vec<(u64, PathBuf)>,
+    readable: Vec<(u64, PathBuf)>,
     /// US-320 : documents récents et fichier où ils sont conservés (`None` : en mémoire seulement).
     recent: RecentList,
     recent_file: Option<PathBuf>,
@@ -325,6 +331,8 @@ impl BridgeState {
             fonts: None,
             font_dirs,
             write_paths: Vec::new(),
+            read_paths: Vec::new(),
+            readable: Vec::new(),
             recent: RecentList::default(),
             recent_file: None,
         }
@@ -393,6 +401,12 @@ impl BridgeState {
         if let Some(path) = result.remember {
             self.remember(&path);
         }
+        if let Some(read) = result.readable {
+            self.readable.push(read);
+            if self.readable.len() > MAX_OPEN_TICKETS {
+                self.readable.remove(0);
+            }
+        }
         result.outcome
     }
 
@@ -429,6 +443,7 @@ impl BridgeState {
 
     fn forget_read(&mut self, ticket: u64, broker: &FileBroker) {
         self.read_tickets.retain(|held| *held != ticket);
+        self.read_paths.retain(|(held, _)| *held != ticket);
         broker.revoke_read(ReadTicket::from_id(ticket));
     }
 
@@ -494,6 +509,7 @@ pub(crate) fn begin_bridge_request(
                     outcome: bytes_outcome(&id, "b64;", &shared_payload(size), "fb;", listing),
                     fonts: Some(catalog),
                     remember: None,
+                    readable: None,
                 }
             }))
         }
@@ -523,6 +539,16 @@ pub(crate) fn begin_bridge_request(
                 error_reply(&id, "files.error.unknown_recent")
             })
         }
+        Request::RecentNote { id, ticket } => Step::Done(
+            match state.readable.iter().position(|(held, _)| *held == ticket) {
+                Some(index) => {
+                    let (_, path) = state.readable.remove(index);
+                    state.remember(&path);
+                    ok_reply(&id, "")
+                }
+                None => error_reply(&id, "files.error.unknown_ticket"),
+            },
+        ),
         Request::RecentRemove { id, recent } => Step::Done(if state.recent.remove(recent) {
             state.persist_recent();
             ok_reply(&id, "")
@@ -572,20 +598,38 @@ fn pick_open(
     let Some(format) = format_for_path(spec, &path) else {
         return error_reply(id, "files.error.unsupported_format");
     };
-    let ticket = match broker.grant_read(&path, TICKET_READ_LIMIT) {
+    issue_open_ticket(id, &path, format, state, broker)
+}
+
+/// Ticket de lecture d'un fichier choisi par le natif (dialogue ou récent) : taille bornée, métadonnées
+/// obligatoires. Le fichier n'entre dans les récents qu'une fois lu et accepté (`recentNote`).
+fn issue_open_ticket(
+    id: &str,
+    path: &Path,
+    format: &str,
+    state: &mut BridgeState,
+    broker: &FileBroker,
+) -> Outcome {
+    let ticket = match broker.grant_read(path, TICKET_READ_LIMIT) {
         Ok(ticket) => ticket,
         Err(error) => return error_reply(id, error.message_key),
     };
-    let size = std::fs::metadata(&path).map_or(0, |meta| meta.len());
+    let size = match std::fs::metadata(path) {
+        Ok(meta) => meta.len(),
+        Err(_) => {
+            broker.revoke_read(ticket);
+            return error_reply(id, "files.error.read_failed");
+        }
+    };
     if size > TICKET_READ_LIMIT {
         broker.revoke_read(ticket);
         return error_reply(id, "files.error.too_large");
     }
     state.read_tickets.push(ticket.id());
-    state.remember(&path);
+    state.read_paths.push((ticket.id(), path.to_path_buf()));
     ok_reply(
         id,
-        &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(&path)),
+        &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(path)),
     )
 }
 
@@ -634,17 +678,7 @@ fn recent_open(id: &str, recent: u64, state: &mut BridgeState, broker: &FileBrok
     let Some(format) = format_of_extension(&path) else {
         return error_reply(id, "files.error.unsupported_format");
     };
-    let ticket = match broker.grant_read(&path, TICKET_READ_LIMIT) {
-        Ok(ticket) => ticket,
-        Err(error) => return error_reply(id, error.message_key),
-    };
-    let size = std::fs::metadata(&path).map_or(0, |meta| meta.len());
-    state.read_tickets.push(ticket.id());
-    state.remember(&path);
-    ok_reply(
-        id,
-        &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(&path)),
-    )
+    issue_open_ticket(id, &path, format, state, broker)
 }
 
 fn pick_save(
@@ -698,18 +732,31 @@ fn read_ticket(id: String, ticket: u64, state: &mut BridgeState, broker: &Arc<Fi
     // Un ticket de lecture sert une fois : retiré tout de suite, révoqué par le travail quel que
     // soit le résultat. La lecture (jusqu'à 256 Mio) ne bloque pas le fil UI.
     state.read_tickets.retain(|held| *held != ticket);
+    let path = state
+        .read_paths
+        .iter()
+        .position(|(held, _)| *held == ticket)
+        .map(|index| state.read_paths.remove(index).1);
     let broker = Arc::clone(broker);
     Step::Job(Box::new(move || {
+        let number = ticket;
         let ticket = ReadTicket::from_id(ticket);
         let result = broker.read(ticket);
         broker.revoke_read(ticket);
-        JobResult::outcome(match result {
+        let readable = result
+            .is_ok()
+            .then_some(path)
+            .flatten()
+            .map(|path| (number, path));
+        let mut done = JobResult::outcome(match result {
             Ok(bytes) => {
                 let payload = shared_payload(bytes.len());
                 bytes_outcome(&id, "b64;", &payload, "fb;", bytes)
             }
             Err(error) => error_reply(&id, error.message_key),
-        })
+        });
+        done.readable = readable;
+        done
     }))
 }
 
@@ -1890,6 +1937,45 @@ mod tests {
             &mut host,
         ));
         assert!(opened.contains("|ok|r"), "{opened}");
+        // Choisi mais pas encore lu ni accepté : pas dans la liste.
+        assert!(recent_rows(&mut state, &broker).is_empty());
+        let open_ticket = opened
+            .strip_prefix("us120-file|1|1|ok|")
+            .and_then(|payload| parse_ticket(payload.split(';').next()?))
+            .unwrap()
+            .1;
+        let read = request_text(
+            &mut state,
+            &broker,
+            Request::ReadTicket {
+                id: "7".into(),
+                ticket: open_ticket,
+            },
+        );
+        assert!(read.contains("|ok|b64;"), "{read}");
+        assert!(
+            recent_rows(&mut state, &broker).is_empty(),
+            "lu mais pas accepté"
+        );
+        let noted = request_text(
+            &mut state,
+            &broker,
+            Request::RecentNote {
+                id: "8".into(),
+                ticket: open_ticket,
+            },
+        );
+        assert_eq!(noted, "us120-file|1|8|ok|");
+        assert_eq!(recent_rows(&mut state, &broker).len(), 1);
+        let again = request_text(
+            &mut state,
+            &broker,
+            Request::RecentNote {
+                id: "9".into(),
+                ticket: open_ticket,
+            },
+        );
+        assert_eq!(again, "us120-file|1|9|error|files.error.unknown_ticket");
         // Enregistrement : le fichier n'entre dans la liste qu'une fois écrit.
         let ticket = pick_save_ticket(&dir, "second.txt", &mut state, &broker);
         assert_eq!(
@@ -2043,6 +2129,68 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Un fichier devenu illisible entre le choix et la lecture n'entre jamais dans les récents, et un ticket
+    /// jamais lu ou jamais confirmé ne peut pas être noté.
+    #[test]
+    fn an_unreadable_file_never_reaches_the_recent_list() {
+        let dir = work_dir("recent-unreadable");
+        let file = dir.join("fragile.txt");
+        std::fs::write(&file, b"x").unwrap();
+        let broker = Arc::new(FileBroker::new());
+        let mut state = recent_state(&dir);
+        let mut host = FakeHost::new(Some(file.clone()));
+        let opened = text_of(&process_bridge_request(
+            Request::PickOpen {
+                id: "1".into(),
+                spec: open_spec(),
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        ));
+        let ticket = parse_ticket(
+            opened
+                .strip_prefix("us120-file|1|1|ok|")
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap(),
+        )
+        .unwrap()
+        .1;
+        let early = request_text(
+            &mut state,
+            &broker,
+            Request::RecentNote {
+                id: "2".into(),
+                ticket,
+            },
+        );
+        assert_eq!(early, "us120-file|1|2|error|files.error.unknown_ticket");
+        std::fs::remove_file(&file).unwrap();
+        let read = request_text(
+            &mut state,
+            &broker,
+            Request::ReadTicket {
+                id: "3".into(),
+                ticket,
+            },
+        );
+        assert!(read.contains("|error|"), "{read}");
+        let late = request_text(
+            &mut state,
+            &broker,
+            Request::RecentNote {
+                id: "4".into(),
+                ticket,
+            },
+        );
+        assert_eq!(late, "us120-file|1|4|error|files.error.unknown_ticket");
+        assert!(recent_rows(&mut state, &broker).is_empty());
+        assert!(!dir.join("recent.ini").exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn a_failed_write_and_a_cancelled_dialog_leave_the_recent_list_untouched() {
         let dir = work_dir("recent-failed");
@@ -2112,7 +2260,17 @@ mod tests {
                 recent: 12
             })
         );
+        assert!(accepted(&mut queue, 5, "recentNote", "r12"));
+        assert_eq!(
+            queue.pop(),
+            Some(Request::RecentNote {
+                id: "5".into(),
+                ticket: 12
+            })
+        );
         for (index, (operation, tail)) in [
+            ("recentNote", "w12"),
+            ("recentNote", "12"),
             ("recentList", "x"),
             ("recentOpen", ""),
             ("recentOpen", "0"),

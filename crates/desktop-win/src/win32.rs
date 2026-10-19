@@ -508,6 +508,7 @@ fn process_file_request(
             | Request::RecentOpen { .. }
             | Request::RecentPin { .. }
             | Request::RecentRemove { .. }
+            | Request::RecentNote { .. }
     ) {
         let mut host = StaHost { dialogs, owner };
         return match bridge_ops::begin_bridge_request(

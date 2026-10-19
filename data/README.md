@@ -15,3 +15,4 @@ Les [modèles de documents](templates/) (lettre, CV, rapport, compte rendu) sont
 simples DOCX fournis avec l'exe comme ressources hors réseau (`/templates/*.docx`).
 Ils s'ouvrent dans l'éditeur riche comme des documents sans nom ; leur ouverture et
 leur réenregistrement sont vérifiés par `node tests/file-templates.mjs`.
+Modèles : contenu original, AGPL-3.0-or-later.

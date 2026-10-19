@@ -58,6 +58,7 @@ export function createFileTab({ document, i18n, onStatus = () => {}, onResult = 
   let disposed = false;
   let entries = [];
   let refreshToken = 0;
+  let lastTicket = null;
 
   const templateButtons = new Map();
   for (const template of TEMPLATES) {
@@ -205,6 +206,7 @@ export function createFileTab({ document, i18n, onStatus = () => {}, onResult = 
   async function readRecent(entry) {
     const picked = await host.recentOpen(entry.id);
     if (picked.kind !== "ok") return picked;
+    lastTicket = picked.ticket;
     if (picked.size > RICH_LIMITS.maxOpenBytes) { void host.releaseTicket?.(picked.ticket); return { kind: "error", key: "files.error.too_large" }; }
     const read = await host.readTicket(picked.ticket, { copy: true });
     if (read.kind !== "ok") return read;
@@ -221,8 +223,11 @@ export function createFileTab({ document, i18n, onStatus = () => {}, onResult = 
       if (!entries.find(item => item.id === entry.id)?.present) { onStatus(t("file-recent-missing-status", { name }), true); return notFound; }
     }
     let result;
+    lastTicket = null;
     try { result = await openDocument(() => readRecent(entry)); }
     catch { result = { kind: "error", key: "status-open-error" }; }
+    // Le document est accepté : seulement maintenant le natif note le fichier (remonte en tête de la liste).
+    if (result.kind === "ok" && lastTicket) { try { await host.recentNote?.(lastTicket); } catch { /* le confort des récents ne gêne pas l'ouverture */ } }
     if (result.kind === "error" && result.key === "files.error.not_found") {
       onStatus(t("file-recent-missing-status", { name }), true);
       await refreshRecents({ id: entry.id, part: "open" }, entries.map(item => item.id));

@@ -241,7 +241,7 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     } else if (status === "ok" && ["readTicket", "readFont", "listFonts"].includes(entry.operation)) {
       try { finishData(id, entry, inlineBytes(payload, entry.operation === "listFonts" ? MAX_FONT_LIST_BYTES : MAX_DOCX_BYTES), noop); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
-    } else if (status === "ok" && payload === "" && ["save", "dirty", "launch", "writeTicket", "releaseTicket", "openUrl", "recentPin", "recentRemove"].includes(entry.operation)) {
+    } else if (status === "ok" && payload === "" && ["save", "dirty", "launch", "writeTicket", "releaseTicket", "openUrl", "recentPin", "recentRemove", "recentNote"].includes(entry.operation)) {
       settle(id, { kind: "ok" });
     } else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   }
@@ -390,6 +390,14 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     /** US-320 : épingle (`true`) ou désépingle un récent. */
     recentPin(recentId, pinned) {
       return validRecentId(recentId) && typeof pinned === "boolean" ? request("recentPin", `${recentId};${pinned ? 1 : 0}`) : invalid("files.error.unknown_recent");
+    },
+    /**
+     * US-320 : confirme qu'un document lu par le ticket `r…` a été accepté ; le natif le note alors dans les récents
+     * (jamais au choix du fichier). `files.error.unknown_ticket` si le ticket n'a pas été lu avec succès.
+     */
+    recentNote(ticket) {
+      if (typeof ticket !== "string" || !/^r[1-9][0-9]{0,19}$/.test(ticket)) return invalid("files.error.unknown_ticket");
+      return request("recentNote", ticket);
     },
     /** US-320 : retire un récent de la liste ; le fichier n'est pas touché. */
     recentRemove(recentId) { return validRecentId(recentId) ? request("recentRemove", String(recentId)) : invalid("files.error.unknown_recent"); },

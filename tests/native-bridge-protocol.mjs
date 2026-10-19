@@ -334,6 +334,16 @@ for (const [bad, key] of [
   assert.deepEqual([fake.last().op, fake.last().tail], ["recentPin", "3;0"]);
   fake.reply(fake.last().id, "ok");
   assert.deepEqual(await pinned, { kind: "ok" });
+  const noted = host.recentNote("r7");
+  assert.deepEqual([fake.last().op, fake.last().tail], ["recentNote", "r7"]);
+  fake.reply(fake.last().id, "ok");
+  assert.deepEqual(await noted, { kind: "ok" });
+  const refused = host.recentNote("r8");
+  fake.reply(fake.last().id, "error", "files.error.unknown_ticket");
+  assert.deepEqual(await refused, { kind: "error", key: "files.error.unknown_ticket" });
+  const beforeNote = fake.sent.length;
+  for (const bad of ["w7", "7", "C:\\a.docx", "r0", null]) assert.deepEqual(await host.recentNote(bad), { kind: "error", key: "files.error.unknown_ticket" });
+  assert.equal(fake.sent.length, beforeNote, "an invalid ticket never reaches the native side");
   const removed = host.recentRemove(2);
   assert.deepEqual([fake.last().op, fake.last().tail], ["recentRemove", "2"]);
   fake.reply(fake.last().id, "ok");

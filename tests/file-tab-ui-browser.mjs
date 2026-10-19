@@ -24,7 +24,7 @@ const fromB64 = text => Uint8Array.from(atob(text), c => c.charCodeAt(0));
 function createFakeBridge() {
   const listeners = new Set();
   const bridge = {
-    calls: [], files: [], reads: new Map(), writes: new Map(), serial: 1, nextOpen: { cancelled: true }, nextSave: {}, lastSaveSpec: null,
+    calls: [], files: [], reads: new Map(), paths: new Map(), readable: new Map(), writes: new Map(), serial: 1, nextOpen: { cancelled: true }, nextSave: {}, lastSaveSpec: null,
     recents: [], recentSerial: 1, clock: 1_770_000_000,
     addRecent(path, { pinned = false, present = true, bytes = new Uint8Array(), format = "txt", used } = {}) {
       const entry = { id: bridge.recentSerial++, path, pinned, present, bytes, format, used: used ?? bridge.clock++ };
@@ -39,15 +39,15 @@ function createFakeBridge() {
         if (!match || match[2] === "dirty") return;
         const [, id, operation, payload] = match;
         const reply = (status, body = "") => queueMicrotask(() => { for (const listener of listeners) listener({ data: `us120-file|1|${id}|${status}|${body}` }); });
-        const grant = (bytes, format, name) => { const ticket = `r${bridge.serial++}`; bridge.reads.set(ticket, bytes); reply("ok", `${ticket};${format};${bytes.length};${b64(encoder.encode(name))}`); };
+        const grant = (bytes, format, name, path) => { const ticket = `r${bridge.serial++}`; bridge.reads.set(ticket, bytes); bridge.paths.set(ticket, path); reply("ok", `${ticket};${format};${bytes.length};${b64(encoder.encode(name))}`); };
         if (operation === "pickOpen") {
           const next = bridge.nextOpen;
           if (next.cancelled) return reply("cancelled");
-          if (next.path) bridge.touch(next.path);
-          return grant(next.bytes, next.format, next.name);
+          return grant(next.bytes, next.format, next.name, next.path);
         }
         if (operation === "readTicket") {
           const bytes = bridge.reads.get(payload); bridge.reads.delete(payload);
+          if (bytes) bridge.readable.set(payload, bridge.paths.get(payload));
           return bytes ? reply("ok", `b64;${b64(bytes)}`) : reply("error", "files.error.unknown_ticket");
         }
         if (operation === "pickSave") {
@@ -77,8 +77,12 @@ function createFakeBridge() {
           const entry = bridge.recents.find(item => item.id === Number(payload));
           if (!entry) return reply("error", "files.error.unknown_recent");
           if (!entry.present) return reply("error", "files.error.not_found");
-          entry.used = bridge.clock++;
-          return grant(entry.bytes, entry.format, entry.path.split("\\").pop());
+          return grant(entry.bytes, entry.format, entry.path.split("\\").pop(), entry.path);
+        }
+        if (operation === "recentNote") {
+          const path = bridge.readable.get(payload); bridge.readable.delete(payload);
+          if (!path) return reply("error", "files.error.unknown_ticket");
+          bridge.touch(path); return reply("ok");
         }
         if (operation === "recentPin") {
           const [number, flag] = payload.split(";"); const entry = bridge.recents.find(item => item.id === Number(number));
@@ -232,6 +236,12 @@ try {
   openButton.click();
   await waitFor(async () => await text() === "neuf", "open through the dialog");
   await waitFor(() => items().some(item => item.querySelector(".file-recent-path").textContent === "E:\\Nouveau.txt"), "a document opened through the dialog appears in the recents");
+
+  // Un fichier lu mais refusé par l'éditeur n'entre pas dans les récents (pas de recentNote).
+  bridge.nextOpen = { path: "E:/Refusé.docx", name: "Refusé.docx", format: "docx", bytes: encoder.encode("pas un docx") };
+  openButton.click();
+  await waitFor(() => /pas pu être ouvert/.test(status.textContent), "a corrupt DOCX is refused");
+  assert(!bridge.recents.some(item => item.path === "E:/Refusé.docx"), "a refused document is not added to the recents");
 
   // --- modèles -----------------------------------------------------------------------------------------------------------------------
   const MARKERS = { letter: "Madame, Monsieur,", cv: "Expérience professionnelle", report: "Résumé", minutes: "Ordre du jour" };

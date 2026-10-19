@@ -241,6 +241,7 @@ async function start() {
     onSearch: () => navigation?.openSearch(), onReplace: () => navigation?.openReplace(), onStatistics: () => navigation?.openStatistics() });
   let client;
   let host;
+  let lastReadTicket = null;
   let editor;
   let disposed = false;
   const imagePicker = imageAvailable ? createImagePicker() : null;
@@ -342,8 +343,11 @@ async function start() {
     if (reply.type !== MessageType.Ping || reply.requestId !== 1n || reply.payload.byteLength !== 0) throw new Error("PING_ECHO_FAILED");
     showPing(true, messages);
 
-    try { host = createNativeHost(); }
-    catch {
+    try {
+      const native = createNativeHost();
+      // US-320 : le dernier ticket de lecture désigne le fichier à noter dans les récents une fois le document accepté.
+      host = Object.freeze({ ...native, readTicket: (ticket, options) => { lastReadTicket = ticket; return native.readTicket(ticket, options); } });
+    } catch {
       host = {
         open: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
         openDocx: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
@@ -382,13 +386,20 @@ async function start() {
     }
     if (toolsAvailable && editor.capabilities.search) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
+    /** Le document vient d'être accepté par l'éditeur : le natif note le fichier lu par le dernier ticket. */
+    async function noteOpened() {
+      const ticket = lastReadTicket;
+      lastReadTicket = null;
+      if (ticket) { try { await host.recentNote?.(ticket); } catch { /* confort : les récents ne gênent pas l'ouverture */ } }
+      await fileTab?.refreshRecents();
+    }
     async function openDocxInEditor(source) {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
       const result = await editor.openDocument(source, { formats: ["docx", "docm", "dotx", "txt"] });
       if (result.kind === "ok") showEditorMessage(messages.get(editor.state?.readOnly ? "status-readonly-opened" : "status-opened"));
       else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
       else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
-      if (result.kind === "ok") void fileTab?.refreshRecents();
+      if (result.kind === "ok") void noteOpened();
       return result;
     }
     const openDocx = source => openDocxInEditor(source);
@@ -474,7 +485,7 @@ async function start() {
         if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
-        if (result.kind === "ok") void fileTab?.refreshRecents();
+        if (result.kind === "ok") void noteOpened();
       } catch (error) { onError(error); }
     }, { signal: listeners.signal });
     nodes.save.addEventListener("click", async () => {

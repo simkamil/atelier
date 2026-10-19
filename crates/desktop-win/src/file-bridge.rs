@@ -97,6 +97,11 @@ pub(crate) enum Request {
         recent: u64,
         pinned: bool,
     },
+    /// US-320 : le front confirme qu'un document lu par un ticket `r<n>` a été accepté : il entre dans les récents.
+    RecentNote {
+        id: String,
+        ticket: u64,
+    },
     /// US-320 : retire un document de la liste (le fichier n'est jamais touché).
     RecentRemove {
         id: String,
@@ -123,6 +128,7 @@ impl Request {
             | Self::RecentOpen { id, .. }
             | Self::RecentPin { id, .. }
             | Self::RecentRemove { id, .. }
+            | Self::RecentNote { id, .. }
             | Self::Dirty { id, .. } => id,
         }
     }
@@ -519,6 +525,10 @@ fn parse_extended(operation: &str, tail: &str, id: &str) -> Option<Result<Reques
         "recentOpen" => parse_recent_id(tail)
             .map(|recent| Request::RecentOpen { id, recent })
             .ok_or(BAD),
+        "recentNote" => match bridge_ops::parse_ticket(tail) {
+            Some((false, ticket)) => Ok(Request::RecentNote { id, ticket }),
+            _ => Err(BAD),
+        },
         "recentRemove" => parse_recent_id(tail)
             .map(|recent| Request::RecentRemove { id, recent })
             .ok_or(BAD),
