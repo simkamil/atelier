@@ -66,21 +66,26 @@ for (const [bad, key] of [
   assert.equal(op, "pickOpen");
   assert.equal(Buffer.from(tail, "base64").toString("utf8"), "Ouvrir\nfilter:docx=Document Word\nfilter:txt=Texte brut");
   fake.reply(id, "ok", `r12;docx;1048576;${b64("Lettre é.docx")}`);
-  assert.deepEqual(await opened, { kind: "ok", ticket: "r12", format: "docx", size: 1048576, name: "Lettre é.docx", identity: null });
+  assert.deepEqual(await opened, { kind: "ok", ticket: "r12", format: "docx", size: 1048576, name: "Lettre é.docx" });
 
-  // US-327 : cinquième champ facultatif, identité canonique du fichier (Base64 UTF-8) ; invalide, la réponse est refusée.
-  const identified = host.pickOpen(OPEN);
-  fake.reply(fake.last().id, "ok", `r13;txt;5;${b64("a.txt")};${b64("C:\Dossier é\a.txt")}`);
-  assert.deepEqual(await identified, { kind: "ok", ticket: "r13", format: "txt", size: 5, name: "a.txt", identity: "C:\Dossier é\a.txt" });
-  const badIdentity = host.pickOpen(OPEN);
-  fake.reply(fake.last().id, "ok", `r14;txt;5;${b64("a.txt")};not base64!`);
-  assert.deepEqual(await badIdentity, { kind: "error", key: "HOST_INVALID_RESPONSE" });
-  const brokenUtf8 = host.pickOpen(OPEN);
-  fake.reply(fake.last().id, "ok", `r15;txt;5;${b64("a.txt")};${b64(Uint8Array.of(0xff, 0xfe))}`);
-  assert.deepEqual(await brokenUtf8, { kind: "error", key: "HOST_INVALID_RESPONSE" });
-  const tooLong = host.pickOpen(OPEN);
-  fake.reply(fake.last().id, "ok", `r16;txt;5;${b64("a.txt")};${b64("x".repeat(1025))}`);
-  assert.deepEqual(await tooLong, { kind: "error", key: "HOST_FILE_TOO_LARGE" }, "an identity over 1 KiB is refused, never truncated");
+  // US-327 : l'empreinte OPAQUE du fichier d'un ticket (16 chiffres hexadécimaux) est demandée à part ; jamais un chemin.
+  const identified = host.fileIdentity("r12");
+  assert.equal(fake.last().op, "fileIdentity");
+  assert.equal(fake.last().tail, "r12");
+  fake.reply(fake.last().id, "ok", "0123456789abcdef");
+  assert.deepEqual(await identified, { kind: "ok", identity: "0123456789abcdef" });
+  for (const bad of ["C:\\Dossier\\a.txt", "0123456789ABCDEF", "0123456789abcde", ""]) {
+    const refused = host.fileIdentity("r12");
+    fake.reply(fake.last().id, "ok", bad);
+    assert.deepEqual(await refused, { kind: "error", key: "HOST_INVALID_RESPONSE" }, `a fingerprint is 16 lowercase hex digits: ${bad}`);
+  }
+  assert.deepEqual(await host.fileIdentity("C:\\x"), { kind: "error", key: "files.error.unknown_ticket" });
+  const unknownTicket = host.fileIdentity("r99");
+  fake.reply(fake.last().id, "error", "files.error.unknown_ticket");
+  assert.deepEqual(await unknownTicket, { kind: "error", key: "files.error.unknown_ticket" });
+  const withPath = host.pickOpen(OPEN);
+  fake.reply(fake.last().id, "ok", `r13;txt;5;${b64("a.txt")};${b64("C:/Dossier/a.txt")}`);
+  assert.deepEqual(await withPath, { kind: "error", key: "HOST_INVALID_RESPONSE" }, "a dialog reply never carries a path");
 
   const cancelled = host.pickOpen(OPEN);
   fake.reply(fake.last().id, "cancelled");
@@ -281,27 +286,32 @@ for (const [bad, key] of [
   const host = createNativeHost({ webview: fake.webview, timeoutMs: 1000 });
   const docx = new Uint8Array(500000).fill(7);
   const taking = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|docx;2;${b64("C:\\dossier\\é.docx")};@sb`, docx);
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|docx;2;${b64("é.docx")};0123456789abcdef;@sb`, docx);
   const result = await taking;
   assert.equal(result.document.type, "docx");
   assert.equal(result.document.remaining, 2, "US-327: the following files stay pending, the front claims them one by one");
-  assert.equal(result.document.path, "C:\\dossier\\é.docx", "the identity of the file travels with it (tab title, file already open)");
+  assert.equal(result.document.name, "é.docx", "the name of the file travels with it (tab title)");
+  assert.equal(result.document.identity, "0123456789abcdef", "and an opaque fingerprint (file already open), never a path");
+  assert.equal(result.document.path, undefined);
   assert.equal(result.document.bytes.byteLength, 500000);
   assert.equal(fake.released.length, 1, "the launch document is copied and its buffer released");
   const legacy = host.takeLaunch();
-  fake.reply(fake.last().id, "ok", `txt;0;;${b64("bonjour")}`);
+  fake.reply(fake.last().id, "ok", `txt;0;;0123456789abcdef;${b64("bonjour")}`);
   const inline = (await legacy).document;
   assert.equal(new TextDecoder().decode(inline.bytes), "bonjour");
-  assert.equal(inline.path, null, "an empty identity is null");
+  assert.equal(inline.name, null, "an empty name is null");
   const refused = host.takeLaunch();
-  fake.reply(fake.last().id, "error", `files.error.unsupported_type;${b64("C:\\x.png")}`);
-  assert.deepEqual(await refused, { kind: "error", key: "files.error.unsupported_type", path: "C:\\x.png" }, "a refused launched file carries its identity");
+  fake.reply(fake.last().id, "error", `files.error.unsupported_type;${b64("x.png")}`);
+  assert.deepEqual(await refused, { kind: "error", key: "files.error.unsupported_type", name: "x.png" }, "a refused launched file carries its name");
   const bare = host.takeLaunch();
   fake.reply(fake.last().id, "error", "files.error.queue_full");
   assert.deepEqual(await bare, { kind: "error", key: "files.error.queue_full" });
   const hostile = host.takeLaunch();
-  fake.reply(fake.last().id, "ok", "txt;0;bad base64!;AAAA");
+  fake.reply(fake.last().id, "ok", "txt;0;;0123456789abcdef;bad base64!");
   assert.deepEqual(await hostile, { kind: "error", key: "HOST_INVALID_RESPONSE" });
+  const pathLike = host.takeLaunch();
+  fake.reply(fake.last().id, "ok", `txt;0;;C:/secret/file.txt;${b64("x")}`);
+  assert.deepEqual(await pathLike, { kind: "error", key: "HOST_INVALID_RESPONSE" }, "a fingerprint that is not 16 hex digits (a path) is refused");
   host.close();
 }
 
@@ -311,15 +321,15 @@ for (const [bad, key] of [
   const host = createNativeHost({ webview: fake.webview, timeoutMs: 1000 });
   const text = new Uint8Array(1024 * 1024).fill(0x78);
   const first = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;@sb`, text);
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;0123456789abcdef;@sb`, text);
   const opened = await first;
   assert.equal(opened.document.type, "txt");
   assert.equal(opened.document.bytes.byteLength, 1024 * 1024, "a 1 MiB launched TXT is delivered whole");
   const atLimit = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes));
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;0123456789abcdef;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes));
   assert.equal((await atLimit).document.bytes.byteLength, RICH_LIMITS.maxOpenBytes);
   const over = host.takeLaunch();
-  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes + 1));
+  fake.buffer(`us120-file|1|${fake.last().id}|ok|txt;0;;0123456789abcdef;@sb`, new Uint8Array(RICH_LIMITS.maxOpenBytes + 1));
   assert.deepEqual(await over, { kind: "error", key: "HOST_INVALID_RESPONSE" });
   host.close();
 }
@@ -351,7 +361,7 @@ for (const [bad, key] of [
   const opened = host.recentOpen(3);
   assert.deepEqual([fake.last().op, fake.last().tail], ["recentOpen", "3"]);
   fake.reply(fake.last().id, "ok", `r7;docx;2048;${b64("Lettre é.docx")}`);
-  assert.deepEqual(await opened, { kind: "ok", ticket: "r7", format: "docx", size: 2048, name: "Lettre é.docx", identity: null });
+  assert.deepEqual(await opened, { kind: "ok", ticket: "r7", format: "docx", size: 2048, name: "Lettre é.docx" });
   const missing = host.recentOpen(2);
   fake.reply(fake.last().id, "error", "files.error.not_found");
   assert.deepEqual(await missing, { kind: "error", key: "files.error.not_found" });

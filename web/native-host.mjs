@@ -211,21 +211,21 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     if (!entry) return;
     if (status === "cancelled" && payload === "") settle(id, { kind: "cancelled" });
     else if (status === "error" && entry.operation === "launch" && /^[A-Za-z][A-Za-z0-9_.]{0,63};[A-Za-z0-9+/=]*$/.test(payload)) {
-      // US-327 : l'erreur d'un fichier lancé porte son identité (chemin ou nom, base64), pour le message par fichier.
+      // US-327 : l'erreur d'un fichier lancé porte son nom (base64), pour le message par fichier.
       const [key, who] = payload.split(";");
-      try { settle(id, { kind: "error", key, path: who === "" ? null : decodeName(who) }); }
+      try { settle(id, { kind: "error", key, name: who === "" ? null : decodeName(who) }); }
       catch { settle(id, { kind: "error", key }); }
     } else if (status === "error" && /^[A-Za-z][A-Za-z0-9_.]{0,63}$/.test(payload)) settle(id, { kind: "error", key: payload });
     else if (status === "ok" && ["open", "openDocx"].includes(entry.operation)) {
       try { settle(id, { kind: "ok", bytes: fromBase64(payload, entry.operation === "openDocx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) }); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "launch" && payload !== "") {
-      // `<type>;<restants>;<identité base64>;<octets base64>` : `remaining` fichiers attendent encore (US-327), `path` est
-      // le chemin (ou le nom) du fichier, null s'il n'a pas pu être transmis.
-      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);([A-Za-z0-9+/=]*)$/.exec(payload);
+      // `<type>;<restants>;<nom base64>;<empreinte>;<octets base64>` : `remaining` fichiers attendent encore (US-327), `name` est
+      // le nom du fichier (sans dossier), `identity` son empreinte opaque : le chemin n'arrive jamais jusqu'ici.
+      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);([0-9a-f]{16});([A-Za-z0-9+/=]*)$/.exec(payload);
       try {
         if (!match || Number(match[2]) > MAX_LAUNCH_REMAINING) throw new NativeHostError("HOST_INVALID_RESPONSE");
-        settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), path: match[3] === "" ? null : decodeName(match[3]), bytes: fromBase64(match[4], MAX_DOCX_BYTES) } });
+        settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), name: match[3] === "" ? null : decodeName(match[3]), identity: match[4], bytes: fromBase64(match[5], MAX_DOCX_BYTES) } });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "recentList") {
       try {
@@ -234,12 +234,10 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
         settle(id, { kind: "ok", entries: parseRecentList(fromBase64(match[1], MAX_RECENT_LIST_BYTES)) });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && ["pickOpen", "recentOpen"].includes(entry.operation)) {
-      // Cinquième champ facultatif (US-327) : identité canonique du fichier (chemin résolu par le natif), Base64 UTF-8.
-      const match = /^(r[1-9][0-9]{0,19});([a-z]{2,5});([0-9]{1,10});([A-Za-z0-9+/=]*)(?:;([A-Za-z0-9+/=]*))?$/.exec(payload);
+      const match = /^(r[1-9][0-9]{0,19});([a-z]{2,5});([0-9]{1,10});([A-Za-z0-9+/=]*)$/.exec(payload);
       try {
         if (!match || !DIALOG_FORMATS.includes(match[2])) throw new NativeHostError("HOST_INVALID_RESPONSE");
-        settle(id, { kind: "ok", ticket: match[1], format: match[2], size: Number(match[3]), name: decodeName(match[4]),
-          identity: match[5] ? decodeName(match[5]) : null });
+        settle(id, { kind: "ok", ticket: match[1], format: match[2], size: Number(match[3]), name: decodeName(match[4]) });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "pickSave") {
       const match = /^(w[1-9][0-9]{0,19});([a-z]{2,5});([A-Za-z0-9+/=]*)$/.exec(payload);
@@ -247,6 +245,10 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
         if (!match || !DIALOG_FORMATS.includes(match[2])) throw new NativeHostError("HOST_INVALID_RESPONSE");
         settle(id, { kind: "ok", ticket: match[1], format: match[2], name: decodeName(match[3]) });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
+    } else if (status === "ok" && entry.operation === "fileIdentity") {
+      // US-327 : empreinte OPAQUE du fichier (16 chiffres hexadécimaux), jamais son chemin.
+      if (/^[0-9a-f]{16}$/.test(payload)) settle(id, { kind: "ok", identity: payload });
+      else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
     } else if (status === "ok" && ["readTicket", "readFont", "listFonts"].includes(entry.operation)) {
       try { finishData(id, entry, inlineBytes(payload, entry.operation === "listFonts" ? MAX_FONT_LIST_BYTES : MAX_DOCX_BYTES), noop); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
@@ -269,16 +271,16 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     stats.sharedReceived += 1;
     const { id, payload } = parsed;
     if (entry.operation === "launch") {
-      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);@sb$/.exec(payload);
-      let path = null;
-      try { path = match && match[3] !== "" ? decodeName(match[3]) : null; } catch { drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return; }
+      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);([0-9a-f]{16});@sb$/.exec(payload);
+      let name = null;
+      try { name = match && match[3] !== "" ? decodeName(match[3]) : null; } catch { drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return; }
       if (!match || Number(match[2]) > MAX_LAUNCH_REMAINING || buffer.byteLength > MAX_LAUNCH_BYTES) {
         drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return;
       }
       // Le document d'ouverture est copié : les appelants le conservent, le tampon est libéré aussitôt.
       const bytes = new Uint8Array(buffer).slice();
       drop();
-      settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), path, bytes } });
+      settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), name, identity: match[4], bytes } });
       return;
     }
     const match = /^sb;([0-9]{1,10})$/.exec(payload);
@@ -420,6 +422,11 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     readTicket(ticket, { copy = false } = {}) {
       if (typeof ticket !== "string" || !/^r[1-9][0-9]{0,19}$/.test(ticket)) return invalid("files.error.unknown_ticket");
       return request("readTicket", ticket, 0, { copy });
+    },
+    /** US-327 : empreinte opaque du fichier d'un ticket `r…` (reconnaître un document déjà ouvert sans connaître son chemin). */
+    fileIdentity(ticket) {
+      if (typeof ticket !== "string" || !/^r[1-9][0-9]{0,19}$/.test(ticket)) return invalid("files.error.unknown_ticket");
+      return request("fileIdentity", ticket);
     },
     /** US-113 : écriture atomique par morceaux sur un ticket `w…` ; le fichier n'apparaît qu'au dernier morceau. */
     writeTicket,

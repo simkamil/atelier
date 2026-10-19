@@ -57,6 +57,11 @@ pub(crate) enum Request {
         id: String,
         ticket: u64,
     },
+    /// US-327 : empreinte opaque du fichier d'un ticket `r<n>` (document déjà ouvert).
+    FileIdentity {
+        id: String,
+        ticket: u64,
+    },
     /// US-113 : abandon d'un ticket `r<n>` ou `w<n>`.
     ReleaseTicket {
         id: String,
@@ -119,6 +124,7 @@ impl Request {
             | Self::PickOpen { id, .. }
             | Self::PickSave { id, .. }
             | Self::ReadTicket { id, .. }
+            | Self::FileIdentity { id, .. }
             | Self::ReleaseTicket { id, .. }
             | Self::WriteTicket { id, .. }
             | Self::ListFonts { id }
@@ -467,31 +473,43 @@ pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
     }
 }
 
-/// Identité du fichier d'ouverture pour le front (titre de l'onglet, fichier déjà ouvert) : le chemin canonique
-/// (voir `bridge_ops::canonical_identity`) s'il tient en 1 Kio, sinon le nom seul, sinon rien.
-fn launch_identity(path: &std::path::Path) -> String {
-    bridge_ops::identity_limited(path)
+/// Qui est le fichier d'ouverture (US-327) : son nom (titre de l'onglet, messages) et son empreinte opaque (fichier déjà
+/// ouvert). Le chemin complet ne part jamais vers le script. `of` résout le chemin canonique : à appeler sur le fil de
+/// lecture, jamais sur le fil de la fenêtre.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct LaunchWho {
+    pub(crate) name: String,
+    pub(crate) hash: String,
 }
 
-/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<restants>;<identité base64>;<base64>` en
-/// ligne, ou `ok|<txt|docx>;<restants>;<identité base64>;@sb` quand les octets partent par SharedBuffer (repli :
+impl LaunchWho {
+    pub(crate) fn of(path: &std::path::Path) -> Self {
+        Self {
+            name: bridge_ops::short_file_name(path),
+            hash: bridge_ops::identity_hash(path),
+        }
+    }
+}
+
+/// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<restants>;<nom base64>;<empreinte>;<base64>` en
+/// ligne, ou `ok|<txt|docx>;<restants>;<nom base64>;<empreinte>;@sb` quand les octets partent par SharedBuffer (repli :
 /// la forme en ligne). `<restants>` compte les chemins encore en attente : ils ne sont PAS écartés (US-327, un
-/// onglet par fichier : le front les réclame un par un). Une erreur est `error|<clé>;<identité base64>` ; les chemins
+/// onglet par fichier : le front les réclame un par un). Une erreur est `error|<clé>;<nom base64>` ; les chemins
 /// suivants restent en attente dans les deux cas.
 pub(crate) fn launch_reply(
     id: &str,
-    path: &std::path::Path,
+    who: &LaunchWho,
     read: LaunchRead,
     pending: &mut VecDeque<PathBuf>,
 ) -> Outcome {
-    let who = encode_base64(launch_identity(path).as_bytes());
+    let name = encode_base64(who.name.as_bytes());
     match read {
         Ok((kind, bytes)) => {
             let remaining = pending.len();
-            let prefix = format!("{kind};{remaining};{who};");
+            let prefix = format!("{kind};{remaining};{name};{};", who.hash);
             bridge_ops::bytes_outcome(id, &prefix, &format!("{prefix}@sb"), &prefix, bytes)
         }
-        Err(key) => Outcome::Text(format!("us120-file|1|{id}|error|{key};{who}")),
+        Err(key) => Outcome::Text(format!("us120-file|1|{id}|error|{key};{name}")),
     }
 }
 
@@ -501,7 +519,7 @@ pub(crate) fn process_launch(id: &str, pending: &mut VecDeque<PathBuf>) -> Strin
     let Some(path) = pending.pop_front() else {
         return format!("us120-file|1|{id}|ok|");
     };
-    launch_reply(id, &path, read_launch_file(&path), pending)
+    launch_reply(id, &LaunchWho::of(&path), read_launch_file(&path), pending)
         .text()
         .to_owned()
 }
@@ -519,6 +537,10 @@ fn parse_extended(operation: &str, tail: &str, id: &str) -> Option<Result<Reques
         }
         "readTicket" => match bridge_ops::parse_ticket(tail) {
             Some((false, ticket)) => Ok(Request::ReadTicket { id, ticket }),
+            _ => Err(BAD),
+        },
+        "fileIdentity" => match bridge_ops::parse_ticket(tail) {
+            Some((false, ticket)) => Ok(Request::FileIdentity { id, ticket }),
             _ => Err(BAD),
         },
         "releaseTicket" => match bridge_ops::parse_ticket(tail) {
@@ -899,8 +921,9 @@ mod tests {
         assert_eq!(
             reply,
             format!(
-                "us120-file|1|7|ok|txt;1;{};{}",
-                encode_base64(bridge_ops::canonical_identity(&a).as_bytes()),
+                "us120-file|1|7|ok|txt;1;{};{};{}",
+                encode_base64(b"a.TXT"),
+                bridge_ops::identity_hash(&a),
                 encode_base64(b"bonjour")
             )
         );
@@ -909,8 +932,9 @@ mod tests {
         assert_eq!(
             process_launch("8", &mut pending),
             format!(
-                "us120-file|1|8|ok|txt;0;{};{}",
-                encode_base64(bridge_ops::canonical_identity(&b).as_bytes()),
+                "us120-file|1|8|ok|txt;0;{};{};{}",
+                encode_base64(b"b.txt"),
+                bridge_ops::identity_hash(&b),
                 encode_base64(b"autre")
             )
         );
@@ -931,15 +955,16 @@ mod tests {
             process_launch("1", &mut pending),
             format!(
                 "us120-file|1|1|error|files.error.unsupported_type;{}",
-                encode_base64(bridge_ops::canonical_identity(&image).as_bytes())
+                encode_base64(b"x.png")
             )
         );
         assert!(process_launch("2", &mut pending).starts_with("us120-file|1|2|error|files.error."));
         assert_eq!(
             process_launch("3", &mut pending),
             format!(
-                "us120-file|1|3|ok|docx;0;{};{}",
-                encode_base64(bridge_ops::canonical_identity(&good).as_bytes()),
+                "us120-file|1|3|ok|docx;0;{};{};{}",
+                encode_base64(b"good.docx"),
+                bridge_ops::identity_hash(&good),
                 encode_base64(b"PK")
             )
         );
@@ -994,13 +1019,19 @@ mod tests {
         std::fs::write(&big, &content).unwrap();
         let mut pending: VecDeque<PathBuf> = [big.clone()].into();
         let path = pending.pop_front().unwrap();
-        match launch_reply("1", &path, read_launch_file(&path), &mut pending) {
+        match launch_reply(
+            "1",
+            &LaunchWho::of(&path),
+            read_launch_file(&path),
+            &mut pending,
+        ) {
             Outcome::Shared { reply, bytes, .. } => {
                 assert_eq!(
                     reply,
                     format!(
-                        "us120-file|1|1|ok|txt;0;{};@sb",
-                        encode_base64(bridge_ops::canonical_identity(&big).as_bytes())
+                        "us120-file|1|1|ok|txt;0;{};{};@sb",
+                        encode_base64(b"big.txt"),
+                        bridge_ops::identity_hash(&big)
                     )
                 );
                 assert_eq!(bytes, content);
@@ -1028,27 +1059,26 @@ mod tests {
     }
 
     #[test]
-    fn launch_identity_is_canonical_and_bounded_to_one_kibibyte() {
+    fn the_file_identity_is_an_opaque_canonical_fingerprint() {
         let dir = launch_dir("identity");
         let file = dir.join("Casse.TXT");
         std::fs::write(&file, "x").unwrap();
-        // Même fichier, écrit autrement (`.` et `..`, casse du dossier) : une seule identité canonique.
-        let detour = dir.join(".").join("sous").join("..").join("Casse.TXT");
+        // Même fichier, écrit autrement (`.` et `..`, casse) : une seule empreinte.
         std::fs::create_dir_all(dir.join("sous")).unwrap();
-        assert_eq!(
-            launch_identity(&file).to_lowercase(),
-            launch_identity(&detour).to_lowercase()
-        );
-        assert!(!launch_identity(&file).starts_with(r"\\?\"));
-        // Chemin de plus de 1 Kio (fichier inexistant : le chemin reste tel quel) : le nom seul est envoyé.
-        let deep = std::iter::repeat_n("d".repeat(100), 12)
-            .fold(dir.clone(), |path, part| path.join(part))
-            .join("fichier.txt");
-        assert!(deep.to_string_lossy().len() > 1024);
-        assert_eq!(launch_identity(&deep), "fichier.txt");
-        // Même le nom ne tient pas : rien n'est envoyé, jamais une chaîne tronquée.
-        let long_name = dir.join("e".repeat(1100));
-        assert_eq!(bridge_ops::identity_limited(&long_name), "");
+        let detour = dir.join(".").join("sous").join("..").join("casse.txt");
+        let hash = bridge_ops::identity_hash(&file);
+        assert_eq!(hash, bridge_ops::identity_hash(&detour));
+        // Opaque : 16 chiffres hexadécimaux, jamais le chemin ni un morceau du chemin.
+        assert_eq!(hash.len(), 16);
+        assert!(hash.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert!(!hash.contains("Casse") && !hash.contains("casse"));
+        // Un autre fichier : une autre empreinte.
+        let other = dir.join("autre.txt");
+        std::fs::write(&other, "y").unwrap();
+        assert_ne!(hash, bridge_ops::identity_hash(&other));
+        // Le nom envoyé est borné à 1 Kio : un nom plus long n'est pas tronqué, il est omis.
+        assert_eq!(LaunchWho::of(&file).name, "Casse.TXT");
+        assert_eq!(LaunchWho::of(&dir.join("e".repeat(1100))).name, "");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1062,7 +1092,11 @@ mod tests {
         let reply = process_launch("3", &mut pending);
         let fields: Vec<&str> = reply.split('|').collect();
         let payload: Vec<&str> = fields[4].split(';').collect();
-        assert_eq!(payload.len(), 4, "type;restants;identité;octets : {reply}");
+        assert_eq!(
+            payload.len(),
+            5,
+            "type;restants;nom;empreinte;octets : {reply}"
+        );
         assert!(
             payload[2]
                 .bytes()

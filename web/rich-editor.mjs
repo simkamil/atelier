@@ -1172,9 +1172,12 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     const picked = await host.pickOpen({ title: dialogLabels.openTitle, filters: dialogFormats(formats, dialogLabels) });
     if (picked.kind !== "ok") return picked;
     if (picked.size > RICH_LIMITS.maxOpenBytes) { void host.releaseTicket?.(picked.ticket); return { kind: "error", key: "files.error.too_large" }; }
+    // US-327: the opaque fingerprint of the file (never its path) tells a document that is already open.
+    let identity = null;
+    try { const known = await host.fileIdentity?.(picked.ticket); if (known?.kind === "ok") identity = known.identity; } catch { /* the file opens anyway */ }
     const read = await host.readTicket(picked.ticket, { copy: true });
     if (read.kind !== "ok") return read;
-    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name, identity: picked.identity ?? null };
+    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name, identity };
   }
 
   function baseName(name) {

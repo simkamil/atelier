@@ -663,9 +663,9 @@ tabs.lost.restart=Relancer le moteur
 tabs.lost.copied=Le texte affiché a été copié (au plus 256 Kio autour du curseur : ce n’est pas le document entier).
 tabs.lost.copy-failed=Le texte affiché n’a pas pu être copié.
 tabs.lost.recovered=Le document est de nouveau lié au moteur.
-tabs.lost.worker=Le moteur ne répond plus. Relancez-le : chaque document dont le texte complet est connu est reconstruit à partir de ce texte (sans mise en forme) ; les autres restent affichés, marqués en erreur, avec leur texte copiable. Aucun document n’est vidé.
-tabs.lost.restarted=Le moteur a été relancé : chaque document a été reconstruit à partir de son texte affiché (sans mise en forme, ni images). Enregistrez-les ou rouvrez-les depuis leurs fichiers.
 tabs.lost.partial=Le moteur a été relancé. Ces documents n’ont pas pu être reconstruits et restent figés : {names}. Copiez leur texte affiché, puis rouvrez-les depuis leur fichier ou remplacez-les par un document vierge.
 tabs.lost.close-confirm=Le document {name} contient des modifications non enregistrées qui ne peuvent plus l’être, car le moteur l’a perdu. Le fermer fait perdre ces modifications. Fermer quand même ?
 tabs.lost.blank-confirm=Le document {name} contient des modifications non enregistrées. Le remplacer fait perdre ce texte (copiez-le d’abord avec « Copier le texte affiché »). Continuer ?
+tabs.lost.worker=Le moteur ne répond plus. Relancez-le : un document en texte brut modifié est reconstruit à partir de son texte ; tout autre document reste affiché, marqué en erreur, avec son texte copiable (rien n’est vidé ni réécrit). Rouvrez ensuite chaque document depuis son fichier.
+tabs.lost.restarted=Le moteur a été relancé : les documents en texte brut modifiés ont été reconstruits à partir de leur texte. Enregistrez-les.
 # fin US-327

@@ -475,6 +475,7 @@ pub(crate) fn begin_bridge_request(
         Request::PickOpen { id, spec } => Step::Done(pick_open(&id, &spec, state, broker, host)),
         Request::PickSave { id, spec } => Step::Done(pick_save(&id, &spec, state, broker, host)),
         Request::ReadTicket { id, ticket } => read_ticket(id, ticket, state, broker),
+        Request::FileIdentity { id, ticket } => file_identity(id, ticket, state),
         Request::ReleaseTicket { id, ticket, write } => {
             let known = if write {
                 state.write_tickets.contains(&ticket)
@@ -627,15 +628,9 @@ fn issue_open_ticket(
     }
     state.read_tickets.push(ticket.id());
     state.read_paths.push((ticket.id(), path.to_path_buf()));
-    // US-327 : le cinquième champ est l'identité canonique du fichier (le front reconnaît ainsi un document déjà ouvert).
     ok_reply(
         id,
-        &format!(
-            "r{};{format};{size};{};{}",
-            ticket.id(),
-            file_name_b64(path),
-            encode_base64(identity_limited(path).as_bytes())
-        ),
+        &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(path)),
     )
 }
 
@@ -653,13 +648,21 @@ pub(crate) fn canonical_identity(path: &Path) -> String {
     }
 }
 
-/// Identité envoyée au front : le chemin canonique s'il tient en 1 Kio (limite de `decodeName` côté JS), sinon le
-/// nom seul, sinon rien.
-pub(crate) fn identity_limited(path: &Path) -> String {
-    let full = canonical_identity(path);
-    if full.len() <= 1024 {
-        return full;
+/// Empreinte OPAQUE d'un fichier (US-327) : FNV-1a 64 bits du chemin canonique en minuscules, 16 chiffres hexadécimaux.
+/// Le script la compare (document déjà ouvert) sans jamais recevoir le chemin ; l'empreinte ne se calcule que sur un fil
+/// de travail (la résolution canonique peut bloquer sur un partage réseau injoignable).
+pub(crate) fn identity_hash(path: &Path) -> String {
+    let canonical = canonical_identity(path).to_lowercase();
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in canonical.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
+    format!("{hash:016x}")
+}
+
+/// Nom du fichier (sans dossier), au plus 1 Kio ; sinon vide.
+pub(crate) fn short_file_name(path: &Path) -> String {
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -669,6 +672,21 @@ pub(crate) fn identity_limited(path: &Path) -> String {
     } else {
         String::new()
     }
+}
+
+/// Identité d'un ticket de lecture remis par `PickOpen` ou `RecentOpen` : travail hors du fil UI.
+fn file_identity(id: String, ticket: u64, state: &mut BridgeState) -> Step {
+    let Some(path) = state
+        .read_paths
+        .iter()
+        .find(|(held, _)| *held == ticket)
+        .map(|(_, path)| path.clone())
+    else {
+        return Step::Done(error_reply(&id, "files.error.unknown_ticket"));
+    };
+    Step::Job(Box::new(move || {
+        JobResult::outcome(ok_reply(&id, &identity_hash(&path)))
+    }))
 }
 
 /// Format (identifiant JS) d'un chemin d'après son extension, parmi les formats connus du natif.
@@ -1352,7 +1370,7 @@ mod tests {
         let text = text_of(&reply);
         let payload = text.strip_prefix("us120-file|1|1|ok|").expect(&text);
         let fields: Vec<&str> = payload.split(';').collect();
-        assert_eq!(fields.len(), 5, "{payload}");
+        assert_eq!(fields.len(), 4, "{payload}");
         assert!(fields[0].starts_with('r'));
         assert_eq!(fields[1], "docx");
         assert_eq!(fields[2], "10");
@@ -1360,16 +1378,38 @@ mod tests {
             crate::file_bridge::decode_base64(fields[3]).unwrap(),
             "Lettre é.docx".as_bytes()
         );
-        // US-327 : cinquième champ, identité canonique du fichier.
-        assert_eq!(
-            crate::file_bridge::decode_base64(fields[4]).unwrap(),
-            canonical_identity(&file).as_bytes()
-        );
         assert!(
             !text.contains(dir.to_string_lossy().as_ref()),
             "no path leaves the native side"
         );
         let (_, ticket) = parse_ticket(fields[0]).unwrap();
+        // US-327 : l'empreinte opaque du fichier, sur demande (fil de travail), jamais le chemin.
+        let identity = process_bridge_request(
+            Request::FileIdentity {
+                id: "9".into(),
+                ticket,
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        );
+        assert_eq!(
+            identity,
+            Outcome::Text(format!("us120-file|1|9|ok|{}", identity_hash(&file)))
+        );
+        let unknown = process_bridge_request(
+            Request::FileIdentity {
+                id: "10".into(),
+                ticket: ticket + 1000,
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        );
+        assert_eq!(
+            unknown,
+            Outcome::Text("us120-file|1|10|error|files.error.unknown_ticket".into())
+        );
         let read = process_bridge_request(
             Request::ReadTicket {
                 id: "2".into(),

@@ -298,7 +298,7 @@ struct FileRuntime {
     /// Chemin en cours de lecture, noté dans les documents récents si la lecture réussit (US-320).
     launch_path: Option<PathBuf>,
     launch_generation: u64,
-    launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead)>>>,
+    launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead, file_bridge::LaunchWho)>>>,
     /// US-113 : tickets remis au JS, écriture en cours et catalogue de polices.
     bridge: BridgeState,
     /// Résultats des travaux du pont terminés sur un fil de travail, en attente de remise.
@@ -435,7 +435,9 @@ fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<Outco
         .name("atelier-launch-read".into())
         .spawn(move || {
             let read = file_bridge::read_launch_file(&path);
-            *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some((generation, read));
+            // La résolution canonique du chemin (empreinte) peut bloquer sur un partage injoignable : ici, jamais sur le fil UI.
+            let who = file_bridge::LaunchWho::of(&path);
+            *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some((generation, read, who));
             // SAFETY: PostMessageW est sûr sur tout thread ; un HWND détruit fait seulement échouer l'appel.
             unsafe { PostMessageW(target as Hwnd, WM_ATELIER_LAUNCH_DONE, 0, 0) };
         });
@@ -460,7 +462,7 @@ fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<Outcome> {
         .unwrap_or_else(|e| e.into_inner())
         .take();
     match ready {
-        Some((done, read)) if done == generation => {
+        Some((done, read, who)) if done == generation => {
             runtime.launch_inflight = None;
             let path = runtime.launch_path.take().unwrap_or_default();
             if read.is_ok() {
@@ -468,7 +470,7 @@ fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<Outcome> {
             }
             Some(file_bridge::launch_reply(
                 &id,
-                &path,
+                &who,
                 read,
                 &mut runtime.launch,
             ))

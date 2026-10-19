@@ -208,9 +208,11 @@ export function createFileTab({ document, i18n, onStatus = () => {}, onResult = 
     if (picked.kind !== "ok") return picked;
     lastTicket = picked.ticket;
     if (picked.size > RICH_LIMITS.maxOpenBytes) { void host.releaseTicket?.(picked.ticket); return { kind: "error", key: "files.error.too_large" }; }
+    let identity = null;
+    try { const known = await host.fileIdentity?.(picked.ticket); if (known?.kind === "ok") identity = known.identity; } catch { /* the file opens anyway */ }
     const read = await host.readTicket(picked.ticket, { copy: true });
     if (read.kind !== "ok") return read;
-    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name, identity: picked.identity ?? null };
+    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name, identity };
   }
 
   async function openRecent(entry) {

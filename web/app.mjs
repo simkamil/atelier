@@ -17,7 +17,7 @@ import { ABOUT_LICENSES } from "/about-licenses.mjs";
 import { BUILD_INFO } from "/build-info.mjs";
 import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
 import { createImagePicker, imageMessageKey } from "/image-insert.mjs";
-import { baseName, createFileTab, FILE_TAB_KEYS } from "/file-tab.mjs";
+import { createFileTab, FILE_TAB_KEYS } from "/file-tab.mjs";
 import { createDocumentTabs } from "/document-tabs.mjs";
 import { createDialog } from "/ui-components.mjs";
 import { createFormatController, createFormatKeyRouter } from "/format-controller.mjs";
@@ -820,7 +820,7 @@ async function start() {
    * A new editor for the tab on the current client (the old one is bound to a dead Worker, or is replaced by a rebuild),
    * optionally with `text` as the content of a new blank document. The tab keeps its place, its DOM and its name.
    */
-  async function replaceEditor(tab, { text = null } = {}) {
+  async function replaceEditor(tab, { text = null, plain = false } = {}) {
     const wasActive = tab === active;
     tab.keptName = tab.editor.documentName ?? tab.keptName ?? null;
     if (wasActive) { paraFormat.detachEditor(); formatController.detach(); navigation?.setEnabled(false); }
@@ -830,7 +830,12 @@ async function start() {
     tab.editor = fresh;
     fresh.subscribe(({ reason } = {}) => { if (reason === "document" || reason === "document-name") refreshTitle(tab); });
     if (!wasActive) fresh.setVisible(false);
-    if (text !== null) {
+    if (plain) {
+      // A plain-text document (TXT) rebuilt empty under its name, then given its text: modified, still a TXT.
+      await fresh.openDocument(async () => ({ kind: "ok", bytes: new Uint8Array(), format: "txt", name: tab.keptName ?? undefined }));
+      if (text !== "") await fresh.editSelection(text, fresh.getState());
+      tab.pristine = false;
+    } else if (text !== null) {
       await fresh.initialize();
       if (text !== "") await fresh.editSelection(text, fresh.getState());
       tab.pristine = text === "";
@@ -881,9 +886,9 @@ async function start() {
     } catch { showEditorMessage(messages.get("tabs.lost.copy-failed"), true); }
   }
   /**
-   * Worker mort : nouveau Worker, nouveau transport. Chaque onglet dont le texte complet est connu du cache JS est
-   * reconstruit dans un nouvel éditeur à partir de ce texte (sans mise en forme) ; les autres restent affichés, marqués
-   * perdus, avec leur dernier texte lisible et copiable : aucun onglet n'est vidé.
+   * Worker mort : nouveau Worker, nouveau transport. Seul un document en texte brut (TXT) MODIFIÉ dont le texte complet est
+   * connu du cache JS est reconstruit (dans un nouvel éditeur, toujours modifié) ; tous les autres restent affichés, marqués
+   * perdus, avec leur dernier texte lisible et copiable : aucun onglet n'est vidé ni réécrit en texte nu.
    */
   async function restartEngine() {
     if (!engineLost || engineLost.kind !== "worker") return;
@@ -893,9 +898,12 @@ async function start() {
       client = fresh.client; transport = fresh.transport;
       const kept = [];
       for (const tab of tabs) {
+        // Only a MODIFIED plain-text document is rebuilt from its text: bold, headings, lists, borders leave no trace in
+        // the text, so a rich document rebuilt from it would be saved over its file as bare text. Everything else stays
+        // lost but readable (copy, reopen from the file, blank after a confirmation); a clean tab is never made "modified".
         const text = tab.editor.completeText();
-        if (text === null) { kept.push(tab); continue; }
-        await replaceEditor(tab, { text });
+        if (text === null || !tab.dirty || tab.editor.documentFormat !== "txt") { kept.push(tab); continue; }
+        await replaceEditor(tab, { text, plain: true });
         tab.lost = false;
         if (tab.inBar) tabsBar.update(tab.id, { error: false });
       }
@@ -1109,15 +1117,15 @@ async function start() {
       return false;
     }
     async function openLaunched(launched, batch) {
-      const name = launched.path ? baseName(launched.path) : null;
-      const identity = launched.path ? launched.path.toLowerCase() : null;
-      const source = async () => ({ kind: "ok", bytes: launched.bytes, format: launched.type, name: name ?? undefined, identity: launched.path });
+      const name = launched.name;
+      const identity = launched.identity;
+      const source = async () => ({ kind: "ok", bytes: launched.bytes, format: launched.type, name: name ?? undefined, identity });
       for (;;) {
         if (!await untilIdle()) return;
         const existing = identity ? tabs.find(tab => tab.path === identity) : null;
         if (existing) { await switchTo(existing); batch.already.push(name); return; }
         if (tabs.length >= MAX_DOCUMENTS && !documentIsPristine(active)) { batch.skipped += 1; return; }
-        const result = await openIntoTab(source, { path: launched.path });
+        const result = await openIntoTab(source, { path: identity });
         // A refusal to start (something took the document between the wait and the opening): wait again, never drop the file.
         if (result.kind === "cancelled" && !result.already) continue;
         if (result.already) batch.already.push(name);
@@ -1150,7 +1158,7 @@ async function start() {
             if (result.kind === "ok" && !result.document) break;
             if (result.kind === "ok") { await openLaunched(result.document, batch); continue; }
             if (result.kind !== "error" || !result.key.startsWith("files.error.")) break;
-            batch.refused.push({ name: result.path ? baseName(result.path) : null, reason: fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get("status-open-error") });
+            batch.refused.push({ name: result.name ?? null, reason: fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get("status-open-error") });
           }
           void fileTab?.refreshRecents();
           reportLaunch(batch);

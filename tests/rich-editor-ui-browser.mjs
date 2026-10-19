@@ -913,13 +913,16 @@ try {
     assert(document.documentElement.scrollHeight <= innerHeight && document.body.scrollHeight <= innerHeight,
       "a long v2 document does not grow the product body or move the toolbar and footer outside the viewport");
     const launchBase64 = value => b64(encoder.encode(value));
+    // US-327 : `type;restants;nom base64;empreinte opaque;octets` (le chemin n'arrive jamais au script).
+    const fingerprint = path => { let h = 0xcbf29ce484222325n; for (const c of encoder.encode(path.toLowerCase())) { h ^= BigInt(c); h = (h * 0x100000001b3n) & 0xffffffffffffffffn; } return h.toString(16).padStart(16, "0"); };
+    const launched = (path, text, remaining) => `txt;${remaining};${launchBase64(path.split("/").at(-1))};${fingerprint(path)};${launchBase64(text)}`;
     const notifyLaunch = () => bridge.notify("us115-launch|1");
     const trimTabs = async () => { for (const tab of app.documentTabs.list) if (tab.id !== app.documentTabs.active) await app.documentTabs.close(tab.id, { confirm: false }); };
     const tabCount = () => app.documentTabs.list.length;
     await trimTabs();
     // US-115 / US-327 : un fichier lancé s'ouvre dans un nouvel onglet ; son identité (chemin) et ses octets arrivent ensemble.
     let tabsBefore = tabCount();
-    bridge.launchReplies.push({ status: "ok", payload: `txt;0;${launchBase64("C:/dossier/argument.txt")};${launchBase64("lancé par argument")}` });
+    bridge.launchReplies.push({ status: "ok", payload: launched("C:/dossier/argument.txt", "lancé par argument", 0) });
     notifyLaunch();
     await waitFor(async () => (await text()) === "lancé par argument", "a launched .txt opens in the v2 editor");
     assert(statusText() === "Document ouvert." && tabCount() === tabsBefore + 1, "a launched file opens in a new tab and the opening is announced");
@@ -927,16 +930,16 @@ try {
     // Plusieurs fichiers : chacun dans son onglet, l'un après l'autre ; un fichier refusé ne cache pas le suivant.
     tabsBefore = tabCount();
     bridge.launchReplies.push(
-      { status: "ok", payload: `txt;2;${launchBase64("C:/d/un.txt")};${launchBase64("premier")}` },
-      { status: "error", payload: `files.error.unsupported_type;${launchBase64("C:/d/image.png")}` },
-      { status: "ok", payload: `txt;0;${launchBase64("C:/d/trois.txt")};${launchBase64("troisième")}` });
+      { status: "ok", payload: launched("C:/d/un.txt", "premier", 2) },
+      { status: "error", payload: `files.error.unsupported_type;${launchBase64("image.png")}` },
+      { status: "ok", payload: launched("C:/d/trois.txt", "troisième", 0) });
     notifyLaunch();
     await waitFor(async () => (await text()) === "troisième" && tabCount() === tabsBefore + 2, "several launched files open one tab each");
     assert(app.documentTabs.list.slice(-2).map(tab => tab.title).join("|") === "un.txt|trois.txt", "each launched file has its own tab, in launch order");
     assert(statusText().includes("2 documents ouverts") && statusText().includes("image.png") && statusText().includes(".txt ou .docx"), "the refused file is named and explained in the same message");
     // Le même fichier relancé : son onglet est affiché, rien n'est rouvert.
     tabsBefore = tabCount();
-    bridge.launchReplies.push({ status: "ok", payload: `txt;0;${launchBase64("C:/D/UN.txt")};${launchBase64("autre contenu")}` });
+    bridge.launchReplies.push({ status: "ok", payload: launched("C:/D/UN.txt", "autre contenu", 0) });
     notifyLaunch();
     await waitFor(async () => (await text()) === "premier", "a file already open is switched to, not reopened");
     assert(tabCount() === tabsBefore && statusText().includes("déjà ouvert"), "no duplicate tab and the user is told");
@@ -944,7 +947,7 @@ try {
     notifyLaunch();
     await waitFor(() => statusText().includes(".txt ou .docx"), "an unsupported launched file is explained");
     assert((await text()) === "premier", "a refused launched file leaves the document unchanged");
-    bridge.launchReplies.push({ status: "ok", payload: "txt;0;;***" });
+    bridge.launchReplies.push({ status: "ok", payload: "txt;0;;0000000000000000;***" });
     notifyLaunch();
     await sleep(50);
     assert((await text()) === "premier", "a malformed launch reply is ignored");

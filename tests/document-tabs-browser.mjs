@@ -29,6 +29,7 @@ function createFakeBridge() {
   const listeners = new Set();
   const bridge = {
     launchReplies: [], notify(data) { for (const listener of listeners) listener({ data }); },
+    identities: new Map(), hash: path => { let h = 0xcbf29ce484222325n; for (const c of new TextEncoder().encode(path.toLowerCase())) { h ^= BigInt(c); h = (h * 0x100000001b3n) & 0xffffffffffffffffn; } return h.toString(16).padStart(16, "0"); },
     calls: [], files: [], nextOpen: { cancelled: true }, nextSave: {}, reads: new Map(), writes: new Map(), serial: 1,
     dirtyCalls: () => bridge.calls.filter(call => /\|dirty\|/.test(call)),
     webview: {
@@ -43,7 +44,12 @@ function createFakeBridge() {
           if (next.cancelled) return reply("cancelled");
           const ticket = `r${bridge.serial++}`;
           bridge.reads.set(ticket, next.bytes);
-          return reply("ok", `${ticket};${next.format};${next.bytes.length};${b64(encoder.encode(next.name))}${next.identity ? `;${b64(encoder.encode(next.identity))}` : ""}`);
+          bridge.identities.set(ticket, next.identity ?? "");
+          return reply("ok", `${ticket};${next.format};${next.bytes.length};${b64(encoder.encode(next.name))}`);
+        }
+        if (operation === "fileIdentity") {
+          const known = bridge.identities.get(payload);
+          return known ? reply("ok", bridge.hash(known)) : reply("error", "files.error.unknown_ticket");
         }
         if (operation === "readTicket") {
           const bytes = bridge.reads.get(payload); bridge.reads.delete(payload);
@@ -393,7 +399,7 @@ try {
   await tabsApi.close(tabsApi.active, { confirm: false });
 
   // --- US-115 : plusieurs fichiers lancés, un onglet chacun, l'un après l'autre ------------------------------------------------------
-  const launchPayload = (path, text, remaining) => `txt;${remaining};${b64(encoder.encode(path))};${b64(encoder.encode(text))}`;
+  const launchPayload = (path, text, remaining) => `txt;${remaining};${b64(encoder.encode(path.split("/").at(-1)))};${bridge.hash(path)};${b64(encoder.encode(text))}`;
   bridge.launchReplies.push(
     { status: "ok", payload: launchPayload("C:/docs/a.txt", "alpha", 2) },
     { status: "ok", payload: launchPayload("C:/docs/b.txt", "beta", 1) },
@@ -432,47 +438,63 @@ try {
   type("ok"); await waitFor(async () => await textOf(active()) === "ok", "the recovered document works");
   assert(lostTabs.every(tab => list().some(other => other.docId === tab.docId)), "the identifiers are the same");
 
-  // --- Worker mort : trois onglets modifiés, aucune perte silencieuse ---------------------------------------------------------------------
-  const big = "grande ligne de texte pour dépasser la fenêtre de texte du moteur\n".repeat(5000);
-  bridge.nextOpen = { name: "enorme.txt", format: "txt", bytes: encoder.encode(big) };
-  await tabsApi.activate(list()[0].id);
+  // --- Worker mort : seul un TXT modifié est reconstruit ; un document riche, un onglet propre ne sont jamais réécrits en texte nu ---------------
+  while (list().length > 1) await tabsApi.close(list().find(tab => tab.id !== tabsApi.active).id, { confirm: false });
+  const rich = active();
+  await typeAndWait("riche");
+  const docx = new Uint8Array(await (await fetch("/fixtures/basic.docx")).arrayBuffer());
+  bridge.nextOpen = { name: "mis.docx", format: "docx", bytes: docx, identity: "C:/d/mis.docx" };
   document.querySelector("#open-document").click();
-  await waitFor(() => !tabsApi.flags.opening && app.editor.state?.docLen > 300000, "a text larger than the text window opens");
-  const huge = active();
+  await waitFor(() => list().length === 2 && !tabsApi.flags.opening && app.editor.state?.docLen > 0, "a formatted DOCX opens");
+  const formatted = active();
+  key(app.editor.element, "a", { ctrlKey: true });
+  await waitFor(() => app.editor.state.anchor === 0 && app.editor.state.focus === app.editor.state.docLen, "selected");
+  await app.formatController.run(client => client.applyCharFormat({ scope: "wordOrTyping", edits: [{ attr: "bold", op: "set", value: true }] }));
+  await waitFor(() => formatted.editor.state.dirty, "the DOCX is modified (bold)");
+  bridge.nextOpen = { name: "modif.txt", format: "txt", bytes: encoder.encode("texte A"), identity: "C:/d/modif.txt" };
+  document.querySelector("#open-document").click();
+  await waitFor(() => list().length === 3 && !tabsApi.flags.opening && app.editor.state?.docLen === 7, "a TXT opens");
+  const plainModified = active();
+  type("X"); await waitFor(() => plainModified.editor.state.dirty, "the TXT is modified");
+  bridge.nextOpen = { name: "propre.txt", format: "txt", bytes: encoder.encode("texte propre"), identity: "C:/d/propre.txt" };
+  document.querySelector("#open-document").click();
+  await waitFor(() => list().length === 4 && !tabsApi.flags.opening && app.editor.state?.docLen === 12, "a second TXT opens");
+  const plainClean = active();
   await settleLayout();
-  type("Z"); await waitFor(() => huge.editor.state.dirty, "the large document is modified");
-  while (list().length < 4) { await newTab(); await typeAndWait("m" + list().length); }
-  for (const tab of list().slice(0, 3)) { await tabsApi.activate(tab.id); if (!tab.dirty) { type("+"); await waitFor(() => tab.editor.state.dirty, "modified"); } }
-  const before = new Map();
-  for (const tab of list()) before.set(tab.docId, await textOf(tab));
-  const tabCountBeforeKill = list().length;
-  const modifiedCount = list().filter(tab => tab.editor.state.dirty).length;
-  assert(modifiedCount >= 3, "three modified tabs and more");
+  const textsBefore = new Map();
+  for (const tab of list()) textsBefore.set(tab.docId, await textOf(tab));
+  const filesBeforeKill = bridge.files.length;
   app.client.close();
   inputText(app.editor.element, "!");
   await waitFor(() => !document.querySelector("#engine-lost-banner").hidden && tabsApi.lost?.kind === "worker", "a dead Worker is announced");
   assert(!document.querySelector('#engine-lost-banner [data-action="restart"]').hidden, "the banner offers to restart the engine");
   assert(!document.querySelector('#engine-lost-banner [data-action="copy"]').hidden, "copying the displayed text stays available when the Worker is dead");
-  assert(list().every(tab => tab.editor.windowText.length > 0 || tab.editor.state.docLen === 0), "every tab still shows its text");
+  assert(list().every(tab => tab.editor.windowText.length > 0), "every tab still shows its text");
   document.querySelector('#engine-lost-banner [data-action="restart"]').click();
-  await waitFor(() => !tabsApi.flags.busy || tabsApi.lost?.kind === "trap" || tabsApi.lost === null, "the engine restarts");
-  await waitFor(() => list().every(tab => tab.id === huge.id ? true : !tab.lost), "the small tabs are rebuilt");
-  assert(list().length === tabCountBeforeKill, "the tabs are kept");
-  for (const tab of list()) {
-    if (tab.id === huge.id) continue;
-    const now = await textOf(tab);
-    assert(now === before.get(tab.docId) && tab.editor.state.dirty, `tab ${tab.title} was rebuilt from its known text and is still modified`);
+  await waitFor(() => tabsApi.lost?.kind === "trap" && /n’ont pas pu être reconstruits/.test(document.querySelector("#engine-lost-banner").textContent), "the engine restarts and says which documents could not be rebuilt");
+  const byDoc = id => list().find(tab => tab.docId === id);
+  const rebuilt = byDoc(plainModified.docId);
+  assert(!rebuilt.lost && rebuilt.editor.documentFormat === "txt" && rebuilt.dirty && await textOf(rebuilt) === textsBefore.get(plainModified.docId), "the modified TXT is rebuilt from its text, as a plain-text document, still modified");
+  for (const tab of [rich, formatted, plainClean]) {
+    const now = byDoc(tab.docId);
+    assert(now.lost && now.editor.windowText.length > 0, `${now.title} is marked lost, not rebuilt, and stays readable`);
   }
-  const hugeNow = list().find(tab => tab.id === huge.id);
-  assert(hugeNow.lost && hugeNow.editor.windowText.length > 1000 && /Document|enorme/.test(document.querySelector("#engine-lost-banner").textContent) && tabsApi.lost?.kind === "trap", "the tab that cannot be rebuilt is marked lost, keeps its text and is not emptied");
-  assert(!document.querySelector('#engine-lost-banner [data-action="blank"]').hidden && !document.querySelector('#engine-lost-banner [data-action="copy"]').hidden, "it can be copied, reopened or replaced");
+  assert(byDoc(formatted.docId).title === "mis.docx" && byDoc(formatted.docId).editor.element.disabled, "the formatted DOCX keeps its name and cannot be saved as bare text");
+  assert(!byDoc(plainClean.docId).dirty && byDoc(plainClean.docId).lost, "a clean tab is never rebuilt as modified");
+  assert(bridge.files.length === filesBeforeKill && !list().some(tab => !tab.lost && tab.docId !== plainModified.docId), "nothing was written, and no rich document was rebuilt");
   // Closing a modified lost tab says what is lost and asks.
-  await tabsApi.activate(hugeNow.id);
+  await tabsApi.activate(rich.id);
   const asks = []; window.confirm = text => { asks.push(text); return false; };
-  assert(await tabsApi.close(hugeNow.id) === false && /fait perdre ces modifications/.test(asks.at(-1)) && list().length === tabCountBeforeKill, "closing a modified lost tab asks first, and refusing keeps it");
+  assert(await tabsApi.close(rich.id) === false && /fait perdre ces modifications/.test(asks.at(-1)) && list().length === 4, "closing a modified lost tab asks first, and refusing keeps it");
   window.confirm = text => { asks.push(text); return true; };
   document.querySelector('#engine-lost-banner [data-action="blank"]').click();
-  await waitFor(() => !tabsApi.lost && /perdre ce texte/.test(asks.at(-1)), "replacing a modified lost tab warns that its text will be lost, then recovers it");
+  await waitFor(() => !byDoc(rich.docId).lost && /perdre ce texte/.test(asks.at(-1)), "replacing a modified lost tab warns that its text will be lost, then recovers it");
+  for (const tab of [formatted, plainClean]) {
+    await tabsApi.activate(tab.id);
+    document.querySelector('#engine-lost-banner [data-action="blank"]').click();
+    await waitFor(() => !byDoc(tab.docId).lost, `${tab.title} recovers`);
+  }
+  await waitFor(() => tabsApi.lost === null && document.querySelector("#engine-lost-banner").hidden, "the banner goes away when every tab is recovered");
   type("ça marche"); await waitFor(async () => (await textOf(active())).includes("ça marche"), "the new engine works");
 
   assert(pageErrors.length === 0, `no page error: ${pageErrors.join(" | ").slice(0, 400)}`);
