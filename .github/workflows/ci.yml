@@ -155,6 +155,10 @@ jobs:
           node tests/file-templates.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-abi.mjs
+          node tests/rich-editor-format.mjs
+          node tests/rich-editor-format-char.mjs
+          node tests/rich-editor-format-para.mjs
+          node tests/rich-editor-format-styles.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-save.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
