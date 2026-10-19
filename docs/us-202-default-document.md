@@ -23,4 +23,4 @@ assert_eq!(resolved.character.size_half_points, Some(22));
 
 Chaque appel construit ses propres arbre, catalogue et moteur. Le modèle `Section` ne porte pas de géométrie typée et l’API `Style` ne contient pas de champ « style suivant »; ces données restent donc dans les métadonnées de la fabrique, sans attribut opaque artificiel ni modification des structures publiques existantes.
 
-Cette fabrique rend le profil disponible aux appelants Rust. Elle ne raccorde pas le bouton Nouveau à l’éditeur riche; US-202 reste partielle jusqu’à cette intégration.
+Le moteur ouvre un document vierge de profil « document » avec cette fabrique, et l’interface (`web/rich-editor.mjs`, `loadDocument("blank")`) l’utilise pour Nouveau et pour le document du démarrage : le document est riche (`FormatState.plain` faux) et Enregistrer sous propose DOCX en premier (Document.docx). Un TXT ouvert reste du texte brut. La page A4 et les marges de 25 mm sont celles de `PageSetup::standard()` (11906 × 16838, marge 1417 twips), que la mise en page applique à une section sans attributs de page ; la langue `fr-FR` reste dans `presentation` et n’est pas portée par le modèle d’édition.

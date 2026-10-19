@@ -44,8 +44,10 @@ export function createFormatController({ editor: initial = null, onError = () =>
   let scheduled = false;
   let pendingRefresh = Promise.resolve();
 
+  // readOnly comes from the editor's own state (always current); plainText from the FormatState, which is dropped when a
+  // document is opened (reason "document") so that a previous document's value never shows.
   const build = state => Object.freeze({
-    state, readOnly: Boolean(state?.readOnly ?? editor?.state?.readOnly ?? false),
+    state, readOnly: Boolean(editor?.state?.readOnly ?? state?.readOnly ?? false),
     plainText: Boolean(state?.plain ?? false), busy: Boolean(editor?.busy),
   });
   const same = (a, b) => a.state === b.state && a.readOnly === b.readOnly && a.plainText === b.plainText && a.busy === b.busy;
@@ -90,7 +92,10 @@ export function createFormatController({ editor: initial = null, onError = () =>
       if (editor) throw new TypeError("The controller already has an editor.");
       if (!target || typeof target.subscribe !== "function" || !target.format) throw new TypeError("An editor with subscribe() and format is required.");
       editor = target;
-      unsubscribeEditor = editor.subscribe(() => { void schedule(); });
+      unsubscribeEditor = editor.subscribe(({ reason } = {}) => {
+        if (reason === "document" && snap.state) publish(build(null));
+        void schedule();
+      });
       return schedule();
     },
     get client() { return editor?.format ?? null; },
@@ -150,7 +155,7 @@ const RESERVED_IDS = new Set(["ctrl+n", "ctrl+o", "ctrl+s", "ctrl+f", "ctrl+h", 
  *   ctrl  : Ctrl ou Cmd requis (défaut faux) ; alt : exact (défaut faux)
  *   shift : exact (défaut faux) ; `undefined` explicite = Maj ignoré (utile pour ">" ou "+", que Maj produit selon la disposition)
  *   run   : appelé avec l'événement quand le focus est dans l'éditeur, qu'aucun dialogue modal n'est ouvert et que
- *           `isEnabled()` est vrai ; le routeur fait preventDefault. `run` doit tester `canFormat(controller.snapshot())`.
+ *           `isEnabled()` est vrai ; le routeur fait preventDefault dans tous les cas (même désactivé). `run` doit tester `canFormat(controller.snapshot())`.
  * Deux modules ne peuvent pas prendre la même combinaison, ni une combinaison réservée (erreur à la création).
  */
 export function createFormatKeyRouter({ document: doc, target, modules = [], isEnabled = () => true } = {}) {
@@ -174,8 +179,8 @@ export function createFormatKeyRouter({ document: doc, target, modules = [], isE
       if (Boolean(binding.ctrl) !== ctrl || Boolean(binding.alt) !== Boolean(event.altKey)) continue;
       if (!("shift" in binding && binding.shift === undefined) && Boolean(binding.shift) !== Boolean(event.shiftKey)) continue;
       if (binding.code ? event.code !== binding.code : key !== String(binding.key).toLowerCase()) continue;
+      event.preventDefault(); // the shortcut is ours even when disabled: it must not reach the browser
       if (!isEnabled()) return;
-      event.preventDefault();
       binding.run(event);
       return;
     }

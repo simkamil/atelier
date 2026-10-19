@@ -912,9 +912,13 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
 
   // ---- documents ------------------------------------------------------------------------------------------
 
-  /** Opens `data` as `format` ("blank" | "txt" | "docx"): the previous document survives a refused Open. */
+  /**
+   * Opens `data` as `format` ("blank" | "txt" | "docx"): the previous document survives a refused Open. A blank document is
+   * a rich document with the default profile of US-202 (A4, Carlito 11 pt, default styles; `FormatState.plain` is false) and
+   * is saved as DOCX first; only a TXT file opened as such stays plain text.
+   */
   async function loadDocument(format, data = new Uint8Array(), name = null) {
-    const spec = format === "blank" ? { kind: "blank", profile: "txt", data: new Uint8Array() }
+    const spec = format === "blank" ? { kind: "blank", profile: "document", data: new Uint8Array() }
       : format === "txt" ? { kind: "txt", profile: "txt", data } : { kind: "docx", profile: "document", data };
     replacedPending = true;
     scrollWanted = false;
@@ -932,7 +936,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     visibleFlat = null;
     prefetchKey = "";
     lastClipboard = null;
-    origin = { format: format === "blank" ? "txt" : format, name };
+    origin = { format: format === "blank" ? "docx" : format, name };
     resetZoom();
     if (!state) throw new EditorError("EDITOR_INVALID_STATE");
     return state;
