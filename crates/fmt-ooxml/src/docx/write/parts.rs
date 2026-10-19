@@ -5,8 +5,8 @@
 use super::super::preserve::{PreservedChild, PreservedElement, PreservedPart};
 use super::super::{ppr_rank, rpr_rank};
 use super::props::{
-    GenEl, Item, Prefixes, ThemeRefs, local_of, local_of_bytes, merge_ppr, merge_rpr, new_ppr,
-    new_rpr,
+    GenChild, GenEl, Item, Prefixes, ThemeRefs, local_of, local_of_bytes, merge_ppr, merge_rpr,
+    new_ppr, new_rpr,
 };
 use super::xml::Out;
 use super::{PageSetup, StyleDecl, WriteNotice};
@@ -30,7 +30,9 @@ pub(super) fn put(out: &mut Out, g: &GenEl) {
         g.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
     );
     for c in &g.children {
-        put(out, c);
+        if let GenChild::Gen(c) = c {
+            put(out, c);
+        }
     }
     out.end();
 }

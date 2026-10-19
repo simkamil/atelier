@@ -282,7 +282,7 @@ export function createParaFormat({ document, i18n, controller, announce = () => 
     const toggle = side => { sides[side] = current[side].state === "value" ? "none" : line(side); };
     if (choice === "none") for (const side of Object.keys(sides)) sides[side] = "none";
     else if (choice === "all") for (const side of ["top", "left", "bottom", "right", "between"]) sides[side] = line(side);
-    else if (choice === "outside") { for (const side of ["top", "left", "bottom", "right"]) sides[side] = line(side); sides.between = "none"; }
+    else if (choice === "outside") { for (const side of ["top", "left", "bottom", "right"]) sides[side] = line(side); }
     else toggle(choice === "inside" ? "between" : choice);
     return client.applyParaFormat({ edits: [{ attr: "borders", op: "set", value: sides }] });
   }, i18n.t(choice === "none" ? "para-status-borders-none" : "para-status-borders"));

@@ -374,6 +374,17 @@ try {
   borders.click(); await waitFor(() => !bordersMenu.hidden, "menu reopened for none");
   borderItems()[4].click();
   await waitFor(() => ["top", "left", "bottom", "right", "between"].every(side => paragraph()?.borders[side].state === "unset"), "No border clears them");
+  // "Outside borders" leaves the inside line alone (Word): inside first, then outside, the line between stays.
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu for the inside line");
+  borderItems()[7].click();
+  await waitFor(() => paragraph()?.borders.between.state === "value" && paragraph().borders.top.state === "unset", "the inside horizontal line is set alone");
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu for the outside borders");
+  borderItems()[6].click();
+  await waitFor(() => ["top", "left", "bottom", "right"].every(side => paragraph()?.borders[side].state === "value"), "Outside borders sets the four sides");
+  assert(paragraph().borders.between.state === "value", "Outside borders does not touch the line between paragraphs");
+  borders.click(); await waitFor(() => !bordersMenu.hidden, "menu for none again");
+  borderItems()[4].click();
+  await waitFor(() => paragraph()?.borders.between.state === "unset" && paragraph().borders.top.state === "unset", "No border clears everything");
   // The mixed state of one side: the middle paragraph alone gets a top border.
   await toTop(); key(editor.element, "ArrowDown"); await quiet();
   borders.click(); await waitFor(() => !bordersMenu.hidden, "menu for the middle paragraph");
@@ -434,8 +445,9 @@ try {
   document.querySelector("#undo").click();
   await waitFor(() => paragraph()?.borders.left.state === "unset" && paragraph()?.shading.state === "unset", "the second undo removes the box and the shading together");
   await toTop(); await quiet();
-  const restored = inkLines();
-  assert(restored.length === plainLines.length && restored.every((line, i) => Math.abs(line.top - plainLines[i].top) < 1), "the Canvas is back to the original geometry after Ctrl+Z");
+  const sameAsPlain = () => { const now = inkLines(); return now.length === plainLines.length && now.every((line, i) => Math.abs(line.top - plainLines[i].top) < 1); };
+  await waitFor(() => { void toTop; return sameAsPlain(); }, "the Canvas is back to the original geometry after Ctrl+Z");
+  checks.push("the Canvas is back to the original geometry after Ctrl+Z");
 
   // ---- formatting marks (T243-C) --------------------------------------------------------------------------------------------------
   const { createParaFormat } = await import("/format-para.mjs");

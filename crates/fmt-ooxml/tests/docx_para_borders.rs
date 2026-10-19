@@ -149,3 +149,52 @@ fn changed_borders_and_shading_are_written_in_order_and_read_back() {
         ParaBorderStyle::Single
     );
 }
+
+#[test]
+fn changing_one_side_rewrites_only_that_side() {
+    let top = r#"<w:top w:val="single" w:sz="12" w:space="3" w:color="auto" w:themeColor="accent1" w:themeShade="BF"/>"#;
+    let left = r#"<w:left w:val="wave" w:sz="6" w:space="4" w:color="00FF00" w:shadow="1"/>"#;
+    let right = r#"<w:right w:val="thick" w:sz="18" w:space="2" w:color="FF00FF" w:frame="1"/>"#;
+    let bottom = r#"<w:bottom w:val="single" w:sz="4" w:space="1" w:color="000000"/>"#;
+    let mut imp = doc_with(&format!(
+        "<w:p><w:pPr><w:pBdr>{top}{left}{bottom}{right}</w:pBdr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>"
+    ));
+    let id = imp.paragraph_ids()[0];
+    let set = ParaProps {
+        borders: ParaBorders {
+            bottom: Some(ParaBorder {
+                style: ParaBorderStyle::Double,
+                eighths: 16,
+                space: 2,
+                color: Some(red()),
+            }),
+            ..ParaBorders::default()
+        },
+        ..ParaProps::default()
+    };
+    imp.document
+        .apply(
+            &Transaction::new(vec![RichOp::SetParaProps {
+                para: id,
+                set,
+                clear: ParaProps::default(),
+            }])
+            .unwrap(),
+        )
+        .unwrap();
+    let bytes = written(&imp);
+    let text = String::from_utf8(bytes.clone()).unwrap();
+    assert!(order_problems(&parse(&bytes)).is_empty(), "{text}");
+    for kept in [top, left, right] {
+        assert!(text.contains(kept), "{kept} in {text}");
+    }
+    assert!(
+        !text.contains(bottom) && text.contains(r#"w:val="double""#),
+        "{text}"
+    );
+    let order: Vec<_> = ["w:top", "w:left", "w:bottom", "w:right"]
+        .iter()
+        .map(|n| text.find(n).unwrap())
+        .collect();
+    assert!(order.windows(2).all(|w| w[0] < w[1]), "{text}");
+}

@@ -773,3 +773,80 @@ fn marks_of_justified_text_stretch_and_marks_of_a_later_page_use_its_own_coordin
     let first_page_ends = marks(&mut h, 0, 1).iter().filter(|m| m.kind == 0).count();
     assert!(first_page_ends > 20 && ends > 20);
 }
+
+/// A harness with `text` whose paragraphs from flat position `from` carry the shared box.
+fn boxed_from(text: &str, from: u64) -> Harness {
+    let mut h = Harness::new();
+    h.type_text(text);
+    h.select(from, text.len() as u64);
+    apply(&mut h, vec![box_of(border(0, 8, 1))]);
+    h
+}
+
+#[test]
+fn the_neighbours_of_a_shared_box_are_laid_out_again_after_typing_enter_and_a_deleted_break() {
+    // "one" plain, "two" and "three" share a box.
+    let mut h = boxed_from(
+        "one
+two
+three",
+        4,
+    );
+    // Typing in the first paragraph of the box.
+    h.select(7, 7);
+    h.type_text("XY");
+    let fresh = mark_ys(&mut boxed_from(
+        "one
+twoXY
+three",
+        4,
+    ));
+    assert_eq!(mark_ys(&mut h), fresh, "after typing");
+    // Enter in the middle of the box: the new paragraph joins it.
+    h.select(9, 9);
+    h.type_text(
+        "
+",
+    );
+    let fresh = mark_ys(&mut boxed_from(
+        "one
+twoXY
+
+three",
+        4,
+    ));
+    assert_eq!(mark_ys(&mut h), fresh, "after Enter");
+    // Deleting the break again gives the first geometry back.
+    h.select(10, 10);
+    assert!(matches!(
+        h.send(Command::Delete {
+            forward: false,
+            unit: crate::rich_protocol::DeleteUnit::Grapheme,
+        }),
+        Response::State(_)
+    ));
+    let fresh = mark_ys(&mut boxed_from(
+        "one
+twoXY
+three",
+        4,
+    ));
+    assert_eq!(mark_ys(&mut h), fresh, "after the deleted break");
+    // Deleting the break between the plain paragraph and the box.
+    h.select(4, 4);
+    h.send(Command::Delete {
+        forward: false,
+        unit: crate::rich_protocol::DeleteUnit::Grapheme,
+    });
+    // The merged paragraph keeps the (plain) properties of the first one; "three" is a box of its own.
+    let after = mark_ys(&mut h);
+    assert_eq!(
+        after,
+        mark_ys(&mut boxed_from(
+            "onetwoXY
+three",
+            9
+        )),
+        "after merging the plain paragraph and the box"
+    );
+}

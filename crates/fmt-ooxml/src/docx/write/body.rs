@@ -13,7 +13,7 @@ use super::super::{ppr_rank, rpr_rank};
 use super::WriteNotice;
 use super::legacy::{Legacy, LegacyItem, legacy};
 use super::props::{
-    GenEl, Item, Prefixes, ThemeRefs, insert_ranked, local_of, local_of_bytes, merge_ppr,
+    GenChild, GenEl, Item, Prefixes, ThemeRefs, insert_ranked, local_of, local_of_bytes, merge_ppr,
     merge_rpr, new_ppr, new_rpr,
 };
 use super::xml::{Out, xml_char};
@@ -307,7 +307,10 @@ impl<'a> Gen<'a> {
             g.attrs.iter().map(|(k, v)| (k.as_str(), v.as_str())),
         );
         for c in &g.children {
-            self.write_gen(c);
+            match c {
+                GenChild::Gen(c) => self.write_gen(c),
+                GenChild::Raw(b) => self.out.raw(b),
+            }
         }
         self.out.end();
     }

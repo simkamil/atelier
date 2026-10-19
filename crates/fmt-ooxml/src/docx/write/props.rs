@@ -15,7 +15,15 @@ use atelier_text_model::rich::{
 pub(super) struct GenEl {
     pub name: String,
     pub attrs: Vec<(String, String)>,
-    pub children: Vec<GenEl>,
+    pub children: Vec<GenChild>,
+}
+
+/// A child of a built element: built, or kept as the source wrote it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum GenChild {
+    Gen(GenEl),
+    /// The XML of a child of the source, byte for byte.
+    Raw(Vec<u8>),
 }
 
 /// One child of a merged property element.
@@ -588,25 +596,26 @@ pub(super) fn para_fam_elems(
             let mut el = p.el("pBdr", &[]);
             for (name, side) in NAMES.iter().zip(cur.borders.sides()) {
                 let Some(b) = side else { continue };
-                el.children.push(if b.style == ParaBorderStyle::None {
-                    p.el(name, &[("val", "nil".into())])
-                } else {
-                    let val = match b.style {
-                        ParaBorderStyle::Double => "double",
-                        ParaBorderStyle::Dotted => "dotted",
-                        ParaBorderStyle::Dashed => "dashed",
-                        _ => "single",
-                    };
-                    p.el(
-                        name,
-                        &[
-                            ("val", val.into()),
-                            ("sz", b.eighths.to_string()),
-                            ("space", b.space.to_string()),
-                            ("color", b.color.map_or_else(|| "auto".into(), hex)),
-                        ],
-                    )
-                });
+                el.children
+                    .push(GenChild::Gen(if b.style == ParaBorderStyle::None {
+                        p.el(name, &[("val", "nil".into())])
+                    } else {
+                        let val = match b.style {
+                            ParaBorderStyle::Double => "double",
+                            ParaBorderStyle::Dotted => "dotted",
+                            ParaBorderStyle::Dashed => "dashed",
+                            _ => "single",
+                        };
+                        p.el(
+                            name,
+                            &[
+                                ("val", val.into()),
+                                ("sz", b.eighths.to_string()),
+                                ("space", b.space.to_string()),
+                                ("color", b.color.map_or_else(|| "auto".into(), hex)),
+                            ],
+                        )
+                    }));
             }
             if !el.children.is_empty() {
                 out.push(el);
@@ -636,6 +645,83 @@ pub(super) fn para_fam_elems(
         }
     }
     out
+}
+
+/// The qualified name of the root of serialized XML and the XML of each of its
+/// children (`(local name, bytes)`); `None` when the text is not that simple.
+type Split = (String, Vec<(String, Vec<u8>)>);
+
+fn split_children(xml: &[u8]) -> Option<Split> {
+    let text = std::str::from_utf8(xml).ok()?;
+    let open_end = text.find('>')?;
+    let root = text[1..]
+        .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .next()?
+        .to_owned();
+    if text[..open_end].ends_with('/') {
+        return Some((root, Vec::new()));
+    }
+    let close = text.rfind("</")?;
+    let mut rest = &text[open_end + 1..close];
+    let mut out = Vec::new();
+    while let Some(start) = rest.find('<') {
+        rest = &rest[start..];
+        let name = rest[1..]
+            .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+            .next()?;
+        let tag_end = rest.find('>')?;
+        let len = if rest[..tag_end].ends_with('/') {
+            tag_end + 1
+        } else {
+            let closing = format!("</{name}>");
+            rest.find(&closing)? + closing.len()
+        };
+        out.push((local_of(name).to_owned(), rest.as_bytes()[..len].to_vec()));
+        rest = &rest[len..];
+    }
+    Some((root, out))
+}
+
+/// A `w:pBdr` rebuilt for `cur` keeps, for every side the user did not change,
+/// the source child as it was written (theme colours, shadow, frame, styles
+/// the model does not draw).
+fn keep_unchanged_sides(items: &[Item<'_>], base: &ParaProps, cur: &ParaProps, new: &mut [GenEl]) {
+    const NAMES: [(&str, &str); 6] = [
+        ("top", "top"),
+        ("left", "start"),
+        ("bottom", "bottom"),
+        ("right", "end"),
+        ("between", "between"),
+        ("bar", "bar"),
+    ];
+    let Some((root, sides)) = items.iter().find_map(|i| match i {
+        Item::Skel(PreservedChild::Opaque(b)) if local_of_bytes(b) == "pBdr" => split_children(b),
+        _ => None,
+    }) else {
+        return;
+    };
+    let (before, now) = (base.borders.sides(), cur.borders.sides());
+    let Some(el) = new.first_mut().filter(|e| local_of(&e.name) == "pBdr") else {
+        return;
+    };
+    el.name = root;
+    let mut rebuilt = Vec::new();
+    for (k, (name, alias)) in NAMES.iter().enumerate() {
+        if before[k] == now[k] {
+            let kept = sides
+                .iter()
+                .find(|(local, _)| [*name, *alias].contains(&local.as_str()));
+            rebuilt.extend(kept.map(|(_, xml)| GenChild::Raw(xml.clone())));
+        } else {
+            rebuilt.extend(
+                el.children
+                    .iter()
+                    .filter(|c| matches!(c, GenChild::Gen(g) if local_of(&g.name) == *name))
+                    .cloned(),
+            );
+        }
+    }
+    el.children = rebuilt;
 }
 
 /// The `w:pPr` children for `cur` merged with the source children `skel`.
@@ -681,6 +767,11 @@ pub(super) fn merge_ppr<'a>(
                         children: Vec::new(),
                     });
                 }
+            }
+        }
+        if fam == ParaFam::Borders {
+            if let Some(b) = base {
+                keep_unchanged_sides(&items, b, cur, &mut new);
             }
         }
         replace_family(&mut items, owns, new, ppr_rank, false);
