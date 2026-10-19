@@ -336,6 +336,36 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/document-mirror.css"),
     },
     Resource {
+        path: "/format-char.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/format-char.css"),
+    },
+    Resource {
+        path: "/format-para.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/format-para.css"),
+    },
+    Resource {
+        path: "/rich-editor-format.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/rich-editor-format.mjs"),
+    },
+    Resource {
+        path: "/format-controller.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/format-controller.mjs"),
+    },
+    Resource {
+        path: "/format-char.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/format-char.mjs"),
+    },
+    Resource {
+        path: "/format-para.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/format-para.mjs"),
+    },
+    Resource {
         path: "/fonts/Carlito-Regular.ttf",
         mime: "font/ttf",
         bytes: include_bytes!("../../../data/fonts/carlito/Carlito-Regular.ttf"),
@@ -603,6 +633,58 @@ mod tests {
         assert!(
             CSP.contains("default-src 'none'") && CSP.contains("connect-src https://app.atelier")
         );
+    }
+
+    /// Every web module or stylesheet reachable from the page must be embedded.
+    #[test]
+    fn every_referenced_web_file_is_embedded() {
+        use std::collections::BTreeSet;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web");
+        let embedded: BTreeSet<&str> = RESOURCES.iter().map(|r| r.path).collect();
+        let mut seen = BTreeSet::new();
+        let mut todo = vec![String::from("/index.html")];
+        let mut missing = Vec::new();
+        while let Some(file) = todo.pop() {
+            if !seen.insert(file.clone()) {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(root.join(&file[1..])) else {
+                missing.push(format!("{file} (absent on disk)"));
+                continue;
+            };
+            if file != "/index.html" && !embedded.contains(file.as_str()) {
+                missing.push(file.clone());
+            }
+            let dir = file.rsplit_once('/').map_or("", |(d, _)| d);
+            let mut rest = text.as_str();
+            while let Some(q) = rest.find(['"', '\'']) {
+                let quote = rest.as_bytes()[q] as char;
+                let after = &rest[q + 1..];
+                let Some(end) = after.find(quote) else { break };
+                let lit = &after[..end];
+                rest = &after[end + 1..];
+                if !(lit.ends_with(".mjs") || lit.ends_with(".css"))
+                    || lit.contains(['\n', ' ', ':', '$', '{'])
+                    || !(lit.starts_with("./") || lit.starts_with('/') || !lit.contains('/'))
+                {
+                    continue;
+                }
+                let target = if lit.starts_with('/') {
+                    lit.to_string()
+                } else {
+                    format!("{dir}/{}", lit.trim_start_matches("./"))
+                };
+                if root.join(&target[1..]).exists() || !target.contains("..") {
+                    todo.push(target);
+                }
+            }
+        }
+        assert!(
+            seen.len() > 20,
+            "import graph looks truncated: {}",
+            seen.len()
+        );
+        assert!(missing.is_empty(), "web files not embedded: {missing:?}");
     }
 
     #[test]
