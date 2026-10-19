@@ -156,6 +156,18 @@ await scenario("a keystroke between a lost reply and its read-back does not fool
   assert.equal(engine.applied.length, 1);
 });
 
+await scenario("two queued commands: the second waits for the resolution of the first, whose reply is lost", async () => {
+  const { engine, transport, format } = await setup();
+  let lost = false;
+  transport.loseReply = (c) => { if (c.type === "applyCharFormat" && !lost) { lost = true; return true; } return false; };
+  const first = format.applyCharFormat({ edits: [bold] });
+  const second = format.applyParaFormat({ edits: [{ attr: "alignment", op: "set", value: "center" }] });
+  await assert.rejects(first, (e) => e.outcome === "applied");
+  assert.equal((await second).outcome, "applied");
+  assert.deepEqual(engine.applied.map((x) => x.type), ["applyCharFormat", "applyParaFormat"]);
+  assert.equal(engine.last, engine.applied[1].id);
+});
+
 await scenario("a command that only sets typing attributes (no revision) is still settled", async () => {
   const { engine, transport, format } = await setup();
   engine.typingOnly = true;
@@ -268,4 +280,4 @@ await scenario("real WASM: a plain-text document reports it and refuses formatti
   client.dispose();
 });
 
-suite.finish("rich-editor-format", 12);
+suite.finish("rich-editor-format", 13);

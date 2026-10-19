@@ -611,7 +611,16 @@ export function createFormatClient(client) {
    * needed: every attempt takes a new identifier; an attempt whose outcome is unknown is settled by the engine, which
    * reports the last identifier it accepted (`lastCommandId`), never by comparing revisions.
    */
-  async function changing(command, signal) {
+  // One changing command in flight per client, its resolution included: a second one queued behind a command whose
+  // reply was lost would overwrite `lastCommandId` before the read-back and turn "applied" into "not-applied".
+  let chain = Promise.resolve();
+  function changing(command, signal) {
+    const run = chain.then(() => changingNow(command, signal));
+    chain = run.catch(() => {});
+    return run;
+  }
+
+  async function changingNow(command, signal) {
     const commandId = takeId();
     let sent = false;
     try {
