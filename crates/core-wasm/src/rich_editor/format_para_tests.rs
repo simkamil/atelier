@@ -383,8 +383,7 @@ fn line_and_page_breaks_are_marked_apart() {
     )
     .unwrap();
     let mut h = Harness::new();
-    h.editor.active =
-        Some(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+    h.editor.install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     let marks = match h.send(Command::FormatMarks { first: 0, count: 2 }) {
         Response::FormatMarks { marks, .. } => marks,
         other => panic!("{other:?}"),
@@ -534,10 +533,9 @@ fn marks_of_a_page_that_is_not_laid_out_are_not_ready() {
     }
     doc.apply(&Transaction::new(ops).unwrap()).unwrap();
     let mut h = Harness::new();
-    h.editor.active =
-        Some(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+    h.editor.install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     let (page_count, complete) = {
-        let cache = &h.editor.active.as_ref().unwrap().cache;
+        let cache = &h.editor.session().cache;
         (cache.page_count(), cache.layout_complete())
     };
     assert!(
@@ -546,7 +544,7 @@ fn marks_of_a_page_that_is_not_laid_out_are_not_ready() {
     );
     // The first page is laid out; a page the layout has not reached yet is not ready, never a partial list.
     assert!(!marks(&mut h, 0, 1).is_empty());
-    let session = h.editor.active.as_ref().unwrap();
+    let session = h.editor.session();
     assert_eq!(
         session
             .cache

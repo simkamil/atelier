@@ -30,9 +30,9 @@ use crate::rich_protocol::{
 };
 
 /// Distinct pictures one document may receive through `InsertImage` (US-270).
-const MAX_IMAGES: usize = 512;
+pub(super) const MAX_IMAGES: usize = 512;
 /// Encoded bytes of the pictures one document may receive (US-270).
-const MAX_IMAGE_STORE_BYTES: usize = 32 * 1024 * 1024;
+pub(super) const MAX_IMAGE_STORE_BYTES: usize = 32 * 1024 * 1024;
 
 /// How a text file was found, to give it back as it was.
 pub(super) struct TextOrigin {

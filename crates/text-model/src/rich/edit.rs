@@ -50,6 +50,7 @@ use super::ops::RichOp;
 use super::paragraph::{CharRun, Paragraph};
 
 mod format;
+mod paste;
 
 /// Entries kept in each stack; the oldest are dropped beyond it.
 const MAX_HISTORY: usize = 10_000;

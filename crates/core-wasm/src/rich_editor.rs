@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! Session of the rich editor (ATED v2, US-217).
 //!
-//! One active document: a `RichDocument` edited in place through `FlatEdit`
-//! and its `PageCache`, driven by the commands of
-//! `docs/us-203-rich-editor-protocol.md`. Nothing is cloned per command; a
-//! refused command leaves the session unchanged (every check runs before the
-//! first mutation, and the model rolls back a failed edit itself).
+//! Several documents (T0, `docs/us-327-multidoc-protocol.md`): each one a
+//! `Session` holding a `RichDocument` edited in place through `FlatEdit` and
+//! its `PageCache`, driven by the commands of
+//! `docs/us-203-rich-editor-protocol.md`. A command names its document by the
+//! envelope's document id and touches that session only. Nothing is cloned per
+//! command; a refused command leaves the session unchanged (every check runs
+//! before the first mutation, and the model rolls back a failed edit itself).
 //!
 //! Replies carry the pages that changed (`rich_protocol::split_page_delta`),
 //! never the whole document. Every edit, move and selection command also runs
@@ -29,6 +31,9 @@ mod accessible;
 mod find;
 #[cfg(test)]
 mod find_tests;
+mod fragment;
+#[cfg(test)]
+mod fragment_tests;
 // Formatting (F0): `format_state` is written; the three others are the
 // extension modules of US-240, US-243 and US-250.
 mod format_char;
@@ -62,12 +67,49 @@ pub fn is_rich(payload: &[u8]) -> bool {
     payload.len() >= 8 && payload[..4] == proto::MAGIC && payload[4..6] == [2, 0]
 }
 
-/// The rich editor of one engine instance (at most one active document).
+/// Documents an engine instance keeps open at once (`RICH_TOO_MANY_DOCUMENTS`).
+pub const MAX_DOCUMENTS: usize = 8;
+/// Budget of the estimated memory of all documents, in bytes (`RICH_MEMORY`).
+/// The estimate is a proxy, not a measurement: see `Session::weight`.
+pub const MEMORY_BUDGET: usize = 1 << 30;
+/// Estimated engine bytes per byte of source (or of flat text), whichever is larger.
+const WEIGHT_FACTOR: usize = 8;
+/// Estimated fixed cost of a document (layout caches, glyph atlas, index).
+const WEIGHT_BASE: usize = 2 << 20;
+/// Estimated engine bytes per byte of a picture or of a pasted fragment.
+const WEIGHT_PER_PAYLOAD_BYTE: usize = 4;
+
+/// Bounds of one engine instance (tests lower them).
+#[derive(Clone, Copy)]
+struct Limits {
+    max_documents: usize,
+    memory_budget: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_documents: MAX_DOCUMENTS,
+            memory_budget: MEMORY_BUDGET,
+        }
+    }
+}
+
+/// The rich editor of one engine instance: the open documents, by id.
 #[derive(Default)]
 pub struct RichEditor {
-    active: Option<Session>,
-    /// Atlas epoch of the last closed document (a new `Open` never reuses it).
+    sessions: Vec<Session>,
+    /// Highest atlas epoch of a session that was closed or replaced (a new
+    /// `Open` never reuses an epoch of its document id).
     last_epoch: u32,
+    /// Font faces given by `LoadFonts` to any document: a document opened
+    /// later receives them at `Open` (the faces themselves are interned for
+    /// the life of the engine, `format_char::intern_fonts`).
+    faces: Vec<&'static [u8]>,
+    /// Document id of the last request answered: the document whose reply is
+    /// lost when the host calls `mark_resync`.
+    last_doc: Option<u32>,
+    limits: Limits,
 }
 
 struct Session {
@@ -116,6 +158,13 @@ struct Session {
     last_command_id: u32,
     /// `ListFonts` answer and the revision it was computed at.
     fonts_memo: Option<(u64, crate::rich_protocol::FontListData)>,
+    /// Font faces added to `cache` (`LoadFonts`, or the engine's at `Open`):
+    /// a rebuilt cache receives them again.
+    fonts: Vec<&'static [u8]>,
+    /// Estimated engine memory of the document, in bytes (`RICH_MEMORY`): the
+    /// larger of the source and the flat text times `WEIGHT_FACTOR`, a fixed
+    /// base, and the payload of pictures and pasted fragments.
+    weight: usize,
 }
 
 /// Paragraphs of layout a move, a hit test or a caret may run to reach its
@@ -141,9 +190,50 @@ impl RichEditor {
         }
     }
 
-    /// Document id of the active document, if any.
+    /// Id of the document opened last that is still open (the application of
+    /// one document opens its id again), `None` when none is open.
     pub fn active_document(&self) -> Option<u32> {
-        self.active.as_ref().map(|s| s.id)
+        self.sessions.last().map(|s| s.id)
+    }
+
+    /// Ids of the open documents, in the order they were opened.
+    pub fn document_ids(&self) -> Vec<u32> {
+        self.sessions.iter().map(|s| s.id).collect()
+    }
+
+    /// The only document of a single-document test.
+    #[cfg(test)]
+    fn session(&self) -> &Session {
+        self.sessions.last().expect("a document is open")
+    }
+
+    #[cfg(test)]
+    fn session_mut(&mut self) -> &mut Session {
+        self.sessions.last_mut().expect("a document is open")
+    }
+
+    /// Replaces every document by `session` (tests that build a document with items).
+    #[cfg(test)]
+    fn install(&mut self, session: Session) {
+        self.sessions.clear();
+        self.sessions.push(session);
+    }
+
+    /// An engine with other bounds (tests).
+    #[cfg(test)]
+    fn with_limits(max_documents: usize, memory_budget: usize) -> Self {
+        Self {
+            limits: Limits {
+                max_documents,
+                memory_budget,
+            },
+            ..Self::default()
+        }
+    }
+
+    /// Estimated memory of every open document.
+    fn total_weight(&self) -> usize {
+        self.sessions.iter().map(|s| s.weight).sum()
     }
 
     fn transact(&mut self, payload: &[u8]) -> Result<Vec<u8>, ErrorCode> {
@@ -165,6 +255,7 @@ impl RichEditor {
         let response = self
             .execute(request.doc_id, request.command)
             .unwrap_or_else(Response::Error);
+        self.last_doc = Some(request.doc_id);
         let mut reply = Reply {
             doc_id: request.doc_id,
             request_id: request.request_id,
@@ -182,41 +273,107 @@ impl RichEditor {
     }
 
     /// Records that the last reply never reached the client (the host calls it
-    /// when the ABI refuses a response, `STATUS_LIMIT`, `EDITOR_RESPONSE_LIMIT`).
+    /// when the ABI refuses a response, `STATUS_LIMIT`, `EDITOR_RESPONSE_LIMIT`):
+    /// the document of that reply resynchronises, the others are untouched.
     pub fn mark_resync(&mut self) {
-        if let Some(session) = self.active.as_mut() {
+        let doc = self.last_doc;
+        if let Some(session) = self.sessions.iter_mut().find(|s| Some(s.id) == doc) {
             session.mark_resync();
         }
     }
 
     fn execute(&mut self, id: u32, command: Command) -> Result<Response, ErrorCode> {
+        let slot = self.sessions.iter().position(|s| s.id == id);
         if let Command::Open {
             kind,
             profile,
             data,
         } = command
         {
-            // The previous document survives a refused `Open`.
-            let mut session = Session::open(id, kind, profile, &data)?;
-            session.epoch = self
-                .active
-                .as_ref()
-                .map_or(self.last_epoch, |s| s.epoch)
-                .wrapping_add(1);
-            let state = session.open_state()?;
-            self.active = Some(session);
-            return Ok(Response::State(state));
+            return self.open(id, slot, kind, profile, &data);
         }
-        let session = match self.active.as_mut() {
-            Some(s) if s.id == id => s,
-            _ => return Err(ErrorCode::UnknownDocument),
+        let Some(slot) = slot else {
+            return Err(ErrorCode::UnknownDocument);
         };
         if matches!(command, Command::Close) {
-            self.last_epoch = session.epoch;
-            self.active = None;
+            let session = self.sessions.remove(slot);
+            self.last_epoch = self.last_epoch.max(session.epoch);
             return Ok(Response::Closed);
         }
-        session.run(command)
+        // Payload that stays in memory for the life of the document.
+        let extra = match &command {
+            Command::InsertImage { bytes, .. } | Command::PasteFragment { bytes } => {
+                bytes.len().saturating_mul(WEIGHT_PER_PAYLOAD_BYTE)
+            }
+            _ => 0,
+        };
+        if extra > 0 && self.total_weight().saturating_add(extra) > self.limits.memory_budget {
+            return Err(ErrorCode::Memory);
+        }
+        let loaded = match &command {
+            Command::LoadFonts(files) => Some(files.clone()),
+            _ => None,
+        };
+        let response = self.sessions[slot].run(command)?;
+        let session = &mut self.sessions[slot];
+        session.weight = session.weight.saturating_add(extra);
+        if let Some(files) = loaded {
+            // The session accepted them: they are interned, so this only
+            // finds them again. Every later document receives them at `Open`.
+            if let Some(faces) = format_char::intern_fonts(files) {
+                for face in faces {
+                    if !session.fonts.contains(&face) {
+                        session.fonts.push(face);
+                    }
+                    if !self.faces.contains(&face) {
+                        self.faces.push(face);
+                    }
+                }
+            }
+        }
+        Ok(response)
+    }
+
+    /// `Open`: builds the new session first, so that a refusal (limit, memory,
+    /// unreadable source) leaves every open document as it was. An id already
+    /// open is replaced (the application of one document opens id 1 again).
+    fn open(
+        &mut self,
+        id: u32,
+        slot: Option<usize>,
+        kind: OpenKind,
+        profile: Profile,
+        data: &[u8],
+    ) -> Result<Response, ErrorCode> {
+        if slot.is_none() && self.sessions.len() >= self.limits.max_documents {
+            return Err(ErrorCode::TooManyDocuments);
+        }
+        let others: usize = self
+            .sessions
+            .iter()
+            .filter(|s| s.id != id)
+            .map(|s| s.weight)
+            .sum();
+        let budget = self.limits.memory_budget;
+        // Refused on the source alone, before it is parsed.
+        if others.saturating_add(Session::estimate(data.len(), 0)) > budget {
+            return Err(ErrorCode::Memory);
+        }
+        let mut session = Session::open(id, kind, profile, data)?;
+        session.weight = Session::estimate(data.len(), session.doc.len());
+        if others.saturating_add(session.weight) > budget {
+            return Err(ErrorCode::Memory);
+        }
+        let replaced = slot.map_or(0, |i| self.sessions[i].epoch);
+        session.epoch = self.last_epoch.max(replaced).wrapping_add(1);
+        session.give_fonts(&self.faces);
+        let state = session.open_state()?;
+        self.last_epoch = self.last_epoch.max(session.epoch);
+        match slot {
+            Some(i) => self.sessions[i] = session,
+            None => self.sessions.push(session),
+        }
+        Ok(Response::State(state))
     }
 }
 
@@ -326,7 +483,28 @@ impl Session {
             added_styles: Vec::new(),
             last_command_id: 0,
             fonts_memo: None,
+            fonts: Vec::new(),
+            weight: 0,
         })
+    }
+
+    /// Estimated memory of a document of `source` bytes and `text` flat bytes.
+    fn estimate(source: usize, text: usize) -> usize {
+        source
+            .max(text)
+            .saturating_mul(WEIGHT_FACTOR)
+            .saturating_add(WEIGHT_BASE)
+    }
+
+    /// Gives the cache the font faces the engine already holds. A face the
+    /// font manager refuses is left out: the document is laid out without it.
+    fn give_fonts(&mut self, faces: &[&'static [u8]]) {
+        if faces.is_empty() {
+            return;
+        }
+        if self.cache.add_fonts(layout_doc!(self), faces).is_ok() {
+            self.fonts = faces.to_vec();
+        }
     }
 
     /// Restarts the glyph atlas: new epoch, no entry, no painted page.
@@ -355,6 +533,11 @@ impl Session {
         let old = self.cache.page_count();
         if let Ok(cache) = PageCache::new(layout_doc!(self), self.txt) {
             self.cache = cache;
+            // The faces loaded on demand belong to the cache that is gone.
+            if !self.fonts.is_empty() {
+                let faces = std::mem::take(&mut self.fonts);
+                self.give_fonts(&faces);
+            }
             // A fresh cache numbers its atlas from 0.
             self.epoch = self.epoch.wrapping_add(1);
             let count = self.cache.page_count();
@@ -593,6 +776,12 @@ impl Session {
             Command::ListFonts => self.list_fonts(),
             Command::LoadFonts(fonts) => self.load_fonts(fonts),
             Command::FormatMarks { first, count } => self.format_marks(first, count),
+            Command::CopyFragment {
+                revision,
+                start,
+                end,
+            } => self.copy_fragment(revision, start, end),
+            Command::PasteFragment { bytes } => self.paste_fragment(&bytes),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(

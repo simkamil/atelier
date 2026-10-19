@@ -50,6 +50,10 @@ export const RICH_LIMITS = Object.freeze({
   maxHighlightRects: 8192,
   maxPropertyBytes: 64 * 1024,
   maxReplaceMatches: 5000,
+  // T0: documents kept at once (RICH_TOO_MANY_DOCUMENTS) and the rich fragment.
+  maxDocuments: 8,
+  maxFragmentBytes: 16 * 1024 * 1024,
+  maxFragmentTextBytes: 1024 * 1024,
 });
 export const NO_CARET = 0xffffffff;
 
@@ -65,6 +69,8 @@ export const RichOpcode = Object.freeze({
   SelectionRects: 0x0120, ImageBitmap: 0x0121, SelectUnit: 0x0122,
   // R7c: text drag and drop.
   MoveText: 0x0140,
+  // T0: rich fragment (copy and paste between documents).
+  CopyFragment: 0x0170, PasteFragment: 0x0171,
   // R7b-2: search, replace, statistics, properties.
   Search: 0x0130, Statistics: 0x0131, SearchRects: 0x0132, Replace: 0x0133, ReplaceAll: 0x0134,
   PropertiesRead: 0x0135, PropertiesApply: 0x0136,
@@ -76,6 +82,7 @@ export const RichReplyOpcode = Object.freeze({
   AccessibleWindow: 0x8105,
   SaveData: 0x8106,
   SelectionRects: 0x8110, ImageBitmap: 0x8111,
+  Fragment: 0x8140,
   SearchResult: 0x8120, Statistics: 0x8121, SearchRects: 0x8122, Replaced: 0x8123, Properties: 0x8125, PropertiesApplied: 0x8126,
   ...FormatReplyOpcode,
 });
@@ -94,6 +101,8 @@ export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
   RICH_EMPTY_QUERY: 40, RICH_STALE_MATCH: 41, RICH_QUERY_TOO_LARGE: 42, RICH_PROPERTIES_FAILED: 43, RICH_TOO_MANY_MATCHES: 44,
   // R7c (codes 50 to 59)
   RICH_MOVE_UNSUPPORTED: 50,
+  // T0 (codes 70 to 79): several documents and the fragment
+  RICH_TOO_MANY_DOCUMENTS: 70, RICH_MEMORY: 71, RICH_FRAGMENT_INVALID: 72, RICH_EMPTY_SELECTION: 73,
   // F0 (codes 60 to 69)
   ...FormatErrorCode,
 }));
@@ -368,6 +377,20 @@ function parseCommand(opcode, body) {
       command = { type: "moveText", start, end, target, copy };
       break;
     }
+    case RichOpcode.CopyFragment: {
+      const revision = r.u64();
+      const start = r.u64();
+      const end = r.u64();
+      if (start > end) fail("RICH_INVALID_RANGE");
+      command = { type: "copyFragment", revision, start, end };
+      break;
+    }
+    case RichOpcode.PasteFragment: {
+      const len = r.u32();
+      if (len > RICH_LIMITS.maxFragmentBytes) fail("RICH_LIMIT");
+      command = { type: "pasteFragment", bytes: r.take(len) };
+      break;
+    }
     case RichOpcode.Search: case RichOpcode.Statistics: case RichOpcode.SearchRects: case RichOpcode.Replace:
     case RichOpcode.ReplaceAll: case RichOpcode.PropertiesRead: case RichOpcode.PropertiesApply:
       command = readFindCommand(opcode, r); break;
@@ -448,6 +471,11 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "moveText":
       w.u64(u64(command.start)); w.u64(u64(command.end)); w.u64(u64(command.target)); w.u8(command.copy ? 1 : 0, 0, 0, 0);
       opcode = RichOpcode.MoveText; break;
+    case "copyFragment": w.u64(u64(command.revision)); w.u64(u64(command.start)); w.u64(u64(command.end)); opcode = RichOpcode.CopyFragment; break;
+    case "pasteFragment":
+      if (!(command.bytes instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+      if (command.bytes.length > RICH_LIMITS.maxFragmentBytes) fail("RICH_LIMIT");
+      w.u32(command.bytes.length); w.raw(command.bytes); opcode = RichOpcode.PasteFragment; break;
     case "search": case "statistics": case "searchRects": case "replace": case "replaceAll":
     case "propertiesRead": case "propertiesApply":
       opcode = writeFindCommand(w, command); break;
@@ -627,6 +655,27 @@ function readSaveData(r) {
     notices.push({ code, text });
   }
   return { type: "saveData", revision, bytes, notices };
+}
+
+/**
+ * `Fragment` (T0): {revision (BigInt), lossy, text, bytes}. `text` is the plain text of the range (what `TextWindow`
+ * gives, U+FFFC for objects); `bytes` is the opaque fragment (a view into the frame) to give back to `pasteFragment`.
+ */
+function readFragment(r) {
+  const revision = r.u64();
+  const flags = r.u32();
+  if (flags > 1) fail("RICH_INVALID_BODY");
+  const text = r.text(RICH_LIMITS.maxFragmentTextBytes, "RICH_LIMIT");
+  const len = r.u32();
+  if (len > RICH_LIMITS.maxFragmentBytes) fail("RICH_LIMIT");
+  return { type: "fragment", revision, lossy: flags === 1, text, bytes: r.take(len) };
+}
+
+function writeFragment(w, response) {
+  if (!(response.bytes instanceof Uint8Array)) fail("RICH_INVALID_BODY");
+  if (response.bytes.length > RICH_LIMITS.maxFragmentBytes || encoder.encode(response.text).length > RICH_LIMITS.maxFragmentTextBytes) fail("RICH_LIMIT");
+  w.u64(u64(response.revision)); w.u32(response.lossy ? 1 : 0); w.text(response.text);
+  w.u32(response.bytes.length); w.raw(response.bytes);
 }
 
 function writeSaveData(w, response) {
@@ -1122,6 +1171,7 @@ export function decodeRichReply(bytes) {
         break;
       }
       case RichReplyOpcode.SaveData: response = readSaveData(r); break;
+      case RichReplyOpcode.Fragment: response = readFragment(r); break;
       case RichReplyOpcode.SelectionRects: response = readSelectionRects(r); break;
       case RichReplyOpcode.ImageBitmap: response = readImageBitmap(r); break;
       case RichReplyOpcode.SearchResult: case RichReplyOpcode.Statistics: case RichReplyOpcode.SearchRects:
@@ -1152,6 +1202,7 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     case "closed": opcode = RichReplyOpcode.Closed; break;
     case "accessibleWindow": w.u64(u64(response.revision)); writeAccessible(w, response.items); opcode = RichReplyOpcode.AccessibleWindow; break;
     case "saveData": writeSaveData(w, response); opcode = RichReplyOpcode.SaveData; break;
+    case "fragment": writeFragment(w, response); opcode = RichReplyOpcode.Fragment; break;
     case "selectionRects": writeSelectionRects(w, response); opcode = RichReplyOpcode.SelectionRects; break;
     case "imageBitmap": writeImageBitmap(w, response); opcode = RichReplyOpcode.ImageBitmap; break;
     case "searchResult": case "statistics": case "searchRects": case "replaced": case "properties": case "propertiesApplied":

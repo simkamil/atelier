@@ -8,6 +8,7 @@
 import { decodeRichReply, encodeRichRequest, RichProtocolError } from "./rich-editor-protocol.mjs";
 import { EditorPageCache, RichClientError } from "./editor-page-cache.mjs";
 import { FORMAT_REPLY_TYPE } from "./rich-editor-format.mjs";
+import { decodeMessage, encodeMessage, MessageType } from "./wasm-protocol.mjs";
 
 export { EditorPageCache, RichClientError };
 
@@ -20,17 +21,43 @@ const REPLY_TYPE = {
   selectionRects: "selectionRects", imageBitmap: "imageBitmap", selectUnit: "state",
   // R7c: text drag and drop (State).
   moveText: "state",
+  // T0: rich fragment. `copyFragment` carries no page (NOT_CACHE_INPUT); `pasteFragment` answers a State.
+  copyFragment: "fragment", pasteFragment: "state",
   // R7b-2: search, replace, statistics, properties. `replaced` and `propertiesApplied` carry a State (applied to the cache).
   search: "searchResult", statistics: "statistics", searchRects: "searchRects", replace: "replaced", replaceAll: "replaced",
   propertiesRead: "properties", propertiesApply: "propertiesApplied",
   // F0: formatting. The commands that change the document answer a State; FormatState and StyleList carry no page.
   ...FORMAT_REPLY_TYPE,
 };
-const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData", "selectionRects", "imageBitmap", "searchResult", "statistics", "searchRects", "properties", "formatState", "styleList", "fontList", "formatMarks"]);
+const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData", "fragment", "selectionRects", "imageBitmap", "searchResult", "statistics", "searchRects", "properties", "formatState", "styleList", "fontList", "formatMarks"]);
 /** Replies whose result changes the document or the state the cache holds. */
 const STATEFUL = new Set(["state", "replaced", "propertiesApplied"]);
 
 const RICH_MAX_PAGES_PER_REQUEST = 16;
+
+/**
+ * Transport of the clients of every document of one engine (T0): one v2 frame in an `Editor` message of the outer
+ * protocol, over the engine client (`request(bytes, {signal})` resolving with the outer reply). The outer request ids
+ * come from ONE counter, so create it once per engine client and give it to every `createRichEditorClient`: the Worker
+ * refuses two requests with the same id (`DUPLICATE_REQUEST_ID`), which two transports of their own would produce.
+ * Errors carry the codes of `createTransport` of web/rich-editor.mjs (EDITOR_RESPONSE_MISMATCH, EDITOR_ENGINE_FAILED).
+ */
+export function createEngineTransport(engine) {
+  if (!engine || typeof engine.request !== "function") throw new TypeError("engine must provide request().");
+  let outer = 2n;
+  return Object.freeze({
+    async request(frame, { signal } = {}) {
+      const id = outer;
+      outer = outer === 0xffffffffffffffffn ? 2n : outer + 1n;
+      const bytes = await engine.request(encodeMessage({ type: MessageType.Editor, requestId: id, payload: frame }), { signal });
+      const message = decodeMessage(bytes, "event");
+      if (message.requestId !== id) throw new RichClientError("EDITOR_RESPONSE_MISMATCH", "Reply of another request.");
+      if (message.type === MessageType.Failed) throw new RichClientError("EDITOR_ENGINE_FAILED", new TextDecoder().decode(message.payload));
+      if (message.type !== MessageType.EditorResult) throw new RichClientError("EDITOR_RESPONSE_MISMATCH", "Unexpected outer reply.");
+      return message.payload;
+    },
+  });
+}
 
 function abortError() { return new DOMException("The operation was aborted.", "AbortError"); }
 const isAbort = (error) => error?.name === "AbortError";
@@ -481,6 +508,21 @@ export function createRichEditorClient({
         const { response } = await exchange({ type: "accessibleWindow", start, end }, callerSignal);
         return { revision: response.revision, items: response.items };
       }, callerSignal);
+    },
+    /**
+     * Rich fragment of [start, end) (flat positions, BigInt) at the current revision (T0): resolves
+     * `{revision, lossy, text, bytes}`; `bytes` (a copy) goes to `pasteFragment` of any document of the engine, `text`
+     * is what the system clipboard receives. Changes neither the cache nor the document.
+     */
+    copyFragment(start, end, { signal: callerSignal } = {}) {
+      return enqueue(async () => {
+        const { response } = await exchange({ type: "copyFragment", revision: cache.revision ?? 0n, start, end }, callerSignal);
+        return { revision: response.revision, lossy: response.lossy, text: response.text, bytes: response.bytes.slice() };
+      }, callerSignal);
+    },
+    /** Replaces the selection by a fragment, one undo step (T0); resolves like any State-answered command. */
+    pasteFragment(bytes, { signal: callerSignal } = {}) {
+      return enqueue(async () => { replayMove = null; return guarded({ type: "pasteFragment", bytes }, callerSignal); }, callerSignal);
     },
     /** Fetch the unknown pages of [first, end), retrying after Layout on RICH_NOT_READY. */
     ensurePages(first, end, { signal: callerSignal } = {}) {
