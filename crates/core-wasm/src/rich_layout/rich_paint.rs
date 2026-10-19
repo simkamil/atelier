@@ -79,6 +79,16 @@ pub(crate) fn paint_line(
         origin_x: margin_x,
         origin_y: margin_y,
     } = placed;
+    // Highlights go under the glyphs of the line (T240-D).
+    let (highlights, lines) = decorations(
+        &deco_glyphs(paragraph, line, baseline, (margin_x, margin_y), &|offset| {
+            glyph_style(defaults, paragraph, offset)
+        })?,
+        (margin_y + baseline) as f64 * ATDL_SCALE,
+    );
+    for draw in &highlights {
+        push_draw(sink, page_commands, page_path_elements, draw)?;
+    }
     for glyph in line.fragments.iter().flat_map(|fragment| &fragment.glyphs) {
         let glyph_text = paragraph
             .text
@@ -225,39 +235,10 @@ pub(crate) fn paint_line(
                 });
             }
         }
-        if attrs.underline.is_some_and(|u| u != Underline::None) && glyph.x_advance > 0 {
-            let glyph_size_pt = glyph.size as f64 * ATDL_SCALE;
-            let y = origin_y + glyph_size_pt * 0.12;
-            let path = DisplayPath::new(vec![
-                PathElement::MoveTo(Point::try_new(origin_x, y).map_err(render_error)?),
-                PathElement::LineTo(
-                    Point::try_new(origin_x + glyph.x_advance as f64 * ATDL_SCALE, y)
-                        .map_err(render_error)?,
-                ),
-            ])
-            .map_err(render_error)?;
-            *page_path_elements = (*page_path_elements)
-                .checked_add(2)
-                .ok_or(PreviewError::Limit("path elements"))?;
-            if *page_path_elements > atelier_render::limits::MAX_PATH_ELEMENTS {
-                return Err(PreviewError::Limit("path elements"));
-            }
-            if page_commands.len() >= atelier_render::limits::MAX_COMMANDS {
-                return Err(PreviewError::Limit("commands"));
-            }
-            charge_estimate(&mut sink.estimated_atdl_bytes, 34, 39)?;
-            page_commands.push(Command::StrokePath {
-                path,
-                color,
-                style: StrokeStyle::new(
-                    (glyph_size_pt * 0.045).max(1.0 / 64.0),
-                    LineCap::Butt,
-                    LineJoin::Miter,
-                    4.0,
-                )
-                .map_err(render_error)?,
-            });
-        }
+    }
+    // Underlines and strike-throughs go over the glyphs of the line.
+    for draw in &lines {
+        push_draw(sink, page_commands, page_path_elements, draw)?;
     }
     Ok(())
 }
@@ -437,6 +418,314 @@ pub(crate) fn render_error(e: impl fmt::Display) -> PreviewError {
 }
 
 // ---------------------------------------------------------------------------
+// Decorations (US-240: highlight, five underline styles, strike-through)
+//
+// One geometry shared by `paint_line` and `paint_line_fast`, so that both write
+// the same bytes: the glyphs of a line are gathered per run of adjacent
+// decorated glyphs (a dotted or wavy line keeps its phase over several glyphs).
+// ---------------------------------------------------------------------------
+
+/// A decoration to draw: a filled rectangle or a stroked polyline of
+/// `(move, point)` pairs, in points of the page.
+enum Draw {
+    Fill {
+        color: Color,
+        rect: [f64; 4],
+    },
+    Stroke {
+        color: Color,
+        width: f64,
+        round: bool,
+        points: Vec<(bool, [f64; 2])>,
+    },
+}
+
+/// The geometry of one decorated glyph.
+struct DecoGlyph {
+    x: f64,
+    advance: f64,
+    y: f64,
+    size: f64,
+    style: GlyphStyle,
+}
+
+fn stroke_style(width: f64, round: bool) -> Result<StrokeStyle, PreviewError> {
+    StrokeStyle::new(
+        width,
+        LineCap::Butt,
+        if round {
+            LineJoin::Round
+        } else {
+            LineJoin::Miter
+        },
+        4.0,
+    )
+    .map_err(render_error)
+}
+
+fn point(p: [f64; 2]) -> Result<Point, PreviewError> {
+    Point::try_new(p[0], p[1]).map_err(render_error)
+}
+
+/// The path elements of a decoration (validated like any display path).
+fn draw_elements(draw: &Draw) -> Result<Vec<PathElement>, PreviewError> {
+    let elements = match draw {
+        Draw::Fill {
+            rect: [x0, y0, x1, y1],
+            ..
+        } => vec![
+            PathElement::MoveTo(point([*x0, *y0])?),
+            PathElement::LineTo(point([*x1, *y0])?),
+            PathElement::LineTo(point([*x1, *y1])?),
+            PathElement::LineTo(point([*x0, *y1])?),
+            PathElement::Close,
+        ],
+        Draw::Stroke { points, .. } => points
+            .iter()
+            .map(|(start, p)| {
+                point(*p).map(|p| {
+                    if *start {
+                        PathElement::MoveTo(p)
+                    } else {
+                        PathElement::LineTo(p)
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    DisplayPath::new(elements.clone()).map_err(render_error)?;
+    if let Draw::Stroke { width, round, .. } = draw {
+        stroke_style(*width, *round)?;
+    }
+    Ok(elements)
+}
+
+/// One decoration of `paint_line`, into the commands of its page.
+fn push_draw(
+    sink: &mut PaintSink,
+    page_commands: &mut Vec<Command>,
+    page_path_elements: &mut usize,
+    draw: &Draw,
+) -> Result<(), PreviewError> {
+    let elements = draw_elements(draw)?;
+    *page_path_elements = (*page_path_elements)
+        .checked_add(elements.len())
+        .ok_or(PreviewError::Limit("path elements"))?;
+    if *page_path_elements > atelier_render::limits::MAX_PATH_ELEMENTS {
+        return Err(PreviewError::Limit("path elements"));
+    }
+    if page_commands.len() >= atelier_render::limits::MAX_COMMANDS {
+        return Err(PreviewError::Limit("commands"));
+    }
+    charge_estimate(&mut sink.estimated_atdl_bytes, 17 * elements.len(), 39)?;
+    let path = DisplayPath::new(elements).map_err(render_error)?;
+    page_commands.push(match draw {
+        Draw::Fill { color, .. } => Command::FillPath {
+            path,
+            color: *color,
+            rule: FillRule::NonZero,
+        },
+        Draw::Stroke {
+            color,
+            width,
+            round,
+            ..
+        } => Command::StrokePath {
+            path,
+            color: *color,
+            style: stroke_style(*width, *round)?,
+        },
+    });
+    Ok(())
+}
+
+/// The decorated glyphs of a line (no tab, line break or inline box), with
+/// their page position.
+fn deco_glyphs(
+    paragraph: &Paragraph,
+    line: &LayoutLine,
+    baseline: i64,
+    margin: (i64, i64),
+    style_at: &dyn Fn(usize) -> Result<GlyphStyle, PreviewError>,
+) -> Result<Vec<DecoGlyph>, PreviewError> {
+    let mut out = Vec::new();
+    for glyph in line.fragments.iter().flat_map(|fragment| &fragment.glyphs) {
+        if glyph.glyph_id == atelier_text_layout::INLINE_BOX_GLYPH || glyph.x_advance <= 0 {
+            continue;
+        }
+        let Some(text) = paragraph.text.get(glyph.source.clone()) else {
+            continue;
+        };
+        if text
+            .chars()
+            .all(|character| matches!(character, '\t' | '\r' | '\n'))
+        {
+            continue;
+        }
+        let style = style_at(glyph.source.start)?;
+        if style.underline == Underline::None && !style.strike && style.highlight.is_none() {
+            continue;
+        }
+        out.push(DecoGlyph {
+            x: (margin.0 + glyph.x) as f64 * ATDL_SCALE,
+            advance: glyph.x_advance as f64 * ATDL_SCALE,
+            y: (margin.1 + glyph.y + baseline - line.baseline) as f64 * ATDL_SCALE,
+            size: glyph.size as f64 * ATDL_SCALE,
+            style,
+        });
+    }
+    Ok(out)
+}
+
+/// Index ranges of the runs of adjacent glyphs of `items` that `same` groups.
+fn runs(
+    items: &[DecoGlyph],
+    wanted: impl Fn(&DecoGlyph) -> bool,
+    same: impl Fn(&DecoGlyph, &DecoGlyph) -> bool,
+) -> Vec<(usize, usize)> {
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        if !wanted(item) {
+            continue;
+        }
+        if let Some(last) = out.last_mut() {
+            let prev = &items[last.1 - 1];
+            if last.1 == i && (item.x - (prev.x + prev.advance)).abs() < 0.05 && same(prev, item) {
+                last.1 = i + 1;
+                continue;
+            }
+        }
+        out.push((i, i + 1));
+    }
+    out
+}
+
+/// Highlights (before the glyphs) and underlines and strike-throughs (after
+/// them) of a line. `line_y` is the baseline of the line.
+fn decorations(items: &[DecoGlyph], line_y: f64) -> (Vec<Draw>, Vec<Draw>) {
+    let mut highlights = Vec::new();
+    for (a, b) in runs(
+        items,
+        |g| g.style.highlight.is_some(),
+        |p, g| p.style.highlight == g.style.highlight,
+    ) {
+        let size = items[a..b].iter().fold(0.0f64, |m, g| m.max(g.size));
+        let last = &items[b - 1];
+        if let Some(color) = items[a].style.highlight {
+            highlights.push(Draw::Fill {
+                color,
+                rect: [
+                    items[a].x,
+                    line_y - size * 0.95,
+                    last.x + last.advance,
+                    line_y + size * 0.27,
+                ],
+            });
+        }
+    }
+    let mut lines = Vec::new();
+    for (a, b) in runs(
+        items,
+        |g| g.style.underline != Underline::None,
+        |p, g| {
+            p.style.underline == g.style.underline
+                && p.style.color == g.style.color
+                && p.y == g.y
+                && p.size == g.size
+        },
+    ) {
+        let first = &items[a];
+        let last = &items[b - 1];
+        underline(
+            &mut lines,
+            first.style.underline,
+            first.style.color,
+            (first.x, last.x + last.advance),
+            first.y + first.size * 0.12,
+            first.size,
+        );
+    }
+    for (a, b) in runs(
+        items,
+        |g| g.style.strike,
+        |p, g| p.style.color == g.style.color && p.y == g.y && p.size == g.size,
+    ) {
+        let first = &items[a];
+        let last = &items[b - 1];
+        let y = first.y - first.size * 0.30;
+        lines.push(Draw::Stroke {
+            color: first.style.color,
+            width: (first.size * 0.045).max(1.0 / 64.0),
+            round: false,
+            points: vec![(true, [first.x, y]), (false, [last.x + last.advance, y])],
+        });
+    }
+    (highlights, lines)
+}
+
+/// The strokes of one underline of `kind` from `x.0` to `x.1` at `y`.
+fn underline(out: &mut Vec<Draw>, kind: Underline, color: Color, x: (f64, f64), y: f64, size: f64) {
+    let t = (size * 0.045).max(1.0 / 64.0);
+    let flat = |width: f64| Draw::Stroke {
+        color,
+        width,
+        round: false,
+        points: vec![(true, [x.0, y]), (false, [x.1, y])],
+    };
+    let dashes = |dash: f64, gap: f64| {
+        let mut points = Vec::new();
+        let mut at = x.0;
+        while at < x.1 {
+            points.push((true, [at, y]));
+            points.push((false, [(at + dash).min(x.1), y]));
+            at += dash + gap;
+        }
+        Draw::Stroke {
+            color,
+            width: t,
+            round: false,
+            points,
+        }
+    };
+    match kind {
+        Underline::None => {}
+        Underline::Single => out.push(flat(t)),
+        Underline::Thick => out.push(flat(t * 2.0)),
+        Underline::Double => out.push(Draw::Stroke {
+            color,
+            width: t,
+            round: false,
+            points: vec![
+                (true, [x.0, y - t]),
+                (false, [x.1, y - t]),
+                (true, [x.0, y + t]),
+                (false, [x.1, y + t]),
+            ],
+        }),
+        Underline::Dotted => out.push(dashes(t * 1.5, t * 1.5)),
+        Underline::Dashed => out.push(dashes(t * 6.0, t * 3.0)),
+        Underline::Wave => {
+            let amplitude = t * 1.2;
+            let step = t * 2.4;
+            let mut points = vec![(true, [x.0, y])];
+            let mut at = x.0;
+            let mut low = true;
+            while at < x.1 {
+                at = (at + step).min(x.1);
+                points.push((false, [at, if low { y + amplitude } else { y }]));
+                low = !low;
+            }
+            out.push(Draw::Stroke {
+                color,
+                width: t * 0.9,
+                round: true,
+                points,
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Direct page writer (editor page cache)
 //
 // `paint_line` builds a `Command` per glyph, which `DisplayList::encode`
@@ -449,13 +738,15 @@ pub(crate) fn render_error(e: impl fmt::Display) -> PreviewError {
 // commands straight into a byte vector.
 // ---------------------------------------------------------------------------
 
-/// Colour, weight, slant and underline of the glyphs of one run.
+/// Colour, weight, slant and decorations of the glyphs of one run.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GlyphStyle {
     color: Color,
     bold: bool,
     italic: bool,
-    underline: bool,
+    underline: Underline,
+    strike: bool,
+    highlight: Option<Color>,
 }
 
 fn glyph_style(
@@ -473,7 +764,9 @@ fn glyph_style(
             .unwrap_or(Color::new(0.0, 0.0, 0.0, 1.0).map_err(render_error)?),
         bold: attrs.bold == Some(true),
         italic: attrs.italic == Some(true),
-        underline: attrs.underline.is_some_and(|u| u != Underline::None),
+        underline: attrs.underline.unwrap_or(Underline::None),
+        strike: attrs.strike == Some(true),
+        highlight: attrs.highlight.map(|c| color(c.r, c.g, c.b)).transpose()?,
     })
 }
 
@@ -911,37 +1204,51 @@ impl PageWriter {
         Ok(())
     }
 
-    fn underline(
-        &mut self,
-        color: Color,
-        width: f64,
-        from: [f64; 2],
-        to: [f64; 2],
-    ) -> Result<(), PreviewError> {
+    /// One decoration (highlight, underline, strike-through).
+    fn draw(&mut self, draw: &Draw) -> Result<(), PreviewError> {
         self.flush_run()?;
         // Same validation as the display path of `paint_line`.
-        DisplayPath::new(vec![
-            PathElement::MoveTo(Point::try_new(from[0], from[1]).map_err(render_error)?),
-            PathElement::LineTo(Point::try_new(to[0], to[1]).map_err(render_error)?),
-        ])
-        .map_err(render_error)?;
-        let style =
-            StrokeStyle::new(width, LineCap::Butt, LineJoin::Miter, 4.0).map_err(render_error)?;
-        self.count_command(2)?;
+        let elements = draw_elements(draw)?;
+        self.count_command(elements.len())?;
         let out = &mut self.bytes;
-        out.push(2);
-        put_color_bytes(out, color);
-        out.extend_from_slice(&style.width.to_le_bytes());
-        out.push(style.cap as u8);
-        out.push(style.join as u8);
-        out.extend_from_slice(&style.miter_limit.to_le_bytes());
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.push(0);
-        out.extend_from_slice(&from[0].to_le_bytes());
-        out.extend_from_slice(&from[1].to_le_bytes());
-        out.push(1);
-        out.extend_from_slice(&to[0].to_le_bytes());
-        out.extend_from_slice(&to[1].to_le_bytes());
+        match draw {
+            Draw::Fill { color, .. } => {
+                out.push(1);
+                out.push(0); // FillRule::NonZero
+                put_color_bytes(out, *color);
+            }
+            Draw::Stroke {
+                color,
+                width,
+                round,
+                ..
+            } => {
+                let style = stroke_style(*width, *round)?;
+                out.push(2);
+                put_color_bytes(out, *color);
+                out.extend_from_slice(&style.width.to_le_bytes());
+                out.push(style.cap as u8);
+                out.push(style.join as u8);
+                out.extend_from_slice(&style.miter_limit.to_le_bytes());
+            }
+        }
+        out.extend_from_slice(&(elements.len() as u32).to_le_bytes());
+        for element in &elements {
+            match *element {
+                PathElement::MoveTo(p) => {
+                    out.push(0);
+                    out.extend_from_slice(&p.x().to_le_bytes());
+                    out.extend_from_slice(&p.y().to_le_bytes());
+                }
+                PathElement::LineTo(p) => {
+                    out.push(1);
+                    out.extend_from_slice(&p.x().to_le_bytes());
+                    out.extend_from_slice(&p.y().to_le_bytes());
+                }
+                PathElement::Close => out.push(4),
+                _ => {}
+            }
+        }
         Ok(())
     }
 
@@ -987,6 +1294,16 @@ pub(crate) fn paint_line_fast(
         baseline,
         margin,
     } = placed;
+    // Highlights go under the glyphs of the line, underlines and strike-throughs over them.
+    let (highlights, lines) = decorations(
+        &deco_glyphs(paragraph, line, baseline, margin, &|offset| {
+            Ok(styles.at(offset))
+        })?,
+        (margin.1 + baseline) as f64 * ATDL_SCALE,
+    );
+    for draw in &highlights {
+        writer.draw(draw)?;
+    }
     for glyph in line.fragments.iter().flat_map(|fragment| &fragment.glyphs) {
         if glyph.glyph_id == atelier_text_layout::INLINE_BOX_GLYPH {
             let picture = pictures
@@ -1032,16 +1349,9 @@ pub(crate) fn paint_line_fast(
             }
             _ => {}
         }
-        if style.underline && glyph.x_advance > 0 {
-            let glyph_size_pt = glyph.size as f64 * ATDL_SCALE;
-            let y = origin_y + glyph_size_pt * 0.12;
-            writer.underline(
-                style.color,
-                (glyph_size_pt * 0.045).max(1.0 / 64.0),
-                [origin_x, y],
-                [origin_x + glyph.x_advance as f64 * ATDL_SCALE, y],
-            )?;
-        }
+    }
+    for draw in &lines {
+        writer.draw(draw)?;
     }
     Ok(())
 }

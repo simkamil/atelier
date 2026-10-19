@@ -1647,13 +1647,8 @@ fn parse_char_attrs(node: &XmlNode, theme: &Theme) -> Result<CharAttrs, DocxErro
                         value: b"none".to_vec(),
                     });
                 } else {
-                    a.highlight =
-                        Some(
-                            parse_highlight(value).ok_or_else(|| DocxError::InvalidValue {
-                                part: "WordprocessingML".into(),
-                                detail: format!("invalid highlight color {value:?}"),
-                            })?,
-                        );
+                    // A name outside the sixteen of Word is ignored, as Word does: the run stays unhighlighted.
+                    a.highlight = parse_highlight(value);
                 }
             }
             _ => {}

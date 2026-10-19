@@ -739,18 +739,15 @@ fn the_command_identifier_is_recorded_on_acceptance_and_a_repeat_is_refused() {
         })
     };
     assert_eq!(h.state().last_command_id, 0);
-    // A refused or unimplemented command is never recorded.
-    assert_eq!(
-        h.error(with(7, crate::rich_protocol::NO_REVISION_GUARD)),
-        ErrorCode::FormatNotImplemented
-    );
-    assert_eq!(
-        h.error(with(7, crate::rich_protocol::NO_REVISION_GUARD)),
-        ErrorCode::FormatNotImplemented
-    );
+    // A refused command is never recorded (the stale guard comes after the repeat check).
+    assert_eq!(h.error(with(7, 0)), ErrorCode::StaleRevision);
     assert_eq!(h.state().last_command_id, 0);
-    // An accepted one is (the handlers call `note_command`).
-    h.editor.active.as_mut().unwrap().note_command(7);
+    // An accepted one is, and its repeat is refused.
+    h.select(0, 5);
+    assert!(matches!(
+        h.send(with(7, crate::rich_protocol::NO_REVISION_GUARD)),
+        Response::State(_)
+    ));
     assert_eq!(h.state().last_command_id, 7);
     assert_eq!(
         h.error(with(7, crate::rich_protocol::NO_REVISION_GUARD)),
@@ -759,17 +756,17 @@ fn the_command_identifier_is_recorded_on_acceptance_and_a_repeat_is_refused() {
     // A repeat is a duplicate even with a stale guard; another identifier is not.
     assert_eq!(h.error(with(7, 0)), ErrorCode::DuplicateCommand);
     assert_eq!(h.error(with(8, 0)), ErrorCode::StaleRevision);
-    assert_eq!(
-        h.error(with(8, crate::rich_protocol::NO_REVISION_GUARD)),
-        ErrorCode::FormatNotImplemented
-    );
-    // Identifier 0 means "none": never a duplicate.
-    h.editor.active.as_mut().unwrap().note_command(0);
-    assert_eq!(h.state().last_command_id, 7);
-    assert_eq!(
-        h.error(with(0, crate::rich_protocol::NO_REVISION_GUARD)),
-        ErrorCode::FormatNotImplemented
-    );
+    assert!(matches!(
+        h.send(with(8, crate::rich_protocol::NO_REVISION_GUARD)),
+        Response::State(_)
+    ));
+    assert_eq!(h.state().last_command_id, 8);
+    // Identifier 0 means "none": never a duplicate, never recorded.
+    assert!(matches!(
+        h.send(with(0, crate::rich_protocol::NO_REVISION_GUARD)),
+        Response::State(_)
+    ));
+    assert_eq!(h.state().last_command_id, 8);
     let _ = FormatScope::WordOrTyping;
 }
 

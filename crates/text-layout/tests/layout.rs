@@ -452,7 +452,7 @@ fn mixed_font_sizes_change_only_their_line_extents() {
 }
 
 #[test]
-fn unsupported_rich_controls_are_reported() {
+fn rich_controls_laid_out_are_not_reported_and_tab_stops_are_not_unsupported() {
     let mut paragraph = Paragraph::with_text("link");
     paragraph.runs.push(CharRun {
         start: 0,
@@ -469,11 +469,8 @@ fn unsupported_rich_controls_are_reported() {
         LayoutOptions::new(6400),
     )
     .unwrap();
-    assert!(
-        result
-            .unsupported
-            .contains(&"superscript/subscript baseline shifts")
-    );
+    // US-240 (T240-C): baseline shifts are laid out now (tests/vertical_align.rs), no longer reported.
+    assert!(result.unsupported.is_empty());
 
     let tabs = layout("a\tb", 6400);
     assert!(!tabs.unsupported.contains(&"tab stops (US-211)"));

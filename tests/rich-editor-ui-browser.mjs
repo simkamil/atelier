@@ -205,7 +205,8 @@ try {
     const groupNamed = name => [...document.querySelectorAll("[data-ribbon-group-id]")].find(group => group.querySelector(".ribbon-group-label")?.textContent === name);
     const fontGroup = groupNamed("Police");
     const paragraphGroup = groupNamed("Paragraphe");
-    assert(fontGroup && paragraphGroup && fontGroup.nextElementSibling === paragraphGroup,
+    assert(fontGroup && paragraphGroup && fontGroup.nextElementSibling === paragraphGroup
+      && fontGroup.querySelector("input[role=combobox]")?.getAttribute("aria-label") === "Police",
       "the Home tab shows the groups Police then Paragraphe (filled by format-char.mjs and format-para.mjs)");
     let requests = 0;
     const original = editor.format.formatState;

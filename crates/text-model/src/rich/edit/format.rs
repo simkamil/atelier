@@ -10,10 +10,17 @@
 //! to touch the history.
 
 use super::{
-    Applier, EditOutcome, FlatError, FlatIndex, Item, LayoutScope, Meta, RichDocument, RichOp,
+    Applier, EditOutcome, FlatError, FlatIndex, Item, LayoutScope, Meta, NodeId, RichDocument,
+    RichOp,
 };
 
 impl RichDocument {
+    /// Node ids of the flat paragraphs `first..first + count` (opaque blocks
+    /// included), to name the paragraphs of `SetCharAttrs` operations.
+    pub fn flat_node_ids(&self, first: usize, count: usize) -> Vec<NodeId> {
+        self.with_flat(|t| t.range(first, count).iter().map(|e| e.id).collect())
+    }
+
     /// Applies formatting operations (`SetCharAttrs`, `SetParaProps`) in one
     /// history step.
     ///

@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 
-use atelier_font::manager::{FontManager, FontRequest, FontStyle, GenericFamily};
+use atelier_font::manager::{FontManager, FontRequest, FontSource, FontStyle, GenericFamily};
 use atelier_text_layout::caret::{
     CaretAffinity, CaretLayout, CaretOptions, PositionedLine, TextPosition, VerticalDirection,
 };
@@ -268,9 +268,54 @@ pub struct PageCache {
     memo_order: Vec<u32>,
     last_step_work: usize,
     last_stats: StreamStats,
+    /// Faces added by `add_fonts` (US-240, T240-F).
+    added_fonts: Vec<&'static [u8]>,
 }
 
 impl PageCache {
+    /// Registers font faces loaded on demand (US-240, T240-F) and lays the
+    /// document out again: a family the document names that the engine lacked
+    /// is now drawn with its own face. A face already added is skipped. All or
+    /// nothing: when the font manager refuses one (face or byte budget) the
+    /// faces registered by this call are removed and `Err` is returned, the
+    /// session unchanged.
+    pub(crate) fn add_fonts(
+        &mut self,
+        document: &dyn LayoutContext,
+        faces: &[&'static [u8]],
+    ) -> Result<PageDelta, ()> {
+        let mut registered = Vec::new();
+        for face in faces {
+            if self.added_fonts.iter().any(|known| known == face) {
+                continue;
+            }
+            match self.fonts.register(face, 0, FontSource::System) {
+                Ok(id) => registered.push((id, *face)),
+                Err(_) => {
+                    for (id, _) in registered {
+                        let _ = self.fonts.remove(id);
+                    }
+                    return Err(());
+                }
+            }
+        }
+        if registered.is_empty() || self.failed {
+            self.added_fonts
+                .extend(registered.into_iter().map(|(_, face)| face));
+            return Ok(PageDelta::default());
+        }
+        self.added_fonts
+            .extend(registered.into_iter().map(|(_, face)| face));
+        let old_pages = self.stream.page_count();
+        let update = self.rebuild(document);
+        self.pages_hint = self.pages_hint.max(old_pages as u32);
+        let mut delta = self.delta_of(update.as_ref());
+        if old_pages > 0 && !delta.invalidated.iter().any(|(a, _)| *a == 0) {
+            delta.invalidated.push((0, old_pages as u32));
+        }
+        Ok(delta)
+    }
+
     /// The face the engine really draws `requested` (bold, italic) with for the
     /// character `sample`: the metric substitute or the generic fallback when
     /// the font is absent (F0, `FormatState` and `ListFonts`). `None` when no
@@ -1080,6 +1125,7 @@ impl RichPageCache for PageCache {
             memo_order: Vec::new(),
             last_step_work: 0,
             last_stats: StreamStats::default(),
+            added_fonts: Vec::new(),
         };
         cache
             .lay_out_first_pages(document)
@@ -1615,11 +1661,28 @@ mod tests {
                     g: 99,
                     b: 199,
                 }),
+                // US-240: strike-through and highlight, drawn by the same code in both painters.
+                strike: (i % 2 == 1).then_some(true),
+                highlight: (i % 3 != 2).then_some(Color {
+                    r: 255,
+                    g: 255,
+                    b: 0,
+                }),
                 ..CharAttrs::default()
+            };
+            let raised = CharAttrs {
+                vertical_align: Some(if i % 2 == 0 {
+                    atelier_text_model::rich::VerticalAlign::Superscript
+                } else {
+                    atelier_text_model::rich::VerticalAlign::Subscript
+                }),
+                strike: Some(true),
+                underline: Some(Underline::Wave),
+                ..bold.clone()
             };
             let mut p = styled(
                 "underline styles and a missing family \u{e9}\u{2014}",
-                &[(0, 9, attrs), (10, 16, bold.clone())],
+                &[(0, 9, attrs), (10, 16, raised)],
             );
             p.symbols.push(atelier_text_model::rich::InlineSymbol {
                 id: owner.alloc_id().unwrap(),
@@ -1642,6 +1705,69 @@ mod tests {
         }
         assert!(cache.page_count() >= 3);
         (document, cache)
+    }
+
+    /// US-240 (T240-F): faces added after pages were drawn lay the document out
+    /// again; the atlas goes on (new entries after the old ones, same numbering)
+    /// and the pages still expand to the bytes of the preview painter.
+    #[test]
+    fn fonts_added_later_keep_the_atlas_and_the_pages_consistent() {
+        let (document, mut cache) = sample();
+        let (width, height) = (cache.geometry.page_width, cache.geometry.page_height);
+        for page in 0..cache.page_count() as usize {
+            cache.paint_page(page).unwrap();
+        }
+        let (first, mut atlas) = cache.take_atlas();
+        assert_eq!(first, 0);
+        let before = atlas.len();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/fonts/liberation/");
+        let faces: Vec<&'static [u8]> = ["Regular", "Bold", "Italic", "BoldItalic"]
+            .iter()
+            .map(|style| {
+                let bytes = std::fs::read(format!("{dir}LiberationSans-{style}.ttf")).unwrap();
+                &*Box::leak(bytes.into_boxed_slice())
+            })
+            .collect();
+        let delta = cache.add_fonts(&document, &faces).unwrap();
+        assert!(delta.invalidated.iter().any(|(a, _)| *a == 0));
+        // The same faces again: nothing to lay out.
+        assert_eq!(
+            cache.add_fonts(&document, &faces).unwrap(),
+            PageDelta::default()
+        );
+        while !cache.layout_complete() {
+            cache.step(&document, 16);
+        }
+        let pages: Vec<Vec<u8>> = (0..cache.page_count() as usize)
+            .map(|page| cache.paint_page(page).unwrap())
+            .collect();
+        let (first, more) = cache.take_atlas();
+        assert_eq!(first as usize, before, "new entries follow the old ones");
+        atlas.extend(more);
+        for (page, bytes) in pages.iter().enumerate() {
+            assert_eq!(
+                expand(bytes, &atlas, width, height),
+                slow_page(&cache, &document, page),
+                "page {page}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_face_the_manager_refuses_leaves_the_cache_as_it_was() {
+        let (document, mut cache) = sample();
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../data/fonts/liberation/LiberationSans-Regular.ttf"
+        ))
+        .unwrap();
+        let good: &'static [u8] = Box::leak(bytes.into_boxed_slice());
+        // Not a font: the manager refuses it, and the good face before it is rolled back.
+        let bad: &'static [u8] = &[0, 1, 2, 3];
+        assert!(cache.add_fonts(&document, &[good, bad]).is_err());
+        assert!(cache.added_fonts.is_empty());
+        assert!(cache.add_fonts(&document, &[good]).is_ok());
+        assert_eq!(cache.added_fonts.len(), 1);
     }
 
     #[test]

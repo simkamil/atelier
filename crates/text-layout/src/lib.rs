@@ -21,7 +21,7 @@ use atelier_font::manager::{
 };
 use atelier_shape::{LatinShaper, ShapeError, ShapeOptions};
 use atelier_text_model::rich::{
-    Alignment, CharAttrs, LineRule, LineSpacing, Paragraph, ResolvedProperties,
+    Alignment, CharAttrs, LineRule, LineSpacing, Paragraph, ResolvedProperties, VerticalAlign,
 };
 use atelier_unicode::line_break::{BreakKind, line_breaks};
 use atelier_unicode::segmentation::grapheme_boundaries;
@@ -189,6 +189,8 @@ struct Span {
     font_id: FontId,
     family: String,
     size: i64,
+    /// Baseline raise in 1/64 pt (superscript > 0, subscript < 0).
+    shift: i64,
     representative: char,
     request: FontRequest,
 }
@@ -687,13 +689,6 @@ fn layout_paragraph_impl(
 
     let mut unsupported = Vec::new();
     if paragraph
-        .runs
-        .iter()
-        .any(|r| r.attrs.vertical_align.is_some())
-    {
-        unsupported.push("superscript/subscript baseline shifts");
-    }
-    if paragraph
         .anchored
         .iter()
         .any(|x| x.offset <= paragraph.text.len())
@@ -760,9 +755,16 @@ fn build_spans(
         let mut attrs = default_character.clone();
         attrs.overlay(&paragraph.attrs_at(source.start));
         let size_half = attrs.size_half_points.unwrap_or(22);
-        let size = i64::from(size_half)
+        let full_size = i64::from(size_half)
             .checked_mul(32)
             .ok_or(LayoutError::ArithmeticOverflow)?;
+        // Superscript and subscript (T240-C): two thirds of the size, the
+        // baseline raised by a third of the full size or lowered by 14 %.
+        let (size, shift) = match attrs.vertical_align {
+            Some(VerticalAlign::Superscript) => (full_size * 2 / 3, full_size * 33 / 100),
+            Some(VerticalAlign::Subscript) => (full_size * 2 / 3, -(full_size * 14 / 100)),
+            _ => (full_size, 0),
+        };
         let request = request_for_attrs(&attrs);
         let ch = text
             .chars()
@@ -772,7 +774,11 @@ fn build_spans(
         let id = resolved.id;
         let family = resolved.family.to_owned();
         if let Some(last) = spans.last_mut() {
-            if last.source.end == source.start && last.font_id == id && last.size == size {
+            if last.source.end == source.start
+                && last.font_id == id
+                && last.size == size
+                && last.shift == shift
+            {
                 last.source.end = source.end;
                 *work = add_work(*work, 1, options.max_work)?;
                 continue;
@@ -783,6 +789,7 @@ fn build_spans(
             font_id: id,
             family,
             size,
+            shift,
             representative: ch,
             request,
         });
@@ -891,8 +898,10 @@ fn shape_range(
                 metrics.units_per_em,
             )?,
         };
-        extents.ascent = extents.ascent.max(face_extents.ascent);
-        extents.descent = extents.descent.max(face_extents.descent);
+        extents.ascent = extents.ascent.max(face_extents.ascent + span.shift.max(0));
+        extents.descent = extents
+            .descent
+            .max(face_extents.descent + (-span.shift).max(0));
         extents.gap = extents.gap.max(face_extents.gap);
         let text = &context.paragraph.text[piece.clone()];
         *work = add_work(*work, text.chars().count(), context.options.max_work)?;
@@ -924,12 +933,12 @@ fn shape_range(
                 advance: glyph.x_advance,
                 y_advance: glyph.y_advance,
                 x_offset: glyph.x_offset,
-                y_offset: glyph.y_offset,
+                y_offset: glyph.y_offset + span.shift,
                 font_id: span.font_id,
                 family: span.family.clone(),
                 size: span.size,
-                ascent: face_extents.ascent,
-                descent: face_extents.descent,
+                ascent: face_extents.ascent + span.shift.max(0),
+                descent: face_extents.descent + (-span.shift).max(0),
                 gap: face_extents.gap,
                 control: false,
             });
