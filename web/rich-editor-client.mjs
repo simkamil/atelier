@@ -7,6 +7,7 @@
 // so user commands always go first. No DOM access, no editor integration (R7).
 import { decodeRichReply, encodeRichRequest, RichProtocolError } from "./rich-editor-protocol.mjs";
 import { EditorPageCache, RichClientError } from "./editor-page-cache.mjs";
+import { FORMAT_REPLY_TYPE } from "./rich-editor-format.mjs";
 
 export { EditorPageCache, RichClientError };
 
@@ -22,8 +23,10 @@ const REPLY_TYPE = {
   // R7b-2: search, replace, statistics, properties. `replaced` and `propertiesApplied` carry a State (applied to the cache).
   search: "searchResult", statistics: "statistics", searchRects: "searchRects", replace: "replaced", replaceAll: "replaced",
   propertiesRead: "properties", propertiesApply: "propertiesApplied",
+  // F0: formatting. The commands that change the document answer a State; FormatState and StyleList carry no page.
+  ...FORMAT_REPLY_TYPE,
 };
-const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData", "selectionRects", "imageBitmap", "searchResult", "statistics", "searchRects", "properties"]);
+const NOT_CACHE_INPUT = new Set(["accessibleWindow", "saveData", "selectionRects", "imageBitmap", "searchResult", "statistics", "searchRects", "properties", "formatState", "styleList", "fontList", "formatMarks"]);
 /** Replies whose result changes the document or the state the cache holds. */
 const STATEFUL = new Set(["state", "replaced", "propertiesApplied"]);
 
@@ -453,10 +456,13 @@ export function createRichEditorClient({
         return result;
       }, callerSignal, true);
     },
-    /** Send one command; resolves `{response, change}`, rejects with RichClientError for RICH_* refusals. */
-    command(command, { signal: callerSignal } = {}) {
-      if (command?.type === "open") return Promise.reject(new TypeError("Use open() to open a document."));
+    /** Send one command (or a function that returns it when its turn comes); resolves `{response, change}`, rejects with RichClientError for RICH_* refusals. */
+    command(requested, { signal: callerSignal } = {}) {
+      if (requested?.type === "open") return Promise.reject(new TypeError("Use open() to open a document."));
       return enqueue(async () => {
+        // A function builds the command when its turn comes (F0: a revision guard must be the one of that moment).
+        const command = typeof requested === "function" ? requested() : requested;
+        if (command?.type === "open") throw new TypeError("Use open() to open a document.");
         if (command?.type === "close") { replayMove = null; return closeExchange(callerSignal); }
         replayMove = null; // a newer command supersedes a move that waited for its caret
         const result = await guarded(command, callerSignal);
@@ -464,7 +470,7 @@ export function createRichEditorClient({
         // A selection command that left the caret unplaced (target not laid out yet): the pump steps faster until it shows.
         if (CARET_COMMANDS.has(command?.type)) awaitingCaret = cache.caret === null && !cache.layoutComplete;
         return result;
-      }, callerSignal, command?.type === "close");
+      }, callerSignal, requested?.type === "close");
     },
     /**
      * Accessible window of [start, end) (flat positions, BigInt) for the DOM mirror (US-209):

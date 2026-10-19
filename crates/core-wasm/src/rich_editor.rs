@@ -29,8 +29,22 @@ mod accessible;
 mod find;
 #[cfg(test)]
 mod find_tests;
+// Formatting (F0): `format_state` is written; the three others are the
+// extension modules of US-240, US-243 and US-250.
+mod format_char;
+#[cfg(test)]
+mod format_char_tests;
+mod format_para;
+#[cfg(test)]
+mod format_para_tests;
+mod format_state;
+#[cfg(test)]
+mod format_tests;
 mod io;
 mod sel;
+mod styles;
+#[cfg(test)]
+mod styles_tests;
 #[cfg(test)]
 mod tests;
 
@@ -91,6 +105,14 @@ struct Session {
     /// Epoch of the glyph atlas of `cache`: changes at `Open`, at a resync and
     /// whenever the cache is rebuilt, i.e. whenever atlas indices restart at 0.
     epoch: u32,
+    /// Attributes of the next typed text (US-240).
+    typing: format_char::Typing,
+    /// Style preview in progress (US-250).
+    preview: styles::Preview,
+    /// `command_id` of the last formatting command accepted (`begin_format`).
+    last_command_id: u32,
+    /// `ListFonts` answer and the revision it was computed at.
+    fonts_memo: Option<(u64, crate::rich_protocol::FontListData)>,
 }
 
 /// Paragraphs of layout a move, a hit test or a caret may run to reach its
@@ -296,6 +318,10 @@ impl Session {
             stats_memo: None,
             resync: false,
             epoch: 0,
+            typing: format_char::Typing::default(),
+            preview: styles::Preview::default(),
+            last_command_id: 0,
+            fonts_memo: None,
         })
     }
 
@@ -397,6 +423,11 @@ impl Session {
     }
 
     fn run(&mut self, command: Command) -> Result<Response, ErrorCode> {
+        // A style preview ends before any command that changes the document
+        // or the selection (F0 hook, `styles::cancels_preview`).
+        if styles::cancels_preview(&command) {
+            styles::cancel_preview(self);
+        }
         match command {
             // Handled by the caller.
             Command::Open { .. } | Command::Close => Err(ErrorCode::Internal),
@@ -544,6 +575,19 @@ impl Session {
             } => self.replace_all(revision, flags, &query, &replacement),
             Command::PropertiesRead => self.properties_read(),
             Command::PropertiesApply { changes } => self.properties_apply(changes),
+            Command::FormatState => self.format_state(),
+            Command::ApplyCharFormat(format) => self.apply_char_format(format),
+            Command::ApplyParaFormat(format) => self.apply_para_format(format),
+            Command::ListStyles { filter, used_only } => self.list_styles(filter, used_only),
+            Command::ApplyStyle {
+                base_revision,
+                command_id,
+                target,
+                id,
+            } => self.apply_style(base_revision, command_id, target, &id),
+            Command::PreviewStyle { target, show, id } => self.preview_style(target, show, &id),
+            Command::ListFonts => self.list_fonts(),
+            Command::FormatMarks { first, count } => self.format_marks(first, count),
             Command::AccessibleWindow { start, end } => Ok(Response::AccessibleWindow {
                 revision: self.revision(),
                 items: accessible::window(
@@ -561,12 +605,15 @@ impl Session {
         self.upstream = upstream;
         self.preferred_x = preferred_x;
         self.unit_base = None;
+        self.typing.forget();
     }
 
     /// Replaces `start..end` and lays the change out.
     fn edit(&mut self, start: usize, end: usize, text: &str) -> Result<Response, ErrorCode> {
         let before = self.doc.revision();
         let outcome = self.doc.replace_range(start, end, text)?;
+        // F0 hook of US-240: typing attributes join the insertion.
+        let outcome = format_char::after_text_edit(self, start, text.len(), outcome);
         let delta = if outcome.revision == before {
             PageDelta::default()
         } else {

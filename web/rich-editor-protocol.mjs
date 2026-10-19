@@ -7,6 +7,10 @@
 // Decoders do not copy: `data`, page `display` are views (subarray) into the
 // frame passed in, which the caller must not mutate while using them.
 
+import {
+  FormatErrorCode, FormatOpcode, FormatReplyOpcode, readFormatCommand, readFormatReply, writeFormatCommand, writeFormatReply,
+} from "./rich-editor-format.mjs";
+
 export const RICH_VERSION = 2;
 export const HEADER_BYTES = 20;
 
@@ -64,6 +68,8 @@ export const RichOpcode = Object.freeze({
   // R7b-2: search, replace, statistics, properties.
   Search: 0x0130, Statistics: 0x0131, SearchRects: 0x0132, Replace: 0x0133, ReplaceAll: 0x0134,
   PropertiesRead: 0x0135, PropertiesApply: 0x0136,
+  // F0: formatting of characters, paragraphs and styles (codec in web/rich-editor-format.mjs).
+  ...FormatOpcode,
 });
 export const RichReplyOpcode = Object.freeze({
   Error: 0x8000, State: 0x8100, TextWindow: 0x8101, Pages: 0x8102, HitResult: 0x8103, Closed: 0x8104,
@@ -71,6 +77,7 @@ export const RichReplyOpcode = Object.freeze({
   SaveData: 0x8106,
   SelectionRects: 0x8110, ImageBitmap: 0x8111,
   SearchResult: 0x8120, Statistics: 0x8121, SearchRects: 0x8122, Replaced: 0x8123, Properties: 0x8125, PropertiesApplied: 0x8126,
+  ...FormatReplyOpcode,
 });
 
 export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
@@ -87,6 +94,8 @@ export const RichErrorCode = Object.freeze(Object.assign(Object.create(null), {
   RICH_EMPTY_QUERY: 40, RICH_STALE_MATCH: 41, RICH_QUERY_TOO_LARGE: 42, RICH_PROPERTIES_FAILED: 43, RICH_TOO_MANY_MATCHES: 44,
   // R7c (codes 50 to 59)
   RICH_MOVE_UNSUPPORTED: 50,
+  // F0 (codes 60 to 69)
+  ...FormatErrorCode,
 }));
 const ERROR_NAMES = new Map(Object.entries(RichErrorCode).map(([name, code]) => [code, name]));
 
@@ -362,6 +371,9 @@ function parseCommand(opcode, body) {
     case RichOpcode.Search: case RichOpcode.Statistics: case RichOpcode.SearchRects: case RichOpcode.Replace:
     case RichOpcode.ReplaceAll: case RichOpcode.PropertiesRead: case RichOpcode.PropertiesApply:
       command = readFindCommand(opcode, r); break;
+    case RichOpcode.FormatState: case RichOpcode.ApplyCharFormat: case RichOpcode.ApplyParaFormat:
+    case RichOpcode.ListStyles: case RichOpcode.ApplyStyle: case RichOpcode.PreviewStyle: case RichOpcode.ListFonts: case RichOpcode.FormatMarks:
+      command = readFormatCommand(opcode, r, { fail }); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   r.finish();
@@ -438,6 +450,9 @@ function encodeRequestUnchecked({ docId, requestId, command }) {
     case "search": case "statistics": case "searchRects": case "replace": case "replaceAll":
     case "propertiesRead": case "propertiesApply":
       opcode = writeFindCommand(w, command); break;
+    case "formatState": case "applyCharFormat": case "applyParaFormat": case "listStyles": case "applyStyle": case "previewStyle":
+    case "listFonts": case "formatMarks":
+      opcode = writeFormatCommand(w, command); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());
@@ -1111,6 +1126,8 @@ export function decodeRichReply(bytes) {
       case RichReplyOpcode.SearchResult: case RichReplyOpcode.Statistics: case RichReplyOpcode.SearchRects:
       case RichReplyOpcode.Replaced: case RichReplyOpcode.Properties: case RichReplyOpcode.PropertiesApplied:
         response = readFindReply(opcode, r); break;
+      case RichReplyOpcode.FormatState: case RichReplyOpcode.StyleList: case RichReplyOpcode.FontList: case RichReplyOpcode.FormatMarks:
+        response = readFormatReply(opcode, r, { fail }); break;
       default: return fail("RICH_UNKNOWN_OPCODE");
     }
     r.finish();
@@ -1138,6 +1155,7 @@ function encodeReplyUnchecked({ docId, requestId, response }) {
     case "imageBitmap": writeImageBitmap(w, response); opcode = RichReplyOpcode.ImageBitmap; break;
     case "searchResult": case "statistics": case "searchRects": case "replaced": case "properties": case "propertiesApplied":
       opcode = writeFindReply(w, response); break;
+    case "formatState": case "styleList": case "fontList": case "formatMarks": opcode = writeFormatReply(w, response); break;
     default: return fail("RICH_UNKNOWN_OPCODE");
   }
   const out = frame(opcode, docId, requestId, w.bytes());

@@ -92,6 +92,22 @@ pub mod opcode {
     pub const PROPERTIES_READ: u16 = 0x0135;
     pub const PROPERTIES_APPLY: u16 = 0x0136;
     pub const R_ERROR: u16 = 0x8000;
+    // Formatting (F0): characters, paragraphs, styles.
+    pub const FORMAT_STATE: u16 = 0x0150;
+    pub const APPLY_CHAR_FORMAT: u16 = 0x0151;
+    pub const APPLY_PARA_FORMAT: u16 = 0x0152;
+    pub const LIST_STYLES: u16 = 0x0153;
+    pub const APPLY_STYLE: u16 = 0x0154;
+    pub const PREVIEW_STYLE: u16 = 0x0155;
+    pub const LIST_FONTS: u16 = 0x0156;
+    pub const FORMAT_MARKS: u16 = 0x0157;
+    // 0x0158 to 0x016F: later formatting commands (US-241, US-242, US-247, US-248).
+    pub const R_FORMAT_STATE: u16 = 0x8130;
+    pub const R_STYLE_LIST: u16 = 0x8131;
+    pub const R_FONT_LIST: u16 = 0x8132;
+    pub const R_FORMAT_MARKS: u16 = 0x8133;
+    // 0x8134 to 0x813F: replies of the later formatting commands.
+
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
     pub const R_PAGES: u16 = 0x8102;
@@ -158,6 +174,19 @@ pub enum ErrorCode {
     /// `MoveText` names a range with objects, tables or opaque blocks, or a
     /// target in another container.
     MoveUnsupported = 50,
+    // Formatting (F0): codes 60 to 69.
+    /// The formatting command is defined by the contract but its handler is
+    /// not written yet (stub of `format_char.rs`, `format_para.rs`, `styles.rs`).
+    FormatNotImplemented = 60,
+    /// `ApplyStyle` or `PreviewStyle` names a style that is not in the catalog
+    /// (or is of the other kind).
+    UnknownStyle = 61,
+    /// A formatting command on a plain-text (TXT profile) document, which holds
+    /// no formatting.
+    FormatPlainText = 62,
+    /// A formatting command carries the `command_id` of the last one the
+    /// engine accepted: a repeat after a lost reply; nothing changes.
+    DuplicateCommand = 63,
 }
 
 impl ErrorCode {
@@ -194,6 +223,10 @@ impl ErrorCode {
             43 => Self::PropertiesFailed,
             44 => Self::TooManyMatches,
             50 => Self::MoveUnsupported,
+            60 => Self::FormatNotImplemented,
+            61 => Self::UnknownStyle,
+            62 => Self::FormatPlainText,
+            63 => Self::DuplicateCommand,
             _ => return None,
         })
     }
@@ -231,6 +264,10 @@ impl ErrorCode {
             Self::QueryTooLarge => "RICH_QUERY_TOO_LARGE",
             Self::PropertiesFailed => "RICH_PROPERTIES_FAILED",
             Self::TooManyMatches => "RICH_TOO_MANY_MATCHES",
+            Self::FormatNotImplemented => "RICH_FORMAT_NOT_IMPLEMENTED",
+            Self::UnknownStyle => "RICH_UNKNOWN_STYLE",
+            Self::FormatPlainText => "RICH_FORMAT_PLAIN_TEXT",
+            Self::DuplicateCommand => "RICH_DUPLICATE_COMMAND",
         }
     }
 }
@@ -468,6 +505,39 @@ pub enum Command {
     PropertiesApply {
         changes: [Option<String>; PROPERTY_COUNT],
     },
+    /// Formatting of the selection or the caret; answered by `FormatState`.
+    FormatState,
+    /// Sets or clears character attributes; answered by `State`.
+    ApplyCharFormat(CharFormat),
+    /// Sets or clears paragraph attributes of every paragraph touched; `State`.
+    ApplyParaFormat(ParaFormat),
+    /// The styles of the catalog; answered by `StyleList`.
+    ListStyles {
+        filter: StyleFilter,
+        used_only: bool,
+    },
+    /// Applies a paragraph or character style; answered by `State`.
+    ApplyStyle {
+        base_revision: u64,
+        command_id: u32,
+        target: StyleTarget,
+        id: String,
+    },
+    /// Shows (`show`) or cancels the preview of a style, without touching the
+    /// document or its history; answered by `State`.
+    PreviewStyle {
+        target: StyleTarget,
+        show: bool,
+        id: String,
+    },
+    /// The fonts the engine draws and those the document names; answered by `FontList`.
+    ListFonts,
+    /// Formatting marks (paragraph ends, spaces, tabs...) of pages
+    /// `first..first + count`, drawn over the pages by the client; `FormatMarks`.
+    FormatMarks {
+        first: u32,
+        count: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -652,6 +722,16 @@ pub enum Response {
         snapshot: Box<PropertiesSnapshot>,
     },
     PropertiesApplied(PropertiesOutcome),
+    FormatState(Box<FormatStateData>),
+    StyleList {
+        revision: u64,
+        styles: Vec<StyleEntry>,
+    },
+    FontList(FontListData),
+    FormatMarks {
+        revision: u64,
+        marks: Vec<FormatMark>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -977,6 +1057,14 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
         | opcode::REPLACE_ALL
         | opcode::PROPERTIES_READ
         | opcode::PROPERTIES_APPLY => find::parse_command(opcode, &mut r)?,
+        opcode::FORMAT_STATE
+        | opcode::APPLY_CHAR_FORMAT
+        | opcode::APPLY_PARA_FORMAT
+        | opcode::LIST_STYLES
+        | opcode::APPLY_STYLE
+        | opcode::PREVIEW_STYLE
+        | opcode::LIST_FONTS
+        | opcode::FORMAT_MARKS => format::parse_command(opcode, &mut r)?,
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -1110,6 +1198,14 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
         | Command::ReplaceAll { .. }
         | Command::PropertiesRead
         | Command::PropertiesApply { .. } => find::encode_command(&request.command, &mut b)?,
+        Command::FormatState
+        | Command::ApplyCharFormat(_)
+        | Command::ApplyParaFormat(_)
+        | Command::ListStyles { .. }
+        | Command::ApplyStyle { .. }
+        | Command::PreviewStyle { .. }
+        | Command::ListFonts
+        | Command::FormatMarks { .. } => format::encode_command(&request.command, &mut b)?,
     };
     let frame = header(op, request.doc_id, request.request_id, &b)?;
     decode_request(&frame).map_err(|e| e.code)?;
@@ -1545,6 +1641,10 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
         | Response::Replaced { .. }
         | Response::Properties { .. }
         | Response::PropertiesApplied(_) => find::encode_reply(&reply.response, &mut b)?,
+        Response::FormatState(_)
+        | Response::StyleList { .. }
+        | Response::FontList(_)
+        | Response::FormatMarks { .. } => format::encode_reply(&reply.response, &mut b)?,
     };
     let frame = header(op, reply.doc_id, reply.request_id, &b)?;
     #[cfg(test)]
@@ -1624,6 +1724,10 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
             | opcode::R_REPLACED
             | opcode::R_PROPERTIES
             | opcode::R_PROPERTIES_APPLIED => find::parse_reply(op, &mut r)?,
+            opcode::R_FORMAT_STATE
+            | opcode::R_STYLE_LIST
+            | opcode::R_FONT_LIST
+            | opcode::R_FORMAT_MARKS => format::parse_reply(op, &mut r)?,
             _ => return Err(Fail::UnknownOpcode),
         };
         r.finish()?;
@@ -1713,6 +1817,15 @@ pub fn split_page_delta(delta: &crate::rich_layout::PageDelta) -> (Vec<u32>, Vec
     (changed, merged)
 }
 
+mod format;
+pub use format::{
+    BORDER_SIDES, BorderEdit, BorderLine, CharAttr, CharEdit, CharFormat, CharState, CharValue,
+    EditOp, FontEntry, FontListData, FontState, FormatMark, FormatScope, FormatStateData,
+    MARK_KINDS, MAX_BORDER_EIGHTHS, MAX_BORDER_SPACE, MAX_FONT_LIST, MAX_FORMAT_EDITS,
+    MAX_FORMAT_MARKS, MAX_HALF_POINTS, MAX_NAME_BYTES, MAX_STATE_RUNS, MAX_STYLE_LIST, MAX_TWIPS,
+    MIN_HALF_POINTS, NO_REVISION_GUARD, ParaAttr, ParaEdit, ParaFormat, ParaState, ParaValue, Rgb,
+    SIZE_STEPS, StyleEntry, StyleFilter, StyleTarget, Tri, size_step,
+};
 mod find;
 pub use find::{
     HighlightRect, MAX_EXCERPT_BYTES, MAX_HIGHLIGHT_RANGES, MAX_HIGHLIGHT_RECTS,
@@ -1735,6 +1848,8 @@ mod sel_tests;
 
 #[cfg(test)]
 mod find_tests;
+#[cfg(test)]
+mod format_tests;
 #[cfg(test)]
 mod io_tests;
 #[cfg(test)]

@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 
-use atelier_font::manager::{FontManager, FontRequest, FontStyle};
+use atelier_font::manager::{FontManager, FontRequest, FontStyle, GenericFamily};
 use atelier_text_layout::caret::{
     CaretAffinity, CaretLayout, CaretOptions, PositionedLine, TextPosition, VerticalDirection,
 };
@@ -243,6 +243,13 @@ fn merge_equal_runs(runs: &mut Vec<CharRun>) {
     *runs = merged;
 }
 
+/// A face the font manager resolved (see `PageCache::used_face`).
+pub(crate) struct UsedFace {
+    pub family: String,
+    pub bold: bool,
+    pub italic: bool,
+}
+
 /// Incremental layout and per-page paint cache of one document.
 pub struct PageCache {
     txt: bool,
@@ -264,6 +271,39 @@ pub struct PageCache {
 }
 
 impl PageCache {
+    /// The face the engine really draws `requested` (bold, italic) with for the
+    /// character `sample`: the metric substitute or the generic fallback when
+    /// the font is absent (F0, `FormatState` and `ListFonts`). `None` when no
+    /// face can show the character. The editor registers the faces of
+    /// `rich_preview::build_fonts` only, whatever `atelier_font::embedded` holds.
+    pub(crate) fn used_face(
+        &self,
+        requested: &str,
+        bold: bool,
+        italic: bool,
+        sample: char,
+    ) -> Option<UsedFace> {
+        let request = FontRequest::new(
+            [requested],
+            if bold { 700 } else { 400 },
+            if italic {
+                FontStyle::Italic
+            } else {
+                FontStyle::Normal
+            },
+        )
+        // The request of `text_layout::request_for_attrs`.
+        .with_generic(GenericFamily::SansSerif);
+        self.fonts
+            .resolve_for_char(&request, sample)
+            .ok()
+            .map(|font| UsedFace {
+                family: font.family.to_owned(),
+                bold: font.weight >= 700,
+                italic: font.style == FontStyle::Italic,
+            })
+    }
+
     fn options(geometry: &Geometry) -> PaginationOptions {
         PaginationOptions {
             page_height: geometry.content_height,
