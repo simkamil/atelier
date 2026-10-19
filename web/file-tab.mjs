@@ -210,7 +210,7 @@ export function createFileTab({ document, i18n, onStatus = () => {}, onResult = 
     if (picked.size > RICH_LIMITS.maxOpenBytes) { void host.releaseTicket?.(picked.ticket); return { kind: "error", key: "files.error.too_large" }; }
     const read = await host.readTicket(picked.ticket, { copy: true });
     if (read.kind !== "ok") return read;
-    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name };
+    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name, identity: picked.identity ?? null };
   }
 
   async function openRecent(entry) {

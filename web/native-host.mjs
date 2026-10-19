@@ -234,10 +234,12 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
         settle(id, { kind: "ok", entries: parseRecentList(fromBase64(match[1], MAX_RECENT_LIST_BYTES)) });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && ["pickOpen", "recentOpen"].includes(entry.operation)) {
-      const match = /^(r[1-9][0-9]{0,19});([a-z]{2,5});([0-9]{1,10});([A-Za-z0-9+/=]*)$/.exec(payload);
+      // Cinquième champ facultatif (US-327) : identité canonique du fichier (chemin résolu par le natif), Base64 UTF-8.
+      const match = /^(r[1-9][0-9]{0,19});([a-z]{2,5});([0-9]{1,10});([A-Za-z0-9+/=]*)(?:;([A-Za-z0-9+/=]*))?$/.exec(payload);
       try {
         if (!match || !DIALOG_FORMATS.includes(match[2])) throw new NativeHostError("HOST_INVALID_RESPONSE");
-        settle(id, { kind: "ok", ticket: match[1], format: match[2], size: Number(match[3]), name: decodeName(match[4]) });
+        settle(id, { kind: "ok", ticket: match[1], format: match[2], size: Number(match[3]), name: decodeName(match[4]),
+          identity: match[5] ? decodeName(match[5]) : null });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "pickSave") {
       const match = /^(w[1-9][0-9]{0,19});([a-z]{2,5});([A-Za-z0-9+/=]*)$/.exec(payload);

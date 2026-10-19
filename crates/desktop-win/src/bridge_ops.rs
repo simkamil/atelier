@@ -627,10 +627,48 @@ fn issue_open_ticket(
     }
     state.read_tickets.push(ticket.id());
     state.read_paths.push((ticket.id(), path.to_path_buf()));
+    // US-327 : le cinquième champ est l'identité canonique du fichier (le front reconnaît ainsi un document déjà ouvert).
     ok_reply(
         id,
-        &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(path)),
+        &format!(
+            "r{};{format};{size};{};{}",
+            ticket.id(),
+            file_name_b64(path),
+            encode_base64(identity_limited(path).as_bytes())
+        ),
     )
+}
+
+/// Chemin canonique d'un fichier (US-327) : chemin absolu, résolu par le système (noms courts 8.3 en noms longs,
+/// casse réelle, liens), sans le préfixe verbatim \\?\ . Un fichier introuvable garde son chemin tel quel.
+pub(crate) fn canonical_identity(path: &Path) -> String {
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let text = resolved.to_string_lossy().into_owned();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        text
+    }
+}
+
+/// Identité envoyée au front : le chemin canonique s'il tient en 1 Kio (limite de `decodeName` côté JS), sinon le
+/// nom seul, sinon rien.
+pub(crate) fn identity_limited(path: &Path) -> String {
+    let full = canonical_identity(path);
+    if full.len() <= 1024 {
+        return full;
+    }
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if name.len() <= 1024 {
+        name
+    } else {
+        String::new()
+    }
 }
 
 /// Format (identifiant JS) d'un chemin d'après son extension, parmi les formats connus du natif.
@@ -1314,13 +1352,18 @@ mod tests {
         let text = text_of(&reply);
         let payload = text.strip_prefix("us120-file|1|1|ok|").expect(&text);
         let fields: Vec<&str> = payload.split(';').collect();
-        assert_eq!(fields.len(), 4, "{payload}");
+        assert_eq!(fields.len(), 5, "{payload}");
         assert!(fields[0].starts_with('r'));
         assert_eq!(fields[1], "docx");
         assert_eq!(fields[2], "10");
         assert_eq!(
             crate::file_bridge::decode_base64(fields[3]).unwrap(),
             "Lettre é.docx".as_bytes()
+        );
+        // US-327 : cinquième champ, identité canonique du fichier.
+        assert_eq!(
+            crate::file_bridge::decode_base64(fields[4]).unwrap(),
+            canonical_identity(&file).as_bytes()
         );
         assert!(
             !text.contains(dir.to_string_lossy().as_ref()),

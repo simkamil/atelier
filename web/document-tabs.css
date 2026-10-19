@@ -22,3 +22,7 @@
 .engine-lost-banner button{height:30px}
 .engine-lost-text{flex:1 1 320px}
 .document-tabs-confirm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.document-panel{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.document-panel[hidden]{display:none}
+.document-panel>.document-scroll{flex:1;min-height:0;height:auto}
+@media(max-width:700px){.document-panel{min-height:100px}}

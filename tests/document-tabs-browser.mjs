@@ -43,7 +43,7 @@ function createFakeBridge() {
           if (next.cancelled) return reply("cancelled");
           const ticket = `r${bridge.serial++}`;
           bridge.reads.set(ticket, next.bytes);
-          return reply("ok", `${ticket};${next.format};${next.bytes.length};${b64(encoder.encode(next.name))}`);
+          return reply("ok", `${ticket};${next.format};${next.bytes.length};${b64(encoder.encode(next.name))}${next.identity ? `;${b64(encoder.encode(next.identity))}` : ""}`);
         }
         if (operation === "readTicket") {
           const bytes = bridge.reads.get(payload); bridge.reads.delete(payload);
@@ -122,7 +122,7 @@ try {
   const typeAndWait = async text => { const before = app.editor.state.docLen; type(text); await waitFor(() => app.editor.state.docLen === before + new TextEncoder().encode(text).length, `typed ${text}`); };
   const ctrlZ = () => key(app.editor.element, "z", { ctrlKey: true });
   const newTab = async () => { const before = list().length; await waitFor(() => !document.querySelector("#new-document").disabled, "New is available"); document.querySelector("#new-document").click(); await waitFor(() => list().length === before + 1 && !app.editor.busy, "a new tab opens"); };
-  const visiblePanels = () => [...document.querySelectorAll(".document-scroll")].filter(node => !node.hidden);
+  const visiblePanels = () => [...document.querySelectorAll(".document-panel")].filter(node => !node.hidden);
   const tabButtons = () => [...document.querySelectorAll(".document-tab-label")];
   const settleLayout = async () => { await app.editor.whenLayoutComplete(); await sleep(80); };
 
@@ -130,7 +130,8 @@ try {
   const bar = document.querySelector(".document-tabs");
   assert(bar && bar.getAttribute("aria-label") === "Documents ouverts" && tabButtons().length === 1, "the tab bar is a tablist with one tab");
   assert(tabButtons()[0].getAttribute("aria-selected") === "true" && tabButtons()[0].textContent.includes("Document 1"), "the first document is the selected tab, named Document 1");
-  assert(visiblePanels().length === 1 && visiblePanels()[0].getAttribute("role") === "tabpanel" && visiblePanels()[0].id === "document-scroll", "one tab panel is shown and carries the ids of the page");
+  assert(visiblePanels().length === 1 && visiblePanels()[0].getAttribute("role") === "tabpanel" && visiblePanels()[0].querySelector("#document-scroll"), "one tab panel is shown, its scrollport carries the ids of the page");
+  assert(tabButtons()[0].getAttribute("aria-controls") === visiblePanels()[0].id && visiblePanels()[0].getAttribute("aria-labelledby") === tabButtons()[0].id, "the tab controls its panel and the panel is labelled by its tab");
 
   // --- trois onglets, frappe et annulation indépendantes -------------------------------------------------------------------
   await typeAndWait("un");
@@ -145,7 +146,7 @@ try {
   await typeAndWait("trois");
   const third = active();
   assert(list().length === 3 && tabButtons().length === 3 && new Set([first.docId, second.docId, third.docId]).size === 3, "three tabs, three distinct documents");
-  assert(visiblePanels().length === 1 && document.querySelectorAll(".document-scroll").length === 3 && document.querySelectorAll("#document-canvas").length === 1, "three DOMs, one shown, the page ids belong to the shown one");
+  assert(visiblePanels().length === 1 && document.querySelectorAll(".document-panel").length === 3 && document.querySelectorAll("#document-canvas").length === 1, "three DOMs, one shown, the page ids belong to the shown one");
   assert(tabButtons().map(button => button.getAttribute("aria-selected")).join() === "false,false,true", "the new tab is selected");
   assert(tabButtons().every(button => /modifié/.test(button.getAttribute("aria-label"))), "every modified tab says so in its name");
   assert(await textOf(first) === "un" && await textOf(second) === "deux" && await textOf(third) === "trois", "each tab holds its own text");
@@ -332,6 +333,19 @@ try {
   document.querySelector("#para-marks, [data-ribbon-command-id=\"para-marks\"]")?.click?.();
 
   // --- limite de huit documents -----------------------------------------------------------------------------------------------
+  // Fifty openings and closings: no DOM node, field or canvas is left behind and no engine session leaks (the eighth tab below still opens).
+  const cycle = async () => { const before = list().length; await tabsApi.newDocument(); await waitFor(() => list().length === before + 1 && !app.editor.busy, "cycle: a tab opens"); await tabsApi.close(tabsApi.active, { confirm: false }); await waitFor(() => list().length === before && !tabsApi.flags.closingTab, "cycle: the tab closes"); };
+  await cycle();
+  await sleep(150);
+  const nodesBefore = document.getElementsByTagName("*").length;
+  const fieldsBefore = document.querySelectorAll("textarea").length;
+  const canvasesBefore = document.querySelectorAll("canvas").length;
+  const tabsBeforeCycles = list().length;
+  for (let index = 0; index < 50; index += 1) await cycle();
+  await sleep(2500);
+  assert(list().length === tabsBeforeCycles && document.querySelectorAll("textarea").length === fieldsBefore && document.querySelectorAll("canvas").length === canvasesBefore, "fifty openings and closings leave no text field or canvas behind");
+  assert(document.getElementsByTagName("*").length === nodesBefore, `fifty openings and closings leave the DOM at the same size (${nodesBefore} then ${document.getElementsByTagName("*").length})`);
+  assert(document.querySelectorAll(".document-panel").length === tabsBeforeCycles && tabButtons().length === tabsBeforeCycles, "no panel or tab remains");
   while (list().length < 8) { await newTab(); await typeAndWait("n"); }
   assert(list().length === 8, "eight documents are open");
   const texts = await Promise.all(list().map(tab => textOf(tab)));
@@ -362,6 +376,21 @@ try {
   assert(list().length === 1 && app.editor.state.docLen === 0 && !app.editor.state.dirty && visiblePanels().length === 1, "closing the last tab leaves a new blank document");
   await waitFor(() => bridge.dirtyCalls().at(-1).endsWith("|dirty|0"), "the window is clean again");
   assert(tabsApi.windowDirty === false, "the aggregate is clean");
+
+  // --- un fichier ouvert par la boîte d'ouverture est reconnu par son identité canonique (donnée par le natif) -------------------------------
+  await typeAndWait("base");
+  const openTabs = list().length;
+  bridge.nextOpen = { name: "x.txt", format: "txt", bytes: encoder.encode("xx"), identity: "C:/Id/X.txt" };
+  document.querySelector("#open-document").click();
+  await waitFor(() => list().length === openTabs + 1 && !tabsApi.flags.opening && /xx/.test(app.editor.windowText), "a file opened through the dialog gets a tab");
+  const xTab = active();
+  await newTab(); await typeAndWait("autre");
+  bridge.nextOpen = { name: "x.txt", format: "txt", bytes: encoder.encode("xx"), identity: "c:/id/x.TXT" };
+  document.querySelector("#open-document").click();
+  await waitFor(() => tabsApi.active === xTab.id && /déjà ouvert/.test(status.textContent), "the same file opened again shows its tab");
+  assert(list().length === openTabs + 2, "no second tab for the same file, whatever the case of its path");
+  while (list().length > 1) await tabsApi.close(list().find(tab => tab.id !== tabsApi.active).id, { confirm: false });
+  await tabsApi.close(tabsApi.active, { confirm: false });
 
   // --- US-115 : plusieurs fichiers lancés, un onglet chacun, l'un après l'autre ------------------------------------------------------
   const launchPayload = (path, text, remaining) => `txt;${remaining};${b64(encoder.encode(path))};${b64(encoder.encode(text))}`;
@@ -403,15 +432,48 @@ try {
   type("ok"); await waitFor(async () => await textOf(active()) === "ok", "the recovered document works");
   assert(lostTabs.every(tab => list().some(other => other.docId === tab.docId)), "the identifiers are the same");
 
-  // --- Worker mort : nouveau Worker, nouveaux éditeurs -------------------------------------------------------------------------------------
+  // --- Worker mort : trois onglets modifiés, aucune perte silencieuse ---------------------------------------------------------------------
+  const big = "grande ligne de texte pour dépasser la fenêtre de texte du moteur\n".repeat(5000);
+  bridge.nextOpen = { name: "enorme.txt", format: "txt", bytes: encoder.encode(big) };
+  await tabsApi.activate(list()[0].id);
+  document.querySelector("#open-document").click();
+  await waitFor(() => !tabsApi.flags.opening && app.editor.state?.docLen > 300000, "a text larger than the text window opens");
+  const huge = active();
+  await settleLayout();
+  type("Z"); await waitFor(() => huge.editor.state.dirty, "the large document is modified");
+  while (list().length < 4) { await newTab(); await typeAndWait("m" + list().length); }
+  for (const tab of list().slice(0, 3)) { await tabsApi.activate(tab.id); if (!tab.dirty) { type("+"); await waitFor(() => tab.editor.state.dirty, "modified"); } }
+  const before = new Map();
+  for (const tab of list()) before.set(tab.docId, await textOf(tab));
+  const tabCountBeforeKill = list().length;
+  const modifiedCount = list().filter(tab => tab.editor.state.dirty).length;
+  assert(modifiedCount >= 3, "three modified tabs and more");
   app.client.close();
   inputText(app.editor.element, "!");
   await waitFor(() => !document.querySelector("#engine-lost-banner").hidden && tabsApi.lost?.kind === "worker", "a dead Worker is announced");
   assert(!document.querySelector('#engine-lost-banner [data-action="restart"]').hidden, "the banner offers to restart the engine");
+  assert(!document.querySelector('#engine-lost-banner [data-action="copy"]').hidden, "copying the displayed text stays available when the Worker is dead");
+  assert(list().every(tab => tab.editor.windowText.length > 0 || tab.editor.state.docLen === 0), "every tab still shows its text");
   document.querySelector('#engine-lost-banner [data-action="restart"]').click();
-  await waitFor(() => document.querySelector("#engine-lost-banner").hidden && tabsApi.lost === null && !app.editor.busy, "the engine restarts");
-  assert(list().length === 4 && list().every(tab => !tab.lost), "the tabs are kept");
-  type("ça marche"); await waitFor(async () => await textOf(active()) === "ça marche", "the new engine works");
+  await waitFor(() => !tabsApi.flags.busy || tabsApi.lost?.kind === "trap" || tabsApi.lost === null, "the engine restarts");
+  await waitFor(() => list().every(tab => tab.id === huge.id ? true : !tab.lost), "the small tabs are rebuilt");
+  assert(list().length === tabCountBeforeKill, "the tabs are kept");
+  for (const tab of list()) {
+    if (tab.id === huge.id) continue;
+    const now = await textOf(tab);
+    assert(now === before.get(tab.docId) && tab.editor.state.dirty, `tab ${tab.title} was rebuilt from its known text and is still modified`);
+  }
+  const hugeNow = list().find(tab => tab.id === huge.id);
+  assert(hugeNow.lost && hugeNow.editor.windowText.length > 1000 && /Document|enorme/.test(document.querySelector("#engine-lost-banner").textContent) && tabsApi.lost?.kind === "trap", "the tab that cannot be rebuilt is marked lost, keeps its text and is not emptied");
+  assert(!document.querySelector('#engine-lost-banner [data-action="blank"]').hidden && !document.querySelector('#engine-lost-banner [data-action="copy"]').hidden, "it can be copied, reopened or replaced");
+  // Closing a modified lost tab says what is lost and asks.
+  await tabsApi.activate(hugeNow.id);
+  const asks = []; window.confirm = text => { asks.push(text); return false; };
+  assert(await tabsApi.close(hugeNow.id) === false && /fait perdre ces modifications/.test(asks.at(-1)) && list().length === tabCountBeforeKill, "closing a modified lost tab asks first, and refusing keeps it");
+  window.confirm = text => { asks.push(text); return true; };
+  document.querySelector('#engine-lost-banner [data-action="blank"]').click();
+  await waitFor(() => !tabsApi.lost && /perdre ce texte/.test(asks.at(-1)), "replacing a modified lost tab warns that its text will be lost, then recovers it");
+  type("ça marche"); await waitFor(async () => (await textOf(active())).includes("ça marche"), "the new engine works");
 
   assert(pageErrors.length === 0, `no page error: ${pageErrors.join(" | ").slice(0, 400)}`);
   report = { status: "passed", checks, userAgent: navigator.userAgent };

@@ -467,22 +467,10 @@ pub(crate) fn read_launch_file(path: &std::path::Path) -> LaunchRead {
     }
 }
 
-/// Identité du fichier d'ouverture pour le front (titre de l'onglet, fichier déjà ouvert) : le chemin complet en
-/// UTF-8 s'il tient en 1 Kio (limite de `decodeName` côté JS), sinon le nom seul, sinon rien.
+/// Identité du fichier d'ouverture pour le front (titre de l'onglet, fichier déjà ouvert) : le chemin canonique
+/// (voir `bridge_ops::canonical_identity`) s'il tient en 1 Kio, sinon le nom seul, sinon rien.
 fn launch_identity(path: &std::path::Path) -> String {
-    let full = path.to_string_lossy();
-    if full.len() <= 1024 {
-        return full.into_owned();
-    }
-    let name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    if name.len() <= 1024 {
-        name
-    } else {
-        String::new()
-    }
+    bridge_ops::identity_limited(path)
 }
 
 /// Réponse du pont pour un fichier d'ouverture lu : `ok|<txt|docx>;<restants>;<identité base64>;<base64>` en
@@ -912,7 +900,7 @@ mod tests {
             reply,
             format!(
                 "us120-file|1|7|ok|txt;1;{};{}",
-                encode_base64(a.to_string_lossy().as_bytes()),
+                encode_base64(bridge_ops::canonical_identity(&a).as_bytes()),
                 encode_base64(b"bonjour")
             )
         );
@@ -922,7 +910,7 @@ mod tests {
             process_launch("8", &mut pending),
             format!(
                 "us120-file|1|8|ok|txt;0;{};{}",
-                encode_base64(b.to_string_lossy().as_bytes()),
+                encode_base64(bridge_ops::canonical_identity(&b).as_bytes()),
                 encode_base64(b"autre")
             )
         );
@@ -943,7 +931,7 @@ mod tests {
             process_launch("1", &mut pending),
             format!(
                 "us120-file|1|1|error|files.error.unsupported_type;{}",
-                encode_base64(image.to_string_lossy().as_bytes())
+                encode_base64(bridge_ops::canonical_identity(&image).as_bytes())
             )
         );
         assert!(process_launch("2", &mut pending).starts_with("us120-file|1|2|error|files.error."));
@@ -951,7 +939,7 @@ mod tests {
             process_launch("3", &mut pending),
             format!(
                 "us120-file|1|3|ok|docx;0;{};{}",
-                encode_base64(good.to_string_lossy().as_bytes()),
+                encode_base64(bridge_ops::canonical_identity(&good).as_bytes()),
                 encode_base64(b"PK")
             )
         );
@@ -1012,7 +1000,7 @@ mod tests {
                     reply,
                     format!(
                         "us120-file|1|1|ok|txt;0;{};@sb",
-                        encode_base64(big.to_string_lossy().as_bytes())
+                        encode_base64(bridge_ops::canonical_identity(&big).as_bytes())
                     )
                 );
                 assert_eq!(bytes, content);
@@ -1036,6 +1024,73 @@ mod tests {
             read_launch_file(&over_docx).unwrap_err(),
             "files.error.too_large"
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn launch_identity_is_canonical_and_bounded_to_one_kibibyte() {
+        let dir = launch_dir("identity");
+        let file = dir.join("Casse.TXT");
+        std::fs::write(&file, "x").unwrap();
+        // Même fichier, écrit autrement (`.` et `..`, casse du dossier) : une seule identité canonique.
+        let detour = dir.join(".").join("sous").join("..").join("Casse.TXT");
+        std::fs::create_dir_all(dir.join("sous")).unwrap();
+        assert_eq!(
+            launch_identity(&file).to_lowercase(),
+            launch_identity(&detour).to_lowercase()
+        );
+        assert!(!launch_identity(&file).starts_with(r"\\?\"));
+        // Chemin de plus de 1 Kio (fichier inexistant : le chemin reste tel quel) : le nom seul est envoyé.
+        let deep = std::iter::repeat_n("d".repeat(100), 12)
+            .fold(dir.clone(), |path, part| path.join(part))
+            .join("fichier.txt");
+        assert!(deep.to_string_lossy().len() > 1024);
+        assert_eq!(launch_identity(&deep), "fichier.txt");
+        // Même le nom ne tient pas : rien n'est envoyé, jamais une chaîne tronquée.
+        let long_name = dir.join("e".repeat(1100));
+        assert_eq!(bridge_ops::identity_limited(&long_name), "");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn launch_replies_carry_the_identity_even_when_it_is_not_valid_base64_material() {
+        // Le champ est toujours du Base64 valide, quelle que soit la forme du nom (accents, espaces, `;`).
+        let dir = launch_dir("odd-names");
+        let odd = dir.join("é ; a.txt");
+        std::fs::write(&odd, "x").unwrap();
+        let mut pending: VecDeque<PathBuf> = [odd.clone()].into();
+        let reply = process_launch("3", &mut pending);
+        let fields: Vec<&str> = reply.split('|').collect();
+        let payload: Vec<&str> = fields[4].split(';').collect();
+        assert_eq!(payload.len(), 4, "type;restants;identité;octets : {reply}");
+        assert!(
+            payload[2]
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b))
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_path_forwarded_while_a_file_is_being_opened_is_kept_in_order() {
+        // WM_COPYDATA pendant une ouverture : le chemin arrive dans la file pendant que le front ouvre le précédent.
+        let dir = launch_dir("during-open");
+        let names = ["a.txt", "b.txt", "c.txt"];
+        for name in names {
+            std::fs::write(dir.join(name), name).unwrap();
+        }
+        let mut pending: VecDeque<PathBuf> = [dir.join("a.txt"), dir.join("b.txt")].into();
+        assert!(process_launch("1", &mut pending).contains("|ok|txt;1;"));
+        pending.push_back(dir.join("c.txt"));
+        let second = process_launch("2", &mut pending);
+        assert!(
+            second.contains("|ok|txt;1;"),
+            "c.txt attend encore : {second}"
+        );
+        let third = process_launch("3", &mut pending);
+        assert!(third.contains("|ok|txt;0;"), "{third}");
+        assert!(third.ends_with(&encode_base64(b"c.txt")));
+        assert_eq!(process_launch("4", &mut pending), "us120-file|1|4|ok|");
         let _ = std::fs::remove_dir_all(dir);
     }
 

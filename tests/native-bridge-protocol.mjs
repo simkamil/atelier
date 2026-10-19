@@ -66,7 +66,21 @@ for (const [bad, key] of [
   assert.equal(op, "pickOpen");
   assert.equal(Buffer.from(tail, "base64").toString("utf8"), "Ouvrir\nfilter:docx=Document Word\nfilter:txt=Texte brut");
   fake.reply(id, "ok", `r12;docx;1048576;${b64("Lettre é.docx")}`);
-  assert.deepEqual(await opened, { kind: "ok", ticket: "r12", format: "docx", size: 1048576, name: "Lettre é.docx" });
+  assert.deepEqual(await opened, { kind: "ok", ticket: "r12", format: "docx", size: 1048576, name: "Lettre é.docx", identity: null });
+
+  // US-327 : cinquième champ facultatif, identité canonique du fichier (Base64 UTF-8) ; invalide, la réponse est refusée.
+  const identified = host.pickOpen(OPEN);
+  fake.reply(fake.last().id, "ok", `r13;txt;5;${b64("a.txt")};${b64("C:\Dossier é\a.txt")}`);
+  assert.deepEqual(await identified, { kind: "ok", ticket: "r13", format: "txt", size: 5, name: "a.txt", identity: "C:\Dossier é\a.txt" });
+  const badIdentity = host.pickOpen(OPEN);
+  fake.reply(fake.last().id, "ok", `r14;txt;5;${b64("a.txt")};not base64!`);
+  assert.deepEqual(await badIdentity, { kind: "error", key: "HOST_INVALID_RESPONSE" });
+  const brokenUtf8 = host.pickOpen(OPEN);
+  fake.reply(fake.last().id, "ok", `r15;txt;5;${b64("a.txt")};${b64(Uint8Array.of(0xff, 0xfe))}`);
+  assert.deepEqual(await brokenUtf8, { kind: "error", key: "HOST_INVALID_RESPONSE" });
+  const tooLong = host.pickOpen(OPEN);
+  fake.reply(fake.last().id, "ok", `r16;txt;5;${b64("a.txt")};${b64("x".repeat(1025))}`);
+  assert.deepEqual(await tooLong, { kind: "error", key: "HOST_FILE_TOO_LARGE" }, "an identity over 1 KiB is refused, never truncated");
 
   const cancelled = host.pickOpen(OPEN);
   fake.reply(fake.last().id, "cancelled");
@@ -337,7 +351,7 @@ for (const [bad, key] of [
   const opened = host.recentOpen(3);
   assert.deepEqual([fake.last().op, fake.last().tail], ["recentOpen", "3"]);
   fake.reply(fake.last().id, "ok", `r7;docx;2048;${b64("Lettre é.docx")}`);
-  assert.deepEqual(await opened, { kind: "ok", ticket: "r7", format: "docx", size: 2048, name: "Lettre é.docx" });
+  assert.deepEqual(await opened, { kind: "ok", ticket: "r7", format: "docx", size: 2048, name: "Lettre é.docx", identity: null });
   const missing = host.recentOpen(2);
   fake.reply(fake.last().id, "error", "files.error.not_found");
   assert.deepEqual(await missing, { kind: "error", key: "files.error.not_found" });

@@ -235,6 +235,7 @@ async function start() {
     : null;
   /** Message d'une ouverture lancée depuis l'onglet Fichier (modèle ou récent). */
   function reportOpened(result, success = messages.get("status-opened")) {
+    if (result.already) return;
     if (result.kind === "ok") showEditorMessage(editor?.state?.readOnly ? messages.get("status-readonly-opened") : success);
     else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
     else showEditorMessage(openFailureMessage(result), true);
@@ -392,7 +393,7 @@ async function start() {
   // ---- onglets : état, titres, hôte agrégé --------------------------------------------------------------------------------
   const tabById = id => tabs.find(tab => tab.id === id) ?? null;
   function tabTitle(tab) {
-    const name = tab.editor?.documentName;
+    const name = tab.editor?.documentName ?? tab.keptName;
     if (name) return name;
     tab.untitled ??= ++untitledCounter;
     return i18n.t("tabs.untitled", { number: tab.untitled });
@@ -426,11 +427,21 @@ async function start() {
   const PANEL_IDS = [["scroll", "document-scroll"], ["canvas", "document-canvas"], ["spacer", "page-spacer"], ["text", "document-text"]];
   /** The first tab keeps the elements of index.html; the others get their own (canvas, scrollport, spacer, text mirror). */
   function buildPanel(first) {
-    if (first) return { scroll: nodes.scrollport, canvas: nodes.canvas, spacer: nodes.spacer, text: nodes.textRepresentation };
+    // The tabpanel is a wrapper with a stable id of its own (the tab controls it); the scrollport inside it carries the
+    // historic ids while its document is shown.
+    if (first) {
+      const panel = document.createElement("div");
+      panel.className = "document-panel";
+      nodes.scrollport.before(panel);
+      panel.append(nodes.scrollport);
+      nodes.scrollport.removeAttribute("role");
+      return { panel, scroll: nodes.scrollport, canvas: nodes.canvas, spacer: nodes.spacer, text: nodes.textRepresentation };
+    }
     const make = (tag, className) => { const node = document.createElement(tag); if (className) node.className = className; return node; };
     const scroll = make("div", "document-scroll");
-    scroll.tabIndex = 0; scroll.hidden = true;
-    scroll.setAttribute("role", "tabpanel");
+    scroll.tabIndex = 0;
+    const panel = make("div", "document-panel");
+    panel.hidden = true;
     scroll.setAttribute("aria-label", messages.get("pages-label"));
     const stack = make("div", "page-stack");
     const text = make("div", "accessible-document");
@@ -441,8 +452,9 @@ async function start() {
     spacer.setAttribute("aria-hidden", "true");
     stack.append(text, canvas, spacer);
     scroll.append(stack);
-    nodes.stylesSlot.before(scroll);
-    return { scroll, canvas, spacer, text };
+    panel.append(scroll);
+    nodes.stylesSlot.before(panel);
+    return { panel, scroll, canvas, spacer, text };
   }
   /** The shown document carries the ids of index.html (tests and modules look them up); the others have none. */
   function assignPanelIds(tab) {
@@ -482,6 +494,9 @@ async function start() {
       pristine: true, untitled: null, path: null, lost: false, closing: false, pendingError: null, inBar: false, suspended: false };
     // Each editor gets its own host: `notifyDirty` is aggregated (docs 7.9), the rest is the native host.
     tab.host = Object.freeze({ ...host, notifyDirty: dirty => { tab.hostDirty = Boolean(dirty); return aggregateDirty(); } });
+    tab.dom.panel.id = `document-panel-${docId}`;
+    tab.dom.panel.setAttribute("role", "tabpanel");
+    tab.dom.panel.setAttribute("aria-labelledby", `document-tab-${docId}`);
     tab.editor = createEditorFor(tab);
     // A tab that is not shown yet is hidden for its editor too; the first one is shown from the start.
     if (!first) tab.editor.setVisible(false);
@@ -496,12 +511,12 @@ async function start() {
     } catch { /* the engine is unreachable: dispose() tries once more, bounded */ }
     try { tab.editor.dispose(); } catch { /* already disposed */ }
     tab.hostDirty = false;
-    tab.dom.scroll.remove();
+    tab.dom.panel.remove();
   }
   function joinTab(tab) {
     tabs.push(tab);
     tab.inBar = true;
-    tabsBar.add({ id: tab.id, title: tabTitle(tab), dirty: tab.dirty, error: false });
+    tabsBar.add({ id: tab.id, title: tabTitle(tab), dirty: tab.dirty, error: false, panelId: tab.dom.panel.id });
   }
 
   // ---- onglets : bascule (docs 7.5, six étapes) -------------------------------------------------------------------------------
@@ -553,11 +568,11 @@ async function start() {
         navigation?.setEnabled(false);
         previous.editor.setSuspended(true); previous.suspended = true;
         previous.editor.setVisible(false);
-        previous.dom.scroll.hidden = true;
+        previous.dom.panel.hidden = true;
       }
       active = next; editor = next.editor;
       assignPanelIds(next);
-      next.dom.scroll.hidden = false;
+      next.dom.panel.hidden = false;
       next.editor.setVisible(true);
       void formatController.attach(next.editor);
       paraFormat.attachEditor(next.editor, { canvas: next.dom.canvas, scrollport: next.dom.scroll, spacer: next.dom.spacer });
@@ -618,16 +633,35 @@ async function start() {
     if (!canStartOperation()) return { kind: "cancelled" };
     opening = true; refreshBusy();
     const options = formats ? { formats } : undefined;
+    // The identity of the file (canonical path given by the native side: dialog, recents, launch) tells a document that is
+    // already open: its tab is shown instead of a second copy (the file is read, but never opened twice).
+    let identity = path ? path.toLowerCase() : null;
+    let found = null;
+    const target = documentIsPristine(active) ? active : null;
+    const read = source ?? (() => (target ?? active).editor.readFromDialog(formats));
+    const wrapped = async () => {
+      const result = await read();
+      if (result.kind !== "ok") return result;
+      identity = (result.identity ?? path)?.toLowerCase() ?? null;
+      found = identity ? tabs.find(tab => tab.path === identity) ?? null : null;
+      return found ? { kind: "cancelled" } : result;
+    };
     try {
-      if (documentIsPristine(active)) {
-        const target = active;
-        const result = await target.editor.openDocument(source, options);
-        if (result.kind === "ok") { target.pristine = false; target.path = path; refreshTitle(target); }
-        return result;
+      let result;
+      if (target) {
+        result = await target.editor.openDocument(wrapped, options);
+        if (result.kind === "ok") { target.pristine = false; target.path = identity; refreshTitle(target); }
+      } else if (tabs.length >= MAX_DOCUMENTS) {
+        return { kind: "error", key: "tabs.error.too_many", code: "RICH_TOO_MANY_DOCUMENTS" };
+      } else {
+        result = await openInNewTab(tab => tab.editor.openDocument(wrapped, options));
+        if (result.kind === "ok") { result.tab.pristine = false; result.tab.path = identity; refreshTitle(result.tab); }
       }
-      if (tabs.length >= MAX_DOCUMENTS) return { kind: "error", key: "tabs.error.too_many", code: "RICH_TOO_MANY_DOCUMENTS" };
-      const result = await openInNewTab(tab => tab.editor.openDocument(source, options));
-      if (result.kind === "ok") { result.tab.pristine = false; result.tab.path = path; refreshTitle(result.tab); }
+      if (found) {
+        await switchTo(found);
+        showEditorMessage(i18n.t("tabs.launch.already", { name: tabTitle(found) }));
+        return { kind: "ok", already: true, tab: found };
+      }
       return result;
     } finally { opening = false; refreshBusy(); }
   }
@@ -674,7 +708,7 @@ async function start() {
   async function saveTab(tab) {
     try {
       const result = await tab.editor.saveAs();
-      if (result.kind === "ok") { refreshTitle(tab); void fileTab?.refreshRecents(); return true; }
+      if (result.kind === "ok") { tab.path = null; refreshTitle(tab); void fileTab?.refreshRecents(); return true; }
       if (result.kind === "cancelled") { showEditorMessage(messages.get("status-cancelled")); return false; }
       showEditorMessage(i18n.t("tabs.close.save-failed", { name: tabTitle(tab) }), true);
       return false;
@@ -689,7 +723,10 @@ async function start() {
     closingTab = true;
     refreshBusy();
     try {
-      if (confirm && tab.dirty && !engineLost) {
+      if (confirm && tab.dirty && tab.lost) {
+        // Saving is impossible (the document is not in the engine any more): say what is lost, then ask.
+        if (!globalThis.confirm(i18n.t("tabs.lost.close-confirm", { name: tabTitle(tab) }))) return false;
+      } else if (confirm && tab.dirty && !engineLost) {
         if (tab !== active) await switchTo(tab, { focus: false });
         if (editor.busy) return false;
         const choice = await askSaveChoice(tab);
@@ -716,7 +753,7 @@ async function start() {
       void aggregateDirty();
       try { await tab.editor.closeDocument(); } catch { showEditorMessage(messages.get("status-editor-error"), true); }
       try { tab.editor.dispose(); } catch { /* already disposed */ }
-      tab.dom.scroll.remove();
+      tab.dom.panel.remove();
       showEditorMessage(i18n.t("tabs.closed", { name }));
       return true;
     } finally { closingTab = false; refreshBusy(); }
@@ -751,22 +788,27 @@ async function start() {
     nodes.readonlyBanner.after(banner);
     return { banner, text };
   }
+  /** The text of a tab that stays readable and copyable in every lost state; restart only when the Worker is dead. */
+  function showLostButtons(kind) {
+    for (const [name, button] of lostButtons) button.hidden = kind === "worker" ? !["restart", "copy"].includes(name) : name === "restart";
+  }
   function markEngineLost(kind) {
     if (engineLost || disposed || !lostBanner) return;
     engineLost = { kind };
     for (const tab of tabs) {
       tab.lost = true;
+      if (kind === "worker") tab.stale = true;
       tab.editor.element.disabled = true;
       if (tab.inBar) tabsBar.update(tab.id, { error: true });
     }
     lostBanner.text.textContent = i18n.t(kind === "worker" ? "tabs.lost.worker" : "tabs.lost.message");
-    for (const [name, button] of lostButtons) button.hidden = kind === "worker" ? name !== "restart" : name === "restart";
+    showLostButtons(kind);
     lostBanner.banner.hidden = false;
     showEditorMessage(lostBanner.text.textContent, true);
     refreshBusy();
   }
   function tabRecovered(tab) {
-    tab.lost = false;
+    tab.lost = false; tab.stale = false;
     if (tab.inBar) tabsBar.update(tab.id, { error: false });
     if (tabs.some(other => other.lost)) return;
     engineLost = null;
@@ -774,13 +816,47 @@ async function start() {
     refreshBusy();
     showEditorMessage(messages.get("tabs.lost.recovered"));
   }
+  /**
+   * A new editor for the tab on the current client (the old one is bound to a dead Worker, or is replaced by a rebuild),
+   * optionally with `text` as the content of a new blank document. The tab keeps its place, its DOM and its name.
+   */
+  async function replaceEditor(tab, { text = null } = {}) {
+    const wasActive = tab === active;
+    tab.keptName = tab.editor.documentName ?? tab.keptName ?? null;
+    if (wasActive) { paraFormat.detachEditor(); formatController.detach(); navigation?.setEnabled(false); }
+    try { tab.editor.dispose(); } catch { /* the old client may be dead */ }
+    tab.state = null; tab.dirty = false; tab.hostDirty = false; tab.pendingError = null; tab.suspended = false; tab.stale = false;
+    const fresh = createEditorFor(tab);
+    tab.editor = fresh;
+    fresh.subscribe(({ reason } = {}) => { if (reason === "document" || reason === "document-name") refreshTitle(tab); });
+    if (!wasActive) fresh.setVisible(false);
+    if (text !== null) {
+      await fresh.initialize();
+      if (text !== "") await fresh.editSelection(text, fresh.getState());
+      tab.pristine = text === "";
+    }
+    if (wasActive) {
+      editor = fresh;
+      void formatController.attach(fresh);
+      paraFormat.attachEditor(fresh, { canvas: tab.dom.canvas, scrollport: tab.dom.scroll, spacer: tab.dom.spacer });
+      rebuildContextMenu(); rebuildReaderToggle();
+      refreshBusy();
+      if (fresh.state) onState(fresh.state, { documentReplaced: true });
+    } else if (text !== null) { fresh.setSuspended(true); tab.suspended = true; }
+    void aggregateDirty();
+    refreshTitle(tab);
+  }
   /** Rouvrir depuis le fichier : le même identifiant est rouvert par un `Open` (le moteur recrée la session). */
   async function recoverByOpening() {
     const tab = active;
     if (!tab || !engineLost || engineLost.kind !== "trap") return;
     try {
+      if (tab.stale) {
+        if (tab.dirty && !globalThis.confirm(i18n.t("tabs.lost.blank-confirm", { name: tabTitle(tab) }))) return;
+        await replaceEditor(tab);
+      }
       const result = await tab.editor.openDocument(undefined);
-      if (result.kind === "ok") { tab.pristine = false; refreshTitle(tab); tabRecovered(tab); void noteOpened(); }
+      if (result.kind === "ok") { tab.pristine = false; tab.keptName = null; refreshTitle(tab); tabRecovered(tab); void noteOpened(); }
       else if (result.kind === "error") showEditorMessage(openFailureMessage(result), true);
     } catch (error) { showEditorMessage(messageForError(error, messages), true); }
   }
@@ -788,8 +864,14 @@ async function start() {
     const tab = active;
     if (!tab || !engineLost || engineLost.kind !== "trap") return;
     try {
+      if (tab.stale) {
+        if (tab.dirty && !globalThis.confirm(i18n.t("tabs.lost.blank-confirm", { name: tabTitle(tab) }))) return;
+        await replaceEditor(tab, { text: "" });
+        tab.keptName = null; tab.path = null; tab.untitled = null; refreshTitle(tab); tabRecovered(tab);
+        return;
+      }
       const result = await tab.editor.newDocument();
-      if (result.kind !== "cancelled") { tab.pristine = true; tab.path = null; tab.untitled = null; refreshTitle(tab); tabRecovered(tab); }
+      if (result.kind !== "cancelled") { tab.pristine = true; tab.path = null; tab.untitled = null; tab.keptName = null; refreshTitle(tab); tabRecovered(tab); }
     } catch (error) { showEditorMessage(messageForError(error, messages), true); }
   }
   async function copyDisplayedText() {
@@ -798,34 +880,37 @@ async function start() {
       showEditorMessage(messages.get("tabs.lost.copied"));
     } catch { showEditorMessage(messages.get("tabs.lost.copy-failed"), true); }
   }
-  /** Worker mort : nouveau Worker, nouveau transport, nouveaux éditeurs ; chaque onglet repart d'un document vierge. */
+  /**
+   * Worker mort : nouveau Worker, nouveau transport. Chaque onglet dont le texte complet est connu du cache JS est
+   * reconstruit dans un nouvel éditeur à partir de ce texte (sans mise en forme) ; les autres restent affichés, marqués
+   * perdus, avec leur dernier texte lisible et copiable : aucun onglet n'est vidé.
+   */
   async function restartEngine() {
     if (!engineLost || engineLost.kind !== "worker") return;
     try {
       const previous = client;
       const fresh = await connectEngine();
       client = fresh.client; transport = fresh.transport;
-      const current = active;
-      paraFormat.detachEditor(); formatController.detach(); navigation?.setEnabled(false);
-      active = null; editor = null;
+      const kept = [];
       for (const tab of tabs) {
-        try { tab.editor.dispose(); } catch { /* the old client is dead */ }
-        tab.state = null; tab.dirty = false; tab.hostDirty = false; tab.pristine = true; tab.path = null; tab.untitled = null; tab.lost = false;
-        tab.suspended = false; tab.pendingError = null;
-        tab.editor = createEditorFor(tab);
-        tab.editor.setVisible(false);
-        tab.editor.subscribe(({ reason } = {}) => { if (reason === "document" || reason === "document-name") refreshTitle(tab); });
-        await tab.editor.initialize();
-        if (tab !== current) { tab.editor.setSuspended(true); tab.suspended = true; tab.dom.scroll.hidden = true; }
-        if (tab.inBar) tabsBar.update(tab.id, { title: tabTitle(tab), dirty: false, error: false });
+        const text = tab.editor.completeText();
+        if (text === null) { kept.push(tab); continue; }
+        await replaceEditor(tab, { text });
+        tab.lost = false;
+        if (tab.inBar) tabsBar.update(tab.id, { error: false });
       }
-      void aggregateDirty();
       try { previous?.close(); } catch { /* already closed */ }
-      engineLost = null;
-      lostBanner.banner.hidden = true;
-      await switchTo(current ?? tabs[0]);
+      if (kept.length === 0) {
+        engineLost = null;
+        lostBanner.banner.hidden = true;
+        showEditorMessage(messages.get("tabs.lost.restarted"));
+      } else {
+        engineLost = { kind: "trap" };
+        lostBanner.text.textContent = i18n.t("tabs.lost.partial", { names: kept.map(tabTitle).join(", ") });
+        showLostButtons("trap");
+        showEditorMessage(lostBanner.text.textContent, true);
+      }
       refreshBusy();
-      showEditorMessage(messages.get("tabs.lost.restarted"));
     } catch (error) { showEditorMessage(messageForError(error, messages), true); }
   }
   /** Worker, client du moteur et transport unique (une seule suite d'identifiants de requêtes externes). */
@@ -876,7 +961,7 @@ async function start() {
     lostButtons.get("copy").addEventListener("click", () => { void copyDisplayedText(); }, { signal: listeners.signal });
     lostButtons.get("restart").addEventListener("click", () => { void restartEngine(); }, { signal: listeners.signal });
     const first = createTab({ first: true });
-    first.dom.scroll.hidden = false;
+    first.dom.panel.hidden = false;
     joinTab(first);
     editor = first.editor;
     // Raccourcis des modules de mise en forme : chaque module les déclare dans keyBindings() (voir format-controller.mjs).
@@ -898,6 +983,7 @@ async function start() {
     async function openDocxInEditor(source) {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
       const result = await openIntoTab(source, { formats: ["docx", "docm", "dotx", "txt"] });
+      if (result.already) return result;
       if (result.kind === "ok") showEditorMessage(messages.get(editor.state?.readOnly ? "status-readonly-opened" : "status-opened"));
       else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
       else showEditorMessage(openFailureMessage(result), true);
@@ -965,6 +1051,7 @@ async function start() {
     nodes.open.addEventListener("click", async () => {
       try {
         const result = await openIntoTab(undefined);
+        if (result.already) return;
         if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(openFailureMessage(result), true);
@@ -975,7 +1062,7 @@ async function start() {
       try {
         const saving = active;
         const result = await editor.saveAs();
-        if (result.kind === "ok") { showEditorMessage(messages.get("status-saved")); refreshTitle(saving); void fileTab?.refreshRecents(); }
+        if (result.kind === "ok") { showEditorMessage(messages.get("status-saved")); saving.path = null; refreshTitle(saving); void fileTab?.refreshRecents(); }
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
       } catch (error) { onError(error); }
@@ -1013,10 +1100,10 @@ async function start() {
     let claiming = false;
     let claimAgain = false;
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-    /** Waits until nothing holds the document (dialog, save, other opening); the launched file is not lost meanwhile. */
+    /** Waits (without limit: the file is already consumed on the native side) until nothing holds the document. */
     async function untilIdle() {
-      for (let waited = 0; waited < 120000 && !disposed; waited += 50) {
-        if (initialized && !opening && !switching && !closingTab && !editor?.busy && !document.querySelector("dialog:modal")) return true;
+      while (!disposed) {
+        if (initialized && !opening && !switching && !closingTab && !engineLost && !editor?.busy && !document.querySelector("dialog:modal")) return true;
         await sleep(50);
       }
       return false;
@@ -1024,17 +1111,21 @@ async function start() {
     async function openLaunched(launched, batch) {
       const name = launched.path ? baseName(launched.path) : null;
       const identity = launched.path ? launched.path.toLowerCase() : null;
-      if (!await untilIdle()) { batch.refused.push({ name, reason: messages.get("files.error.queue_full") }); return; }
-      const existing = identity ? tabs.find(tab => tab.path === identity) : null;
-      if (existing) { await switchTo(existing); batch.already.push(name); return; }
-      if (tabs.length >= MAX_DOCUMENTS && !documentIsPristine(active)) { batch.skipped += 1; return; }
-      const source = async () => ({ kind: "ok", bytes: launched.bytes, format: launched.type, name: name ?? undefined });
-      const result = await openIntoTab(source, { path: identity });
-      if (result.kind === "ok") {
-        batch.opened += 1;
-        await editor.whenFirstScreen();
-      } else if (result.code === "RICH_TOO_MANY_DOCUMENTS") batch.skipped += 1;
-      else batch.refused.push({ name, reason: result.kind === "cancelled" ? messages.get("status-cancelled") : openFailureMessage(result) });
+      const source = async () => ({ kind: "ok", bytes: launched.bytes, format: launched.type, name: name ?? undefined, identity: launched.path });
+      for (;;) {
+        if (!await untilIdle()) return;
+        const existing = identity ? tabs.find(tab => tab.path === identity) : null;
+        if (existing) { await switchTo(existing); batch.already.push(name); return; }
+        if (tabs.length >= MAX_DOCUMENTS && !documentIsPristine(active)) { batch.skipped += 1; return; }
+        const result = await openIntoTab(source, { path: launched.path });
+        // A refusal to start (something took the document between the wait and the opening): wait again, never drop the file.
+        if (result.kind === "cancelled" && !result.already) continue;
+        if (result.already) batch.already.push(name);
+        else if (result.kind === "ok") { batch.opened += 1; await editor.whenFirstScreen(); }
+        else if (result.code === "RICH_TOO_MANY_DOCUMENTS") batch.skipped += 1;
+        else batch.refused.push({ name, reason: openFailureMessage(result) });
+        return;
+      }
     }
     function reportLaunch(batch) {
       const parts = [];

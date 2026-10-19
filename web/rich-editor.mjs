@@ -1174,7 +1174,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     if (picked.size > RICH_LIMITS.maxOpenBytes) { void host.releaseTicket?.(picked.ticket); return { kind: "error", key: "files.error.too_large" }; }
     const read = await host.readTicket(picked.ticket, { copy: true });
     if (read.kind !== "ok") return read;
-    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name };
+    return { kind: "ok", bytes: read.bytes, format: picked.format, name: picked.name, identity: picked.identity ?? null };
   }
 
   function baseName(name) {
@@ -1225,6 +1225,19 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
     /** Name of the file the document came from (or was saved as), null for a new document (tab title). */
     get documentName() { return origin.name; },
     get documentFormat() { return origin.format; },
+    /** Native dialog and ticket read without opening anything: `{ kind: "ok", bytes, format, name, identity }` (the application decides where the file opens). */
+    readFromDialog(formats = OPEN_FORMATS) { return pickAndRead(formats); },
+    /**
+     * The whole text of the document as the engine last showed it, or null when this is not certain (a window of
+     * the text only, an object or a symbol in it, or a window older than the last state): the application can then
+     * rebuild the document from it after the engine was lost; null means the tab must be shown as lost instead.
+     */
+    completeText() {
+      if (state && state.docLen === 0) return "";
+      const held = cache.window;
+      if (!state || !held || Number(held.start) !== 0 || held.text.includes("\ufffc") || byteLength(held.text) !== state.docLen) return null;
+      return held.text;
+    },
     /** The identifier of the document in the engine. */
     get docId() { return docId; },
     get visible() { return visible; },
@@ -1382,7 +1395,7 @@ export function createRichEditor({ client, host, canvas, scrollport, spacer, tex
         if (result.bytes.length > RICH_LIMITS.maxOpenBytes) return { kind: "error", key: "files.error.too_large" };
         try {
           const opened = await enqueueTask(() => loadDocument(format === "txt" ? "txt" : "docx", result.bytes, result.name ?? null));
-          return { kind: "ok", state: opened };
+          return { kind: "ok", state: opened, identity: result.identity ?? null };
         } catch (error) {
           if (error?.code === "EDITOR_CLOSED") throw error;
           return { kind: "error", key: OPEN_ERROR_KEYS[error?.code] ?? "status-open-error", code: error?.code };
