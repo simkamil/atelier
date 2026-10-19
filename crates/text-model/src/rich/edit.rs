@@ -49,6 +49,8 @@ use super::node::{Node, Subtree};
 use super::ops::RichOp;
 use super::paragraph::{CharRun, Paragraph};
 
+mod format;
+
 /// Entries kept in each stack; the oldest are dropped beyond it.
 const MAX_HISTORY: usize = 10_000;
 
@@ -97,6 +99,9 @@ struct Item {
     /// (`replace_ranges`) carries the size of the group, the others one. A
     /// group is one history step: one undo, one revision.
     group: usize,
+    /// Applying the item changes more than paragraphs (a style): the layout
+    /// of the whole document must be redone (`LayoutScope::All`).
+    all: bool,
 }
 
 /// What an edit replaced, in bytes and in paragraphs: `removed` units at
@@ -641,6 +646,7 @@ impl RichDocument {
             }
         }
         let mut span: Option<Span> = None;
+        let all = items.iter().any(|item| item.all);
         let mut opposites = Vec::with_capacity(items.len());
         let (mut last, mut doc_len, mut failed) = (None, 0, false);
         for item in items {
@@ -656,6 +662,7 @@ impl RichDocument {
                 ops: inverses,
                 meta: item.meta.swapped(),
                 group: 1,
+                all: item.all,
             });
             last = Some(item.meta);
         }
@@ -685,6 +692,9 @@ impl RichDocument {
             }
         }
         let mut outcome = self.outcome(&meta, doc_len);
+        if all {
+            outcome.layout_scope = LayoutScope::All;
+        }
         if let Some(span) = span {
             outcome.start = span.start;
             outcome.removed_bytes = span.removed;
@@ -764,6 +774,7 @@ impl FlatEdit for RichDocument {
             ops,
             meta: meta.swapped(),
             group: 1,
+            all: false,
         });
         self.put_flat(tree);
         Ok(self.outcome(&outcome_meta, doc_len))
@@ -959,6 +970,7 @@ impl RichDocument {
             ops,
             meta: meta.swapped(),
             group: 1,
+            all: false,
         });
         self.put_flat(tree);
         Ok(self.outcome(&outcome_meta, doc_len))
@@ -1137,6 +1149,7 @@ impl RichDocument {
             ops,
             meta,
             group: 1,
+            all: false,
         });
         Ok(Some(span))
     }

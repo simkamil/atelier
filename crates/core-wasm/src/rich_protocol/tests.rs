@@ -122,6 +122,15 @@ fn describe_request(r: &Request) -> String {
         | Command::ReplaceAll { .. }
         | Command::PropertiesRead
         | Command::PropertiesApply { .. } => "see find_tests".into(),
+        // The vectors of these are in `format_tests` (tests/rich-editor-format-vectors.txt).
+        Command::FormatState
+        | Command::ApplyCharFormat(_)
+        | Command::ApplyParaFormat(_)
+        | Command::ListStyles { .. }
+        | Command::ApplyStyle { .. }
+        | Command::PreviewStyle { .. }
+        | Command::ListFonts
+        | Command::FormatMarks { .. } => "see format_tests".into(),
     };
     format!("{head} {tail}")
 }
@@ -245,6 +254,10 @@ fn describe_reply(r: &Reply) -> String {
         | Response::Replaced { .. }
         | Response::Properties { .. }
         | Response::PropertiesApplied(_) => "see find_tests".into(),
+        Response::FormatState(_)
+        | Response::StyleList { .. }
+        | Response::FontList(_)
+        | Response::FormatMarks { .. } => "see format_tests".into(),
     };
     format!("{head} {tail}")
 }
