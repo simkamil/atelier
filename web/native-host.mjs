@@ -12,7 +12,7 @@ const MAX_QUEUE = 4;
 const MAX_QUEUED_BYTES = MAX_DOCX_BYTES + MAX_FILE_BYTES * MAX_QUEUE;
 const PREFIX = "us120-file|1|";
 const LAUNCH_NOTICE = "us115-launch|1";
-const MAX_LAUNCH_SKIPPED = 99;
+const MAX_LAUNCH_REMAINING = 99;
 /** US-113 : taille d'un morceau d'écriture avant Base64 (le natif accepte jusqu'à 128 Kio). */
 export const WRITE_CHUNK_BYTES = 96 * 1024;
 /** US-113 : taille maximale d'un fichier écrit par le pont. */
@@ -210,15 +210,22 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     const entry = pending.get(id);
     if (!entry) return;
     if (status === "cancelled" && payload === "") settle(id, { kind: "cancelled" });
-    else if (status === "error" && /^[A-Za-z][A-Za-z0-9_.]{0,63}$/.test(payload)) settle(id, { kind: "error", key: payload });
+    else if (status === "error" && entry.operation === "launch" && /^[A-Za-z][A-Za-z0-9_.]{0,63};[A-Za-z0-9+/=]*$/.test(payload)) {
+      // US-327 : l'erreur d'un fichier lancé porte son nom (base64), pour le message par fichier.
+      const [key, who] = payload.split(";");
+      try { settle(id, { kind: "error", key, name: who === "" ? null : decodeName(who) }); }
+      catch { settle(id, { kind: "error", key }); }
+    } else if (status === "error" && /^[A-Za-z][A-Za-z0-9_.]{0,63}$/.test(payload)) settle(id, { kind: "error", key: payload });
     else if (status === "ok" && ["open", "openDocx"].includes(entry.operation)) {
       try { settle(id, { kind: "ok", bytes: fromBase64(payload, entry.operation === "openDocx" ? MAX_DOCX_BYTES : MAX_FILE_BYTES) }); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "launch" && payload !== "") {
-      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*)$/.exec(payload);
+      // `<type>;<restants>;<nom base64>;<empreinte>;<octets base64>` : `remaining` fichiers attendent encore (US-327), `name` est
+      // le nom du fichier (sans dossier), `identity` son empreinte opaque : le chemin n'arrive jamais jusqu'ici.
+      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);([0-9a-f]{16});([A-Za-z0-9+/=]*)$/.exec(payload);
       try {
-        if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED) throw new NativeHostError("HOST_INVALID_RESPONSE");
-        settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes: fromBase64(match[3], MAX_DOCX_BYTES) } });
+        if (!match || Number(match[2]) > MAX_LAUNCH_REMAINING) throw new NativeHostError("HOST_INVALID_RESPONSE");
+        settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), name: match[3] === "" ? null : decodeName(match[3]), identity: match[4], bytes: fromBase64(match[5], MAX_DOCX_BYTES) } });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
     } else if (status === "ok" && entry.operation === "recentList") {
       try {
@@ -238,6 +245,10 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
         if (!match || !DIALOG_FORMATS.includes(match[2])) throw new NativeHostError("HOST_INVALID_RESPONSE");
         settle(id, { kind: "ok", ticket: match[1], format: match[2], name: decodeName(match[3]) });
       } catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
+    } else if (status === "ok" && entry.operation === "fileIdentity") {
+      // US-327 : empreinte OPAQUE du fichier (16 chiffres hexadécimaux), jamais son chemin.
+      if (/^[0-9a-f]{16}$/.test(payload)) settle(id, { kind: "ok", identity: payload });
+      else settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" });
     } else if (status === "ok" && ["readTicket", "readFont", "listFonts"].includes(entry.operation)) {
       try { finishData(id, entry, inlineBytes(payload, entry.operation === "listFonts" ? MAX_FONT_LIST_BYTES : MAX_DOCX_BYTES), noop); }
       catch (error) { settle(id, { kind: "error", key: error.code ?? "HOST_INVALID_RESPONSE" }); }
@@ -260,14 +271,16 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     stats.sharedReceived += 1;
     const { id, payload } = parsed;
     if (entry.operation === "launch") {
-      const match = /^(txt|docx);([0-9]{1,2});@sb$/.exec(payload);
-      if (!match || Number(match[2]) > MAX_LAUNCH_SKIPPED || buffer.byteLength > MAX_LAUNCH_BYTES) {
+      const match = /^(txt|docx);([0-9]{1,2});([A-Za-z0-9+/=]*);([0-9a-f]{16});@sb$/.exec(payload);
+      let name = null;
+      try { name = match && match[3] !== "" ? decodeName(match[3]) : null; } catch { drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return; }
+      if (!match || Number(match[2]) > MAX_LAUNCH_REMAINING || buffer.byteLength > MAX_LAUNCH_BYTES) {
         drop(); settle(id, { kind: "error", key: "HOST_INVALID_RESPONSE" }); return;
       }
       // Le document d'ouverture est copié : les appelants le conservent, le tampon est libéré aussitôt.
       const bytes = new Uint8Array(buffer).slice();
       drop();
-      settle(id, { kind: "ok", document: { type: match[1], skipped: Number(match[2]), bytes } });
+      settle(id, { kind: "ok", document: { type: match[1], remaining: Number(match[2]), name, identity: match[4], bytes } });
       return;
     }
     const match = /^sb;([0-9]{1,10})$/.exec(payload);
@@ -409,6 +422,11 @@ export function createNativeHost({ webview = globalThis.chrome?.webview, timeout
     readTicket(ticket, { copy = false } = {}) {
       if (typeof ticket !== "string" || !/^r[1-9][0-9]{0,19}$/.test(ticket)) return invalid("files.error.unknown_ticket");
       return request("readTicket", ticket, 0, { copy });
+    },
+    /** US-327 : empreinte opaque du fichier d'un ticket `r…` (reconnaître un document déjà ouvert sans connaître son chemin). */
+    fileIdentity(ticket) {
+      if (typeof ticket !== "string" || !/^r[1-9][0-9]{0,19}$/.test(ticket)) return invalid("files.error.unknown_ticket");
+      return request("fileIdentity", ticket);
     },
     /** US-113 : écriture atomique par morceaux sur un ticket `w…` ; le fichier n'apparaît qu'au dernier morceau. */
     writeTicket,

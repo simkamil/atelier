@@ -475,6 +475,7 @@ pub(crate) fn begin_bridge_request(
         Request::PickOpen { id, spec } => Step::Done(pick_open(&id, &spec, state, broker, host)),
         Request::PickSave { id, spec } => Step::Done(pick_save(&id, &spec, state, broker, host)),
         Request::ReadTicket { id, ticket } => read_ticket(id, ticket, state, broker),
+        Request::FileIdentity { id, ticket } => file_identity(id, ticket, state),
         Request::ReleaseTicket { id, ticket, write } => {
             let known = if write {
                 state.write_tickets.contains(&ticket)
@@ -631,6 +632,61 @@ fn issue_open_ticket(
         id,
         &format!("r{};{format};{size};{}", ticket.id(), file_name_b64(path)),
     )
+}
+
+/// Chemin canonique d'un fichier (US-327) : chemin absolu, résolu par le système (noms courts 8.3 en noms longs,
+/// casse réelle, liens), sans le préfixe verbatim \\?\ . Un fichier introuvable garde son chemin tel quel.
+pub(crate) fn canonical_identity(path: &Path) -> String {
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let text = resolved.to_string_lossy().into_owned();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        text
+    }
+}
+
+/// Empreinte OPAQUE d'un fichier (US-327) : FNV-1a 64 bits du chemin canonique en minuscules, 16 chiffres hexadécimaux.
+/// Le script la compare (document déjà ouvert) sans jamais recevoir le chemin ; l'empreinte ne se calcule que sur un fil
+/// de travail (la résolution canonique peut bloquer sur un partage réseau injoignable).
+pub(crate) fn identity_hash(path: &Path) -> String {
+    let canonical = canonical_identity(path).to_lowercase();
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in canonical.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Nom du fichier (sans dossier), au plus 1 Kio ; sinon vide.
+pub(crate) fn short_file_name(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if name.len() <= 1024 {
+        name
+    } else {
+        String::new()
+    }
+}
+
+/// Identité d'un ticket de lecture remis par `PickOpen` ou `RecentOpen` : travail hors du fil UI.
+fn file_identity(id: String, ticket: u64, state: &mut BridgeState) -> Step {
+    let Some(path) = state
+        .read_paths
+        .iter()
+        .find(|(held, _)| *held == ticket)
+        .map(|(_, path)| path.clone())
+    else {
+        return Step::Done(error_reply(&id, "files.error.unknown_ticket"));
+    };
+    Step::Job(Box::new(move || {
+        JobResult::outcome(ok_reply(&id, &identity_hash(&path)))
+    }))
 }
 
 /// Format (identifiant JS) d'un chemin d'après son extension, parmi les formats connus du natif.
@@ -1327,6 +1383,33 @@ mod tests {
             "no path leaves the native side"
         );
         let (_, ticket) = parse_ticket(fields[0]).unwrap();
+        // US-327 : l'empreinte opaque du fichier, sur demande (fil de travail), jamais le chemin.
+        let identity = process_bridge_request(
+            Request::FileIdentity {
+                id: "9".into(),
+                ticket,
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        );
+        assert_eq!(
+            identity,
+            Outcome::Text(format!("us120-file|1|9|ok|{}", identity_hash(&file)))
+        );
+        let unknown = process_bridge_request(
+            Request::FileIdentity {
+                id: "10".into(),
+                ticket: ticket + 1000,
+            },
+            &mut state,
+            &broker,
+            &mut host,
+        );
+        assert_eq!(
+            unknown,
+            Outcome::Text("us120-file|1|10|error|files.error.unknown_ticket".into())
+        );
         let read = process_bridge_request(
             Request::ReadTicket {
                 id: "2".into(),

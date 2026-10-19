@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="/format-para.css">
     <link rel="stylesheet" href="/styles-pane.css">
     <link rel="stylesheet" href="/document-mirror.css">
+    <link rel="stylesheet" href="/document-tabs.css">
     <script type="module" src="/app.mjs"></script>
   </head>
   <body>
@@ -57,6 +58,7 @@
         <span id="readonly-text" role="status"></span>
         <button id="readonly-copy" type="button" class="ui-button" data-i18n="readonly-copy" hidden>Créer une copie modifiable</button>
       </div>
+      <div id="document-tabs-slot"></div>
       <section id="text-workspace" class="workspace" aria-label="Éditeur de texte" data-i18n-aria-label="workspace-label">
         <div id="search-slot" hidden></div>
         <div id="document-scroll" class="document-scroll" tabindex="0" aria-label="Pages du document" data-i18n-aria-label="pages-label">

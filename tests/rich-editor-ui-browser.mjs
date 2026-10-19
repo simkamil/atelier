@@ -131,10 +131,17 @@ try {
   const { editorReady } = await import("/app.mjs?first");
   app = await editorReady;
   assert(app.status === "ready" && app.engine === "v2", "product initializes with the v2 editor from ?engine=v2");
-  const editor = app.editor;
+  // US-327 : un document s'ouvre dans un nouvel onglet quand le document affiché est modifié ; `editor` désigne toujours celui de l'onglet actif.
+  const editor = new Proxy({}, { get: (_, key) => { const target = app.editor; const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
   const status = document.querySelector("#editor-status");
-  const canvas = document.querySelector("#document-canvas");
-  const scrollport = document.querySelector("#document-scroll");
+  // US-327 : le canvas et le défilement sont ceux du document affiché (celui qui porte les identifiants de index.html).
+  const liveNode = id => new Proxy({}, {
+    get: (_, key) => { const node = document.getElementById(id); const value = node[key]; return typeof value === "function" ? value.bind(node) : value; },
+    set: (_, key, value) => { document.getElementById(id)[key] = value; return true; },
+  });
+  const canvasNode = () => document.getElementById("document-canvas");
+  const canvas = liveNode("document-canvas");
+  const scrollport = liveNode("document-scroll");
   const state = () => app.getState();
   const text = () => editor.readText();
   assert(document.documentElement.dataset.engine === "v2" && editor.engine === "v2", "page and editor report the v2 engine");
@@ -146,7 +153,7 @@ try {
   const darkPixels = (x0, y0, x1, y1) => {
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
-    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvasNode(), 0, 0);
     const data = ctx.getImageData(Math.round(x0 * ratio), Math.round(y0 * ratio), Math.max(1, Math.round((x1 - x0) * ratio)), Math.max(1, Math.round((y1 - y0) * ratio))).data;
     let dark = 0;
     for (let i = 0; i < data.length; i += 4) if (data[i] < 100 && data[i + 1] < 100 && data[i + 2] < 100) dark += 1;
@@ -157,7 +164,7 @@ try {
   const pixelAt = (x, y) => {
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
-    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvasNode(), 0, 0);
     return [...ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data];
   };
   const near = (rgb, expected, tolerance = 40) => expected.every((v, i) => Math.abs(rgb[i] - v) <= tolerance);
@@ -248,7 +255,8 @@ try {
   }
 
   // --- mirror and reader mode ----------------------------------------------------------------------------------
-  const mirror = document.querySelector(".document-mirror");
+  // US-327 : chaque onglet a son miroir ; `mirror` désigne celui de l'onglet affiché (celui qui porte l'identifiant #document-scroll).
+  const mirror = new Proxy({}, { get: (_, key) => { const node = document.querySelector("#document-scroll .document-mirror"); const value = node?.[key]; return typeof value === "function" ? value.bind(node) : value; } });
   assert(mirror && mirror.getAttribute("role") === "document", "accessible DOM mirror exists in the page stack");
   inputText(editor.element, "Titre");
   await waitFor(() => mirror.textContent.includes("Titre"), "mirror shows the typed paragraph");
@@ -264,21 +272,26 @@ try {
 
 
   // --- open a text file through the native dialog and tickets ---------------------------------------------
-  const clickAndWait = async (button, scenario, ready) => { scenario(); button.click(); await waitFor(ready, `${button.id} flow`); };
+  // US-327 : chaque ouverture crée un onglet (8 au plus) ; ce scénario ne s'intéresse qu'au document affiché : les autres onglets sont fermés avant chaque ouverture.
+  const trimTabs = async () => { for (const tab of app.documentTabs.list) if (tab.id !== app.documentTabs.active) await app.documentTabs.close(tab.id, { confirm: false }); };
+  const clickAndWait = async (button, scenario, ready) => { await trimTabs(); scenario(); button.click(); await waitFor(ready, `${button.id} flow`); };
   const openButton = document.querySelector("#open-document");
   const openDocxButton = document.querySelector("#open-docx");
   const saveButton = document.querySelector("#save-document");
   const message = () => status.textContent;
   await waitFor(() => !openButton.disabled, "open button enabled");
-  window.confirm = () => false;
-  assert(state().dirty, "the document is dirty before the confirmation checks");
+  // US-327 : ouvrir un fichier ne remplace plus un document modifié : il s'ouvre dans un nouvel onglet, sans rien demander ni perdre.
+  let discardAsked = 0;
+  window.confirm = () => { discardAsked += 1; return false; };
+  assert(state().dirty, "the document is dirty before opening a file");
+  const modifiedDocument = app.editor;
+  const modifiedText = await modifiedDocument.readText();
+  const tabsBeforeOpen = app.documentTabs.list.length;
   bridge.nextOpen = { name: "essai.txt", format: "txt", bytes: encoder.encode("un café trois\r\nseconde ligne") };
-  const callsBefore = bridge.calls.length;
-  openButton.click();
-  await waitFor(() => message() === "Opération annulée.", "declined discard confirmation cancels the open");
-  assert(!bridge.calls.slice(callsBefore).some(call => call.includes("|pickOpen|")), "no file dialog is opened when the discard is declined");
-  window.confirm = () => true;
   await clickAndWait(openButton, () => {}, () => message() === "Document ouvert.");
+  assert(discardAsked === 0 && app.documentTabs.list.length === tabsBeforeOpen + 1 && app.editor !== modifiedDocument, "a modified document is not replaced: the file opens in a new tab and nothing is asked");
+  assert(await modifiedDocument.readText() === modifiedText && modifiedDocument.state.dirty, "the modified document keeps its text and its modifications in its own tab");
+  window.confirm = () => true;
   await waitFor(async () => await text() === "un café trois\nseconde ligne", "TXT content opened");
   assert(!state().dirty && state().revision === 0n && state().docLen === byteLengthOf("un café trois\nseconde ligne"), "opened TXT is clean at revision 0");
   assert(/filter:txt=Texte brut/.test(bridge.lastOpenSpec) && /filter:docx=Document Word/.test(bridge.lastOpenSpec), "open dialog lists the localised formats (txt, docx)");
@@ -403,7 +416,7 @@ try {
   const tintOf = () => {
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
-    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvas, 0, 0);
+    const ctx = view.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, view.width, view.height); ctx.drawImage(canvasNode(), 0, 0);
     const { data } = ctx.getImageData(0, 0, view.width, view.height);
     let yellow = 0; let orange = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -900,23 +913,44 @@ try {
     assert(document.documentElement.scrollHeight <= innerHeight && document.body.scrollHeight <= innerHeight,
       "a long v2 document does not grow the product body or move the toolbar and footer outside the viewport");
     const launchBase64 = value => b64(encoder.encode(value));
+    // US-327 : `type;restants;nom base64;empreinte opaque;octets` (le chemin n'arrive jamais au script).
+    const fingerprint = path => { let h = 0xcbf29ce484222325n; for (const c of encoder.encode(path.toLowerCase())) { h ^= BigInt(c); h = (h * 0x100000001b3n) & 0xffffffffffffffffn; } return h.toString(16).padStart(16, "0"); };
+    const launched = (path, text, remaining) => `txt;${remaining};${launchBase64(path.split("/").at(-1))};${fingerprint(path)};${launchBase64(text)}`;
     const notifyLaunch = () => bridge.notify("us115-launch|1");
-    bridge.launchReplies.push({ status: "ok", payload: `txt;2;${launchBase64("lancé par argument")}` });
+    const trimTabs = async () => { for (const tab of app.documentTabs.list) if (tab.id !== app.documentTabs.active) await app.documentTabs.close(tab.id, { confirm: false }); };
+    const tabCount = () => app.documentTabs.list.length;
+    await trimTabs();
+    // US-115 / US-327 : un fichier lancé s'ouvre dans un nouvel onglet ; son identité (chemin) et ses octets arrivent ensemble.
+    let tabsBefore = tabCount();
+    bridge.launchReplies.push({ status: "ok", payload: launched("C:/dossier/argument.txt", "lancé par argument", 0) });
     notifyLaunch();
     await waitFor(async () => (await text()) === "lancé par argument", "a launched .txt opens in the v2 editor");
-    assert(statusText().startsWith("Document ouvert.") && statusText().includes("2 autres fichiers n’ont pas été ouverts"), "opening and the plural skipped count are announced in a single message");
-    bridge.launchReplies.push({ status: "error", payload: "files.error.unsupported_type" }, { status: "ok", payload: `txt;1;${launchBase64("deuxième")}` });
+    assert(statusText() === "Document ouvert." && tabCount() === tabsBefore + 1, "a launched file opens in a new tab and the opening is announced");
+    assert(app.documentTabs.list.find(tab => tab.id === app.documentTabs.active).title === "argument.txt", "the tab is named after the launched file");
+    // Plusieurs fichiers : chacun dans son onglet, l'un après l'autre ; un fichier refusé ne cache pas le suivant.
+    tabsBefore = tabCount();
+    bridge.launchReplies.push(
+      { status: "ok", payload: launched("C:/d/un.txt", "premier", 2) },
+      { status: "error", payload: `files.error.unsupported_type;${launchBase64("image.png")}` },
+      { status: "ok", payload: launched("C:/d/trois.txt", "troisième", 0) });
     notifyLaunch();
-    await waitFor(async () => (await text()) === "deuxième", "an unsupported launched file does not hide the next one");
-    assert(statusText().startsWith("Document ouvert.") && statusText().includes("1 autre fichier n’a pas été ouvert"), "singular skipped message");
+    await waitFor(async () => (await text()) === "troisième" && tabCount() === tabsBefore + 2, "several launched files open one tab each");
+    assert(app.documentTabs.list.slice(-2).map(tab => tab.title).join("|") === "un.txt|trois.txt", "each launched file has its own tab, in launch order");
+    assert(statusText().includes("2 documents ouverts") && statusText().includes("image.png") && statusText().includes(".txt ou .docx"), "the refused file is named and explained in the same message");
+    // Le même fichier relancé : son onglet est affiché, rien n'est rouvert.
+    tabsBefore = tabCount();
+    bridge.launchReplies.push({ status: "ok", payload: launched("C:/D/UN.txt", "autre contenu", 0) });
+    notifyLaunch();
+    await waitFor(async () => (await text()) === "premier", "a file already open is switched to, not reopened");
+    assert(tabCount() === tabsBefore && statusText().includes("déjà ouvert"), "no duplicate tab and the user is told");
     bridge.launchReplies.push({ status: "error", payload: "files.error.unsupported_type" });
     notifyLaunch();
     await waitFor(() => statusText().includes(".txt ou .docx"), "an unsupported launched file is explained");
-    assert((await text()) === "deuxième", "a refused launched file leaves the document unchanged");
-    bridge.launchReplies.push({ status: "ok", payload: "txt;0;***" });
+    assert((await text()) === "premier", "a refused launched file leaves the document unchanged");
+    bridge.launchReplies.push({ status: "ok", payload: "txt;0;;0000000000000000;***" });
     notifyLaunch();
     await sleep(50);
-    assert((await text()) === "deuxième", "a malformed launch reply is ignored");
+    assert((await text()) === "premier", "a malformed launch reply is ignored");
   }
 
   // --- a second product instance: persisted reader mode, close during a save ---------------------------------------------------------------------

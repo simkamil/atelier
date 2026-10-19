@@ -66,9 +66,15 @@ try {
   const { editorReady } = await import("/app.mjs");
   app = await editorReady;
   assert(app.status === "ready", "product initializes with Worker and optimized WASM");
-  const editor = app.editor;
+  // US-327 : le document affiché change quand un document s'ouvre dans un nouvel onglet ; ces références désignent toujours celui de l'onglet actif.
+  const liveNode = id => new Proxy({}, {
+    get: (_, key) => { const node = document.getElementById(id); const value = node[key]; return typeof value === "function" ? value.bind(node) : value; },
+    set: (_, key, value) => { document.getElementById(id)[key] = value; return true; },
+  });
+  const canvasNode = () => document.getElementById("document-canvas");
+  const editor = new Proxy({}, { get: (_, key) => { const target = app.editor; const value = target[key]; return typeof value === "function" ? value.bind(target) : value; } });
   const status = document.querySelector("#editor-status");
-  const canvas = document.querySelector("#document-canvas");
+  const canvas = liveNode("document-canvas");
   const state = () => app.getState();
   // v1 keeps the whole text in the state; v2 asks the engine for it.
   const textOf = async () => (v2 ? editor.readText() : state().text);
@@ -93,7 +99,7 @@ try {
     const ratio = devicePixelRatio || 1;
     const view = document.createElement("canvas");
     view.width = canvas.width; view.height = canvas.height;
-    const ctx = view.getContext("2d"); ctx.drawImage(canvas, 0, 0);
+    const ctx = view.getContext("2d"); ctx.drawImage(canvasNode(), 0, 0);
     return [...ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data];
   };
   const pictures = () => {

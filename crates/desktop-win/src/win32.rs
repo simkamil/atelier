@@ -298,7 +298,7 @@ struct FileRuntime {
     /// Chemin en cours de lecture, noté dans les documents récents si la lecture réussit (US-320).
     launch_path: Option<PathBuf>,
     launch_generation: u64,
-    launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead)>>>,
+    launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead, file_bridge::LaunchWho)>>>,
     /// US-113 : tickets remis au JS, écriture en cours et catalogue de polices.
     bridge: BridgeState,
     /// Résultats des travaux du pont terminés sur un fil de travail, en attente de remise.
@@ -435,7 +435,9 @@ fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<Outco
         .name("atelier-launch-read".into())
         .spawn(move || {
             let read = file_bridge::read_launch_file(&path);
-            *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some((generation, read));
+            // La résolution canonique du chemin (empreinte) peut bloquer sur un partage injoignable : ici, jamais sur le fil UI.
+            let who = file_bridge::LaunchWho::of(&path);
+            *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some((generation, read, who));
             // SAFETY: PostMessageW est sûr sur tout thread ; un HWND détruit fait seulement échouer l'appel.
             unsafe { PostMessageW(target as Hwnd, WM_ATELIER_LAUNCH_DONE, 0, 0) };
         });
@@ -460,12 +462,18 @@ fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<Outcome> {
         .unwrap_or_else(|e| e.into_inner())
         .take();
     match ready {
-        Some((done, read)) if done == generation => {
+        Some((done, read, who)) if done == generation => {
             runtime.launch_inflight = None;
-            if let (Ok(_), Some(path)) = (&read, runtime.launch_path.take()) {
+            let path = runtime.launch_path.take().unwrap_or_default();
+            if read.is_ok() {
                 runtime.bridge.remember(&path);
             }
-            Some(file_bridge::launch_reply(&id, read, &mut runtime.launch))
+            Some(file_bridge::launch_reply(
+                &id,
+                &who,
+                read,
+                &mut runtime.launch,
+            ))
         }
         _ if expired => {
             runtime.launch_inflight = None;
@@ -2060,7 +2068,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/fonts/LiberationMono-Bold.ttf','font/ttf'], ['/fonts/LiberationMono-BoldItalic.ttf','font/ttf'], ['/fonts/LiberationMono-Italic.ttf','font/ttf'], ['/fonts/LiberationMono-Regular.ttf','font/ttf'], ['/fonts/LiberationSans-Bold.ttf','font/ttf'], ['/fonts/LiberationSans-BoldItalic.ttf','font/ttf'], ['/fonts/LiberationSans-Italic.ttf','font/ttf'], ['/fonts/LiberationSans-Regular.ttf','font/ttf'], ['/fonts/LiberationSerif-Bold.ttf','font/ttf'], ['/fonts/LiberationSerif-BoldItalic.ttf','font/ttf'], ['/fonts/LiberationSerif-Italic.ttf','font/ttf'], ['/fonts/LiberationSerif-Regular.ttf','font/ttf'], ['/fonts/Caladea-Bold.ttf','font/ttf'], ['/fonts/Caladea-BoldItalic.ttf','font/ttf'], ['/fonts/Caladea-Italic.ttf','font/ttf'], ['/fonts/Caladea-Regular.ttf','font/ttf'], ['/licenses/Liberation-OFL.txt','text/plain'], ['/licenses/Caladea-OFL.txt','text/plain'],
             ['/format-char.css','text/css'], ['/format-para.css','text/css'], ['/rich-editor-format.mjs','text/javascript'], ['/format-controller.mjs','text/javascript'], ['/format-char.mjs','text/javascript'], ['/format-para.mjs','text/javascript'], ['/styles-pane.css','text/css'], ['/styles-pane.mjs','text/javascript']
           ];
-          paths.push(['/rich-editor.mjs','text/javascript'],['/rich-editor-client.mjs','text/javascript'],['/rich-image-cache.mjs','text/javascript'],['/rich-editor-protocol.mjs','text/javascript'],['/editor-page-cache.mjs','text/javascript'],['/document-mirror.mjs','text/javascript'],['/document-mirror.css','text/css']);
+          paths.push(['/rich-editor.mjs','text/javascript'],['/rich-editor-client.mjs','text/javascript'],['/rich-image-cache.mjs','text/javascript'],['/rich-editor-protocol.mjs','text/javascript'],['/editor-page-cache.mjs','text/javascript'],['/document-mirror.mjs','text/javascript'],['/document-mirror.css','text/css'],['/document-tabs.mjs','text/javascript'],['/document-tabs.css','text/css']);
           paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);
           paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/file-tab.mjs','text/javascript'],['/file-tab.css','text/css'],['/templates/lettre.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/templates/cv.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/templates/rapport.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/templates/compte-rendu.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/build-info.mjs','text/javascript'],['/image-insert.mjs','text/javascript'],['/properties-dialog.mjs','text/javascript'],['/properties-dialog.css','text/css']);
           // Keep required log probes within the bounded request log.

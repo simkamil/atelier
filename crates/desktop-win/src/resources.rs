@@ -336,6 +336,16 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/document-mirror.css"),
     },
     Resource {
+        path: "/document-tabs.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/document-tabs.mjs"),
+    },
+    Resource {
+        path: "/document-tabs.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/document-tabs.css"),
+    },
+    Resource {
         path: "/format-char.css",
         mime: "text/css; charset=utf-8",
         bytes: include_bytes!("../../../web/format-char.css"),
