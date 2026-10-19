@@ -14,7 +14,9 @@ use atelier_render::{
     StrokeStyle,
 };
 use atelier_text_layout::LayoutLine;
-use atelier_text_model::rich::{CharAttrs, Paragraph, Underline};
+use atelier_text_model::rich::{
+    CharAttrs, Color as ModelColor, ParaBorder, ParaBorderStyle, ParaBorders, Paragraph, Underline,
+};
 use core::fmt;
 use std::collections::BTreeMap;
 
@@ -536,6 +538,190 @@ fn push_draw(
             style: stroke_style(*width, *round)?,
         },
     });
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Shading and borders of paragraphs (US-243, T243-A and T243-B)
+//
+// The geometry is shared by both painters like the decorations: the fragments
+// of the framed paragraphs of a page are turned into filled rectangles, drawn
+// before the glyphs of the page (a frame never covers text: it lies in the
+// room the layout reserved).
+// ---------------------------------------------------------------------------
+
+/// The part of a framed paragraph on one page, in 1/64 pt of the page.
+#[derive(Debug, Clone)]
+pub(crate) struct FrameFragment {
+    pub borders: ParaBorders,
+    /// Background colour (`None`: nothing painted).
+    pub shading: Option<ModelColor>,
+    /// Page x of the text edges (the borders lie outside them).
+    pub left: i64,
+    pub right: i64,
+    /// Page y of the top and bottom of the lines of this fragment, border room included.
+    pub top: i64,
+    pub bottom: i64,
+    /// This fragment opens its box (first line of the paragraph, not joined above).
+    pub top_edge: bool,
+    /// This fragment closes its box (last line of the paragraph, not joined below).
+    pub bottom_edge: bool,
+    /// The paragraph ends here and the next one shares the box: "between" line.
+    pub between_edge: bool,
+    /// The next fragment of the page continues the same box.
+    pub join_next: bool,
+    pub next_top: i64,
+    pub next_shading: Option<ModelColor>,
+}
+
+/// Distance of the outer edge of a border from the text edge, 1/64 pt.
+pub(crate) fn border_room(border: Option<ParaBorder>) -> i64 {
+    border
+        .filter(ParaBorder::is_line)
+        .map_or(0, |b| i64::from(b.space) * 64 + i64::from(b.eighths) * 8)
+}
+
+/// Longest run of dots or dashes drawn as such; a longer line is solid.
+const MAX_BORDER_PIECES: i64 = 1_024;
+
+/// One border line as rectangles: `(x0, y0, x1, y1)` in 1/64 pt. `horizontal`
+/// tells the long axis.
+fn border_rects(out: &mut Vec<[i64; 4]>, b: &ParaBorder, rect: [i64; 4], horizontal: bool) {
+    let [x0, y0, x1, y1] = rect;
+    let (along0, along1, across0, across1) = if horizontal {
+        (x0, x1, y0, y1)
+    } else {
+        (y0, y1, x0, x1)
+    };
+    let thickness = across1 - across0;
+    let mut push = |a0: i64, a1: i64, c0: i64, c1: i64| {
+        out.push(if horizontal {
+            [a0, c0, a1, c1]
+        } else {
+            [c0, a0, c1, a1]
+        });
+    };
+    match b.style {
+        ParaBorderStyle::Double => {
+            let third = (thickness / 3).max(1);
+            push(along0, along1, across0, across0 + third);
+            push(along0, along1, across1 - third, across1);
+        }
+        ParaBorderStyle::Dotted | ParaBorderStyle::Dashed => {
+            let (piece, gap) = if b.style == ParaBorderStyle::Dotted {
+                (thickness, 2 * thickness)
+            } else {
+                (5 * thickness, 2 * thickness)
+            };
+            let step = (piece + gap).max(1);
+            if (along1 - along0) / step > MAX_BORDER_PIECES {
+                push(along0, along1, across0, across1);
+                return;
+            }
+            let mut at = along0;
+            while at < along1 {
+                push(at, (at + piece).min(along1), across0, across1);
+                at += step;
+            }
+        }
+        _ => push(along0, along1, across0, across1),
+    }
+}
+
+/// Draws one border line (colour: its own, black when automatic).
+fn border_line(
+    draws: &mut Vec<Draw>,
+    b: &ParaBorder,
+    rect: [i64; 4],
+    horizontal: bool,
+) -> Result<(), PreviewError> {
+    let c = b.color.unwrap_or(ModelColor { r: 0, g: 0, b: 0 });
+    let color = color(c.r, c.g, c.b)?;
+    let mut rects = Vec::new();
+    border_rects(&mut rects, b, rect, horizontal);
+    for r in rects {
+        draws.push(Draw::Fill {
+            color,
+            rect: r.map(|v| v as f64 * ATDL_SCALE),
+        });
+    }
+    Ok(())
+}
+
+/// The decorations (rectangles) that paint `fragments`: shading first, then the borders.
+fn frame_draws(fragments: &[FrameFragment]) -> Result<Vec<Draw>, PreviewError> {
+    let mut draws = Vec::new();
+    for f in fragments {
+        let Some(shading) = f.shading else { continue };
+        let bottom = if f.join_next && f.next_shading == f.shading {
+            f.next_top
+        } else {
+            f.bottom
+        };
+        let x0 = f.left - border_room(f.borders.left);
+        let x1 = f.right + border_room(f.borders.right);
+        if x1 > x0 && bottom > f.top {
+            draws.push(Draw::Fill {
+                color: color(shading.r, shading.g, shading.b)?,
+                rect: [x0, f.top, x1, bottom].map(|v| v as f64 * ATDL_SCALE),
+            });
+        }
+    }
+    for f in fragments {
+        let x0 = f.left - border_room(f.borders.left);
+        let x1 = f.right + border_room(f.borders.right);
+        // The top line hangs from the top of the fragment, the bottom and
+        // "between" lines sit on its bottom (the room the layout reserved).
+        let top = f.top_edge.then_some((f.borders.top, f.top, true));
+        let bottom = f.bottom_edge.then_some((f.borders.bottom, f.bottom, false));
+        let between = f
+            .between_edge
+            .then_some((f.borders.between, f.bottom, false));
+        for (edge, at, hangs) in [top, bottom, between].into_iter().flatten() {
+            if let Some(b) = edge.filter(ParaBorder::is_line) {
+                let w = i64::from(b.eighths) * 8;
+                let (y0, y1) = if hangs { (at, at + w) } else { (at - w, at) };
+                border_line(&mut draws, &b, [x0, y0, x1, y1], true)?;
+            }
+        }
+        let side_bottom = if f.join_next { f.next_top } else { f.bottom };
+        if side_bottom > f.top {
+            if let Some(b) = f.borders.left.filter(ParaBorder::is_line) {
+                let w = i64::from(b.eighths) * 8;
+                border_line(&mut draws, &b, [x0, f.top, x0 + w, side_bottom], false)?;
+            }
+            if let Some(b) = f.borders.right.filter(ParaBorder::is_line) {
+                let w = i64::from(b.eighths) * 8;
+                border_line(&mut draws, &b, [x1 - w, f.top, x1, side_bottom], false)?;
+            }
+        }
+    }
+    Ok(draws)
+}
+
+/// The frames of a page into the writer of the editor (before the glyphs).
+pub(crate) fn paint_frames(
+    writer: &mut PageWriter,
+    fragments: &[FrameFragment],
+) -> Result<(), PreviewError> {
+    for draw in &frame_draws(fragments)? {
+        writer.draw(draw)?;
+    }
+    Ok(())
+}
+
+/// The frames of a page into the commands of the display path (the reference
+/// painter of the tests: the preview of a DOCX import does not draw frames).
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(crate) fn push_frames(
+    sink: &mut PaintSink,
+    page_commands: &mut Vec<Command>,
+    page_path_elements: &mut usize,
+    fragments: &[FrameFragment],
+) -> Result<(), PreviewError> {
+    for draw in &frame_draws(fragments)? {
+        push_draw(sink, page_commands, page_path_elements, draw)?;
+    }
     Ok(())
 }
 

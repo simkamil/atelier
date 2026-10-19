@@ -33,7 +33,7 @@ pub type NodeId = atelier_model::NodeId;
 
 pub use attrs::{
     Alignment, CharAttrs, Color, LineRule, LineSpacing, ListRef, MAX_LIST_LEVEL, OpaqueAttr,
-    ParaProps, Underline, VerticalAlign,
+    ParaBorder, ParaBorderStyle, ParaBorders, ParaProps, ParaShading, Underline, VerticalAlign,
 };
 pub use defaults::{DefaultPresentation, DefaultRichDocument, default_rich_document};
 pub use document::RichDocument;

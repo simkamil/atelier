@@ -681,3 +681,72 @@ fn cached_base_is_safe_for_equal_node_ids_across_documents() {
     );
     assert_eq!(engine.cache_hits(), 1);
 }
+
+#[test]
+fn borders_and_shading_cascade_from_styles_side_by_side() {
+    use atelier_text_model::rich::{ParaBorder, ParaBorderStyle, ParaBorders, ParaShading};
+    let line = |eighths| {
+        Some(ParaBorder {
+            style: ParaBorderStyle::Single,
+            eighths,
+            space: 2,
+            color: None,
+        })
+    };
+    let mut engine = StyleEngine::new(
+        StyleCatalog::new(DocumentStyleDefaults::default()),
+        Theme::default(),
+        8,
+    );
+    let mut base = style("base", StyleKind::Paragraph);
+    base.paragraph.borders = ParaBorders {
+        top: line(4),
+        bottom: line(4),
+        ..ParaBorders::default()
+    };
+    base.paragraph.shading = Some(ParaShading {
+        fill: Some(Color { r: 1, g: 2, b: 3 }),
+        ..ParaShading::default()
+    });
+    engine.set_style(base).unwrap();
+    let mut child = style("child", StyleKind::Paragraph);
+    child.based_on = Some("base".into());
+    child.paragraph.borders.bottom = line(12);
+    engine.set_style(child).unwrap();
+
+    let (mut document, paragraph) = paragraph_document();
+    let direct = ParaProps {
+        style: Some("child".into()),
+        borders: ParaBorders {
+            // "No border" on the top side only, a new left side.
+            top: Some(ParaBorder {
+                style: ParaBorderStyle::None,
+                eighths: 0,
+                space: 0,
+                color: None,
+            }),
+            left: line(8),
+            ..ParaBorders::default()
+        },
+        ..ParaProps::default()
+    };
+    document
+        .apply(&transaction(RichOp::SetParaProps {
+            para: paragraph,
+            set: direct,
+            clear: ParaProps::default(),
+        }))
+        .unwrap();
+    let resolved = engine
+        .resolve(&document, paragraph, None, &CharAttrs::default())
+        .unwrap()
+        .paragraph;
+    assert!(!resolved.borders.top.unwrap().is_line()); // hidden by the direct value
+    assert_eq!(resolved.borders.bottom.unwrap().eighths, 12); // child over base
+    assert_eq!(resolved.borders.left.unwrap().eighths, 8); // direct
+    assert!(resolved.borders.right.is_none());
+    assert_eq!(
+        resolved.shading.unwrap().paint_color(),
+        Some(Color { r: 1, g: 2, b: 3 }) // inherited whole
+    );
+}

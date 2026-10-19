@@ -424,6 +424,8 @@ fn paragraph_properties_set_clear_and_validate() {
             name: "keepNext".into(),
             value: vec![],
         }],
+        shading: None,
+        borders: Default::default(),
     };
     run_checked(
         &mut doc,
