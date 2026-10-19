@@ -16,6 +16,7 @@ import { ABOUT_LICENSES } from "/about-licenses.mjs";
 import { BUILD_INFO } from "/build-info.mjs";
 import { analyzeMessage, createI18n, parseCatalog } from "/i18n.mjs";
 import { createImagePicker, imageMessageKey } from "/image-insert.mjs";
+import { createFileTab, FILE_TAB_KEYS } from "/file-tab.mjs";
 
 const READER_MODE_KEY = "atelier.screenReaderMode";
 const byId = id => document.getElementById(id);
@@ -216,8 +217,18 @@ async function start() {
   const imageAvailable = imageKeys.every(key => messages.has(key));
   const aboutAvailable = [...aboutKeys.map(key => `about-${key}`), "aboutTitle", "about-buildUnavailable"].every(key => messages.has(key));
   const contextAvailable = contextKeys.every(key => messages.has(`context-${key}`));
+  // US-320 : l'onglet Fichier (modèles, récents, commandes) ; sans ses messages, l'onglet d'origine reste.
+  const fileTab = FILE_TAB_KEYS.every(key => messages.has(key))
+    ? createFileTab({ document, i18n, onStatus: (text, isError) => showEditorMessage(text, isError), onResult: (result, success) => reportOpened(result, success) })
+    : null;
+  /** Message d'une ouverture lancée depuis l'onglet Fichier (modèle ou récent). */
+  function reportOpened(result, success = messages.get("status-opened")) {
+    if (result.kind === "ok") showEditorMessage(editor?.state?.readOnly ? messages.get("status-readonly-opened") : success);
+    else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
+    else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
+  }
   const shell = createEditorShell({ toolbar: document.querySelector(".toolbar"), messages, navigationAvailable: toolsAvailable,
-    symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, onImage: () => { void insertPickedImages(); }, onProperties: () => {
+    symbolsAvailable, imageAvailable, aboutAvailable, propertiesAvailable, fileTab, onImage: () => { void insertPickedImages(); }, onProperties: () => {
       if (!properties || document.querySelector("dialog:modal")) return;
       if (!initialized || busy || !editor?.capabilities?.properties) return;
       properties.open({ returnFocusTo: document.activeElement }).catch(() => showEditorMessage(messages.get("status-properties-loadError"), true));
@@ -230,6 +241,7 @@ async function start() {
     onSearch: () => navigation?.openSearch(), onReplace: () => navigation?.openReplace(), onStatistics: () => navigation?.openStatistics() });
   let client;
   let host;
+  let lastReadTicket = null;
   let editor;
   let disposed = false;
   const imagePicker = imageAvailable ? createImagePicker() : null;
@@ -253,7 +265,7 @@ async function start() {
   function dispose() {
     if (disposed) return;
     disposed = true; listeners.abort();
-    imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
+    fileTab?.dispose(); imagePicker?.dispose(); symbols?.dispose(); about?.dispose(); properties?.dispose(); contextMenu?.dispose(); navigation?.dispose(); documentStatus?.dispose(); zoomControls?.dispose(); editor?.dispose(); host?.close?.(); client?.close(); shell.dispose();
   }
   let initialized = false;
   let busy = false;
@@ -299,6 +311,7 @@ async function start() {
     nodes.undo.disabled = blocked || !state?.canUndo; nodes.redo.disabled = blocked || !state?.canRedo;
     nodes.frenchSpacing.disabled = blocked;
     nodes.openDocx.disabled = blocked;
+    fileTab?.setBlocked(blocked);
     updateZoom();
     const toolsEnabled = !blocked;
     const writable = !state?.readOnly;
@@ -330,8 +343,11 @@ async function start() {
     if (reply.type !== MessageType.Ping || reply.requestId !== 1n || reply.payload.byteLength !== 0) throw new Error("PING_ECHO_FAILED");
     showPing(true, messages);
 
-    try { host = createNativeHost(); }
-    catch {
+    try {
+      const native = createNativeHost();
+      // US-320 : le dernier ticket de lecture désigne le fichier à noter dans les récents une fois le document accepté.
+      host = Object.freeze({ ...native, readTicket: (ticket, options) => { lastReadTicket = ticket; return native.readTicket(ticket, options); } });
+    } catch {
       host = {
         open: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
         openDocx: async () => ({ kind: "error", key: "HOST_UNAVAILABLE" }),
@@ -370,12 +386,20 @@ async function start() {
     }
     if (toolsAvailable && editor.capabilities.search) navigation = createNavigationTools({ document, editor, paneSlot: byId("search-slot"), statusSlot: byId("statistics-slot"), i18n,
       labels: Object.fromEntries(toolKeys.map(key => [key, messages.get(key)])) });
+    /** Le document vient d'être accepté par l'éditeur : le natif note le fichier lu par le dernier ticket. */
+    async function noteOpened() {
+      const ticket = lastReadTicket;
+      lastReadTicket = null;
+      if (ticket) { try { await host.recentNote?.(ticket); } catch { /* confort : les récents ne gênent pas l'ouverture */ } }
+      await fileTab?.refreshRecents();
+    }
     async function openDocxInEditor(source) {
       if (!initialized || busy || disposed) return { kind: "cancelled" };
       const result = await editor.openDocument(source, { formats: ["docx", "docm", "dotx", "txt"] });
       if (result.kind === "ok") showEditorMessage(messages.get(editor.state?.readOnly ? "status-readonly-opened" : "status-opened"));
       else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
       else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
+      if (result.kind === "ok") void noteOpened();
       return result;
     }
     const openDocx = source => openDocxInEditor(source);
@@ -431,6 +455,12 @@ async function start() {
     onState(state);
     showEditorMessage(messages.get("status-ready"));
     nodes.openDocx.addEventListener("click", () => { void openDocx(); }, { signal: listeners.signal });
+    if (fileTab) {
+      // Les récents se relisent à l'affichage de l'onglet Fichier : un fichier a pu disparaître ou revenir entre-temps.
+      const fileTabButton = document.querySelector('[data-ribbon-tab-id="file"]');
+      for (const type of ["click", "focus"]) fileTabButton?.addEventListener(type, () => { void fileTab.refreshRecents(); }, { signal: listeners.signal });
+      void fileTab.attach({ host, openDocument: source => editor.openDocument(source) });
+    }
     nodes.readonlyCopy.addEventListener("click", async () => {
       if (nodes.readonlyCopy.disabled) return;
       nodes.readonlyCopy.disabled = true;
@@ -455,12 +485,13 @@ async function start() {
         if (result.kind === "ok") showEditorMessage(messages.get("status-opened"));
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-open-error"), true);
+        if (result.kind === "ok") void noteOpened();
       } catch (error) { onError(error); }
     }, { signal: listeners.signal });
     nodes.save.addEventListener("click", async () => {
       try {
         const result = await editor.saveAs();
-        if (result.kind === "ok") showEditorMessage(messages.get("status-saved"));
+        if (result.kind === "ok") { showEditorMessage(messages.get("status-saved")); void fileTab?.refreshRecents(); }
         else if (result.kind === "cancelled") showEditorMessage(messages.get("status-cancelled"));
         else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get(result.key === "HOST_UNAVAILABLE" ? "status-host-unavailable" : "status-save-error"), true);
       } catch (error) { onError(error); }
@@ -503,6 +534,7 @@ async function start() {
         else showEditorMessage(fileErrorMessage(result.key, i18n, messages, fileLimit) ?? messages.get("status-open-error"), true);
       }
       // Un seul message : le résultat de l'ouverture suivi du nombre de fichiers ignorés.
+      void fileTab?.refreshRecents();
       if (launched.skipped > 0) {
         const failed = nodes.editorStatus.classList.contains("error");
         showEditorMessage(`${nodes.editorStatus.textContent} ${i18n.t("status-launch-skipped", { count: launched.skipped })}`, failed);
@@ -537,6 +569,7 @@ async function start() {
       editor, host,
       theme: shell.theme, ribbon: shell.ribbon,
       zoomControls,
+      fileTab,
       navigation,
       documentStatus,
       symbols, about, properties, contextMenu,

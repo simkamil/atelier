@@ -4,7 +4,7 @@ import { createThemeController } from "/theme.mjs";
 import { createDialog, createDropdown, createTooltip } from "/ui-components.mjs";
 
 /** Reuses the existing command nodes: their state and business listeners stay authoritative. */
-export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, imageAvailable = false, aboutAvailable = false, propertiesAvailable = false, onProperties = () => {}, onSymbols = () => {}, onImage = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
+export function createEditorShell({ toolbar, messages, navigationAvailable = true, symbolsAvailable = false, imageAvailable = false, aboutAvailable = false, propertiesAvailable = false, fileTab = null, onProperties = () => {}, onSymbols = () => {}, onImage = () => {}, onAbout = () => {}, onZoom = () => {}, onSearch = () => {}, onReplace = () => {}, onStatistics = () => {} }) {
   const doc = toolbar.ownerDocument;
   const t = key => messages.get(key) ?? key;
   const byId = id => doc.getElementById(id);
@@ -57,15 +57,20 @@ export function createEditorShell({ toolbar, messages, navigationAvailable = tru
   const preferences = createDialog({ label: t("appearance-title"), content: preferenceContent, closeLabel: t("action-close") });
   doc.body.append(preferences.element);
 
+  // US-320 : l'onglet Fichier complet vient de file-tab.mjs quand ses messages sont présents ; sinon l'onglet d'origine.
+  const fileGroups = fileTab ? fileTab.groups({ command, existing: {
+    new: byId("new-document"), open: byId("open-document"), openDocx: byId("open-docx"), save: byId("save-document"),
+    properties: propertiesAvailable ? propertiesCommand : null, about: aboutAvailable ? aboutCommand : null,
+  } }) : [{ id: "files", label: t("ribbon-files-group"), commands: [
+    command("new", "action-new", "N", byId("new-document")),
+    command("open", "action-open", "O", byId("open-document")),
+    command("open-docx", "action-open-docx", "D", byId("open-docx")),
+    command("save", "action-save", "S", byId("save-document")),
+    ...(propertiesAvailable ? [command("properties", "propertiesTitle", "R", propertiesCommand)] : []),
+    ...(aboutAvailable ? [command("about", "aboutTitle", "P", aboutCommand)] : []),
+  ] }];
   const tabs = [
-    { id: "file", label: t("ribbon-file"), keyTip: "F", groups: [{ id: "files", label: t("ribbon-files-group"), commands: [
-      command("new", "action-new", "N", byId("new-document")),
-      command("open", "action-open", "O", byId("open-document")),
-      command("open-docx", "action-open-docx", "D", byId("open-docx")),
-      command("save", "action-save", "S", byId("save-document")),
-      ...(propertiesAvailable ? [command("properties", "propertiesTitle", "R", propertiesCommand)] : []),
-      ...(aboutAvailable ? [command("about", "aboutTitle", "P", aboutCommand)] : []),
-    ] }] },
+    { id: "file", label: t("ribbon-file"), keyTip: "F", groups: fileGroups },
     { id: "home", label: t("ribbon-home"), keyTip: "A", groups: [
       { id: "history", label: t("ribbon-history-group"), commands: [command("undo", "action-undo", "U", byId("undo")), command("redo", "action-redo", "R", byId("redo"))] },
       { id: "editing", label: t("ribbon-editing-group"), commands: [command("options", "options-label", "E", options), ...(localizedNavigation ? [command("search", "searchTitle", "C", searchCommand), command("replace", "replaceTitle", "H", replaceCommand)] : [])] },

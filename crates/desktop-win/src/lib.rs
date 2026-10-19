@@ -6,6 +6,7 @@ pub mod files;
 pub mod fonts;
 pub mod i18n;
 pub mod instance;
+pub mod recent;
 pub mod resources;
 pub mod url_open;
 pub mod window;

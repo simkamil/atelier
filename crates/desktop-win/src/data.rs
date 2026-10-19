@@ -334,6 +334,11 @@ mod tests {
         };
 
         assert_eq!(paths.root, temp.0.join("atelier-data"));
+        // win32.rs place les récents à côté du fichier d'état de la fenêtre : même fichier que `recent_file()`.
+        assert_eq!(
+            paths.window_state_file().with_file_name("recent.ini"),
+            paths.recent_file()
+        );
         assert_eq!(paths.mode, DataMode::Portable);
         assert_eq!(paths.mode_label(), "Portable");
         for child in [

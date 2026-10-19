@@ -295,6 +295,8 @@ struct FileRuntime {
     launch: std::collections::VecDeque<PathBuf>,
     /// Lecture en cours hors du fil UI : (génération, id de la requête).
     launch_inflight: Option<(u64, String)>,
+    /// Chemin en cours de lecture, noté dans les documents récents si la lecture réussit (US-320).
+    launch_path: Option<PathBuf>,
     launch_generation: u64,
     launch_slot: Arc<Mutex<Option<(u64, file_bridge::LaunchRead)>>>,
     /// US-113 : tickets remis au JS, écriture en cours et catalogue de polices.
@@ -307,16 +309,17 @@ struct FileRuntime {
 }
 
 impl FileRuntime {
-    fn new() -> Result<Self, crate::files::FileError> {
+    fn new(recent_file: PathBuf) -> Result<Self, crate::files::FileError> {
         Ok(Self {
             broker: Arc::new(FileBroker::new()),
             dialogs: StaFileDialogs::initialize_current_thread()?,
             dirty: false,
             launch: std::collections::VecDeque::new(),
             launch_inflight: None,
+            launch_path: None,
             launch_generation: 0,
             launch_slot: Arc::new(Mutex::new(None)),
-            bridge: BridgeState::system(),
+            bridge: BridgeState::system().with_recent_file(recent_file),
             bridge_done: Arc::new(Mutex::new(std::collections::VecDeque::new())),
             bridge_inflight: 0,
             close_wait_since: None,
@@ -426,6 +429,7 @@ fn begin_launch(hwnd: Hwnd, runtime: &mut FileRuntime, id: &str) -> Option<Outco
     runtime.launch_generation += 1;
     let generation = runtime.launch_generation;
     let slot = Arc::clone(&runtime.launch_slot);
+    runtime.launch_path = Some(path.clone());
     let target = hwnd as usize;
     let spawned = std::thread::Builder::new()
         .name("atelier-launch-read".into())
@@ -458,6 +462,9 @@ fn finish_launch(runtime: &mut FileRuntime, expired: bool) -> Option<Outcome> {
     match ready {
         Some((done, read)) if done == generation => {
             runtime.launch_inflight = None;
+            if let (Ok(_), Some(path)) = (&read, runtime.launch_path.take()) {
+                runtime.bridge.remember(&path);
+            }
             Some(file_bridge::launch_reply(&id, read, &mut runtime.launch))
         }
         _ if expired => {
@@ -497,6 +504,11 @@ fn process_file_request(
             | Request::ListFonts { .. }
             | Request::ReadFont { .. }
             | Request::OpenUrl { .. }
+            | Request::RecentList { .. }
+            | Request::RecentOpen { .. }
+            | Request::RecentPin { .. }
+            | Request::RecentRemove { .. }
+            | Request::RecentNote { .. }
     ) {
         let mut host = StaHost { dialogs, owner };
         return match bridge_ops::begin_bridge_request(
@@ -1637,7 +1649,8 @@ pub fn run_with_launch(
     let _apartment = webview::ComApartment::initialize_sta()?;
     let saved = load_state(state_file)?;
     let mut context = create_context(state_file, title, saved)?;
-    let mut runtime = FileRuntime::new().map_err(|error| startup_file_error(&error))?;
+    let mut runtime = FileRuntime::new(state_file.with_file_name("recent.ini"))
+        .map_err(|error| startup_file_error(&error))?;
     runtime
         .launch
         .extend(launch.into_iter().take(crate::instance::MAX_PATHS));
@@ -2047,7 +2060,7 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
           ];
           paths.push(['/rich-editor.mjs','text/javascript'],['/rich-editor-client.mjs','text/javascript'],['/rich-image-cache.mjs','text/javascript'],['/rich-editor-protocol.mjs','text/javascript'],['/editor-page-cache.mjs','text/javascript'],['/document-mirror.mjs','text/javascript'],['/document-mirror.css','text/css']);
           paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);
-          paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/build-info.mjs','text/javascript'],['/image-insert.mjs','text/javascript'],['/properties-dialog.mjs','text/javascript'],['/properties-dialog.css','text/css']);
+          paths.push(['/symbol-dialog.mjs','text/javascript'],['/symbol-dialog.css','text/css'],['/symbol-catalogue.mjs','text/javascript'],['/editor-context-menu.mjs','text/javascript'],['/about-dialog.mjs','text/javascript'],['/about-dialog.css','text/css'],['/about-licenses.mjs','text/javascript'],['/file-tab.mjs','text/javascript'],['/file-tab.css','text/css'],['/templates/lettre.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/templates/cv.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/templates/rapport.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/templates/compte-rendu.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],['/build-info.mjs','text/javascript'],['/image-insert.mjs','text/javascript'],['/properties-dialog.mjs','text/javascript'],['/properties-dialog.css','text/css']);
           // Keep required log probes within the bounded request log.
           paths.sort((a,b)=>Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(a[0]))-Number(['/app.css','/engine-worker.mjs','/atelier_core_wasm.wasm'].includes(b[0])));
           const assets={};

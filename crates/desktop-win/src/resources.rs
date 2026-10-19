@@ -161,6 +161,36 @@ pub static RESOURCES: &[Resource] = &[
         bytes: include_bytes!("../../../web/ui-components.css"),
     },
     Resource {
+        path: "/file-tab.mjs",
+        mime: "text/javascript; charset=utf-8",
+        bytes: include_bytes!("../../../web/file-tab.mjs"),
+    },
+    Resource {
+        path: "/file-tab.css",
+        mime: "text/css; charset=utf-8",
+        bytes: include_bytes!("../../../web/file-tab.css"),
+    },
+    Resource {
+        path: "/templates/lettre.docx",
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        bytes: include_bytes!("../../../data/templates/lettre.docx"),
+    },
+    Resource {
+        path: "/templates/cv.docx",
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        bytes: include_bytes!("../../../data/templates/cv.docx"),
+    },
+    Resource {
+        path: "/templates/rapport.docx",
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        bytes: include_bytes!("../../../data/templates/rapport.docx"),
+    },
+    Resource {
+        path: "/templates/compte-rendu.docx",
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        bytes: include_bytes!("../../../data/templates/compte-rendu.docx"),
+    },
+    Resource {
         path: "/ribbon.mjs",
         mime: "text/javascript; charset=utf-8",
         bytes: include_bytes!("../../../web/ribbon.mjs"),
