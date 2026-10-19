@@ -152,6 +152,7 @@ jobs:
           node tests/rich-editor-client.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/native-bridge-protocol.mjs
+          node tests/file-templates.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/rich-editor-abi.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -190,6 +191,7 @@ jobs:
           node --test tests/rich-editor-unit.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node tests/run-rich-editor-ui-browser.mjs
+          node tests/run-file-tab-ui-browser.mjs
 
   linux-musl:
     name: Linux musl build and tests

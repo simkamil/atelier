@@ -1390,11 +1390,13 @@ Réf : §6.13 · Taille : M · Dépend de : US-004, US-307, US-310, US-314
 
 #### US-320 — Onglet Fichier et accueil
 *En tant qu'*utilisateur, *je veux* un écran d'accueil *afin de* créer ou rouvrir rapidement un document.
-- [ ] Nouveau : document vierge et modèles fournis (lettre, CV, rapport, compte rendu).
-- [ ] Récents : liste avec chemin et date, épingler, retirer, fichier introuvable signalé.
+- [x] Nouveau : document vierge et modèles fournis (lettre, CV, rapport, compte rendu).
+- [x] Récents : liste avec chemin et date, épingler, retirer, fichier introuvable signalé.
 - [ ] Ouvrir, Enregistrer, Enregistrer sous, Exporter en PDF, Imprimer, Propriétés, Options, À propos.
 
 Réf : F-COM-001, F-COM-004 · Taille : M · Dépend de : US-106, US-113
+
+Validation US-320 (2026-10-19) : onglet Fichier (`web/file-tab.mjs`) ; quatre modèles DOCX originaux embarqués (`data/templates/`), ouverts comme documents sans nom, Enregistrer sous ne touche jamais le modèle ; récents persistés dans `recent.ini` (`crates/desktop-win/src/recent.rs`, écriture atomique, 30 entrées), notés seulement après ouverture réussie (`recentNote`) ou écriture réussie, désignés par numéro de session côté script. Critère 3 non coché : Exporter en PDF (US-332), Imprimer (US-333), Options (US-329) et Enregistrer direct (US-322) sont désactivés avec leur raison. Réserves : le document vierge garde le profil par défaut actuel (page par défaut : US-202) ; un fichier lancé par la ligne de commande entre dans les récents dès sa lecture réussie ; dialogues natifs non pilotés par les tests (hôte factice). Relecture indépendante : fusionnable ; corrections mineures intégrées (taille du ticket, note après réussite, licence des modèles).
 
 #### US-321 — Ouvrir un document
 *En tant qu'*utilisateur, *je veux* ouvrir un document de plusieurs façons *afin de* travailler comme j'en ai l'habitude.
