@@ -198,8 +198,8 @@ fn object_document() -> RichDocument {
 
 fn harness_with(doc: RichDocument) -> Harness {
     let mut h = Harness::new();
-    h.editor.active =
-        Some(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+    h.editor
+        .install(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
     h
 }
 
@@ -772,7 +772,7 @@ fn a_refused_open_keeps_the_active_document() {
     ));
     assert_eq!(h.editor.active_document(), Some(1));
     assert_eq!(h.text(), "!garde");
-    // Opening with another id replaces the document.
+    // Opening with another id adds a document (T0): the first one stays open.
     let s = match h.send(
         2,
         Command::Open {
@@ -786,10 +786,8 @@ fn a_refused_open_keeps_the_active_document() {
     };
     assert_eq!(s.doc_len, 0);
     assert_eq!(h.editor.active_document(), Some(2));
-    assert!(matches!(
-        h.send(1, Command::Undo),
-        Response::Error(ErrorCode::UnknownDocument)
-    ));
+    assert_eq!(h.editor.document_ids(), vec![1, 2]);
+    assert!(matches!(h.send(1, Command::Undo), Response::State(_)));
 }
 
 #[test]

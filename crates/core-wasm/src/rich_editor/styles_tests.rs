@@ -472,7 +472,7 @@ fn typing_ends_the_preview_and_the_state_reports_the_restored_pages() {
     reference.type_text("Titre");
     reference.type_text("!");
     assert!(page0(&mut h) == page0(&mut reference), "the pages differ");
-    assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+    assert!(h.editor.session().preview.overlay.is_none());
     // The hover ended: another cancel does nothing.
     assert!(cancel(&mut h).pages.is_empty());
 }
@@ -520,7 +520,7 @@ fn applying_during_a_preview_ends_it_and_is_one_undo_step() {
     preview(&mut h, StyleTarget::Paragraph, TITLE);
     paragraph_style(&mut h, TITLE);
     assert_eq!(style_of(&mut h, 0).as_deref(), Some(TITLE));
-    assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+    assert!(h.editor.session().preview.overlay.is_none());
 }
 
 #[test]
@@ -556,10 +556,10 @@ fn the_preview_survives_resync_and_reading_commands_and_ends_with_the_document()
     styles(&mut h, StyleFilter::All, false);
     state_of(h.send(Command::Layout { budget: 16 }));
     assert!(page0(&mut h) == shown, "the pages differ");
-    assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_some());
+    assert!(h.editor.session().preview.overlay.is_some());
     // A new document starts without preview.
     open_blank(&mut h);
-    assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+    assert!(h.editor.session().preview.overlay.is_none());
     let cancelled = cancel(&mut h);
     assert!(cancelled.pages.is_empty());
 }
@@ -689,7 +689,7 @@ fn the_style_commands_in_read_only_and_plain_text_documents() {
         }),
         ErrorCode::UnknownStyle
     );
-    assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+    assert!(h.editor.session().preview.overlay.is_none());
 }
 
 #[test]
@@ -714,7 +714,7 @@ fn statistics_and_properties_do_not_keep_the_preview() {
         preview(&mut h, StyleTarget::Paragraph, TITLE);
         assert!(page0(&mut h) != base_page);
         h.send(command);
-        assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+        assert!(h.editor.session().preview.overlay.is_none());
         assert!(page0(&mut h) == base_page, "the preview ended");
     }
 }
@@ -747,7 +747,7 @@ fn the_default_style_on_a_paragraph_without_reference_changes_nothing() {
     // A preview of the default style shows nothing either.
     let shown = preview(&mut h, StyleTarget::Paragraph, NORMAL);
     assert!(shown.pages.is_empty());
-    assert!(h.editor.active.as_ref().unwrap().preview.overlay.is_none());
+    assert!(h.editor.session().preview.overlay.is_none());
 }
 
 /// A DOCX whose catalog lacks Heading 2, Heading 3 and Quote (Word writes them once used).

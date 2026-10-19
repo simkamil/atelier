@@ -37,7 +37,7 @@ static LOADED_FONTS: std::sync::Mutex<Vec<&'static [u8]>> = std::sync::Mutex::ne
 /// The `'static` copies of a batch of font files, all or nothing: every file is
 /// analysed and the budget (faces and bytes) checked before any is kept.
 /// `None` when a file is no font or the budget would be exceeded.
-fn intern_fonts(batch: Vec<Vec<u8>>) -> Option<Vec<&'static [u8]>> {
+pub(super) fn intern_fonts(batch: Vec<Vec<u8>>) -> Option<Vec<&'static [u8]>> {
     intern_in(&LOADED_FONTS, batch, LOADED_FONT_FACES, LOADED_FONT_BYTES)
 }
 

@@ -82,7 +82,7 @@ impl Harness {
     }
 
     pub(super) fn doc(&mut self) -> &mut RichDocument {
-        &mut self.editor.active.as_mut().unwrap().doc
+        &mut self.editor.session_mut().doc
     }
 
     /// Direct character attributes on `start..end` of paragraph `index`.
@@ -336,13 +336,13 @@ fn format_state_changes_nothing_and_is_idempotent() {
     h.type_text("Hello");
     h.select(0, 3);
     let (before, can_undo) = {
-        let s = h.editor.active.as_ref().unwrap();
+        let s = h.editor.session();
         (s.doc.revision(), s.doc.can_undo())
     };
     let first = h.state();
     let second = h.state();
     assert_eq!(first, second);
-    let s = h.editor.active.as_ref().unwrap();
+    let s = h.editor.session();
     assert_eq!((s.doc.revision(), s.doc.can_undo()), (before, can_undo));
     assert_eq!(first.revision, 1);
 }
@@ -410,7 +410,7 @@ fn a_styled_docx_reports_resolved_values_and_direct_styles() {
         }),
         Response::State(_)
     ));
-    let len = h.editor.active.as_ref().unwrap().doc.len() as u64;
+    let len = h.editor.session().doc.len() as u64;
     h.select(0, len);
     let s = h.state();
     // Whatever the document holds, the answer is complete and consistent.
@@ -776,7 +776,7 @@ fn the_font_list_is_memoised_by_revision() {
     h.type_text("a");
     let first = h.send(Command::ListFonts);
     assert_eq!(h.send(Command::ListFonts), first);
-    assert!(h.editor.active.as_ref().unwrap().fonts_memo.is_some());
+    assert!(h.editor.session().fonts_memo.is_some());
     h.attrs(
         0,
         0,

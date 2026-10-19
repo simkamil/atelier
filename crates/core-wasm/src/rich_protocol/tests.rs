@@ -114,6 +114,8 @@ fn describe_request(r: &Request) -> String {
         | Command::SelectUnit { .. } => "see sel_tests".into(),
         // The vectors of this one are in `move_tests` (tests/rich-editor-move-vectors.txt).
         Command::MoveText { .. } => "see move_tests".into(),
+        // The vectors of these are in `fragment_tests` (tests/rich-editor-multidoc-vectors.txt).
+        Command::CopyFragment { .. } | Command::PasteFragment { .. } => "see fragment_tests".into(),
         // The vectors of these are in `find_tests` (tests/rich-editor-find-vectors.txt).
         Command::Search { .. }
         | Command::Statistics
@@ -248,6 +250,7 @@ fn describe_reply(r: &Reply) -> String {
             )
         }
         Response::SaveData { .. } => "see io_tests".into(),
+        Response::Fragment { .. } => "see fragment_tests".into(),
         Response::SelectionRects { .. } | Response::ImageBitmap { .. } => "see sel_tests".into(),
         Response::SearchResult { .. }
         | Response::Statistics { .. }

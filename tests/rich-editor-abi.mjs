@@ -276,9 +276,10 @@ scenario("PreviewDocx on the real WASM leaves the TXT state unchanged; a malform
   assert.ok(opened.window.text.startsWith("Référence de titre"));
   docId = 2;
   assert.ok(opened.docLen > 10n);
-  // The previous document is gone: id 1 is unknown now.
-  const gone = command({ type: "undo" }, 1);
-  assert.equal(gone.code, "RICH_UNKNOWN_DOCUMENT");
+  // T0: another id adds a document, the previous one stays open (an Open of the same id replaces it, below).
+  const kept = command({ type: "undo" }, 1);
+  assert.equal(kept.type, "state");
+  assert.equal(kept.docLen, 3n);
   openTxt("fin", 1);
   docId = 1;
 });

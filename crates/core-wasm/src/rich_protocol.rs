@@ -104,11 +104,18 @@ pub mod opcode {
     // 0x0158 to 0x016E: later formatting commands (US-241, US-242, US-247, US-248).
     /// Font faces loaded on demand (US-240, T240-F); answered by `State`.
     pub const LOAD_FONTS: u16 = 0x016F;
+    // T0 (multi-documents): rich fragment. 0x0170 to 0x017F belong to it; the
+    // formatting commands keep 0x0150 to 0x016F, MoveText 0x0140.
+    pub const COPY_FRAGMENT: u16 = 0x0170;
+    pub const PASTE_FRAGMENT: u16 = 0x0171;
     pub const R_FORMAT_STATE: u16 = 0x8130;
     pub const R_STYLE_LIST: u16 = 0x8131;
     pub const R_FONT_LIST: u16 = 0x8132;
     pub const R_FORMAT_MARKS: u16 = 0x8133;
     // 0x8134 to 0x813F: replies of the later formatting commands.
+
+    /// Reply of `CopyFragment` (0x8140 to 0x814F: fragment replies).
+    pub const R_FRAGMENT: u16 = 0x8140;
 
     pub const R_STATE: u16 = 0x8100;
     pub const R_TEXT_WINDOW: u16 = 0x8101;
@@ -189,6 +196,17 @@ pub enum ErrorCode {
     /// A formatting command carries the `command_id` of the last one the
     /// engine accepted: a repeat after a lost reply; nothing changes.
     DuplicateCommand = 63,
+    // Several documents and fragment (T0): codes 70 to 79.
+    /// `Open` would exceed the number of documents the engine keeps.
+    TooManyDocuments = 70,
+    /// `Open`, `InsertImage` or `PasteFragment` would exceed the memory budget
+    /// of the documents of the engine; the other documents are untouched.
+    Memory = 71,
+    /// The bytes of `PasteFragment` are not a fragment this engine reads
+    /// (magic, version, structure, bounds).
+    FragmentInvalid = 72,
+    /// `CopyFragment` of an empty range.
+    EmptySelection = 73,
 }
 
 impl ErrorCode {
@@ -229,6 +247,10 @@ impl ErrorCode {
             61 => Self::UnknownStyle,
             62 => Self::FormatPlainText,
             63 => Self::DuplicateCommand,
+            70 => Self::TooManyDocuments,
+            71 => Self::Memory,
+            72 => Self::FragmentInvalid,
+            73 => Self::EmptySelection,
             _ => return None,
         })
     }
@@ -270,6 +292,10 @@ impl ErrorCode {
             Self::UnknownStyle => "RICH_UNKNOWN_STYLE",
             Self::FormatPlainText => "RICH_FORMAT_PLAIN_TEXT",
             Self::DuplicateCommand => "RICH_DUPLICATE_COMMAND",
+            Self::TooManyDocuments => "RICH_TOO_MANY_DOCUMENTS",
+            Self::Memory => "RICH_MEMORY",
+            Self::FragmentInvalid => "RICH_FRAGMENT_INVALID",
+            Self::EmptySelection => "RICH_EMPTY_SELECTION",
         }
     }
 }
@@ -543,6 +569,17 @@ pub enum Command {
         first: u32,
         count: u32,
     },
+    /// The rich fragment of the flat range `start..end` (T0); `revision` must
+    /// be the current one; answered by `Fragment`, no state change.
+    CopyFragment {
+        revision: u64,
+        start: u64,
+        end: u64,
+    },
+    /// Replaces the selection by a fragment, in one undo step; answered by `State`.
+    PasteFragment {
+        bytes: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -736,6 +773,15 @@ pub enum Response {
     FormatMarks {
         revision: u64,
         marks: Vec<FormatMark>,
+    },
+    /// The fragment of a `CopyFragment`: `text` is the plain text of the range
+    /// (what `TextWindow` gives, objects as U+FFFC), `lossy` says that tables or
+    /// opaque blocks were flattened or dropped.
+    Fragment {
+        revision: u64,
+        lossy: bool,
+        text: String,
+        bytes: Vec<u8>,
     },
 }
 
@@ -1071,6 +1117,7 @@ fn parse_command(opcode: u16, body: &[u8]) -> Result<Command, Fail> {
         | opcode::LIST_FONTS
         | opcode::FORMAT_MARKS
         | opcode::LOAD_FONTS => format::parse_command(opcode, &mut r)?,
+        opcode::COPY_FRAGMENT | opcode::PASTE_FRAGMENT => fragment::parse_command(opcode, &mut r)?,
         _ => return Err(Fail::UnknownOpcode),
     };
     r.finish()?;
@@ -1213,6 +1260,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, ErrorCode> {
         | Command::ListFonts
         | Command::LoadFonts(_)
         | Command::FormatMarks { .. } => format::encode_command(&request.command, &mut b)?,
+        Command::CopyFragment { .. } | Command::PasteFragment { .. } => {
+            fragment::encode_command(&request.command, &mut b)?
+        }
     };
     let frame = header(op, request.doc_id, request.request_id, &b)?;
     decode_request(&frame).map_err(|e| e.code)?;
@@ -1652,6 +1702,15 @@ pub fn encode_reply(reply: &Reply) -> Result<Vec<u8>, ErrorCode> {
         | Response::StyleList { .. }
         | Response::FontList(_)
         | Response::FormatMarks { .. } => format::encode_reply(&reply.response, &mut b)?,
+        Response::Fragment {
+            revision,
+            lossy,
+            text,
+            bytes,
+        } => {
+            fragment::put_fragment(&mut b, *revision, *lossy, text, bytes)?;
+            opcode::R_FRAGMENT
+        }
     };
     let frame = header(op, reply.doc_id, reply.request_id, &b)?;
     #[cfg(test)]
@@ -1735,6 +1794,7 @@ pub fn decode_reply(bytes: &[u8]) -> Result<Reply, DecodeError> {
             | opcode::R_STYLE_LIST
             | opcode::R_FONT_LIST
             | opcode::R_FORMAT_MARKS => format::parse_reply(op, &mut r)?,
+            opcode::R_FRAGMENT => fragment::read_fragment(&mut r)?,
             _ => return Err(Fail::UnknownOpcode),
         };
         r.finish()?;
@@ -1842,6 +1902,8 @@ pub use find::{
     SearchFlags, SearchItem, StatCounts,
 };
 
+mod fragment;
+pub use fragment::{MAX_FRAGMENT_BYTES, MAX_FRAGMENT_TEXT_BYTES};
 mod io;
 pub use io::{
     MAX_ALT_BYTES, MAX_IMAGE_BYTES, MAX_NOTICE_BYTES, MAX_NOTICES, MAX_SAVE_BYTES, Notice,
@@ -1858,6 +1920,8 @@ mod sel_tests;
 mod find_tests;
 #[cfg(test)]
 mod format_tests;
+#[cfg(test)]
+mod fragment_tests;
 #[cfg(test)]
 mod io_tests;
 #[cfg(test)]
