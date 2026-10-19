@@ -1032,11 +1032,13 @@ Réf : F-TXT-014 · Taille : S · Dépend de : US-240
 
 #### US-250 — Appliquer un style
 *En tant qu'*utilisateur, *je veux* appliquer des styles *afin de* garder un document cohérent.
-- [ ] Galerie de styles dans le ruban avec aperçu en direct au survol.
+- [x] Galerie de styles dans le ruban avec aperçu en direct au survol.
 - [ ] Volet Styles : liste (styles utilisés / tous), aperçu, indication du style courant ; raccourcis Titre 1–3 de Word.
-- [ ] Appliquer un style de paragraphe conserve la mise en forme directe de caractère, comme dans Word.
+- [x] Appliquer un style de paragraphe conserve la mise en forme directe de caractère, comme dans Word.
 
 Réf : F-TXT-020 · Taille : M · Dépend de : US-201, US-106, US-219
+
+Validation US-250 (2026-10-19) : galerie « Styles » de l'onglet Accueil et volet Styles (`web/styles-pane.mjs`, handler `rich_editor/styles.rs`, contrat [F0](docs/us-240-format-protocol.md) §5.4–5.6). Aperçu au survol et au focus clavier par recouvrement de mise en page (`overlay`, `layout_doc!`) : ni modèle, ni historique, ni révision, ni enregistrement ne le voient ; toute commande qui change le document, la sélection, les statistiques ou les propriétés l'annule. Style de paragraphe appliqué en une étape Ctrl+Z, mise en forme directe de caractère et de paragraphe conservée. Modèle (M1) : nom d'affichage, galerie rapide, style par défaut, priorité, lus et écrits en DOCX ; styles intégrés absents d'un DOCX instanciés depuis la fabrique US-202 au premier usage. Critère 2 non coché : volet (utilisés / tous, aperçu, style courant) fait, mais les raccourcis Word Ctrl+Alt+1/2/3 ne valent que pour Titre 1 sur AZERTY (Ctrl+Alt+é et Ctrl+Alt+" tapent ~ et #, qui ne sont pas interceptés) ; Ctrl+Maj+1/2/3 et Ctrl+Maj+N offerts en plus ; réception de ces raccourcis dans WebView2 à confirmer à la main dans l'exe. Réserves : `w:latentStyles` et `semiHidden` non lus ; numérotation des paragraphes suivants non recalculée pendant l'aperçu. Relecture indépendante : fusionnable, retouches intégrées.
 
 #### US-251 — Gérer les styles
 *En tant qu'*utilisateur, *je veux* créer et modifier des styles *afin d'adapter* la présentation à mes besoins.
