@@ -2056,7 +2056,8 @@ fn embedded_resource_self_check(hwnd: Hwnd, context: &mut Context) -> io::Result
             ['/canvas-renderer.mjs','text/javascript'], ['/text-input.mjs','text/javascript'],
             ['/mouse-selection.mjs','text/javascript'],
             ['/wasm-protocol.mjs','text/javascript'], ['/atelier_core_wasm.wasm','application/wasm'],
-            ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain']
+            ['/fonts/Carlito-Regular.ttf','font/ttf'], ['/licenses/Carlito-OFL.txt','text/plain'],
+            ['/fonts/LiberationMono-Bold.ttf','font/ttf'], ['/fonts/LiberationMono-BoldItalic.ttf','font/ttf'], ['/fonts/LiberationMono-Italic.ttf','font/ttf'], ['/fonts/LiberationMono-Regular.ttf','font/ttf'], ['/fonts/LiberationSans-Bold.ttf','font/ttf'], ['/fonts/LiberationSans-BoldItalic.ttf','font/ttf'], ['/fonts/LiberationSans-Italic.ttf','font/ttf'], ['/fonts/LiberationSans-Regular.ttf','font/ttf'], ['/fonts/LiberationSerif-Bold.ttf','font/ttf'], ['/fonts/LiberationSerif-BoldItalic.ttf','font/ttf'], ['/fonts/LiberationSerif-Italic.ttf','font/ttf'], ['/fonts/LiberationSerif-Regular.ttf','font/ttf'], ['/fonts/Caladea-Bold.ttf','font/ttf'], ['/fonts/Caladea-BoldItalic.ttf','font/ttf'], ['/fonts/Caladea-Italic.ttf','font/ttf'], ['/fonts/Caladea-Regular.ttf','font/ttf'], ['/licenses/Liberation-OFL.txt','text/plain'], ['/licenses/Caladea-OFL.txt','text/plain']
           ];
           paths.push(['/rich-editor.mjs','text/javascript'],['/rich-editor-client.mjs','text/javascript'],['/rich-image-cache.mjs','text/javascript'],['/rich-editor-protocol.mjs','text/javascript'],['/editor-page-cache.mjs','text/javascript'],['/document-mirror.mjs','text/javascript'],['/document-mirror.css','text/css']);
           paths.push(['/page-navigation.mjs','text/javascript'],['/replace-controls.mjs','text/javascript'],['/replace-controls.css','text/css'],['/document-status.mjs','text/javascript'],['/document-status.css','text/css']);

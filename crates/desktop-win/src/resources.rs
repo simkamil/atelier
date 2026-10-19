@@ -345,6 +345,96 @@ pub static RESOURCES: &[Resource] = &[
         mime: "text/plain; charset=utf-8",
         bytes: include_bytes!("../../../data/fonts/licenses/Carlito-OFL.txt"),
     },
+    Resource {
+        path: "/fonts/LiberationMono-Bold.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationMono-Bold.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationMono-BoldItalic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationMono-BoldItalic.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationMono-Italic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationMono-Italic.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationMono-Regular.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationMono-Regular.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSans-Bold.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSans-Bold.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSans-BoldItalic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSans-BoldItalic.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSans-Italic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSans-Italic.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSans-Regular.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSans-Regular.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSerif-Bold.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSerif-Bold.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSerif-BoldItalic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSerif-BoldItalic.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSerif-Italic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSerif-Italic.ttf"),
+    },
+    Resource {
+        path: "/fonts/LiberationSerif-Regular.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/liberation/LiberationSerif-Regular.ttf"),
+    },
+    Resource {
+        path: "/fonts/Caladea-Bold.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/caladea/Caladea-Bold.ttf"),
+    },
+    Resource {
+        path: "/fonts/Caladea-BoldItalic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/caladea/Caladea-BoldItalic.ttf"),
+    },
+    Resource {
+        path: "/fonts/Caladea-Italic.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/caladea/Caladea-Italic.ttf"),
+    },
+    Resource {
+        path: "/fonts/Caladea-Regular.ttf",
+        mime: "font/ttf",
+        bytes: include_bytes!("../../../data/fonts/caladea/Caladea-Regular.ttf"),
+    },
+    Resource {
+        path: "/licenses/Liberation-OFL.txt",
+        mime: "text/plain; charset=utf-8",
+        bytes: include_bytes!("../../../data/fonts/licenses/Liberation-OFL.txt"),
+    },
+    Resource {
+        path: "/licenses/Caladea-OFL.txt",
+        mime: "text/plain; charset=utf-8",
+        bytes: include_bytes!("../../../data/fonts/licenses/Caladea-OFL.txt"),
+    },
 ];
 
 /// Strictly classify a request URL and method. Queries and fragments do not affect routing.
@@ -513,6 +603,37 @@ mod tests {
         assert!(
             CSP.contains("default-src 'none'") && CSP.contains("connect-src https://app.atelier")
         );
+    }
+
+    #[test]
+    fn character_format_fonts_and_licenses_are_embedded() {
+        let mut fonts = Vec::new();
+        for family in [
+            "LiberationSans",
+            "LiberationSerif",
+            "LiberationMono",
+            "Caladea",
+        ] {
+            for style in ["Regular", "Bold", "Italic", "BoldItalic"] {
+                fonts.push(format!("/fonts/{family}-{style}.ttf"));
+            }
+        }
+        for path in &fonts {
+            let url = format!("https://app.atelier{path}");
+            let Decision::Serve(index) = classify(&url, "GET") else {
+                panic!("{path} not served");
+            };
+            let r = &RESOURCES[index];
+            assert_eq!(r.mime, "font/ttf", "{path}");
+            assert!(r.bytes.len() > 10_000, "{path}");
+        }
+        for path in ["/licenses/Liberation-OFL.txt", "/licenses/Caladea-OFL.txt"] {
+            let url = format!("https://app.atelier{path}");
+            assert!(
+                matches!(classify(&url, "GET"), Decision::Serve(_)),
+                "{path}"
+            );
+        }
     }
 
     #[test]
