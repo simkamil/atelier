@@ -27,9 +27,9 @@ use atelier_text_model::inline_image::IMAGE_OBJECT_KIND;
 use atelier_text_model::rich::flat::{BlockKind, FlatEdit, FlatIndex, LayoutContext, OBJECT_LEN};
 use atelier_text_model::rich::{
     Alignment, AnchoredObject, BreakKind, CharAttrs, CharRun, ClearSide, Color, Field, InlineBreak,
-    InlineSymbol, LineRule, LineSpacing, Link, LinkTarget, ListRef, NodeId, OpaqueAttr, ParaProps,
-    Paragraph, RichDocument, Style, StyleCharAttrs, StyleKind, ThemeColor, ThemeFont, Underline,
-    VerticalAlign,
+    InlineSymbol, LineRule, LineSpacing, Link, LinkTarget, ListRef, NodeId, OpaqueAttr, ParaBorder,
+    ParaBorderStyle, ParaBorders, ParaProps, ParaShading, Paragraph, RichDocument, Style,
+    StyleCharAttrs, StyleKind, ThemeColor, ThemeFont, Underline, VerticalAlign,
 };
 
 use super::styles::layout_doc;
@@ -70,6 +70,13 @@ const ALIGNMENTS: [Alignment; 4] = [
     Alignment::Center,
     Alignment::Right,
     Alignment::Justify,
+];
+const BORDER_STYLES: [ParaBorderStyle; 5] = [
+    ParaBorderStyle::None,
+    ParaBorderStyle::Single,
+    ParaBorderStyle::Double,
+    ParaBorderStyle::Dotted,
+    ParaBorderStyle::Dashed,
 ];
 const RULES: [LineRule; 3] = [LineRule::Auto, LineRule::Exact, LineRule::AtLeast];
 const CLEARS: [ClearSide; 4] = [
@@ -180,6 +187,8 @@ impl W {
             line_spacing,
             style,
             list,
+            shading,
+            borders,
             opaque,
         } = p;
         self.opt(alignment, |w, a| w.u8(index_of(&ALIGNMENTS, a)));
@@ -197,6 +206,38 @@ impl W {
             w.u32(l.list_id);
             w.u8(l.level);
         });
+        self.opt(shading, |w, sh| {
+            let ParaShading {
+                fill,
+                pattern,
+                pattern_color,
+            } = sh;
+            w.opt(fill, |w, c| w.color(c));
+            w.opt(pattern, |w, t| w.str(t));
+            w.opt(pattern_color, |w, c| w.color(c));
+        });
+        let ParaBorders {
+            top,
+            left,
+            bottom,
+            right,
+            between,
+            bar,
+        } = borders;
+        for side in [top, left, bottom, right, between, bar] {
+            self.opt(side, |w, b| {
+                let ParaBorder {
+                    style,
+                    eighths,
+                    space,
+                    color,
+                } = b;
+                w.u8(index_of(&BORDER_STYLES, style));
+                w.u32(u32::from(*eighths));
+                w.u8(*space);
+                w.opt(color, |w, c| w.color(c));
+            });
+        }
         self.opaque(opaque);
     }
     fn style(&mut self, s: &Style) {
@@ -446,7 +487,32 @@ impl<'a> R<'a> {
                     level: r.u8()?,
                 })
             })?,
+            shading: self.opt(|r| {
+                Ok(ParaShading {
+                    fill: r.opt(|r| r.color())?,
+                    pattern: r.opt(|r| r.str())?,
+                    pattern_color: r.opt(|r| r.color())?,
+                })
+            })?,
+            borders: ParaBorders {
+                top: self.border()?,
+                left: self.border()?,
+                bottom: self.border()?,
+                right: self.border()?,
+                between: self.border()?,
+                bar: self.border()?,
+            },
             opaque: self.opaque()?,
+        })
+    }
+    fn border(&mut self) -> Res<Option<ParaBorder>> {
+        self.opt(|r| {
+            Ok(ParaBorder {
+                style: r.choice(&BORDER_STYLES)?,
+                eighths: u16::try_from(r.u32()?).map_err(|_| ErrorCode::FragmentInvalid)?,
+                space: r.u8()?,
+                color: r.opt(|r| r.color())?,
+            })
         })
     }
     fn style(&mut self) -> Res<Style> {

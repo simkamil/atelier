@@ -803,3 +803,72 @@ fn a_saved_document_keeps_the_pasted_picture_and_style() {
     );
     let _ = (CharValue::Flag(true), StyleTarget::Paragraph);
 }
+
+#[test]
+fn shading_and_borders_of_a_paragraph_and_of_a_style_travel_with_the_fragment() {
+    use atelier_text_model::rich::{Color, ParaBorder, ParaBorderStyle, ParaBorders, ParaShading};
+    let side = |style, eighths, space, color| {
+        Some(ParaBorder {
+            style,
+            eighths,
+            space,
+            color,
+        })
+    };
+    let borders = ParaBorders {
+        top: side(
+            ParaBorderStyle::Single,
+            8,
+            4,
+            Some(Color { r: 1, g: 2, b: 3 }),
+        ),
+        left: side(ParaBorderStyle::Double, 12, 0, None),
+        bottom: side(ParaBorderStyle::Dotted, 6, 31, None),
+        right: side(ParaBorderStyle::None, 0, 1, None),
+        between: side(ParaBorderStyle::Dashed, 4, 2, None),
+        bar: side(
+            ParaBorderStyle::Single,
+            24,
+            3,
+            Some(Color { r: 9, g: 8, b: 7 }),
+        ),
+    };
+    let shading = Some(ParaShading {
+        fill: Some(Color {
+            r: 250,
+            g: 240,
+            b: 10,
+        }),
+        pattern: Some("pct25".into()),
+        pattern_color: Some(Color { r: 0, g: 0, b: 200 }),
+    });
+    let mut m = M::new();
+    m.blank(1);
+    m.insert(1, "boxed");
+    let mut style = custom_style("Box", "Box", false);
+    style.paragraph.borders = borders;
+    style.paragraph.shading = shading.clone();
+    m.model(1).add_style(style).unwrap();
+    m.props(
+        1,
+        0,
+        ParaProps {
+            style: Some("Box".into()),
+            shading: shading.clone(),
+            borders,
+            ..ParaProps::default()
+        },
+    );
+    let (_, bytes, _) = m.copy(1, 0, 5);
+    m.blank(2);
+    m.paste(2, &bytes);
+    let first = m.model(2).paragraph_ids()[0];
+    let pasted = m.model(2).paragraph(first).unwrap().props.clone();
+    // The empty first paragraph of the target adopts the properties of the piece.
+    assert_eq!((pasted.borders, pasted.shading), (borders, shading.clone()));
+    let id = pasted.style.expect("a style");
+    let doc = m.model(2);
+    let added = LayoutContext::catalog(&*doc).style(&id).unwrap();
+    assert_eq!(added.paragraph.borders, borders);
+    assert_eq!(added.paragraph.shading, shading);
+}
