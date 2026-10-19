@@ -360,3 +360,145 @@ fn a_font_loaded_on_demand_replaces_the_substitute_and_is_reported() {
         ErrorCode::InvalidBody
     );
 }
+
+fn all_font_files(names: &[&str]) -> Vec<Vec<u8>> {
+    names.iter().map(|name| font_file(name)).collect()
+}
+
+#[test]
+fn the_font_budget_is_checked_before_any_font_is_kept() {
+    use super::format_char::intern_in;
+    use std::sync::Mutex;
+    assert_eq!(crate::rich_preview::LOADED_FONT_FACES, 16);
+    assert_eq!(crate::rich_preview::LOADED_FONT_BYTES, 6 * 1024 * 1024);
+    let sans = all_font_files(&[
+        "LiberationSans-Regular.ttf",
+        "LiberationSans-Bold.ttf",
+        "LiberationSans-Italic.ttf",
+        "LiberationSans-BoldItalic.ttf",
+    ]);
+    // Faces: three at most; a batch of four keeps nothing, even its first fonts.
+    let registry = Mutex::new(Vec::new());
+    assert!(intern_in(&registry, sans.clone(), 3, usize::MAX).is_none());
+    assert!(registry.lock().unwrap().is_empty());
+    assert!(intern_in(&registry, sans[..2].to_vec(), 3, usize::MAX).is_some());
+    // A font already kept costs nothing; one more fresh font fits; a fourth does not.
+    assert!(
+        intern_in(
+            &registry,
+            vec![sans[0].clone(), sans[2].clone()],
+            3,
+            usize::MAX
+        )
+        .is_some()
+    );
+    assert!(intern_in(&registry, vec![sans[3].clone()], 3, usize::MAX).is_none());
+    assert_eq!(registry.lock().unwrap().len(), 3);
+    // Bytes: room for one face only.
+    let registry = Mutex::new(Vec::new());
+    assert!(intern_in(&registry, sans[..2].to_vec(), 16, sans[0].len() + 1).is_none());
+    assert!(registry.lock().unwrap().is_empty());
+    assert!(intern_in(&registry, sans[..1].to_vec(), 16, sans[0].len() + 1).is_some());
+    // Something that is no font refuses the whole batch.
+    assert!(intern_in(&registry, vec![sans[1].clone(), vec![9; 8]], 16, usize::MAX).is_none());
+    assert_eq!(registry.lock().unwrap().len(), 1);
+    // The real budget: sixteen faces fit, a seventeenth does not.
+    let registry = Mutex::new(Vec::new());
+    let mut sixteen = sans.clone();
+    sixteen.extend(all_font_files(&[
+        "LiberationSerif-Regular.ttf",
+        "LiberationSerif-Bold.ttf",
+        "LiberationSerif-Italic.ttf",
+        "LiberationSerif-BoldItalic.ttf",
+        "LiberationMono-Regular.ttf",
+        "LiberationMono-Bold.ttf",
+        "LiberationMono-Italic.ttf",
+        "LiberationMono-BoldItalic.ttf",
+    ]));
+    let bytes: usize = sixteen.iter().map(Vec::len).sum();
+    let limit = (
+        crate::rich_preview::LOADED_FONT_FACES,
+        crate::rich_preview::LOADED_FONT_BYTES,
+    );
+    assert!(bytes < limit.1);
+    assert!(intern_in(&registry, sixteen.clone(), 12, limit.1).is_some());
+    assert!(
+        intern_in(
+            &registry,
+            vec![font_file("../carlito/Carlito-Regular.ttf")],
+            12,
+            limit.1
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn a_load_fonts_body_out_of_bounds_is_refused_by_the_decoder() {
+    use crate::rich_protocol::{Request, decode_request, encode_request};
+    let frame = encode_request(&Request {
+        doc_id: 1,
+        request_id: 1,
+        command: Command::LoadFonts(vec![vec![0, 1, 0, 0, 7, 7]]),
+    })
+    .unwrap();
+    let body = 20;
+    assert!(decode_request(&frame).is_ok());
+    let tamper = |at: usize, bytes: &[u8]| {
+        let mut copy = frame.clone();
+        copy[at..at + bytes.len()].copy_from_slice(bytes);
+        decode_request(&copy).is_err()
+    };
+    assert!(tamper(body, &[0]), "count 0");
+    assert!(tamper(body, &[9]), "count 9");
+    assert!(tamper(body + 1, &0u32.to_le_bytes()), "length 0");
+    assert!(
+        tamper(body + 1, &(1024u32 * 1024 + 1).to_le_bytes()),
+        "length over 1 MiB"
+    );
+    // The encoder refuses the same.
+    for fonts in [
+        vec![],
+        vec![vec![]],
+        vec![vec![1u8; 4]; 9],
+        vec![vec![0u8; 1024 * 1024 + 1]],
+    ] {
+        assert!(
+            encode_request(&Request {
+                doc_id: 1,
+                request_id: 1,
+                command: Command::LoadFonts(fonts)
+            })
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn fonts_load_in_a_read_only_document_and_a_resync_agrees_with_the_state() {
+    use crate::rich_protocol::{OpenKind, Profile};
+    let mut h = Harness::new();
+    let docx = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/docx-reference/revisions.docx"
+    ))
+    .unwrap();
+    assert!(matches!(
+        h.send(Command::Open { kind: OpenKind::Docx, profile: Profile::Document, data: docx }),
+        Response::State(s) if s.read_only
+    ));
+    let faces = all_font_files(&["LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf"]);
+    let Response::State(loaded) = h.send(Command::LoadFonts(faces)) else {
+        panic!("a State");
+    };
+    assert!(loaded.read_only, "the document stays read-only");
+    let Response::State(again) = h.send(Command::Resync) else {
+        panic!("a State");
+    };
+    assert_eq!(again.page_count, loaded.page_count);
+    assert_eq!(again.revision, loaded.revision);
+    assert_eq!(again.doc_len, loaded.doc_len);
+    // Resync starts the atlas over (a new epoch).
+    assert_ne!(again.atlas.epoch, loaded.atlas.epoch);
+    assert_eq!(again.atlas.first, 0);
+}

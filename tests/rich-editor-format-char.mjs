@@ -166,6 +166,12 @@ await suite.run("real WASM: a font loaded on demand replaces the substitute and 
   await format.loadFonts({ fonts });
   const list = await format.listFonts();
   assert.equal(list.families.find((f) => f.name === "Arial").substitute, "Liberation Sans");
+  // A resynchronisation after the load: same document, same fonts, the atlas starts again.
+  const pages = client.cache.pageCount;
+  await client.command({ type: "resync" });
+  await client.whenLayoutComplete();
+  assert.equal(client.cache.pageCount, pages);
+  assert.equal(value((await format.formatState()).chars.font).used, "Liberation Sans");
   // Something that is no font is refused and changes nothing.
   await assert.rejects(format.loadFonts({ fonts: [new Uint8Array([1, 2, 3, 4])] }), (e) => e.code === "RICH_INVALID_BODY");
   assert.equal(value((await format.formatState()).chars.font).used, "Liberation Sans");
@@ -186,7 +192,8 @@ await suite.run("the LoadFonts codec round-trips and refuses malformed bodies", 
     const copy = frame.slice(0, 20);
     return Uint8Array.from([...copy, ...bytes]);
   };
-  const bad = [[0], [1, 0, 0, 0, 0], [1, 9, 0, 0, 0, 1, 2]];
+  const over = [1, 1, 0, 16, 0]; // 1 MiB + 1
+  const bad = [[0], [9], [1, 0, 0, 0, 0], over, [1, 9, 0, 0, 0, 1, 2]];
   for (const tail of bad) {
     const raw = body(tail);
     new DataView(raw.buffer).setUint32(16, tail.length, true);

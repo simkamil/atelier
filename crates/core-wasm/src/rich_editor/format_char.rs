@@ -33,20 +33,48 @@ use crate::rich_protocol::{
 /// borrows `'static` bytes).
 static LOADED_FONTS: std::sync::Mutex<Vec<&'static [u8]>> = std::sync::Mutex::new(Vec::new());
 
-/// The `'static` copy of a font file (`None` when it is no font or the budget is spent).
-fn intern_font(bytes: Vec<u8>) -> Option<&'static [u8]> {
-    atelier_font::FontFace::parse_collection(&bytes, 0).ok()?;
-    let mut known = LOADED_FONTS.lock().ok()?;
-    if let Some(found) = known.iter().find(|font| ***font == *bytes) {
-        return Some(*found);
+/// The `'static` copies of a batch of font files, all or nothing: every file is
+/// analysed and the budget (faces and bytes) checked before any is kept.
+/// `None` when a file is no font or the budget would be exceeded.
+fn intern_fonts(batch: Vec<Vec<u8>>) -> Option<Vec<&'static [u8]>> {
+    intern_in(&LOADED_FONTS, batch, LOADED_FONT_FACES, LOADED_FONT_BYTES)
+}
+
+/// [`intern_fonts`] over a given registry and budget (the tests use their own).
+pub(super) fn intern_in(
+    registry: &std::sync::Mutex<Vec<&'static [u8]>>,
+    batch: Vec<Vec<u8>>,
+    max_faces: usize,
+    max_bytes: usize,
+) -> Option<Vec<&'static [u8]>> {
+    for bytes in &batch {
+        atelier_font::FontFace::parse_collection(bytes, 0).ok()?;
+    }
+    let mut known = registry.lock().ok()?;
+    // Files not yet kept, each counted once.
+    let mut fresh: Vec<&Vec<u8>> = Vec::new();
+    for bytes in &batch {
+        let is_known = known.iter().any(|font| **font == **bytes);
+        if !is_known && !fresh.iter().any(|other| **other == *bytes) {
+            fresh.push(bytes);
+        }
     }
     let total: usize = known.iter().map(|font| font.len()).sum();
-    if known.len() >= LOADED_FONT_FACES || total + bytes.len() > LOADED_FONT_BYTES {
+    let extra: usize = fresh.iter().map(|bytes| bytes.len()).sum();
+    if known.len() + fresh.len() > max_faces || total + extra > max_bytes {
         return None;
     }
-    let leaked: &'static [u8] = Box::leak(bytes.into_boxed_slice());
-    known.push(leaked);
-    Some(leaked)
+    let mut out = Vec::with_capacity(batch.len());
+    for bytes in batch {
+        if let Some(found) = known.iter().find(|font| ***font == *bytes) {
+            out.push(*found);
+        } else {
+            let leaked: &'static [u8] = Box::leak(bytes.into_boxed_slice());
+            known.push(leaked);
+            out.push(leaked);
+        }
+    }
+    Some(out)
 }
 
 /// Size used when the cascade gives none: 11 pt.
@@ -561,11 +589,12 @@ impl Session {
     /// change, not a document one: no revision, no history, allowed in a
     /// read-only document.
     pub(super) fn load_fonts(&mut self, fonts: Vec<Vec<u8>>) -> Result<Response, ErrorCode> {
-        let mut faces = Vec::with_capacity(fonts.len());
-        for bytes in fonts {
-            faces.push(intern_font(bytes).ok_or(ErrorCode::InvalidBody)?);
-        }
-        let delta = self.cache.add_fonts(&self.doc, &faces);
+        let faces = intern_fonts(fonts).ok_or(ErrorCode::InvalidBody)?;
+        // All or nothing: a face the font manager refuses leaves the session as it was.
+        let delta = self
+            .cache
+            .add_fonts(&self.doc, &faces)
+            .map_err(|()| ErrorCode::Limit)?;
         self.fonts_memo = None;
         self.finish(delta, DEFAULT_LAYOUT_BUDGET, true)
     }

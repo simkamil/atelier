@@ -153,6 +153,18 @@ fn text_controls_false_overrides_and_prefixes_keep_utf8_offsets_and_break_types(
 }
 
 #[test]
+fn an_unknown_highlight_name_is_ignored_and_does_not_fail_the_opening() {
+    let xml = format!(
+        r#"<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:rPr><w:b/><w:highlight w:val="chartreuse"/></w:rPr><w:t>x</w:t></w:r></w:p></w:body></w:document>"#
+    );
+    let imported = import_docx(&package(xml.as_bytes(), [])).unwrap();
+    let id = imported.paragraph_ids()[0];
+    let p = imported.document.paragraph(id).unwrap();
+    assert_eq!(p.runs[0].attrs.highlight, None);
+    assert_eq!(p.runs[0].attrs.bold, Some(true));
+}
+
+#[test]
 fn automatic_text_color_and_named_highlight_are_supported_without_loss() {
     let xml = format!(
         r#"<w:document xmlns:w="{W}"><w:body><w:p><w:r><w:rPr><w:color w:val="auto"/><w:highlight w:val="yellow"/></w:rPr><w:t>x</w:t></w:r></w:p></w:body></w:document>"#
