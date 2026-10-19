@@ -414,3 +414,204 @@ fn marks_refuse_a_missing_page_and_change_no_state() {
     }
     assert_eq!(h.state().revision, revision);
 }
+
+fn marks(h: &mut Harness, first: u32, count: u32) -> Vec<FormatMark> {
+    match h.send(Command::FormatMarks { first, count }) {
+        Response::FormatMarks { marks, .. } => marks,
+        other => panic!("expected marks, got {other:?}"),
+    }
+}
+
+fn alignment_at(h: &mut Harness, position: u64) -> Tri<u8> {
+    h.select(position, position);
+    h.state().paragraph.alignment
+}
+
+#[test]
+fn table_cells_are_formatted_and_opaque_blocks_are_skipped() {
+    use atelier_text_model::rich::flat::{FlatIndex, ParagraphPosition};
+    let mut h = Harness::new();
+    h.type_text("first\nsecond");
+    let section = h.doc().section_ids()[0];
+    let opaque = h.doc().new_opaque("unknown", b"<x/>").unwrap();
+    let table = h.doc().new_table(1, 2).unwrap();
+    for (position, subtree) in [(1, opaque), (2, table)] {
+        h.doc()
+            .apply(
+                &Transaction::new(vec![RichOp::InsertBlock {
+                    parent: Some(section),
+                    position,
+                    subtree,
+                }])
+                .unwrap(),
+            )
+            .unwrap();
+    }
+    h.send(Command::Resync);
+    let start = |h: &mut Harness, paragraph: usize| {
+        h.doc()
+            .position(ParagraphPosition {
+                paragraph,
+                offset: 0,
+            })
+            .unwrap() as u64
+    };
+    let end = h.doc().len() as u64;
+    h.select(0, end);
+    apply(&mut h, vec![set_alignment(2)]);
+    // first, [opaque], two cells, second.
+    for paragraph in [0, 2, 3, 4] {
+        let at = start(&mut h, paragraph);
+        assert_eq!(
+            alignment_at(&mut h, at),
+            Tri::Value(2),
+            "paragraph {paragraph}"
+        );
+    }
+    // The opaque block alone: accepted, nothing to change.
+    let opaque_at = start(&mut h, 1);
+    h.select(opaque_at, opaque_at);
+    let revision = h.state().revision;
+    apply(&mut h, vec![set_alignment(1)]);
+    assert_eq!(h.state().revision, revision);
+}
+
+#[test]
+fn formatting_is_refused_read_only_and_plain_text_and_works_after_a_resync() {
+    let mut h = Harness::new();
+    let docx = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/docx-reference/revisions.docx"
+    ))
+    .unwrap();
+    h.send(Command::Open {
+        kind: crate::rich_protocol::OpenKind::Docx,
+        profile: crate::rich_protocol::Profile::Document,
+        data: docx,
+    });
+    assert_eq!(
+        h.error(Command::ApplyParaFormat(format(vec![set_alignment(1)]))),
+        ErrorCode::ReadOnly
+    );
+    // Marks only read the layout: allowed.
+    assert!(matches!(
+        h.send(Command::FormatMarks { first: 0, count: 1 }),
+        Response::FormatMarks { .. }
+    ));
+    h.send(Command::Open {
+        kind: crate::rich_protocol::OpenKind::Txt,
+        profile: crate::rich_protocol::Profile::Txt,
+        data: b"plain text".to_vec(),
+    });
+    assert_eq!(
+        h.error(Command::ApplyParaFormat(format(vec![set_alignment(1)]))),
+        ErrorCode::FormatPlainText
+    );
+    assert!(matches!(
+        h.send(Command::FormatMarks { first: 0, count: 1 }),
+        Response::FormatMarks { .. }
+    ));
+    let mut h = three();
+    h.select(0, 13);
+    h.send(Command::Resync);
+    apply(&mut h, vec![set_alignment(3)]);
+    assert_eq!(h.state().paragraph.alignment, Tri::Value(3));
+}
+
+#[test]
+fn marks_of_a_page_that_is_not_laid_out_are_not_ready() {
+    use crate::rich_layout::RichPageCache;
+    let mut doc = RichDocument::new();
+    let section = doc.section_ids()[0];
+    let mut ops = Vec::new();
+    for position in 1..4000 {
+        let subtree = doc.new_paragraph("mot mot mot mot").unwrap();
+        ops.push(RichOp::InsertBlock {
+            parent: Some(section),
+            position,
+            subtree,
+        });
+    }
+    doc.apply(&Transaction::new(ops).unwrap()).unwrap();
+    let mut h = Harness::new();
+    h.editor.active =
+        Some(Session::with_document(1, doc, true, io::Origin::new(io::Source::New)).unwrap());
+    let (page_count, complete) = {
+        let cache = &h.editor.active.as_ref().unwrap().cache;
+        (cache.page_count(), cache.layout_complete())
+    };
+    assert!(
+        !complete && page_count > 2,
+        "the layout of a large document is not finished yet"
+    );
+    // The first page is laid out; a page the layout has not reached yet is not ready, never a partial list.
+    assert!(!marks(&mut h, 0, 1).is_empty());
+    let session = h.editor.active.as_ref().unwrap();
+    assert_eq!(
+        session
+            .cache
+            .format_marks(&session.doc, page_count + 40, page_count + 41, 10),
+        Err(crate::rich_layout::LayoutError::NotReady)
+    );
+    assert_eq!(
+        h.error(Command::FormatMarks {
+            first: page_count,
+            count: 1
+        }),
+        ErrorCode::PageRange
+    );
+}
+
+#[test]
+fn marks_of_justified_text_stretch_and_marks_of_a_later_page_use_its_own_coordinates() {
+    let mut h = Harness::new();
+    let words = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau";
+    h.type_text(words);
+    let left = marks(&mut h, 0, 1);
+    let first_line_spaces = |m: &[FormatMark]| {
+        let first = m.iter().find(|m| m.kind == 1).unwrap().y;
+        m.iter()
+            .filter(|m| m.kind == 1 && m.y == first)
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let plain = first_line_spaces(&left);
+    h.select(0, 0);
+    apply(&mut h, vec![set_alignment(3)]);
+    let justified = marks(&mut h, 0, 1);
+    let stretched = first_line_spaces(&justified);
+    assert!(stretched.len() >= 2);
+    // The gaps between words are widened: the marks move right, evenly, and the last one nears the right margin.
+    assert!(stretched.len() <= plain.len());
+    let n = stretched.len();
+    assert!(
+        stretched[n - 1].x > plain[n - 1].x + 1.0,
+        "the spaces of a justified line move right {:?} {:?}",
+        plain.iter().map(|m| m.x).collect::<Vec<_>>(),
+        stretched.iter().map(|m| m.x).collect::<Vec<_>>()
+    );
+    let steps: Vec<f64> = stretched.windows(2).map(|w| w[1].x - w[0].x).collect();
+    let plain_steps: Vec<f64> = plain.windows(2).map(|w| w[1].x - w[0].x).collect();
+    assert!(
+        steps.iter().zip(&plain_steps).all(|(a, b)| a > b),
+        "every gap is wider than unjustified"
+    );
+    let last = &stretched[n - 1];
+    assert!(
+        last.x < 595.276 - 70.866 && last.x > 595.276 - 70.866 - 80.0,
+        "the last space stands near the right margin"
+    );
+    // A later page: its own coordinates, below the top margin and inside the page.
+    let mut h = Harness::new();
+    h.type_text(&vec!["ab cd"; 120].join("\n"));
+    let second = marks(&mut h, 1, 1);
+    assert!(!second.is_empty());
+    assert!(
+        second
+            .iter()
+            .all(|m| m.page == 1 && m.y > 70.0 && m.y < 842.0 && m.x >= 70.0)
+    );
+    let ends = second.iter().filter(|m| m.kind == 0).count();
+    let first_page_ends = marks(&mut h, 0, 1).iter().filter(|m| m.kind == 0).count();
+    assert!(first_page_ends > 20 && ends > 20);
+}

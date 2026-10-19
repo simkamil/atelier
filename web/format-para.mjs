@@ -72,7 +72,9 @@ function createMarksOverlay({ document, i18n, controller }) {
   let editor = null; let canvas = null; let scrollport = null; let spacer = null; let overlay = null;
   let on = false; let disposed = false; let frame = 0; let generation = 0; let sawState = false;
   let cacheKey = ""; let drawKey = ""; let drawn = 0;
-  const marks = new Map(); const inflight = new Set(); const retries = new Map();
+  const stops = []; // listeners and observers to release on detach
+  // page -> { key, marks }: an entry of an older key keeps being drawn until the answer for the new key replaces it (no flicker)
+  const marks = new Map(); const inflight = new Map(); const retries = new Map();
 
   const keyOf = () => {
     const state = controller.snapshot().state;
@@ -106,22 +108,22 @@ function createMarksOverlay({ document, i18n, controller }) {
   }
 
   function fetchPage(page) {
-    if (inflight.has(page) || marks.has(page)) return;
+    if (inflight.get(page) === cacheKey || marks.get(page)?.key === cacheKey) return;
     const client = controller.client;
     if (!client) return;
-    inflight.add(page);
     const mine = cacheKey;
+    inflight.set(page, mine);
     client.formatMarks({ first: page, count: 1 }).then(reply => {
       inflight.delete(page);
       if (disposed || mine !== cacheKey) return;
-      marks.set(page, reply.marks); retries.delete(page);
+      marks.set(page, { key: mine, marks: reply.marks }); retries.delete(page); schedule();
     }, error => {
       inflight.delete(page);
       if (disposed || mine !== cacheKey) return;
       if (error?.code === "RICH_NOT_READY" && (retries.get(page) ?? 0) < 25) {
         retries.set(page, (retries.get(page) ?? 0) + 1);
         setTimeout(() => { if (!disposed && mine === cacheKey) fetchPage(page); }, 120);
-      } else marks.set(page, []); // a page that vanished, or too many marks: nothing is drawn for it
+      } else { marks.set(page, { key: mine, marks: [] }); schedule(); } // a page that vanished, or too many marks: nothing is drawn for it
     });
   }
 
@@ -140,7 +142,7 @@ function createMarksOverlay({ document, i18n, controller }) {
     let count = 0;
     for (const { page, top } of pages) {
       const origin = geo.pages[page];
-      for (const mark of marks.get(page) ?? []) {
+      for (const mark of marks.get(page)?.marks ?? []) {
         const x = -scrollport.scrollLeft + (mark.x - origin.minX) * geo.zoom;
         const y = top + (mark.y - origin.minY) * geo.zoom;
         const w = mark.width * geo.zoom;
@@ -170,23 +172,36 @@ function createMarksOverlay({ document, i18n, controller }) {
     drawn = count;
   }
 
-  function tick() {
+  function update() {
     frame = 0;
-    if (!on || disposed || !editor) return;
+    if (!on || disposed || !editor || !overlay) return;
     const state = controller.snapshot().state;
     if (state && !sawState) sawState = true;
     if (!state && sawState) { sawState = false; generation += 1; } // a document is being opened: the revisions start again
     const key = keyOf();
-    if (key !== cacheKey) { cacheKey = key; marks.clear(); inflight.clear(); retries.clear(); }
-    if (state && editor.state) {
-      const geo = geometry(); const pages = visiblePages(geo);
-      for (const { page } of pages) fetchPage(page);
-      const signature = `${cacheKey}|${geo.zoom}|${scrollport.scrollLeft}|${scrollport.scrollTop}|${canvas.clientWidth}x${canvas.clientHeight}|${pages.map(p => `${p.page}:${marks.get(p.page)?.length ?? "-"}`).join(",")}|${devicePixelRatio}`;
-      if (signature !== drawKey) { drawKey = signature; paint(geo, pages); }
-    }
-    frame = requestAnimationFrame(tick);
+    if (key !== cacheKey) { cacheKey = key; retries.clear(); } // the old marks stay drawn until the new answers arrive
+    if (!state || !editor.state) return;
+    const geo = geometry(); const pages = visiblePages(geo);
+    for (const [page] of marks) if (!pages.some(p => p.page === page) && marks.get(page).key !== cacheKey) marks.delete(page);
+    for (const { page } of pages) fetchPage(page);
+    const signature = `${cacheKey}|${geo.zoom}|${scrollport.scrollLeft}|${scrollport.scrollTop}|${canvas.clientWidth}x${canvas.clientHeight}|${pages.map(p => `${p.page}:${marks.get(p.page)?.key}:${marks.get(p.page)?.marks.length ?? "-"}`).join(",")}|${devicePixelRatio}`;
+    if (signature !== drawKey) { drawKey = signature; paint(geo, pages); }
   }
-  const start = () => { if (!frame && on && editor && !disposed) frame = requestAnimationFrame(tick); };
+  /** One redraw per frame, asked for by an event (scroll, resize, zoom, state, answer); no permanent loop. */
+  function schedule() { if (!frame && on && editor && overlay && !disposed) frame = requestAnimationFrame(update); }
+  function watch() {
+    const add = (target, type) => { target.addEventListener(type, schedule, { passive: true }); stops.push(() => target.removeEventListener(type, schedule)); };
+    add(scrollport, "scroll"); add(globalThis, "resize");
+    const observe = (Observer, target, options) => { if (!target || typeof Observer !== "function") return; const o = new Observer(schedule); o.observe(target, options); stops.push(() => o.disconnect()); };
+    observe(globalThis.ResizeObserver, canvas);
+    // A zoom or a new page layout rewrites the style of the spacer and of the canvas.
+    observe(globalThis.MutationObserver, spacer, { attributes: true, attributeFilter: ["style"] });
+    observe(globalThis.MutationObserver, canvas, { attributes: true, attributeFilter: ["style"] });
+    stops.push(controller.subscribe(schedule));
+    if (typeof editor.subscribe === "function") stops.push(editor.subscribe(schedule));
+  }
+  function unwatch() { while (stops.length) stops.pop()(); }
+  const start = () => { drawKey = ""; schedule(); };
 
   function ensureOverlay() {
     if (overlay || !canvas) return;
@@ -202,9 +217,10 @@ function createMarksOverlay({ document, i18n, controller }) {
       canvas = options.canvas ?? document.getElementById("document-canvas");
       scrollport = options.scrollport ?? document.getElementById("document-scroll");
       spacer = options.spacer ?? document.getElementById("page-spacer");
+      unwatch(); watch();
       if (on) { ensureOverlay(); start(); }
     },
-    detach() { editor = null; if (frame) cancelAnimationFrame(frame); frame = 0; removeOverlay(); },
+    detach() { unwatch(); editor = null; if (frame) cancelAnimationFrame(frame); frame = 0; removeOverlay(); },
     set(value) {
       on = Boolean(value);
       if (on && editor && canvas) { ensureOverlay(); drawKey = ""; start(); }
@@ -214,7 +230,7 @@ function createMarksOverlay({ document, i18n, controller }) {
     /** Nombre de marques dessinées au dernier passage (pour les tests). */
     get drawn() { return drawn; },
     get element() { return overlay; },
-    dispose() { disposed = true; if (frame) cancelAnimationFrame(frame); removeOverlay(); },
+    dispose() { disposed = true; unwatch(); if (frame) cancelAnimationFrame(frame); removeOverlay(); },
   };
 }
 

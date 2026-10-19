@@ -39,7 +39,6 @@ use super::prepare::{Mark, Picture, PictureFit, Prepared, page_break_lines, prep
 use super::rich_paint::{FastLine, GlyphCache, PageWriter, StyleTable, paint_line_fast};
 use super::{CaretGeometry, LayoutError, PageDelta, RichPageCache};
 use crate::rich_preview::build_fonts;
-use crate::rich_protocol::FormatMark;
 
 /// Paragraphs shaped eagerly by one edit; a larger paste is finished by `step`.
 const EAGER_EDIT_PARAGRAPHS: usize = 256;
@@ -813,14 +812,14 @@ impl PageCache {
         first: u32,
         end: u32,
         limit: usize,
-    ) -> Result<Vec<FormatMark>, LayoutError> {
+    ) -> Result<Vec<crate::rich_protocol::FormatMark>, LayoutError> {
         const KIND_PARAGRAPH: u8 = 0;
         const KIND_SPACE: u8 = 1;
         const KIND_TAB: u8 = 2;
         const KIND_NO_BREAK: u8 = 3;
         const KIND_LINE: u8 = 4;
         const KIND_PAGE: u8 = 5;
-        let mut out: Vec<FormatMark> = Vec::new();
+        let mut out: Vec<crate::rich_protocol::FormatMark> = Vec::new();
         // Which `\n` of a paragraph is a page break, computed once per paragraph.
         let mut page_breaks: Option<(usize, Vec<bool>)> = None;
         for page in first..end {
@@ -844,7 +843,7 @@ impl PageCache {
                 let text = &info.painted.text;
                 let line_y = self.geometry.top + placed.baseline;
                 let mut push = |kind: u8, x: i64, y: i64, width: i64| {
-                    out.push(FormatMark {
+                    out.push(crate::rich_protocol::FormatMark {
                         page,
                         kind,
                         x: (self.geometry.left + x) as f64 / 64.0,
